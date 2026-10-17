@@ -130,7 +130,53 @@ The Actor-Gatherer framework improves accuracy in three settings:
 - **Observing the environment:** when something an agent relied on changes, such
   as a file, the Gatherer tells it before it answers from a stale copy.
 
-Below are two short examples of the latter two.
+Below is an example of each.
+
+### Long-running sessions
+
+When a session's history no longer fits, a coding agent compacts it into a summary
+of its own, and an early decision can be lost. The Gatherer instead splits the
+history into tasks, records what each task established, and gives the agent the
+earlier tasks the request at hand needs.
+
+In this example, the database has a trap. Its catalogue links to its studios
+through two columns that both match every row: the declared foreign key
+(`catalogue.studiolink`) is stale, and the right join is the undeclared
+`catalogue.feed_tag = companies.callsign`. Early in the session:
+
+> **You → Codex:** Which studios have the most catalogue entries? Top five, name and count.
+>
+> **Codex:** I joined `catalogue` to `companies` on `catalogue.feed_tag = companies.callsign`: …
+>
+> **You → Codex:** Good, that's correct.
+
+Ten turns of other work on the catalogue follow, and then:
+
+> **You → Codex:** Which five studios have the most Drama entries? Name and count.
+
+| | correct |
+|---|---|
+| `codex`, compacting along the way | 0 of 3: joins on `studiolink` |
+| `ag codex` | 3 of 3: joins on `feed_tag` |
+
+Codex's summary of the early turns keeps "Good, that's correct" but not what was
+correct, so it falls back on the declared foreign key. Under `ag`, the Gatherer
+records "join catalogue to companies on `catalogue.feed_tag = companies.callsign`,
+not `catalogue.studiolink = companies.company_id`" for that task, and gives it to
+the agent with the Drama question.
+
+To run it yourself (every turn is a real model call):
+
+```bash
+demo/long_session/run.sh ag       # Codex under ag
+demo/long_session/run.sh plain    # Codex alone
+```
+
+The session is short, so both run with lowered limits to make the history
+overflow within it: 10,000 tokens for the Gatherer, and compaction at 18,000 for
+Codex. The numbers above are with Gemini 3.8 Flash as both Codex's model and the
+Gatherer's. See [`demo/long_session`](https://github.com/ucbepic/actor-gatherer/tree/main/demo/long_session)
+for how the session is set up.
 
 ### Awareness across agents
 
