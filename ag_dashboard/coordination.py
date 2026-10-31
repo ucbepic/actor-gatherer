@@ -540,7 +540,7 @@ class Coordination:
             key = (r["gatherer"], r["session_id"])
             if r.get("role") != COORDINATOR or key in self.marked or not os.path.exists(sessions.home.db_path(r["gatherer"])):
                 continue
-            if r["harness"] == "codex" and r.get("started_as") == r["session_id"]:
+            if r["harness"] in sessions.OWN_IDS and r.get("started_as") == r["session_id"]:
                 continue                             # not yet under its thread's id: no channel of the gatherer's
             self.marked.add(key)
             actions.record(r["gatherer"], r["session_id"], [{"type": ROLE, "id": f"{ROLE}:{r['session_id']}:{COORDINATOR}",

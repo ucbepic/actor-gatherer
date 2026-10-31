@@ -10,6 +10,7 @@ harnesses through it.
                  reading its own record of a session gives: a Follower's Facts (`follow`)
     claude.py    Claude Code (ClaudeCode); its record of a session (Record)
     codex.py     Codex (Codex); its rollout of a thread (Rollout)
+    antigravity.py  Antigravity's CLI, agy (Antigravity), on its Gemini API route
     shell.py     what a shell command reads and writes, read from its words: shared by every harness
     screen.py    a terminal's screen read back from what was printed to it (Screen): what each harness's `box` reads
                  to tell whether its message box, empty, has the keys
@@ -20,14 +21,15 @@ from typing import Dict, Optional
 from .base import (MODELS, USERS, Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower,  # noqa: F401 - the
                    Harness, InstructionsError, Kind, Part, RenameError, ToolCall, ToolResult, follow)  # package's API
 from . import codex  # noqa: F401 - harness_kit.codex, as before
+from .antigravity import Antigravity
 from .claude import ClaudeCode
 from .codex import Codex
 
-HARNESSES: Dict[str, Harness] = {h.name: h for h in (ClaudeCode(), Codex())}
+HARNESSES: Dict[str, Harness] = {h.name: h for h in (ClaudeCode(), Codex(), Antigravity())}
 
 
 def get(name: Optional[str]) -> Optional[Harness]:
-    """The harness named `name` ("claude", "codex"); None for one harness_kit has no rules for."""
+    """The harness named `name` ("claude", "codex", "antigravity"); None for one harness_kit has no rules for."""
     return HARNESSES.get(name or "")
 
 
@@ -37,7 +39,7 @@ def words(text: str, harness: Optional[str] = None) -> tuple:
     h = get(harness)
     if h is not None:
         return h.words(text)
-    for h in (HARNESSES["codex"], HARNESSES["claude"]):
+    for h in (HARNESSES["codex"], HARNESSES["claude"], HARNESSES["antigravity"]):
         got = h.words(text)
         if got != (Kind.USER, text):
             return got

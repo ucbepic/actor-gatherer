@@ -281,6 +281,15 @@ class TerminalTest(SessionsBase):
         self.assertTrue(self.session(sid)["terminal"])
         self.assertEqual(self.session(sid)["pid"], self.s.terms[sid].pid)
 
+    def test_antigravity_opens_its_terminal_even_headless_its_message_its_first_prompt(self):
+        sid = self.s.create("g", self.work, harness="antigravity")["session_id"]
+        self.assertEqual(self.session(sid)["started_as"], sid)           # agy chooses its id: renamed once known
+        self.s.send(sid, "hello")                                        # chat is "headless" here
+        self.until(lambda: "fake terminal" in self.screen(sid))
+        run = self.logged()[0]
+        self.assertEqual(run["argv"][3], "antigravity")
+        self.assertEqual(run["argv"][-1], "--prompt-interactive=hello")  # agy takes no prompt after `--`
+
     def test_a_terminal_asked_for_full_screen_runs_the_screen_its_settings_choose(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.assertFalse(self.session(sid)["fullscreen"])

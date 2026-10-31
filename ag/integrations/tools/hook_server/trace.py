@@ -15,7 +15,9 @@ its URL label, whether the hook changed it, and the thread its thread header nam
 (the hook server's --thread-header). The answer is read from the
 relayed bytes: a Responses API stream's `response.completed` (or failed / incomplete) event, an
 Anthropic Messages API stream (its content blocks put together from their deltas, its usage from
-`message_start` and `message_delta`), or either API's JSON body; anything else is kept as text.
+`message_start` and `message_delta`), a Gemini API stream (`streamGenerateContent?alt=sse`: its parts
+put together from their chunks, each a content of its own, as Antigravity sends them back), or any of
+these APIs' JSON body; anything else is kept as text.
 While an answer still streams, `streamed_of` reads the parts of it that are complete.
 """
 
@@ -99,6 +101,54 @@ def anthropic_response(events: list, ended: bool = False) -> Optional[dict]:
             "output_items": [blocks[i] for i in sorted(blocks) if not ended or i in stopped]}
 
 
+def gemini_usage(usage: Optional[dict]) -> Optional[dict]:
+    """A Gemini API `usageMetadata` in codex's trace keys: its prompt counted with the cached part (as it counts it),
+    its output with its thoughts."""
+    if not isinstance(usage, dict):
+        return None
+    inp, cached = usage.get("promptTokenCount") or 0, usage.get("cachedContentTokenCount") or 0
+    thoughts = usage.get("thoughtsTokenCount") or 0
+    out = (usage.get("candidatesTokenCount") or 0) + thoughts
+    return {"input_tokens": inp, "cached_input_tokens": cached, "cache_write_input_tokens": 0, "output_tokens": out,
+            "reasoning_output_tokens": thoughts, "total_tokens": usage.get("totalTokenCount") or inp + out}
+
+
+def gemini_response(events: list, ended: bool = False) -> Optional[dict]:
+    """The answer a Gemini API stream's chunks make (`candidates`, `usageMetadata`), or None if they are not one:
+    {response_id, status (the finish reason), token_usage, output_items, error}. Each output item is a content of one
+    part, `{"role": "model", "parts": [part]}` -- a text's chunks joined while they stay text of one kind (thought or
+    not), a function call whole, a thought signature kept on the part it came with. With `ended`, only the parts that
+    are complete: all of them once the stream says why it finished, else all but the last, which may still grow."""
+    events = [e for e in events if "type" not in e]                 # Anthropic's and Responses' events have one
+    chunks = [e for e in events if isinstance(e.get("candidates"), list) or isinstance(e.get("usageMetadata"), dict)]
+    error = next((e["error"] for e in events if isinstance(e.get("error"), dict)), None)
+    if not chunks and error is None:
+        return None
+    parts, finish, usage, rid = [], None, None, None
+    for e in chunks:
+        rid = e.get("responseId") or rid
+        usage = e.get("usageMetadata") or usage
+        candidate = e["candidates"][0] if e.get("candidates") and isinstance(e["candidates"][0], dict) else {}
+        finish = candidate.get("finishReason") or finish
+        for p in (candidate.get("content") or {}).get("parts") or []:
+            if not isinstance(p, dict) or p == {"text": ""}:          # the last chunk's, with its finish reason
+                continue
+            last = parts[-1] if parts else None
+            if (last is not None and "text" in p and "text" in last and "functionCall" not in last
+                    and bool(p.get("thought")) == bool(last.get("thought")) and "thoughtSignature" not in last):
+                last["text"] += p["text"]
+                if "thoughtSignature" in p:
+                    last["thoughtSignature"] = p["thoughtSignature"]
+            elif last is not None and set(p) == {"text", "thoughtSignature"} and not p["text"]:
+                last["thoughtSignature"] = p["thoughtSignature"]      # a signature on its own: the part before's
+            else:
+                parts.append(dict(p))
+    if ended and finish is None and error is None:
+        parts = parts[:-1]
+    return {"response_id": rid, "status": finish, "token_usage": gemini_usage(usage), "error": error,
+            "output_items": [{"role": "model", "parts": [p]} for p in parts]}
+
+
 def _events(text: str) -> list:
     """A stream's events: each `data:` line that is a JSON object."""
     events = []
@@ -117,13 +167,14 @@ def _events(text: str) -> list:
 def streamed_of(raw: bytes) -> dict:
     """The parts of an answer still streaming that are complete, from the bytes relayed so far:
     {response_id, output_items} -- an Anthropic Messages stream's content blocks that have ended, a
-    Responses stream's output items that are done (`response.output_item.done`), its id from
-    `response.created`. No items: none is complete yet, or the bytes are no stream of either."""
+    Gemini stream's parts that are (`gemini_response`), a Responses stream's output items that are done
+    (`response.output_item.done`), its id from `response.created`. No items: none is complete yet, or
+    the bytes are no stream of these."""
     events = _events(raw.decode("utf-8", errors="replace"))
-    anthropic = anthropic_response(events, ended=True)
-    if anthropic is not None:
-        return {"response_id": anthropic["response_id"], "output_items": anthropic["output_items"]}
-    made = next((e["response"] for e in events if e.get("type") == "response.created"
+    found = anthropic_response(events, ended=True) or gemini_response(events, ended=True)
+    if found is not None:
+        return {"response_id": found["response_id"], "output_items": found["output_items"]}
+    made =next((e["response"] for e in events if e.get("type") == "response.created"
                  and isinstance(e.get("response"), dict)), {})
     return {"response_id": made.get("id"), "output_items": [
         e["item"] for e in events if e.get("type") == "response.output_item.done" and isinstance(e.get("item"), dict)]}
@@ -131,7 +182,7 @@ def streamed_of(raw: bytes) -> dict:
 
 def response_of(raw: bytes) -> dict:
     """The model's answer from the bytes relayed back: {response_id, status, token_usage,
-    output_items, error} from a Responses or Anthropic Messages stream or JSON body; {text}
+    output_items, error} from a Responses, Anthropic Messages or Gemini stream or JSON body; {text}
     when it is none of these."""
     text = raw.decode("utf-8", errors="replace")
     final, items, events = None, [], _events(text)
@@ -140,14 +191,16 @@ def response_of(raw: bytes) -> dict:
             final = event["response"]
         elif event.get("type") == "response.output_item.done" and isinstance(event.get("item"), dict):
             items.append(event["item"])
-    anthropic = anthropic_response(events)
-    if anthropic is not None:
-        return anthropic
+    found = anthropic_response(events) or gemini_response(events)
+    if found is not None:
+        return found
     if final is None:
         try:
             body = json.loads(text)
         except ValueError:
             body = None
+        if isinstance(body, dict) and isinstance(body.get("candidates"), list):     # a Gemini API body
+            return gemini_response([body])
         if isinstance(body, dict) and body.get("type") == "message":          # an Anthropic Messages body
             return {"response_id": body.get("id"), "status": body.get("stop_reason"),
                     "token_usage": anthropic_usage(body.get("usage")), "output_items": body.get("content") or [],

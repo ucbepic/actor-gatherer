@@ -92,6 +92,7 @@ ag --gatherer demo claude                                # Claude Code
 ag --gatherer demo codex exec "fix the tests"            # Codex
 ag --gatherer demo opencode run "add a --verbose flag"   # OpenCode
 ag --gatherer demo pi                                    # Pi
+ag --gatherer demo antigravity                           # Antigravity (agy; needs GEMINI_API_KEY)
 ```
 Agents join the gatherer specified (`demo` above). Agents with the same gatherer
 share information with each other, whichever harness runs them (see the [example](#awareness-across-agents)). Agents in

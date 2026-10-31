@@ -38,13 +38,13 @@ HARNESS_SIDE = ("integrations",)                     # its package, and its fold
 H_DIR = os.path.join("ag", "integrations", "harnesses")
 T_DIR = os.path.join("ag", "integrations", "tools")
 TOOLS = ("ag_connection", "ag_orchestrator", "hook_server")
-HARNESSES = ("codex", "pi", "opencode", "claude")
+HARNESSES = ("codex", "pi", "opencode", "claude", "antigravity")
 PARTS = ("ag_orchestrator", "adaptor", "setup")
 TS_IMPORT = re.compile(r"""(?:^|\n)\s*import\s([^;]*?)\sfrom\s+["']([^"']+)["']""")
 # The event types the policies expect: named in a harness's adaptor, never in its routing. ("context" is
 # left out: it is also pi's event's name.)
 TYPE_NAMES = ("user_message", "agent_message", "tool_call", "tool_output")
-EXT = {"codex": ".py", "pi": ".ts", "opencode": ".ts", "claude": ".py"}
+EXT = {"codex": ".py", "pi": ".ts", "opencode": ".ts", "claude": ".py", "antigravity": ".py"}
 TOOLS_CONNECTION = os.path.join(REPO, T_DIR, "ag_connection") + os.sep
 TOOLS_ORCHESTRATOR = os.path.join(REPO, T_DIR, "ag_orchestrator") + os.sep
 

@@ -329,6 +329,22 @@ The doc planned a PR per step. Steps 1–3 went into one PR: they were built tog
    skill with no files of its own (artifact-diagramming, keybindings-help) has its instructions sent bare after the
    Skill tool's result, with no base directory, read as the user's words (now `skill`, by where they are: `launched`).
 
+## Antigravity (agy)
+
+`harness_kit/antigravity.py` and `ag/integrations/harnesses/antigravity/`, read from agy 1.4.12. ag hooks agy on its
+Gemini API route (`modelProvider: "gemini"`, GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: its 1.1.13 changelog), not the
+Cloud Code API it calls when signed in with Google. Its calls are the public Gemini API's
+(`streamGenerateContent?alt=sse`), which trace.py now reads (`gemini_response`). Nothing in its headers names a
+session or what a call is for: its system instruction's <user_information> names the conversation and the working
+directory, and its title call (TITLE_PROMPT, before the first turn's call) is matched to its conversation by the run
+(`/r/<pid>`) once its answer is back. Each part of its contents is one item and one event, as agy itself sends them
+back. Built: the hook (events in, context back, `model_call`, `reply_part`, `reply_end`, `call_failed`, the title as
+`name`, `file_touched`), the launcher, `command`, and the dashboard starting it in a terminal (sessions.py: renamed
+to its conversation as a codex terminal is; its first message as `--prompt-interactive=`, `first_prompt`). Not yet,
+for want of a capture: compaction, subagents (each its own conversation, read as one), `ask_question`'s asks, its
+record of a conversation (`conversations/<id>.db`, SQLite) followed, `derived`, its headless mode, and a fixtures
+folder (`tests/probe` drives Claude Code's and Codex's terminals).
+
 ## Open questions
 
 - Sessions run outside ag's launcher: the watcher learns a session's file from the launcher's URL.

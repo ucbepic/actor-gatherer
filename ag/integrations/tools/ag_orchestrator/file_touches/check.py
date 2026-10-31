@@ -133,7 +133,7 @@ def named(name: str, inp, cwd: Optional[str]) -> List[str]:
     not be there yet."""
     out = []
     if isinstance(inp, dict) and name not in SHELLS:
-        for k in ("file_path", "notebook_path", "path"):
+        for k in ("file_path", "notebook_path", "path", "Path"):          # Antigravity's: Path
             if isinstance(inp.get(k), str) and inp[k]:
                 out.append(_resolve(inp[k], cwd or ""))
     if name == "apply_patch":

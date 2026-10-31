@@ -7,7 +7,7 @@ ones it started:
                      here; codex's thread id, which codex chooses -- until its first call, the id it was
                      started under, then renamed to the thread's (`started_as` keeps the first)
     gatherer         the gatherer it joined (ag makes a new one on its first call)
-    harness          "claude" or "codex"
+    harness          "claude", "codex" or "antigravity"
     cwd              where the agent runs
     permission_mode  Claude Code's --permission-mode: auto (the default), acceptEdits, plan, ...; for codex,
                      auto is --approve-for-me, bypassPermissions its bypass, any other none (codex asks)
@@ -80,6 +80,9 @@ so a codex session starts under an id of the dashboard's and is renamed to its t
 from `codex exec`'s `thread.started`, or, in a terminal, the gatherer's first call from the terminal's
 process that names a directory (codex's side calls -- a title for the thread -- name none).
 
+ANTIGRAVITY (agy) runs in a terminal only, its own interactive UI, whatever `chat_mode` says (its headless
+mode is not built): it chooses its conversation's id too, so it is started and renamed as a codex terminal is.
+
 A new gatherer, with no session yet, is made by `ag new <name>` (`new_gatherer`).
 
 A SHELL is opened from a gatherer's row too (`shell`): no session, the user's own login shell in a
@@ -122,7 +125,8 @@ try:                                    # a terminal needs a pseudo-terminal: Un
 except ImportError:
     TERMINALS = False
 
-HARNESSES = ("claude", "codex")
+HARNESSES = ("claude", "codex", "antigravity")
+OWN_IDS = ("codex", "antigravity")     # the harnesses that choose their session's id: started under one of ours, renamed
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
 CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
 COORDINATOR = "coordinator"                    # the role of a gatherer's gatherer agent (coordination.py)
@@ -693,7 +697,7 @@ class Sessions:
         try:
             conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0, ?)",
                          (session_id, gatherer, harness, cwd, permission_mode, _now(), model,
-                          session_id if harness == "codex" else None, role))
+                          session_id if harness in OWN_IDS else None, role))
         finally:
             conn.close()
         self._changed(gatherer, session_id)
@@ -734,7 +738,7 @@ class Sessions:
         text, sid = (text or "").strip(), got.get("session_id")
         with self.lock:                          # a codex session still under the id it was started under: no channel yet
             s = self._row(sid)
-            if s is not None and s["harness"] == "codex" and s["started_as"] == sid:
+            if s is not None and s["harness"] in OWN_IDS and s["started_as"] == sid:
                 self.unsent.setdefault(sid, []).append((text, time.time()))
                 return got
         actions.chat_sent(got.get("gatherer"), sid, text)
@@ -749,7 +753,8 @@ class Sessions:
             self._gone(t)
         with self.lock:
             a = self.agents.get(session_id)
-            opens = session_id not in self.terms and self._row(session_id) is not None and chat_mode() == "terminal" \
+            s = self._row(session_id)
+            opens = session_id not in self.terms and s is not None and (chat_mode() == "terminal" or s["harness"] == "antigravity") \
                 and not (a is not None and a.proc.poll() is None and (a.busy or a.queue))
         if opens:                                    # outside the lock: an idle agent's end is recorded by its reader
             return self.terminal(session_id, cols, rows, fullscreen, prompt=text)
@@ -1158,10 +1163,10 @@ class Sessions:
                         prompt: Optional[str] = None) -> _Term:
         sid = s["session_id"]
         resume = bool(s["turns"]) or _has_calls(s["gatherer"], sid)
-        first = ["--", prompt] if prompt else []     # its first message: after `--`, never read as an option
         h = harness_kit.get(s["harness"])               # its own options: the harness's (harness_kit's `command`)
         if h is None:
             raise SessionError(f"no rules for {s['harness']} to start it with")
+        first = h.first_prompt(prompt) if prompt else []     # its first message, never read as an option
         told = instructions(s)
         argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"],     # quiet: ag's notes not on its screen
                 *extra_args(s), *h.command(sid, resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
@@ -1192,7 +1197,7 @@ class Sessions:
         self._set(sid, status="terminal", last_error=None, kept=0)
         t.reader = threading.Thread(target=self._read_terminal, args=(sid, t), daemon=True)
         t.reader.start()
-        if s["harness"] == "codex" and not resume:  # its thread's id, once its first call names it
+        if s["harness"] in OWN_IDS and not resume:  # its thread's id, once its first call names it
             threading.Thread(target=self._find_thread, args=(sid, s["gatherer"], t), daemon=True).start()
         return t
 

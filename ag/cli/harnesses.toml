@@ -36,3 +36,10 @@ log_dir  = ""               # if set, each request the hook changed, before and 
 trace_root = ""             # if set, every model call there: the request as the model got it, and its answer
 system_messages = ""        # "keep" / "user" for every request ("": chosen by each request's model)
 env      = {}               # extra environment for Claude Code (and nothing else)
+
+[cli.harnesses.antigravity]
+launcher = "ag.integrations.harnesses.antigravity.setup.launch:AntigravityLauncher"
+adaptor  = "ag.integrations.harnesses.antigravity.adaptor.adaptor:AntigravityAdaptor"
+command  = ["agy"]          # Antigravity's CLI, run on its Gemini API route (needs GEMINI_API_KEY)
+port     = 4213             # the first port a hook server tries
+env      = {}               # extra environment for agy (and nothing else)

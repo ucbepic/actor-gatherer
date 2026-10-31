@@ -116,7 +116,8 @@ def says_writes(name: str, raw, cwd: str) -> set:
     if name not in EDITS:
         return set()
     inp = raw if isinstance(raw, dict) else {"input": raw}
-    out = {_resolve(str(inp[k]), cwd) for k in ("file_path", "notebook_path") if isinstance(inp.get(k), str) and inp[k]}
+    out = {_resolve(str(inp[k]), cwd) for k in ("file_path", "notebook_path", "Path")       # Path: Antigravity's
+           if isinstance(inp.get(k), str) and inp[k]}
     body = inp.get("input") if isinstance(inp.get("input"), str) else inp.get("patch") or ""
     return out | {_resolve(p, cwd) for p, _, _ in _patch_files(str(body))}
 

@@ -132,7 +132,7 @@ class ProxyHook:
         await self.recorded(gatherer, channel, out)
         if ended:                                         # what it asks the user, once the answer is whole
             body = getattr(request, "body", None)
-            history = body.get("messages") or body.get("input") if isinstance(body, dict) else None
+            history = body.get("messages") or body.get("input") or body.get("contents") if isinstance(body, dict) else None
             self.derive(gatherer, channel, self.harness.read(self.harness.items(self.answer_items(answer["output_items"]))),
                         self.harness.items(history) if isinstance(history, list) else None)
         return f"{len(events)} parts" + (f", ended ({answer.get('status')})" if ended else "")

@@ -300,6 +300,11 @@ class Harness(ABC):
         (`instruction_args`). The message it starts with goes after them, after `--`."""
         raise NotImplementedError(f"{self.label or self.name or 'this harness'} is not run in a terminal here")
 
+    def first_prompt(self, text: str) -> List[str]:
+        """Its own arguments that start a session in its terminal with `text` as the first message, after `command`'s:
+        by default after `--`, so the message is never read as an option."""
+        return ["--", text]
+
     def instruction_args(self, text: str) -> List[str]:
         """Its own options that add `text` to the instructions it gives its model, for one run -- given again on each
         run, as the harness keeps none of it with the session. Raises InstructionsError where it takes none."""

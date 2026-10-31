@@ -115,7 +115,7 @@ class WithPlugins(Home):
 class Harnesses(WithPlugins):
     def test_the_shipped_harnesses_are_written_into_the_config(self):
         harnesses = config.load()["harnesses"]
-        self.assertEqual(sorted(harnesses), ["claude", "codex", "opencode", "pi"])
+        self.assertEqual(sorted(harnesses), ["antigravity", "claude", "codex", "opencode", "pi"])
         for name, entry in harnesses.items():
             self.assertEqual(entry["launcher"].split(":")[0], f"ag.integrations.harnesses.{name}.setup.launch")
             self.assertIn("adaptor", entry)
