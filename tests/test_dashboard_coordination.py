@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import unittest
@@ -18,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import harness_kit  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag.cli import actors as cli  # noqa: E402
-from ag_dashboard import coordination, data, docwriter, files, server, sessions  # noqa: E402
+from ag_dashboard import branches, coordination, data, docwriter, editor, files, server, sessions  # noqa: E402
 from test_dashboard_sessions import FAKE_AG, SessionsBase  # noqa: E402
 
 # the fake ag, also saying who the dashboard told it it is, and where the dashboard is
@@ -26,6 +27,23 @@ FAKE = FAKE_AG.replace('"claudecode": os.environ.get("CLAUDECODE")}',
                        '"claudecode": os.environ.get("CLAUDECODE"), "actor": os.environ.get("AG_ACTOR"), '
                        '"dashboard": os.environ.get("AG_DASHBOARD")}')
 PAGE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ag_dashboard", "page.html")
+
+
+def git(cwd, *args):
+    return subprocess.run(["git", "-C", cwd, *args], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def make_repo(path):
+    """A git repository at `path`, with a commit of src/a.py: its real path."""
+    os.makedirs(os.path.join(path, "src"))
+    git(path, "init", "-q", "-b", "main")
+    for k, v in (("user.name", "T"), ("user.email", "t@example.com"), ("commit.gpgsign", "false")):
+        git(path, "config", k, v)
+    with open(os.path.join(path, "src", "a.py"), "w") as fh:
+        fh.write("x = 1\n")
+    git(path, "add", "-A")
+    git(path, "commit", "-qm", "start")
+    return os.path.realpath(path)
 
 
 class EnvelopeTest(unittest.TestCase):
@@ -279,6 +297,56 @@ class CoordinationTest(CoordinationBase):
         self.assertEqual((got["asked"], got["said"], got["changed"]), ("write the docs", "The docs are written.", ["/w/README.md"]))
 
 
+@unittest.skipIf(not docwriter.AVAILABLE, "pycrdt is not installed")      # the Editor, which branches merge into
+class BranchTest(CoordinationBase):
+    """`ag actors new --branch`: a new actor on a branch of its own, as the page's branch button starts one."""
+
+    def setUp(self):
+        super().setUp()
+        self.repo = make_repo(os.path.join(self.tmp.name, "repo"))
+        self.editors = editor.Editors(poll=3600)
+        self.addCleanup(self.editors.close)
+        self.branched = branches.Branches(self.editors, self.s, poll=3600)     # looked at by hand: not here
+        self.addCleanup(self.branched.close)
+        self.crew = coordination.Coordination(self.s, watch=False, branched=self.branched)
+
+    def test_a_new_actor_on_a_branch_works_in_a_worktree_of_the_repository_its_directory_is_in(self):
+        c = self.s.create("g", os.path.join(self.repo, "src"), permission_mode="acceptEdits")["session_id"]
+        self.names[c] = "In the repo"
+        got = self.crew.new(self.a, "Try another layout.", like=c, branch=True, approve=True, name="Layout")
+        new = got["actor"]["channel"]
+        b = got["branch"]
+        self.assertEqual((b["project"], b["approve"]), (self.repo, True))
+        self.assertRegex(b["branch"], r"^ag/[0-9a-f]{8}$")
+        self.assertEqual(git(b["worktree"], "rev-parse", "--abbrev-ref", "HEAD"), b["branch"])
+        row = next(r for r in self.s.list() if r["session_id"] == new)
+        self.assertEqual((row["cwd"], row["permission_mode"], row["gatherer"]), (b["worktree"], "acceptEdits", "g"))
+        self.assertEqual(got["actor"]["cwd"], b["worktree"])
+        kept = self.branched.rows()
+        self.assertEqual([(r["session_id"], r["project"], r["approve"]) for r in kept], [(new, self.repo, 1)])
+        self.assertEqual([p["path"] for p in branches.projects("g")], [self.repo])     # made one of the gatherer's
+        self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Try another layout.")
+        self.assertEqual(self.kept[-1][2][0]["payload"]["kind"], "new")
+        # one like it, from its worktree: a branch of the same repository, not of the worktree
+        self.names[new] = "Layout"
+        again = self.crew.new(self.a, "Try a third layout.", like=new, branch=True)
+        self.assertEqual((again["branch"]["project"], again["branch"]["approve"]), (self.repo, False))
+        self.assertNotEqual(again["branch"]["branch"], b["branch"])
+        self.assertEqual([p["path"] for p in branches.projects("g")], [self.repo])
+
+    def test_no_actor_is_started_where_no_branch_can_be_made(self):
+        before = len(self.s.list())
+        with self.assertRaisesRegex(coordination.CoordinationError, "not in a git repository"):
+            self.crew.new(self.a, "Go.", cwd=self.work, branch=True)
+        with self.assertRaisesRegex(coordination.CoordinationError, "--docwriter or --branch, not both"):
+            self.crew.new(self.a, "Go.", cwd=self.repo, branch=True, docwriter=True)
+        with self.assertRaisesRegex(coordination.CoordinationError, "--approve is for an actor on a branch"):
+            self.crew.new(self.a, "Go.", cwd=self.repo, approve=True)
+        with self.assertRaisesRegex(coordination.CoordinationError, "makes no branches"):
+            coordination.Coordination(self.s, watch=False).new(self.a, "Go.", cwd=self.repo, branch=True)
+        self.assertEqual((len(self.s.list()), self.branched.rows(), branches.projects("g")), (before, [], []))
+
+
 class WatchTest(CoordinationBase):
     def setUp(self):
         super().setUp()
@@ -391,6 +459,21 @@ class CommandTest(CoordinationBase):
         self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Tighten the introduction.")
         code, out, _ = self.run_cli()
         self.assertIn(f"{new} (a DocWriter) -- idle, claude, in", out)
+
+    @unittest.skipIf(not docwriter.AVAILABLE, "pycrdt is not installed")
+    def test_the_gatherer_agent_starts_an_actor_on_a_branch_from_its_shell(self):
+        repo = make_repo(os.path.join(self.tmp.name, "repo"))
+        code, out, err = self.run_cli("new", "--branch", "--approve", "--cwd", repo, "Try", "another", "layout.")
+        self.assertEqual((code, err), (0, ""))
+        new = re.match(r"Started actor (\S+) ", out).group(1)
+        b = self.httpd.branches.rows()[0]
+        self.assertEqual((b["session_id"], b["project"], b["approve"]), (new, repo, 1))
+        self.assertIn(f"in {b['worktree']}) with your message, on its own branch {b['branch']} of {repo}.", out)
+        self.assertIn("each change waiting for the user to accept it in the Editor", out)
+        self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Try another layout.")
+        code, _, err = self.run_cli("new", "--approve", "--cwd", repo, "Go.")
+        self.assertEqual(code, 1)
+        self.assertIn("--approve is for an actor on a branch", err)
 
     def test_its_errors_are_said_plainly(self):
         code, _, err = self.run_cli("send", "nobody", "hi")

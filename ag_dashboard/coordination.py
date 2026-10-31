@@ -12,7 +12,11 @@ reach them: `ag actors` (ag/cli/actors.py), run in its shell, asks this dashboar
     new       a new actor in the gatherer, started with a message: in a directory, on a harness and model, as given, else
               as the actor it is `like` has them, else as the asker's -- or a DocWriter's actor (`docwriter`): a new
               DocWriter on the directory (docwriter.py's `create`), its actor writing with the user there, its edits
-              proposals the user accepts or rejects in its DocWriter view
+              proposals the user accepts or rejects in its DocWriter view -- or an actor on a branch of its own
+              (`branch`): a new worktree of the repository the directory is in (branches.py's `create`, as the page's
+              branch button makes one; the repository made one of the gatherer's projects if it is not yet), what the
+              actor changes there merged into the repository's checkout by the dashboard (`approve`: each change
+              waiting for the user in the Editor)
     when      the asker told, by an update in its conversation, once an actor's turn is over (WATCHES)
     watches   what the asker asked to be told and has not been yet; `unwatch`, one of them dropped
 
@@ -69,7 +73,7 @@ import time
 import uuid
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import actions, data, docwriter as dw, editor, files, naming, sessions
+from . import actions, branches, data, docwriter as dw, editor, files, naming, sessions
 
 COORDINATOR = sessions.COORDINATOR
 ALIASES = ("gatherer", "gatherer-agent", "coordinator")   # what `send`, `show` and `when` take for the gatherer agent
@@ -177,12 +181,14 @@ def instructions(gatherer: str) -> str:
 class Coordination:
     """What actors ask the dashboard (module doc), and the watches: `started`, the dashboard's sessions, which run the
     actors; `ring(gatherer)`, told when a gatherer's actors changed; `docwriters`, its DocWriters (docwriter.py), which
-    a new actor may be one of. Thread-safe: the server's handlers share one, and its watches are looked at on a thread
-    of its own, until `close`."""
+    a new actor may be one of; `branched`, its actors' branches (branches.py), which a new actor may be on.
+    Thread-safe: the server's handlers share one, and its watches are looked at on a thread of its own, until
+    `close`."""
 
     def __init__(self, started: "sessions.Sessions", ring: Optional[Callable[[Optional[str]], None]] = None,
-                 watch: bool = True, docwriters: Optional["dw.DocWriters"] = None):
-        self.started, self.ring, self.docwriters = started, ring, docwriters
+                 watch: bool = True, docwriters: Optional["dw.DocWriters"] = None,
+                 branched: Optional["branches.Branches"] = None):
+        self.started, self.ring, self.docwriters, self.branched = started, ring, docwriters, branched
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.marked: set = set()                 # the gatherer agents' channels marked private by this dashboard
@@ -326,9 +332,14 @@ class Coordination:
 
     def new(self, actor: str, text: str, cwd: Optional[str] = None, harness: Optional[str] = None,
             model: Optional[str] = None, like: Optional[str] = None, name: Optional[str] = None,
-            docwriter: bool = False) -> dict:
+            docwriter: bool = False, branch: bool = False, approve: bool = False) -> dict:
         g, me, agents = self._asker(actor)
         text = _message(text)
+        if docwriter and branch:
+            raise CoordinationError("a DocWriter writes in its folder, not on a branch: --docwriter or --branch, not both")
+        if approve and not branch:
+            raise CoordinationError("--approve is for an actor on a branch of its own (--branch): each change it makes "
+                                    "there waits for the user in the Editor")
         base = self._find(g, like, agents) if like else None
         base = base or me
         bs = base.get("session") or {}
@@ -339,11 +350,15 @@ class Coordination:
         same = harness == (base.get("harness") or bs.get("harness"))
         model = model or (bs.get("model") if same else None)
         name = naming.clean(name)
-        made = None
+        made = on = None
+        mode = bs.get("permission_mode") or "auto"
         if docwriter:
             row, made = self._new_docwriter(g, cwd or "", harness, model, name)
         else:
-            row = self.started.create(g, cwd or "", bs.get("permission_mode") or "auto", harness, model)
+            if branch:
+                row, on = self._new_on_branch(g, cwd or "", harness, model, mode, approve)
+            else:
+                row = self.started.create(g, cwd or "", mode, harness, model)
             if name and harness == "claude":     # codex's id is its thread's, once it has one: not named here
                 threading.Thread(target=_name_it, args=(g, row["session_id"], name), daemon=True).start()
         to = {"channel": row["session_id"], "session": row, "harness": harness, "cwd": row["cwd"], "status": data.IDLE,
@@ -352,7 +367,29 @@ class Coordination:
         self._keep(g, me["channel"], "new", to, text)
         if self.ring is not None:
             self.ring(g)
-        return {"started": True, "actor": self._view(to, me), **({"docwriter": made} if made else {})}
+        return {"started": True, "actor": self._view(to, me), **({"docwriter": made} if made else {}),
+                **({"branch": on} if on else {})}
+
+    def _new_on_branch(self, gatherer: str, cwd: str, harness: str, model: Optional[str], mode: str,
+                       approve: bool) -> Tuple[dict, dict]:
+        """A new actor on a branch of its own (branches.py's `create`) of the repository `cwd` is in -- made one of the
+        gatherer's projects first if it is not yet, as the page's "Add a source" makes one: (its session, as the
+        dashboard's table has it; {branch, project, worktree, approve})."""
+        if self.branched is None:
+            raise CoordinationError("this dashboard makes no branches")
+        project = branches.repository(cwd) if cwd else None
+        if project is None:
+            raise CoordinationError(f"{cwd or 'no directory'}: not in a git repository, which an actor's branch is made "
+                                    f"from (--cwd: a folder in one)")
+        try:
+            if project not in {p["path"] for p in branches.projects(gatherer)}:
+                branches.add_project(gatherer, project)
+            got = self.branched.create(gatherer, project, harness, approve, model, permission_mode=mode)
+        except branches.BranchError as exc:
+            raise CoordinationError(f"no branch made: {exc}") from None
+        b = got["branch"]
+        row = next(r for r in self.started.list() if r["session_id"] == got["session_id"])
+        return row, {k: b[k] for k in ("branch", "project", "worktree", "approve")}
 
     def _new_docwriter(self, gatherer: str, cwd: str, harness: str, model: Optional[str],
                        name: Optional[str]) -> Tuple[dict, dict]:
