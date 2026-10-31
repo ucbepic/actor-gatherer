@@ -8,11 +8,14 @@ the dashboard that runs them (ag_dashboard/coordination.py), over its local API 
     ag actors send <actor> <message>    a message to the actor (`gatherer`: the gatherer agent; - for the message: read
                                         from stdin), which it gets in its conversation now -- as a new turn, or in the
                                         one it is running -- saying who it is from
-    ag actors new [--like A] [--cwd D] [--harness H] [--model M] [--name N] [--docwriter] <message>
+    ag actors new [--like A] [--cwd D] [--harness H] [--model M] [--name N] [--docwriter | --branch [--approve]] <message>
                                         a new actor in the gatherer, started with the message: in D, on H and M, as given,
                                         else as actor A has them, else as this one. --docwriter: a DocWriter's actor,
                                         writing with the user on D's documents in DocWriter, in the dashboard, where its
-                                        edits are proposals the user accepts or rejects
+                                        edits are proposals the user accepts or rejects. --branch: on a branch of its own,
+                                        in a new git worktree of the repository D is in, what it changes there merged
+                                        into D's checkout by the dashboard as it goes (--approve: each change waiting
+                                        for the user to accept it in the Editor)
     ag actors when <actor> [--note T]   an update in this actor's conversation once the actor is done (with T, said back)
     ag actors watches | unwatch <n>     what this actor asked to be told and has not been; one of them dropped
 
@@ -107,6 +110,11 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--docwriter", action="store_true",
                      help="a DocWriter's actor: it writes with the user on the directory's documents in DocWriter, in "
                           "the dashboard, where its edits are proposals the user accepts or rejects")
+    new.add_argument("--branch", action="store_true",
+                     help="on a branch of its own: a new git worktree of the repository its directory is in, what it "
+                          "changes there merged into that repository's checkout by the dashboard as it goes")
+    new.add_argument("--approve", action="store_true",
+                     help="with --branch: each change it makes waits for the user to accept it in the Editor")
     new.add_argument("message", nargs="+", help="its first message (- reads it from stdin)")
     when = sub.add_parser("when", help="an update in your conversation once an actor is done")
     when.add_argument("actor")
@@ -145,8 +153,9 @@ def main(argv: List[str]) -> int:
             body.update({k: getattr(opts, k) for k in ("like", "cwd", "harness", "model", "name") if getattr(opts, k)})
             if body.get("cwd"):
                 body["cwd"] = os.path.abspath(os.path.expanduser(body["cwd"]))
-            if opts.docwriter:
-                body["docwriter"] = True
+            for flag in ("docwriter", "branch", "approve"):
+                if getattr(opts, flag):
+                    body[flag] = True
         if op == "when":
             body["note"] = opts.note
         if op == "unwatch":
@@ -161,11 +170,13 @@ def main(argv: List[str]) -> int:
 
 # ---- what each answer prints
 
-def _place(cwd: Optional[str]) -> str:
-    if not cwd:
-        return ""
+def _short(path: str) -> str:
     home = os.path.expanduser("~")
-    return " in " + ("~" + cwd[len(home):] if cwd == home or cwd.startswith(home + "/") else cwd)
+    return "~" + path[len(home):] if path == home or path.startswith(home + "/") else path
+
+
+def _place(cwd: Optional[str]) -> str:
+    return " in " + _short(cwd) if cwd else ""
 
 
 def _who(a: dict) -> str:
@@ -225,6 +236,13 @@ def shown(op: str, got: dict) -> str:
             return (f"Started actor {a['id']} ({a.get('harness')},{_place(a.get('cwd'))}), a DocWriter, with your message. "
                     f"Its edits to the documents are proposals: they reach the files once the user accepts them in its "
                     f"DocWriter view (the dashboard, its actor selected).")
+        b = got.get("branch")
+        if b:
+            merged = (" each change waiting for the user to accept it in the Editor" if b.get("approve") else
+                      " as it goes, but for lines the user is editing in the Editor or changed too, which wait for them there")
+            return (f"Started actor {a['id']} ({a.get('harness')},{_place(a.get('cwd'))}) with your message, on its own "
+                    f"branch {b['branch']} of {_short(b['project'])}. The dashboard merges what it "
+                    f"changes there into that checkout,{merged}; nothing is committed.")
         return f"Started actor {a['id']} ({a.get('harness')},{_place(a.get('cwd'))}) with your message."
     if op == "when":
         t = got["target"]
