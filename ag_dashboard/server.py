@@ -42,6 +42,15 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/branches?root=R              the actors' branches of the projects R is in or holds, each with its changes
                                           held for the reader (branches.py's `under`)
         shows (editor.place: the folder holding what it changed lately; null, none)
+    GET /api/preview?path=P               the project of the file or folder P (in the Editor): its preview -- the command
+                                          its Execute button runs, and what it shows -- or a guess at one, and its
+                                          checkout's latest run (preview.py)
+    GET /api/preview/stream?path=P        server-sent events, until the page goes: the runs of P's checkout -- `run` (its
+                                          state), `out` {id, text, reset?} (its output, as it comes) -- and `preview`
+                                          (the project's, as an actor or another page sets it)
+    GET /preview/<token>/<path>           a file of the checkout the token names, which a preview shows: HTML and SVG
+                                          sandboxed, an origin of their own
+    GET /vendor/pdfjs/<path>              pdf.js and its viewer (DocWriter's copy), which a preview shows a PDF in
     GET /api/edit/stream?path=P&root=R&conn=C&client=N   server-sent events, until the page goes: the file P (under
         R) opened for editing (editor.py), shared with every other page editing it: `init` {epoch, update (the
         document, a Yjs update, base64), sv (its state vector), aware (the other pages' cursors)}, then `update`
@@ -112,6 +121,11 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/edit/save {path, root}      the file written as its document has it -> its state
     POST /api/edit/settle {path, root, conflict, take}   a conflict with the file on disk settled: the lines kept
                                           (take "mine"), the file's in their place ("theirs"), or both -> its state
+    POST /api/preview/<op> {path, actor?, ...}   the project's preview (preview.py), from the page or -- with `actor`,
+                                          its id or "" -- an actor's `ag preview`: show, set {command, show}, clear,
+                                          run {file?, ok? (the command an actor set, let run), wait?}, stop -> as GET
+                                          /api/preview; run's with the run's output, its end; synctex {pdf, mode?, file?,
+                                          line?, column?, page?, x?, y?}: between the PDF it shows and its source
     POST /api/edit/zone/clear {path, root}   the conflict zone cleared: the lines edited here the file's to change,
                                           as any other -> its state
     GET /docwriter/w/<key>/...            a DocWriter (docwriter.py): its page and pdf.js viewer (vendor/docwriter/), its
@@ -135,7 +149,8 @@ runs (and the shells it opens), the gatherers `ag new` makes, the builds and mod
 start, its own events `ag home insert` puts in (an actor's name), the harness's own store of a name
 (naming.py), the files a History extract is saved as (where Claude Code reads them, once the reader has
 seen them), ag's config.toml, and the files edited in the Editor panel (editor.py: under the directory the
-page names) -- besides the avatar the home gives an actor it has not seen before
+page names), the previews it keeps and runs (preview.py: the command a project's Execute button runs, in its checkout)
+-- besides the avatar the home gives an actor it has not seen before
 (avatars.py), kept in the dashboard's own table:
 the gatherers' databases are otherwise only read. They are taken from the dashboard's own page only
 (`own_page`), and the server listens on localhost unless told otherwise.
@@ -158,12 +173,12 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import List, Optional
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import harness_kit
 
 from . import (actions, avatars, branches, coordination, data, docwriter, editor, files, hiding, history, home, live, mcp,
-               migrating, monitor, naming, saved, seen, sessions, settings)
+               migrating, monitor, naming, preview, saved, seen, sessions, settings)
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -221,7 +236,8 @@ def _signature(value) -> str:
 
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors,
             crew: coordination.Coordination, known: Optional[data.Kept] = None,
-            branched: Optional[branches.Branches] = None, docwriters: Optional[docwriter.DocWriters] = None):
+            branched: Optional[branches.Branches] = None, docwriters: Optional[docwriter.DocWriters] = None,
+            previews: Optional[preview.Runs] = None):
     shared, sharing = {"version": None, "at": 0.0, "value": None}, threading.Lock()
 
     def home_view(woken: bool = False) -> dict:
@@ -309,11 +325,15 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer(home.view_names())
                 if url.path == "/api/settings":
                     return self.answer(settings.read())
+                if url.path.startswith("/vendor/pdfjs/"):
+                    got = preview.viewer_file(unquote(url.path[len("/vendor/pdfjs/"):]))
+                    return self.send(200, *got) if got else self.send(404, b"not found", "text/plain")
                 if url.path == "/vendor/editor.js":
                     with open(EDITOR, "rb") as fh:
                         return self.send(200, fh.read(), "text/javascript; charset=utf-8")
-                if url.path in ("/api/edit/list", "/api/edit/stream", "/api/edit/place", "/api/projects",
-                                "/api/branches") and not self.local_host():
+                if (url.path in ("/api/edit/list", "/api/edit/stream", "/api/edit/place", "/api/projects",
+                                 "/api/branches", "/api/preview", "/api/preview/stream")
+                        or url.path.startswith("/preview/")) and not self.local_host():
                     return self.send(403, b"only the dashboard's own page may do that", "text/plain")
                 if url.path == "/api/edit/list":
                     return self.answer(editors.listing(q.get("dir", ""), q.get("root", "")))
@@ -327,6 +347,16 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer({"dir": editor.place(q["gatherer"], q["channel"], q.get("cwd", ""))})
                 if url.path == "/api/edit/stream":
                     return self.edit_stream(q)
+                if url.path == "/api/preview" and previews is not None:
+                    return self.answer(previews.about(q.get("path", "")))
+                if url.path == "/api/preview/stream" and previews is not None:
+                    try:
+                        got = previews.watch(q.get("path", ""))
+                    except preview.PreviewError as exc:
+                        return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
+                    return self.queue_stream(*got)
+                if url.path.startswith("/preview/") and previews is not None:
+                    return self.preview_file(url.path[len("/preview/"):])
                 if url.path.startswith("/avatars/") and url.path.endswith(".svg"):
                     return self.avatar(url.path[len("/avatars/"):-len(".svg")], "bare" in q)
                 if url.path.startswith("/views/"):
@@ -375,7 +405,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     got = docwriter.asset("docwriter-mark.svg")
                     return self.send(200, *got) if got else self.send(404, b"not found", "text/plain")
                 return self.send(404, b"not found", "text/plain")
-            except editor.EditorError as exc:
+            except (editor.EditorError, preview.PreviewError) as exc:
                 return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
@@ -521,6 +551,26 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 pass
             finally:
                 room.leave(conn)
+
+        def preview_file(self, rest: str) -> None:
+            """A file a preview shows (preview.py's `file`): HTML and SVG sandboxed -- an origin of their own, so a page
+            previewed cannot call the dashboard's API -- the rest as they are."""
+            token, _, rel = rest.partition("/")
+            try:
+                body, kind = previews.file(token, unquote(rel))
+            except FileNotFoundError:
+                return self.send(404, b"not found", "text/plain")
+            except PermissionError as exc:
+                return self.send(403, str(exc).encode(), "text/plain")
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            if kind.startswith(("text/html", "image/svg+xml", "application/xhtml")):
+                self.send_header("Content-Security-Policy", "sandbox allow-scripts allow-forms allow-modals allow-popups")
+            self.end_headers()
+            self.wfile.write(body)
 
         def docwriter(self, method: str, url, raw: bytes) -> None:
             """A request of a DocWriter's page, or of its actor (its MCP server, its edit guard): docwriter.py's."""
@@ -756,6 +806,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                                                              str(body.get("harness") or "") or None))
                 if url.path.startswith("/api/actors/"):
                     return self.answer(actors_op(crew, url.path[len("/api/actors/"):], body))
+                if url.path.startswith("/api/preview/") and previews is not None:
+                    return self.answer(preview_op(previews, url.path[len("/api/preview/"):], body))
                 if url.path == "/api/discard":
                     sid = str(body.get("session_id") or "")
                     row = next((x for x in started.list() if x["session_id"] == sid), None)
@@ -894,6 +946,31 @@ def actors_op(crew: coordination.Coordination, op: str, body: dict):
     raise coordination.CoordinationError(f"no `ag actors {op}`: one of list, show, who, send, new, when, watches, unwatch")
 
 
+def preview_op(previews: preview.Runs, op: str, body: dict):
+    """What the page, or an actor's `ag preview <op>` (`actor` in the body: its id, "" a shell not an actor's), asked of
+    a project's preview (server.py's doc)."""
+    path = str(body.get("path") or "")
+    by = preview.READER if "actor" not in body else (str(body.get("actor") or "") or "cli")
+    if op == "show":
+        return previews.about(path)
+    if op == "set":
+        return previews.set(path, str(body.get("command") or ""), str(body.get("show") or ""), by)
+    if op == "clear":
+        return previews.clear(path)
+    if op == "run":
+        try:
+            wait = min(float(body.get("wait") or 0), 600.0)
+        except (TypeError, ValueError):
+            wait = 0.0
+        return previews.run(path, str(body["file"]) if body.get("file") else None,
+                            str(body["ok"]) if body.get("ok") is not None else None, by, wait)
+    if op == "stop":
+        return previews.stop(path)
+    if op == "synctex":
+        return preview.synctex(preview.place(path)[1], body)
+    raise preview.PreviewError(f"no `ag preview {op}`: one of show, set, clear, run, stop")
+
+
 MAX_BODY = 30_000_000       # the largest request body taken: a message, or an image pasted into one
 DOCWRITER_BODY = 32_000_000  # the largest a DocWriter's: a document's state, a file dropped into its folder
 MAX_ALSO = 8                # the most other actors one stream follows (the page shows at most 4 panes)
@@ -949,14 +1026,15 @@ class Server(ThreadingHTTPServer):
         self.hub.on_change = known.changed if known else None                                  # ag's notifications
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
-        self.listener = self.fallback = self.rest = self.address_file = self.docwriters = None   # for server_close, which a failed bind calls
+        self.listener = self.fallback = self.rest = self.address_file = self.docwriters = self.previews = None   # for server_close, which a failed bind calls
         self.docwriters = docwriter.DocWriters(self.sessions)          # the DocWriters' documents, tools and notices
         self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates,   # actors' `ag actors`
                                               docwriters=self.docwriters)
         self.branches = branches.Branches(self.editors, self.sessions, self.hub.ring)   # the actors' own branches
+        self.previews = preview.Runs()                                 # the projects' previews, run
         self.keeps_actions = False
         super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew, known, self.branches,
-                                          self.docwriters))
+                                          self.docwriters, self.previews))
         docwriter.ORIGIN = f"http://127.0.0.1:{self.server_address[1]}"   # where its actors reach the dashboard
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
@@ -972,7 +1050,8 @@ class Server(ThreadingHTTPServer):
             threading.Thread(target=lambda: data.home([], known), name="ag-home-first", daemon=True).start()   # first
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.rest, self.editors, self.crew, self.branches, self.docwriters):
+        for part in (self.listener, self.fallback, self.rest, self.editors, self.crew, self.branches, self.docwriters,
+                     self.previews):
             if part is not None:
                 part.close()
         if self.keeps_actions:

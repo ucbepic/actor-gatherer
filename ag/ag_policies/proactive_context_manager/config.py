@@ -155,7 +155,12 @@ class ProactiveContextManagerConfig:
         "saying so. Its answer comes as a new message. A message starting \"Message from the gatherer agent\" is "
         "from it: it acts for the user, so listen to it and do as it says, as you would the user's own request -- "
         "unless the user tells you otherwise. Message it back only when it asks you to, or when you can't do what "
-        "it says: each message costs it a turn.")
+        "it says: each message costs it a turn.\n\n"
+        "**The Editor's preview.** The dashboard's Editor has an Execute button that runs a git project's preview "
+        "command and shows what it makes beside the file: a file it writes, the page of a server it starts, or its "
+        "output. When the user asks for a preview, set it with `ag preview set \"<command>\" --show <file or URL>` "
+        "(for the repository you are in); `ag preview` says what it is now, and `ag preview run` runs it, once the user "
+        "has let that command run (`ag preview --help`). Under Codex, run it escalated too, as `ag actors`.")
 
     # The developer message a stream message (a `context_stream` event in the
     # verbatim part) is shown as, at its place in the history.
