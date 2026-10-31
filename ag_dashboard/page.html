@@ -1009,6 +1009,46 @@ button:disabled { opacity: .5; cursor: default; }
   .ed-person { width: 10px; height: 10px; padding: 0; font-size: 0; border-radius: 50%; background: var(--who); border: 0; flex: none; }
   .ed-changed { font-size: 0; } .ed-changed::before { margin-right: 0; } .ed-writer .nm { display: none; } }
 .ed-grip { position: absolute; left: 0; right: 0; bottom: -7px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
+/* the chat minimized under the Editor (setChatMin): the Editor the column's height but for the row of message boxes, each
+   pane's as tall as what it shows -- a frame's told by its page (fitMini) -- and no head of its own */
+.work.chat-min > .ed-top { flex: 1 1 0; }
+.work.chat-min > .ed-top > .ed-grip { display: none; }
+.work.chat-min > .panes { flex: none; }
+.work.chat-min .pane > iframe { flex: none; margin-top: auto; }   /* the strips side by side, along the bottom */
+.pane:has(> main > .chat.mini) > .pane-top { display: none; }
+main:has(> .chat.mini) { align-items: flex-end; }
+/* a pane minimized: what the agent asks the reader, if it does, over the message box; the way back at its left, the actor's
+   status at its right */
+.chat.mini { flex: 1 1 auto; min-height: 48px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  grid-template-areas: "note note note" "back box st" ". err st"; }
+.chat.mini > * { grid-area: note; }
+.chat.mini > .mini-back { grid-area: back; }
+.chat.mini > :is(.composer, .readonly, .mini-sh) { grid-area: box; }
+.chat.mini > .err { grid-area: err; padding: 0 8px 6px 0; }
+.chat.mini > .mini-st { grid-area: st; }
+.chat.mini .composer, .chat.mini .readonly { border-top: 0; padding: 8px 8px 8px 0; }
+.chat.mini .asking-note { max-height: 360px; }      /* not in vh: a frame is as tall as its pane (fitMini) */
+.mini-back { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: 0 4px 0 8px; padding: 0;
+  border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
+.mini-back:hover, .mini-back:focus-visible { background: var(--wash); color: var(--ink); }
+.mini-st { align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 56px;
+  margin: 0; padding: 4px 10px 5px; border: 0; border-left: 1px solid var(--grid); border-radius: 0; background: none; cursor: pointer;
+  font: 10.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.mini-st:hover, .mini-st:focus-visible { background: var(--wash); }
+.mini-st .pic { display: flex; align-items: center; justify-content: center; height: 26px; }
+.mini-st .spin::before { content: "✻"; display: inline-block; color: var(--term-accent); font-size: 16px; animation: term-spin 1.2s steps(1) infinite; }
+.mini-st .still { position: relative; display: inline-flex; }
+.mini-st .still img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
+.mini-st .mk { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; display: grid; place-items: center;
+  box-shadow: 0 0 0 1.5px var(--surface); color: #fff; font: 700 9px/1 system-ui, sans-serif; }
+.mini-st .mk.ask { background: var(--warning); } .mini-st .mk.err { background: var(--critical); }
+.mini-st .mk.bg { right: -2px; bottom: 0; width: 8px; height: 8px; background: var(--good); }
+.mini-st .n { display: flex; align-items: center; gap: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mini-st .n:empty { display: none; }
+.mini-st .c { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2); } .mini-st .c.err { color: var(--critical); }
+.mini-st .chg-a { color: var(--term-ok); } .mini-st .chg-r { color: var(--term-err); }
+.mini-sh { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 10px 8px 10px 0; color: var(--ink-2); font-size: 12.5px; }
+.mini-sh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-grip:hover, .ed-grip.on { background: color-mix(in srgb, var(--s1) 35%, transparent); }
 .ed-close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); }
 .ed-close:hover { color: var(--ink); background: var(--wash); }
@@ -1504,12 +1544,12 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-status > .buddy { margin: 2px 0 0 4px; }
 /* the turn over: the actor small, done -- a check at its corner, still; grown in if the page saw it end (--r) */
 .files .fl-done { display: flex; align-items: center; margin: 6px 6px 0 17px; }
-.files .fl-done .done { position: relative; display: inline-flex; flex: none; transform-origin: 30% 90%;
+:is(.files .fl-done, .mini-st) .done { position: relative; display: inline-flex; flex: none; transform-origin: 30% 90%;
   animation: w-arrive .5s cubic-bezier(.3, 1.3, .5, 1) var(--r, -60s) 1 both; }
-.files .fl-done .done img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
-.files .fl-done .done .ok { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: #22a55a;
+:is(.files .fl-done, .mini-st) .done img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
+:is(.files .fl-done, .mini-st) .done .ok { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: #22a55a;
   box-shadow: 0 0 0 1.5px var(--surface); display: grid; place-items: center; }
-.files .fl-done .done .ok svg { width: 8px; height: 8px; }
+:is(.files .fl-done, .mini-st) .done .ok svg { width: 8px; height: 8px; }
 /* before its first message: the actor waving hello (greeting()), in the middle of the conversation's space -- under the
    message sent, while it waits to reach the agent */
 .files .fl-talk.hi { display: flex; flex-direction: column; }
@@ -1690,7 +1730,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .stage .swish.s2 { animation-name: w-swish2; }
 @keyframes w-swish { 0%, 6%, 14%, 26%, 34%, 100% { opacity: 0; } 10%, 30% { opacity: .9; } }
 @keyframes w-swish2 { 0%, 16%, 24%, 36%, 44%, 100% { opacity: 0; } 20%, 40% { opacity: .9; } }
-@media (prefers-reduced-motion: reduce) { svg.stage, svg.stage *, .files .fl-done .done { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { svg.stage, svg.stage *, :is(.files .fl-done, .mini-st) .done { animation: none !important; }
   svg.stage .leave, svg.stage .o-confetti { display: none !important; } }
 /* the stage and, while it thinks, its character's effect round it (.buddy) laid over the character */
 .stage-box { position: relative; display: inline-flex; flex: none; isolation: isolate; }
@@ -2625,6 +2665,8 @@ const ICONS = {
     + "M8 2.5v2.75M6.25 8.25v1.5M9.75 8.25v1.5M1.25 8.5v2.5M14.75 8.5v2.5",   // a new actor: an agent's head
   more: "M3.5 8h.01M8 8h.01M12.5 8h.01",                              // more of them, in a drop-down
   play: "M5 3.25v9.5L12.75 8z",                                        // run: the Editor's preview
+  minimize: "M4 5.5 8 9.5l4-4M3 12.75h10",                             // the chat minimized under the Editor: down to a line
+  restore: "M4 10.5 8 6.5l4 4M3 3.25h10",                              // and shown again: up from it
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -2919,7 +2961,7 @@ const mainSignature = () => {
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
-    state.details && state.detailsTab, edShown()]);
+    state.details && state.detailsTab, edShown(), chatMin()]);
 };
 // The page's state, small under its name: its dot green while live, amber paused, red on an error.
 const setLive = (text) => {
@@ -4347,7 +4389,8 @@ function paneReady() {
     earlier: (pick) => setEarlierTurns(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
-    editor: () => keepingPlace(renderMain),          // the Editor opened or closed above the panes: its head, in the bar or not
+    editor: () => minRedraw(),                       // the Editor opened or closed above the panes: its head, in the bar or not
+    minimized: () => minRedraw(),                    // the chat minimized under the Editor, or shown again (setChatMin)
     escape: () => escapeShown(),                     // an Esc on the page outside the frame, this pane in focus
   });
   PANE.ready(window, state.selected);
@@ -4964,12 +5007,13 @@ function renderMain() {
   const x = document.getElementById("pane-close"), shell = isShell(state.selected[1]);
   x.title = shell ? "Close this pane: the terminal runs on, under its gatherer (Terminate ends it)" : "Close this pane";
   x.setAttribute("aria-label", x.title);
-  if (shell) { patch(main, [shellCard(state.selected[1])]); return; }
+  if (shell) { patch(main, [chatMin() ? shellMini(state.selected[1]) : shellCard(state.selected[1])]); fitMini(); return; }
   const info = selectedInfo() || {};
-  const kids = [chatCard(info), ...(state.details ? [detailsPanel(info)] : [])];
+  const kids = [chatCard(info), ...(state.details && !chatMin() ? [detailsPanel(info)] : [])];
   const open = new Set([...main.querySelectorAll("details[open][id]")].map((d) => d.id));
   for (const k of kids) for (const d of k.querySelectorAll("details[id]")) if (open.has(d.id)) d.open = true;
   patch(main, kids);
+  fitMini();
   if (document.getElementById("size-chart") && state.agent && state.agent.reads) drawCharts();
 }
 // Put `kids` in `parent`, keeping each node already there that is the same as its new one: the browser
@@ -5122,7 +5166,7 @@ function gathererDetails(a) {                        // what ag did for the agen
 // a snapshot) has its history and no box; so has every actor in a view to read it by (`readOnly`: the ones in Details).
 function chatCard(info) {
   const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
-  const view = chatView(), feed = chatFeed(view);
+  const view = chatMin() ? MINI_VIEW : chatView(), feed = chatFeed(view);
   const writable = hasChat(info) && !SNAPSHOT && !view.readOnly;
   const held = info.chattable === false
     ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}: `
@@ -5136,7 +5180,7 @@ function chatCard(info) {
       const m = document.getElementById("chat-list"); if (m) m.scrollTop = m.scrollHeight - from;
     },
     rerender: () => keepingPlace(renderMain), api: agDashboard };
-  const card = el("section", { class: "chat", "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}`,
+  const card = el("section", { class: "chat" + (view.mini ? " mini" : ""), "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}`,
     "data-morph": "", "data-for": signature([state.selected, view.id, writable, held, !!info.session]) });
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
@@ -5151,6 +5195,8 @@ function chatCard(info) {
       SNAPSHOT ? null : el("button", { type: "button", class: "details-btn", "aria-expanded": edShown() ? "true" : "false", "aria-label": "Editor",
         title: "Editor, at this actor's work -- the folder holding the files it changed lately, else its working directory: files edited live, above the actors' views -- with everyone who has a file open, and what the actors write to them as it lands. Closed by its ×",
         onclick: edAtActor }, strokeIcon(ICONS.code, 16)),
+      SNAPSHOT || !edShown() ? null : el("button", { type: "button", class: "details-btn", "aria-label": "Minimize the chat", title: MIN_TIP,
+        onclick: () => setChatMin(true) }, strokeIcon(ICONS.minimize, 16)),
       el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
         title: "Details: what ag saw and did for this actor (its context, calls, history and builds), and the history's other views",
         onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.panel, 16)))];
@@ -5158,7 +5204,7 @@ function chatCard(info) {
   // the Gatherer works) does not make them flash under the pointer. A view's own tools are made again each
   // draw: what they do may be the draw's.
   const same = !tools.length && heading.length === controls.children.length && heading.every((n, i) => n.isEqualNode(controls.children[i]));
-  if (!same) controls.replaceChildren(...heading);
+  if (!same && !view.mini) controls.replaceChildren(...heading);   // minimized: the head hidden, kept as it was
   const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1", "data-morph": "",
     role: "log", "aria-label": `Chat history, ${view.name}` });
   // its blocks, put in by patch(): a block kept from the last draw is still on the page, and is left there
@@ -5169,7 +5215,7 @@ function chatCard(info) {
       blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
-  card.append(frame);
+  if (!view.mini) card.append(frame);
   if (view.chat === false) {                         // not the conversation: no message box, and no word that there is none
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
@@ -6670,7 +6716,7 @@ CHAT_FEEDS.agent = {
   load: async () => {},
   data: () => state.agent && state.agent.reads ? { items: state.agent.reads, pending: [], earlier: false } : null,
 };
-const chatFeed = (view = chatView()) => CHAT_FEEDS[view.feed] || CHAT_FEEDS.history;
+const chatFeed = (view = chatView()) => (chatMin() ? CHAT_FEEDS.files : CHAT_FEEDS[view.feed]) || CHAT_FEEDS.history;
 
 // The views that come with the page.
 addChatView({
@@ -7075,6 +7121,7 @@ function barActs() {
       strokeIcon(ICONS.code, 14), edAtActor),
     act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),
       () => setDetails(!state.details), !!state.details),
+    act("Minimize the chat", MIN_TIP, strokeIcon(ICONS.minimize, 14), () => setChatMin(true)),
     act("Close this pane", "Close this pane", "×", () => $("pane-close").click(), null, "close"));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
@@ -7516,10 +7563,7 @@ const isInterrupting = () => !!interrupting && !!state.selected && interrupting.
 // queue; in the dashboard agent's queue. Not seen for long, with its terminal open: it may be asking something there
 // first (whether to trust the folder, on a new actor's first message), and the way to it.
 function pendingTalk(info, h) {
-  const k = state.selected && key(...state.selected);
-  for (let i = sentHere.length - 1; i >= 0; i--)
-    if (sentHere[i].key === k && heardCount(h, sentHere[i].text) > sentHere[i].base) sentHere.splice(i, 1);
-  const mine = sentHere.filter((m) => m.key === k);
+  const mine = sentHereNow(h);
   const list = [...h.typed.filter((q) => q.sent === null && !q.chat).map((q) => q.text), ...h.queued, ...mine.map((m) => m.text)];
   const chats = h.typed.filter((q) => q.chat && q.sent === null && !list.some((t) => sameWords(t, q.text)));
   list.push(...chats.map((q) => q.text));  // sent from Chat elsewhere (or before a reload), not had yet: its `chat_sent`
@@ -7531,6 +7575,13 @@ function pendingTalk(info, h) {
     el("span", { class: "lbl" }, unseen ? "Pending · not seen by the session yet" : "Pending",
       asks ? "; its terminal may be asking something first. " : null,
       asks ? el("button", { type: "button", class: "to-term", onclick: () => setChatView("terminal") }, "Open the terminal") : null));
+}
+// What was sent from here to the selected actor and the session has not recorded yet (`h`: heard(info)): those it has, dropped.
+function sentHereNow(h) {
+  const k = state.selected && key(...state.selected);
+  for (let i = sentHere.length - 1; i >= 0; i--)
+    if (sentHere[i].key === k && heardCount(h, sentHere[i].text) > sentHere[i].base) sentHere.splice(i, 1);
+  return sentHere.filter((m) => m.key === k);
 }
 // The turns Claude Code has started and ag has not stored yet, each by its first message as Claude Code recorded it when
 // it went to the model (the agent's `typed`, data.py's: sent, not as part of the turn it was written in; data.py's
@@ -9894,12 +9945,14 @@ const edShown = () => PANE ? !!(window.parent.agEditorPanel && window.parent.agE
 // `dir`: the folder to show in it, opened -- a pane's actor's working directory, by its button.
 function setEditor(open, dir = null) {
   if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.set(open, dir); return; }
+  const wasMin = chatMin();
   state.editor = open;
-  if (!open) { edClose(); pvSleep(); }
+  if (!open) { edClose(); pvSleep(); keepMin(false); }   // the chat minimized only under it: closed, shown again
   try { localStorage.setItem(ED_SHOWN_KEY, open ? "1" : ""); } catch (e) { /* this page only */ }
   for (const p of panes.others) p.call("editor", open);
   edMount();
   if (open && dir) edGo(dir);
+  if (wasMin && !open) return minRedraw();          // its view's feed loaded again (minimized, the files')
   keepingPlace(renderMain);                          // its button in the header: pressed, or not
   drawn.main = mainSignature();
 }
@@ -9923,7 +9976,90 @@ async function edAtActor() {
   }
   setEditor(true, dir || cwd);
 }
-if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor };
+if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor, min: () => !!state.chatMin, setMin: setChatMin };
+// The chat minimized under the Editor: each pane only its message box, the actor's status at its right -- its avatar, moving
+// while it works, done with a check, a mark while it waits on the reader or stopped on an error -- and under it the latest
+// turn's commands and the lines its changes added and removed; the Editor the rest of the column. One choice for every
+// pane (they share the row under the Editor), kept in this browser while the Editor is open; closed, the chat comes back.
+const MIN_KEY = "ag-dashboard-chat-min";
+const MIN_TIP = "Minimize the chat: only its message box and the actor's status, under the Editor";
+state.chatMin = !PANE && !SNAPSHOT && !!state.editor && (() => { try { return localStorage.getItem(MIN_KEY) === "1"; } catch (e) { return false; } })();
+const chatMin = () => !SNAPSHOT && edShown()
+  && (PANE ? !!(window.parent.agEditorPanel && window.parent.agEditorPanel.min()) : !!state.chatMin);
+function keepMin(on) {
+  state.chatMin = on;
+  try { localStorage.setItem(MIN_KEY, on ? "1" : ""); } catch (e) { /* this page only */ }
+}
+function setChatMin(on) {
+  if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.setMin(on); return; }
+  keepMin(on);
+  for (const p of panes.others) p.call("minimized", on);
+  minRedraw();
+}
+// This page's pane minimized or shown again: its counts are the latest turn's, from the files' feed (chatFeed) -- then, shown
+// again, its view's own feed.
+async function minRedraw() {
+  if (chatMin() && state.files && state.files.turn !== null) { state.files.turn = null; state.files.sel = null; }
+  edMount();
+  await loadChat();
+  keepingPlace(renderMain);
+  drawn.main = mainSignature();
+  if (!chatMin()) chatToEnd();
+}
+// The view a minimized pane draws in place of its own (chatCard): no history, the message box, and miniFoot.
+const MINI_VIEW = { id: "mini", name: "Chat", feed: "files", mini: true, background: false, queued: false, greets: true,
+  render: () => [], footer: (ctx) => miniFoot(ctx) };
+const miniBack = () => el("button", { type: "button", class: "mini-back", title: "Show the chat again", "aria-label": "Show the chat again",
+  onclick: () => setChatMin(false) }, strokeIcon(ICONS.restore, 14));
+function miniFoot({ info, running }) {
+  const d = state.files && state.selected && state.files.key === key(...state.selected) ? state.files.data : null;
+  const [st0, word0] = statusOf(info);
+  // working: its turn, or a message sent from here that has yet to open one -- for a while: not seen for long, its terminal
+  // may be asking something first (pendingTalk), and the status says so
+  const mine = sentHereNow(heard(info)), unseen = !running && mine.some((m) => Date.now() - m.at > UNSEEN_MS);
+  // the latest turn, as loaded -- none while a message sent from here waits to open the next: its numbers are not that one's
+  const t = d && d.turns.length && d.turn === d.turns.length - 1 && !(mine.length && !running) ? d.turns[d.turn] : null;
+  const live = running || (mine.length > 0 && !unseen);
+  const [st, word] = unseen ? ["asking", "Pending · not seen by the session yet; its terminal may be asking something first"] : [st0, word0];
+  const cmds = t ? d.commands : [], failed = cmds.filter((c) => c.error).length;
+  const lines = t ? addChanged(d.files.filter((f) => (showTmp || !f.temporary) && (showGit || !gitOnly(f))).map((f) => f.changed)) : null;
+  const src = bareAvatar(info);
+  const mark = { asking: ["ask", "?"], error: ["err", "!"], failed: ["err", "!"], background: ["bg", ""] }[st];
+  const pic = live ? (src ? buddy(info, !!info.failing) : el("span", { class: "spin", "aria-hidden": "true" }))
+    : t && ["idle", "finished", "closed"].includes(st) ? atRest(info, t.row_id)
+    : src ? el("span", { class: "still", "data-sig": signature([src, st]) }, el("img", { src, alt: "", draggable: "false" }),
+      mark ? el("span", { class: "mk " + mark[0], text: mark[1] }) : null)
+    : null;
+  const said = [live ? (info.failing ? "Retrying" : "Working") : word,
+    t ? plural(cmds.length, "command") + (failed ? `, ${full(failed)} failed` : "") : null,
+    lines ? `${plural(lines[0], "line")} added, ${full(lines[1])} removed` : null].filter(Boolean).join(" · ");
+  return [miniBack(), el("button", { type: "button", class: "mini-st" + (live ? " live" : ""), "data-morph": "",
+    title: `${said}. Show the chat`, "aria-label": `${said}. Show the chat`, onclick: () => setChatMin(false) },
+    el("span", { class: "pic", "data-morph": "" }, pic),
+    el("span", { class: "n" }, t ? el("span", { class: "c" + (failed ? " err" : "") }, strokeIcon(ICONS.terminal, 11), full(cmds.length)) : null,
+      lines && lines[0] ? el("span", { class: "chg-a", text: `+${full(lines[0])}` }) : null,
+      lines && lines[1] ? el("span", { class: "chg-r", text: `−${full(lines[1])}` }) : null))];
+}
+// A shell's pane, minimized: what it is, and the way back.
+function shellMini(id) {
+  const sh = shellOf(id);
+  return el("section", { class: "chat mini shell", "aria-label": "Terminal", "data-for": signature([id, "mini"]) }, miniBack(),
+    el("span", { class: "mini-sh" }, strokeIcon(ICONS.terminal, 13), el("span", { text: sh ? `Terminal · ${shellPath(sh)}` : "Terminal" })));
+}
+// In a frame: as tall as its minimized pane -- the row under the Editor as tall as its tallest -- else as its pane is laid out.
+let miniFit = null;
+function fitMini() {
+  const f = PANE && window.frameElement;
+  if (!f) return;
+  const card = document.querySelector("#main > .chat.mini");
+  if (miniFit && miniFit.card === card) return;
+  if (miniFit) miniFit.obs.disconnect();
+  miniFit = null;
+  if (!card) { f.style.height = ""; return; }
+  const obs = new ResizeObserver(() => { f.style.height = `${Math.ceil(card.getBoundingClientRect().height)}px`; });
+  obs.observe(card);
+  miniFit = { card, obs };
+}
 const edCloseBtn = () => el("button", { type: "button", class: "ed-close", title: "Close the editor", "aria-label": "Close the editor",
   onclick: () => setEditor(false) }, "×");
 // Execute: the project's preview run, and shown beside the file (edExecute).
@@ -9939,6 +10075,7 @@ function edExecBtn() {
 // Shown or hidden as `state.editor` says, drawn the first time it is shown: called by each draw of the main view.
 function edMount() {
   if (PANE || SNAPSHOT) return;
+  document.querySelector(".work").classList.toggle("chat-min", chatMin());
   const top = document.getElementById("ed-top");
   if (!state.editor) { top.hidden = true; return; }
   if (state.home && state.home.editor === false) {
