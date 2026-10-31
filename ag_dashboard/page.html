@@ -977,6 +977,62 @@ button:disabled { opacity: .5; cursor: default; }
 .dw-menu .err { color: var(--critical); overflow-wrap: anywhere; }
 .dw-menu .err:empty { display: none; }
 .chat .chat-frame.dw-frame { position: relative; overflow: hidden; padding: 0; }
+/* a Browser (browser.py): its bar, its tabs, and the page's screen as Chrome casts it -- the pane's whole width */
+.chat .chat-frame.bw-frame { position: relative; overflow: hidden; padding: 0; display: flex; flex-direction: column; }
+.bw { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.bw [hidden] { display: none !important; }
+.bw-bar { flex: none; display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 1px solid var(--ring); }
+.bw-bar button { flex: none; display: grid; place-items: center; width: 28px; height: 26px; border: 0; border-radius: 6px;
+  background: none; color: var(--muted); cursor: pointer; }
+.bw-bar button:hover:not([disabled]) { background: var(--wash); color: var(--ink); }
+.bw-bar button[disabled] { opacity: .4; cursor: default; }
+.bw-bar button[aria-pressed="true"] { background: color-mix(in srgb, #2563EB 16%, transparent); color: #2563EB; }
+.bw-bar form { flex: 1 1 auto; min-width: 0; display: flex; margin: 0 4px; }
+.bw-bar input { flex: 1 1 auto; min-width: 0; font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink);
+  background: var(--page); border: 1px solid var(--grid); border-radius: 999px; padding: 3px 12px; }
+.bw-bar input:focus { outline: 2px solid color-mix(in srgb, #2563EB 45%, transparent); outline-offset: -1px; }
+.bw-bar .sep { width: 1px; height: 18px; background: var(--grid); margin: 0 4px; flex: none; }
+.bw-bar .mine { flex: none; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; color: #2563EB; white-space: nowrap;
+  background: color-mix(in srgb, #2563EB 12%, transparent); }
+.bw-tabs { flex: none; display: flex; gap: 2px; padding: 4px 8px 0; overflow-x: auto; border-bottom: 1px solid var(--ring); }
+.bw-tabs .t { display: flex; align-items: center; gap: 4px; max-width: 220px; padding: 4px 6px 5px 10px; border: 1px solid transparent;
+  border-bottom: 0; border-radius: 6px 6px 0 0; background: none; color: var(--muted); font-size: 12px; cursor: pointer; }
+.bw-tabs .t .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bw-tabs .t.on { background: var(--surface); border-color: var(--ring); color: var(--ink); }
+.bw-tabs .t .x { border: 0; background: none; color: inherit; padding: 0 3px; cursor: pointer; border-radius: 4px; line-height: 1; }
+.bw-tabs .t .x:hover { background: var(--wash); }
+.bw-tabs .add { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 8px; }
+.bw-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #fff; outline: none; cursor: default; touch-action: none; }
+.bw-stage:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, #2563EB 50%, transparent); }
+.bw-stage.picking { cursor: crosshair; }
+.bw-stage img { position: absolute; left: 0; top: 0; display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.bw-stage .acting { position: absolute; border: 2px solid #E8590C; border-radius: 4px; pointer-events: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #E8590C 22%, transparent); transition: all .15s ease-out; }
+.bw-stage .acting-label { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px); padding: 4px 10px; border-radius: 999px;
+  background: #E8590C; color: #fff; font-size: 12px; font-weight: 600; pointer-events: none; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; box-shadow: 0 2px 8px rgba(0, 0, 0, .18); }
+.bw-stage .drag { position: absolute; border: 1.5px dashed #2563EB; background: color-mix(in srgb, #2563EB 10%, transparent); pointer-events: none; }
+.bw-stage .hint { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px;
+  background: #2563EB; color: #fff; font-size: 12px; pointer-events: none; white-space: nowrap; }
+.bw-stage .cover { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 8px;
+  background: var(--surface); color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+.bw-stage .cover .err { color: var(--critical); max-width: 520px; overflow-wrap: anywhere; }
+.bw-stage .dialog { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); width: min(420px, calc(100% - 24px));
+  box-sizing: border-box; display: grid; gap: 8px; padding: 12px 14px; border-radius: 10px; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--grid); box-shadow: 0 8px 28px rgba(0, 0, 0, .22); font-size: 13px; }
+.bw-stage .dialog .lbl { color: var(--muted); font-size: 11.5px; }
+.bw-stage .dialog .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+.bw-stage .dialog input { font: inherit; padding: 4px 8px; border: 1px solid var(--grid); border-radius: 6px; background: var(--page); color: var(--ink); }
+.bw-stage .dialog .row { display: flex; gap: 6px; justify-content: flex-end; }
+.bw-picks { display: flex; flex-wrap: wrap; gap: 4px; }
+.bw-picks:empty { display: none; }
+.bw-picks .pk { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 1px 4px 1px 8px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #2563EB 40%, transparent); background: color-mix(in srgb, #2563EB 9%, transparent); font-size: 12px; }
+.bw-picks .pk .id { font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #2563EB; }
+.bw-picks .pk .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 320px; }
+.bw-picks .pk button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; border-radius: 999px; }
+.bw-picks .pk button:hover { color: var(--ink); background: var(--wash); }
+.tx .bw-said { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 .dw-slot { position: absolute; inset: 0; }
 /* its frames, never moved (a frame moved loads again): laid over the slot of the view shown, else hidden -- running */
 .dw-page { position: fixed; border: 0; display: block; background: var(--page); z-index: 5; }
@@ -2255,9 +2311,18 @@ function actorLogo(a) {
   const svg = SNAPSHOT && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
   const src = !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg) : `/avatars/${a.avatar}.svg`;
   if (!src) return harnessLogo(a.harness);
-  const dw = !!dwKey(a);
-  return el("span", { class: "logo avatar" + (dw ? " dw" : "") }, el("img", { src, alt: "", draggable: "false" }),
-    dw ? docwriterBadge() : null, harnessBadge(a.harness));
+  const dw = !!dwKey(a), bw = !dw && !!bwKey(a);
+  return el("span", { class: "logo avatar" + (dw ? " dw" : bw ? " dw bw" : "") }, el("img", { src, alt: "", draggable: "false" }),
+    dw ? docwriterBadge() : bw ? browserBadge() : null, harnessBadge(a.harness));
+}
+// A Browser's actor's mark on its avatar: a globe, on blue.
+function browserBadge() {
+  const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "dw-badge", role: "img", "aria-label": "Browser" });
+  const title = svgEl("title"); title.textContent = "Browser";
+  svg.append(title, svgEl("circle", { cx: 12, cy: 12, r: 12, fill: "#2563EB" }),
+    svgEl("path", { d: ICONS.globe, transform: "translate(4 4)", fill: "none", stroke: "#fff", "stroke-width": 1.5,
+      "stroke-linecap": "round", "stroke-linejoin": "round" }));
+  return svg;
 }
 // A DocWriter's actor's mark on its avatar: DocWriter's quill, on its violet.
 function docwriterBadge() {
@@ -2550,6 +2615,14 @@ const ICONS = {
   agent: "M4.75 5.25h6.5A1.75 1.75 0 0 1 13 7v4.5a1.75 1.75 0 0 1-1.75 1.75h-6.5A1.75 1.75 0 0 1 3 11.5V7a1.75 1.75 0 0 1 1.75-1.75z"
     + "M8 2.5v2.75M6.25 8.25v1.5M9.75 8.25v1.5M1.25 8.5v2.5M14.75 8.5v2.5",   // a new actor: an agent's head
   more: "M3.5 8h.01M8 8h.01M12.5 8h.01",                              // more of them, in a drop-down
+  globe: "M8 1.75a6.25 6.25 0 1 0 0 12.5a6.25 6.25 0 1 0 0-12.5zM1.75 8h12.5M8 1.75c1.75 1.75 2.6 3.9 2.6 6.25S9.75 12.5 8 14.25"
+    + "M8 1.75C6.25 3.5 5.4 5.65 5.4 8s.85 4.5 2.6 6.25",                   // a Browser
+  pointer: "M3.25 2.25l9.5 4.6-4.05 1.35-1.7 4.3z",                    // pick an element
+  area: "M2.5 5V2.5H5M11 2.5h2.5V5M13.5 11v2.5H11M5 13.5H2.5V11M7 2.5h2M7 13.5h2M2.5 7v2M13.5 7v2",   // pick an area
+  back: "M9.75 3.5 5.25 8l4.5 4.5",
+  forward: "M6.25 3.5 10.75 8l-4.5 4.5",
+  reload: "M13.25 8a5.25 5.25 0 1 1-1.54-3.71M13.25 2.5v3h-3",
+  plus: "M8 3.25v9.5M3.25 8h9.5",
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -2844,7 +2917,7 @@ const mainSignature = () => {
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
-    state.details && state.detailsTab, edShown()]);
+    state.details && state.detailsTab, edShown(), bwSignature()]);
 };
 // The page's state, small under its name: its dot green while live, amber paused, red on an error.
 const setLive = (text) => {
@@ -3132,6 +3205,7 @@ function takeHome(home) {
   for (const g of home.gatherers) for (const a of g.agents) {
     a.key = key(g.name, a.channel);
     if (dwKey(a)) a.last_user_message = dwAsked(a.last_user_message);
+    else if (bwKey(a)) a.last_user_message = bwStrip(a.last_user_message);
   }
   if (state.selected) {                              // a codex session renamed to its thread: followed there
     const g = home.gatherers.find((x) => x.name === state.selected[0]);
@@ -3353,6 +3427,7 @@ const userWords = (text, kind) => isBash(text)
   ? el("span", { class: "tx bang" }, el("span", { class: "bash-mark", "aria-hidden": "true", text: "!" }),
     " ", shellSpan(String(text).trim().replace(/^!\s*/, "")))
   : envelope(text) ? crewWords(envelope(text))
+  : BW_BLOCK.test(text) ? bwWords(text)
   : el("span", { class: "tx" + (kind === "user_command" ? " bang" : ""), text: text });
 // A message between the actors of a gatherer (coordination.py's `envelope`), typed into the receiver's terminal: its first
 // line who it is from -- the gatherer agent, or another actor (its id, its name as JSON) -- and how to answer, then a
@@ -3997,7 +4072,7 @@ function slideList(root, was) {
 // Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
 // on the stream, which starts with them. The actor list is the stream's already.
 async function select(g, c) {
-  if (!isAt(state.selected, g, c)) dwViewId = "docwriter";   // a DocWriter's actor opens in DocWriter (dwViewId)
+  if (!isAt(state.selected, g, c)) Object.assign(kindViewId, KIND_VIEWS);   // a DocWriter's, a Browser's actor: in its own
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null; state.agent = null;
   state.agentVersion = (state.agentVersion || 0) + 1;
   markSeen();
@@ -4317,8 +4392,10 @@ const NO_HARNESS = "None of Claude Code, Codex or Antigravity is set up here: in
 // Last, its terminal button: a shell (isShell), in that same directory -- or, with none, the form asks for it too.
 const SHELL_START = "shell";                       // the terminal button's, where a harness's name goes
 const DW_START = "docwriter:";                     // a DocWriter's, where a harness's name goes: its actor's harness after it
+const BW_START = "browser:";                       // a Browser's, the same
 const startAny = (gatherer, cwd, harness) => harness === SHELL_START ? startShell(gatherer, cwd)
   : harness.startsWith(DW_START) ? startDocWriter(gatherer, cwd, harness.slice(DW_START.length))
+  : harness.startsWith(BW_START) ? startBrowser(gatherer, cwd, harness.slice(BW_START.length))
   : startSession(gatherer, cwd, harness);
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
@@ -4367,7 +4444,7 @@ function startButtons(g) {
       plus(), strokeIcon(ICONS.agent, 16));
   const others = moreStarts(g, hs, where);
   const more = others.length ? el("button", { class: "act start new-more" + (starting === SHELL_START || starting === BRANCH_START
-      || starting.startsWith(DW_START) ? " busy" : ""), type: "button", ...off, "data-pop": moreKey,
+      || starting.startsWith(DW_START) || starting.startsWith(BW_START) ? " busy" : ""), type: "button", ...off, "data-pop": moreKey,
     title: `More to start in ${g.name}: ${others.map((o) => o.text.replace("…", "").toLowerCase()).join(", ")}`,
     "aria-label": `More to start in ${g.name}`, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === moreKey),
     onclick: (ev) => openMoreMenu(g, hs, ev.currentTarget) }, plus(), strokeIcon(ICONS.more, 16)) : null;
@@ -4381,6 +4458,10 @@ function moreStarts(g, hs, where) {
       run: (button) => openBranchMenu(g, button) } : null,
     hs.length && state.home.docwriter ? { icon: ICONS.quill, text: "DocWriter…", note: "write with an agent that proposes its edits beside your text",
       run: (button) => openPop(`more:${g.name}`, button, dwBox(g, hs)) } : null,
+    hs.length && state.home.browser ? { icon: ICONS.globe, text: "Browser…", note: "a browser you and an agent use together: point it at what you mean",
+      run: (button) => hs.length > 1 ? openPop(`more:${g.name}`, button, popMenu("New Browser, its agent on",
+        hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => addSession(g, BW_START + h) }))))
+        : addSession(g, BW_START + hs[0]) } : null,
     state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: there, run: () => addSession(g, SHELL_START) } : null,
   ].filter(Boolean);
 }
@@ -4543,7 +4624,20 @@ async function startDocWriter(gatherer, cwd, harness) {
     state.adding = null;
     collapsed.delete(gatherer);
     await loadHome();
-    dwViewId = "docwriter";                          // shown in DocWriter, whichever view its actors were last shown in
+    kindViewId.docwriter = "docwriter";              // shown in DocWriter, whichever view its actors were last shown in
+    await show(gatherer, cfg.channel);
+  } finally { state.starting = null; renderAgents(); }
+}
+// A Browser started (browser.py's `create`): its actor listed, then shown in the Browser's view.
+async function startBrowser(gatherer, cwd, harness) {
+  state.starting = { gatherer, harness: BW_START + harness };
+  renderAgents();
+  try {
+    const cfg = await post("/api/browser", { gatherer, cwd, harness });
+    state.adding = null;
+    collapsed.delete(gatherer);
+    await loadHome();
+    kindViewId.browser = "browser";
     await show(gatherer, cfg.channel);
   } finally { state.starting = null; renderAgents(); }
 }
@@ -4761,11 +4855,15 @@ function newForm() {
   if (state.home.docwriter) for (const h of hs) starts.push(el("button", { type: "submit", value: DW_START + h,
     class: adding.harness === DW_START + h ? "primary" : "", title: `DocWriter, its agent on ${harnessName(h)}`,
     ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.quill, 14), "DocWriter", harnessBadge(h)));
+  if (state.home.browser) for (const h of hs) starts.push(el("button", { type: "submit", value: BW_START + h,
+    class: adding.harness === BW_START + h ? "primary" : "", title: `Browser, its agent on ${harnessName(h)}`,
+    ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.globe, 14), "Browser", harnessBadge(h)));
   if (state.home.terminals !== false) starts.push(el("button", { type: "submit", value: SHELL_START, class: shell ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.terminal, 14), "Terminal"));
-  const dwing = String(adding.harness || "").startsWith(DW_START);
+  const dwing = String(adding.harness || "").startsWith(DW_START), bwing = String(adding.harness || "").startsWith(BW_START);
   const form = el("form", { class: "newform", "aria-label": "New session" },
-    el("div", { class: "desc", text: shell ? `A new terminal, listed under ${fixed}` : dwing ? `A new DocWriter in ${fixed}` : `A new session in ${fixed}` }),
+    el("div", { class: "desc", text: shell ? `A new terminal, listed under ${fixed}` : dwing ? `A new DocWriter in ${fixed}`
+      : bwing ? `A new Browser in ${fixed}` : `A new session in ${fixed}` }),
     el("label", {}, "Working directory", cwd),
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), ...starts));
@@ -6544,20 +6642,23 @@ let chatViewId = (PANE && PANE_URL.get("view")) || (() => { try { return localSt
 // A DocWriter's actor (dwKey) opens in DocWriter's view each time it is selected; another picked for it (its Terminal,
 // say) lasts while it stays selected, apart from the other actors' choice. A view with `when(info)` is offered only to
 // the actors it says (DocWriter's, to theirs).
-let dwViewId = "docwriter";
+const KIND_VIEWS = { docwriter: "docwriter", browser: "browser" };
+const kindViewId = { ...KIND_VIEWS };              // the view each kind's actor is shown in, while selected
+const kindOf = (info) => dwKey(info) ? "docwriter" : bwKey(info) ? "browser" : null;
 const offeredTo = (v, info) => !!v && (!v.when || !!v.when(info));
 // The views offered to the selected actor, those for it alone (`when`) first.
 const offeredViews = () => [...CHAT_VIEWS.values()].filter((v) => offeredTo(v, selectedInfo()))
   .sort((a, b) => (b.when ? 1 : 0) - (a.when ? 1 : 0));
 const chatView = () => {
-  const info = selectedInfo(), doc = !!dwKey(info);
-  const v = CHAT_VIEWS.get(doc ? dwViewId : chatViewId);
-  return offeredTo(v, info) ? v : CHAT_VIEWS.get(doc && CHAT_VIEWS.has("docwriter") ? "docwriter" : "files");
+  const info = selectedInfo(), kind = kindOf(info);
+  const v = CHAT_VIEWS.get(kind ? kindViewId[kind] : chatViewId);
+  return offeredTo(v, info) ? v : CHAT_VIEWS.get(kind && CHAT_VIEWS.has(KIND_VIEWS[kind]) ? KIND_VIEWS[kind] : "files");
 };
 async function setChatView(id) {
   if (id === "history" && chatView().id !== "history") hist.askedFor = hist.group = hist.stay = null;   // opened again: built again
                                                      // if due, and at its tasks if it has them
-  if (dwKey(selectedInfo())) dwViewId = id;          // a DocWriter's actor: while it stays selected
+  const kind = kindOf(selectedInfo());
+  if (kind) kindViewId[kind] = id;                   // a DocWriter's, a Browser's actor: while it stays selected
   else {
     chatViewId = id;
     if (PANE) { paneUrl(); PANE.viewed(window, id); }  // a frame's: kept with its pane, not as every page's
@@ -7363,7 +7464,7 @@ function heard(info) {
 }
 // A message as the user typed it, to match what was sent with what is stored (the server gives the user's words as
 // typed: harness_kit's): "!echo hi" the same as "! echo hi".
-const typedAs = (text) => String(text ?? "").trim().replace(/^!\s*/, "! ");
+const typedAs = (text) => bwStrip(String(text ?? "")).trim().replace(/^!\s*/, "! ");
 // whether two say the same: their start, as a stored message is clipped
 const sameWords = (a, b) => typedAs(a).slice(0, 200) === typedAs(b).slice(0, 200);
 // how many messages of these words the actor has had -- not counting one sent from Chat it has not had yet (`chat`: its
@@ -9554,6 +9655,303 @@ if (!SNAPSHOT) addChatView({
     dwFrame(k);
     dwPlaceSoon();
     return el("div", { class: "dw-slot", "data-dw": k });
+  },
+});
+
+// ------------------------------------------------------------------ a Browser
+// Browser (browser.py): the view of a Browser's actor -- one started from a gatherer's "+ more" (startBrowser), its
+// session's `role` naming its Browser (bwKey) -- a Chrome tab the user and the agent use together: its bar (back,
+// forward, reload, the address, Pick, Area), its tabs when it has more than one, and its screen, as Chrome casts it
+// over the Browser's stream (`bwListen`), at the view's own size (`bwResize`), the page laid out to it. What the user
+// does on the screen -- mouse, wheel, keys, a paste -- goes to the tab as Chrome's own input (`bwQueue`); Cmd+C copies
+// what the page has selected. Pick: the element clicked, outlined as the pointer moves over the page; Area: a box
+// dragged over it. Each pick a chip above the message box (bwPicks), going with the next message (browser.py's
+// `compose`), and a ref the agent's tools take. What the agent does now is outlined on the screen, said under it.
+const bwAll = new Map();                             // a Browser's key -> what this page has of it (bwFor)
+function bwKey(info) {
+  const raw = info && info.session && info.session.role;
+  if (!raw) return null;
+  try { const r = JSON.parse(raw); return (r && typeof r.browser === "string" && r.browser) || null; } catch (e) { return null; }
+}
+const BW_BLOCK = /\n*<browser_state>[\s\S]*$/;
+const bwStrip = (text) => typeof text === "string" ? text.replace(BW_BLOCK, "") : text;
+// A message to a Browser's actor, in Chat: the user's words, and under them what they pointed at in the browser.
+function bwWords(text) {
+  const block = (String(text).match(BW_BLOCK) || [""])[0];
+  const picked = [...block.matchAll(/^\[(p\d+)\] (.+)$/gm)].map((m) => `${m[1]} ${m[2]}`);
+  const page = (block.match(/^page: (.+)$/m) || [])[1];
+  const said = picked.length ? `Picked ${picked.join(", ")}` : page ? `In the browser: ${page.replace(/\s+\(.*\)$/, "")}` : "";
+  return el("span", { class: "tx" }, bwStrip(text), said ? el("span", { class: "bw-said", text: said }) : null);
+}
+const bwSignature = () => {
+  const k = bwKey(selectedInfo()), b = k && bwAll.get(k);
+  return b && b.state ? signature([b.state.picks, b.state.error]) : null;
+};
+const bwPost = (b, what, body) => post(`/browser/w/${b.key}/${what}`, body);
+function bwFor(k) {
+  let b = bwAll.get(k);
+  if (b) return b;
+  b = { key: k, es: null, state: null, frameSize: [0, 0], mode: null, queue: [], sending: false, hovering: false,
+        drag: null, sized: "", lastClick: { at: 0, x: 0, y: 0, n: 0 } };
+  const btn = (icon, label, onclick, extra = {}) => el("button", { type: "button", title: label, "aria-label": label, onclick, ...extra }, strokeIcon(icon, 16));
+  b.back = btn(ICONS.back, "Back", () => bwPost(b, "nav", { action: "back" }).catch(bwSay(b)));
+  b.fwd = btn(ICONS.forward, "Forward", () => bwPost(b, "nav", { action: "forward" }).catch(bwSay(b)));
+  b.reload = btn(ICONS.reload, "Reload", () => bwPost(b, "nav", { action: "reload" }).catch(bwSay(b)));
+  b.newTab = btn(ICONS.plus, "New tab (a link Cmd+clicked, or middle-clicked, opens in one too)",
+    () => bwPost(b, "tab", { action: "new" }).then(() => { b.addr.focus(); b.addr.select(); }).catch(bwSay(b)));
+  b.addr = el("input", { type: "text", spellcheck: "false", "aria-label": "Address", placeholder: "Type an address" });
+  const form = el("form", {}, b.addr);
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const url = b.addr.value.trim();
+    if (url) bwPost(b, "nav", { url }).then(() => b.stage.focus()).catch(bwSay(b));
+  });
+  b.pickBtn = btn(ICONS.pointer, "Pick an element to point the agent at (Esc to stop)", () => bwMode(b, b.mode === "pick" ? null : "pick"), { "aria-pressed": "false" });
+  b.areaBtn = btn(ICONS.area, "Pick an area: drag a box over the page (Esc to stop)", () => bwMode(b, b.mode === "area" ? null : "area"), { "aria-pressed": "false" });
+  b.mine = el("span", { class: "mine", hidden: "", text: "Your Chrome",
+    title: "This page runs in your own Chrome (config.toml's [dashboard] browser_profile = \"mine\"): your logins and history, a tab hidden from its tab strip" });
+  b.bar = el("div", { class: "bw-bar" }, b.back, b.fwd, b.reload, b.newTab, form, b.mine, el("span", { class: "sep" }), b.pickBtn, b.areaBtn);
+  b.tabs = el("div", { class: "bw-tabs", hidden: "" });
+  b.img = el("img", { alt: "" });
+  b.acting = el("div", { class: "acting", hidden: "" });
+  b.actingLabel = el("div", { class: "acting-label", hidden: "" });
+  b.dragBox = el("div", { class: "drag", hidden: "" });
+  b.hint = el("div", { class: "hint", hidden: "" });
+  b.cover = el("div", { class: "cover" }, el("div", { text: "Opening the browser…" }));
+  b.dialog = el("div", { class: "dialog", hidden: "" });
+  b.stage = el("div", { class: "bw-stage", tabindex: "0", "aria-label": "The page: click to use it, as the agent does" },
+    b.img, b.acting, b.actingLabel, b.dragBox, b.hint, b.dialog, b.cover);
+  b.host = el("div", { class: "bw" }, b.bar, b.tabs, b.stage);
+  bwInput(b);
+  new ResizeObserver(() => bwResize(b)).observe(b.stage);
+  bwAll.set(k, b);
+  return b;
+}
+const bwSay = (b) => (e) => setLive(`Browser: ${e.message}`);
+// The Browser's stream: its state and screen, while its view is in the page; closed once it is not (bwSweep).
+function bwListen(b) {
+  if (b.es || SNAPSHOT) return;
+  const es = b.es = new EventSource(`/browser/w/${b.key}/stream`);
+  es.addEventListener("state", (ev) => {
+    const was = bwSignature();
+    b.state = JSON.parse(ev.data);
+    bwDraw(b);
+    if (bwSignature() !== was) keepingPlace(renderMain);    // its picks: the chips above the message box
+  });
+  es.addEventListener("frame", (ev) => {
+    const f = JSON.parse(ev.data);
+    b.img.src = `data:image/jpeg;base64,${f.data}`;
+    if (f.w && f.h && (f.w !== b.frameSize[0] || f.h !== b.frameSize[1])) {
+      b.frameSize = [f.w, f.h];
+      Object.assign(b.img.style, { width: `${f.w}px`, height: `${f.h}px` });
+    }
+    b.framed = true;
+    b.cover.hidden = true;
+  });
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED && b.es === es) b.es = null; };
+}
+function bwSweep() {
+  for (const b of bwAll.values()) if (b.es && !b.host.isConnected) {
+    b.es.close(); b.es = null;
+    if (b.mode) bwMode(b, null);
+  }
+}
+if (!SNAPSHOT) setInterval(bwSweep, 1500);
+// The view's size, told: the page laid out to it (and the agent's screenshots at it).
+function bwResize(b) {
+  clearTimeout(b.sizing);
+  b.sizing = setTimeout(() => {
+    const r = b.stage.getBoundingClientRect();
+    if (!b.host.isConnected || r.width < 50 || r.height < 50) return;
+    const want = [Math.floor(r.width), Math.floor(r.height), Math.min(2, window.devicePixelRatio || 1)];
+    if (want.join() === b.sized) return;
+    b.sized = want.join();
+    bwPost(b, "resize", { width: want[0], height: want[1], dpr: want[2] }).catch(() => { b.sized = ""; });
+  }, 120);
+}
+function bwDraw(b) {
+  const st = b.state || {}, tabs = st.tabs || [], tab = tabs[st.active] || null;
+  if (tab && document.activeElement !== b.addr) b.addr.value = tab.url === "about:blank" ? "" : tab.url;
+  // its tabs, when it has more than one
+  b.tabs.hidden = tabs.length < 2;
+  if (tabs.length > 1) b.tabs.replaceChildren(...tabs.map((t, i) => el("div", { class: "t" + (i === st.active ? " on" : ""),
+      title: `${t.title || ""}\n${t.url}`, onclick: () => bwPost(b, "tab", { action: "switch", index: i }).catch(bwSay(b)) },
+    el("span", { class: "nm", text: (t.loading ? "… " : "") + (t.title || t.url || "New tab") }),
+    el("button", { type: "button", class: "x", "aria-label": "Close the tab", text: "×",
+      onclick: (ev) => { ev.stopPropagation(); bwPost(b, "tab", { action: "close", index: i }).catch(bwSay(b)); } }))),
+    el("button", { type: "button", class: "add", "aria-label": "New tab", title: "New tab", text: "+",
+      onclick: () => bwPost(b, "tab", { action: "new" }).catch(bwSay(b)) }));
+  // what the agent does now: outlined, and said
+  const a = st.acting, box = a && a.box;
+  b.acting.hidden = !box;
+  if (box) Object.assign(b.acting.style, { left: `${box[0] - 3}px`, top: `${box[1] - 3}px`, width: `${box[2] + 6}px`, height: `${box[3] + 6}px` });
+  b.actingLabel.hidden = !a;
+  if (a) b.actingLabel.textContent = `Agent: ${a.label}`;
+  // the page's dialog: answered here, or by the agent
+  const d = st.dialog;
+  b.dialog.hidden = !d;
+  if (d && b.dialog.dataset.sig !== JSON.stringify(d)) {
+    b.dialog.dataset.sig = JSON.stringify(d);
+    const input = d.type === "prompt" ? el("input", { type: "text", value: d.default || "" }) : null;
+    const answer = (accept) => bwPost(b, "dialog", { accept, ...(input ? { text: input.value } : {}) }).catch(bwSay(b));
+    b.dialog.replaceChildren(...[el("div", { class: "lbl", text: `The page says (${d.type})` }), el("div", { class: "msg", text: d.message }), input].filter(Boolean),
+      el("div", { class: "row" }, d.type === "alert" ? null : el("button", { type: "button", onclick: () => answer(false) }, "Cancel"),
+        el("button", { type: "button", class: "primary", onclick: () => answer(true) }, "OK")));
+  }
+  if (!d) b.dialog.dataset.sig = "";
+  b.mine.hidden = st.chrome !== "mine";
+  // nothing to show yet, or why not -- your Chrome asking whether to let the dashboard in, first
+  const err = st.allow ? "" : st.error;
+  b.cover.hidden = !!b.framed && !err && !st.allow;
+  if (!b.cover.hidden) b.cover.replaceChildren(...[el("div", { text: st.allow ? "Waiting for your Chrome: click Allow in its “Allow remote debugging?” dialog"
+    : err ? "The browser did not open." : "Opening the browser…" }), err ? el("div", { class: "err", text: err }) : null].filter(Boolean));
+}
+// Pick (an element) and Area (a box): what the pointer does on the screen meanwhile; Esc, or the button again, stops it.
+function bwMode(b, mode) {
+  b.mode = mode;
+  b.pickBtn.setAttribute("aria-pressed", String(mode === "pick"));
+  b.areaBtn.setAttribute("aria-pressed", String(mode === "area"));
+  b.stage.classList.toggle("picking", !!mode);
+  b.hint.hidden = !mode;
+  b.hint.textContent = mode === "pick" ? "Click the element to point the agent at" : mode === "area" ? "Drag a box over the area" : "";
+  b.dragBox.hidden = true; b.drag = null;
+  if (mode !== "pick" && b.hovered) { b.hovered = false; bwPost(b, "hover", {}).catch(() => {}); }
+  if (mode) b.stage.focus();
+}
+// What the user does on the screen, in order, one request at a time; a move waiting to go replaced by the next.
+function bwQueue(b, e) {
+  const last = b.queue[b.queue.length - 1];
+  if (e.kind === "mouseMoved" && last && last.kind === "mouseMoved") b.queue[b.queue.length - 1] = e;
+  else if (e.kind === "mouseWheel" && last && last.kind === "mouseWheel") { last.deltaX += e.deltaX; last.deltaY += e.deltaY; }
+  else b.queue.push(e);
+  if (!b.sending) bwFlush(b);
+}
+async function bwFlush(b) {
+  b.sending = true;
+  while (b.queue.length) {
+    const events = b.queue.splice(0);
+    try { await bwPost(b, "input", { events }); } catch (e) { setLive(`Browser: ${e.message}`); }
+  }
+  b.sending = false;
+}
+const bwMods = (ev) => (ev.altKey ? 1 : 0) | (ev.ctrlKey ? 2 : 0) | (ev.metaKey ? 4 : 0) | (ev.shiftKey ? 8 : 0);
+const BW_BUTTONS = ["left", "middle", "right"];
+function bwInput(b) {
+  const at = (ev) => { const r = b.img.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
+  const st = b.stage;
+  st.addEventListener("pointerdown", (ev) => {
+    st.focus({ preventScroll: true });
+    const p = at(ev);
+    if (b.mode === "pick") {
+      ev.preventDefault();
+      bwMode(b, null);
+      bwPost(b, "pick", p).then(() => document.getElementById("composer-text")?.focus()).catch(bwSay(b));
+      return;
+    }
+    if (b.mode === "area") { ev.preventDefault(); b.drag = { x: p.x, y: p.y }; st.setPointerCapture(ev.pointerId); return; }
+    if (ev.button > 2) return;
+    st.setPointerCapture(ev.pointerId);
+    const c = b.lastClick, now = Date.now();
+    c.n = now - c.at < 450 && Math.abs(c.x - p.x) < 5 && Math.abs(c.y - p.y) < 5 ? c.n + 1 : 1;
+    Object.assign(c, { at: now, x: p.x, y: p.y });
+    bwQueue(b, { type: "mouse", kind: "mousePressed", ...p, button: BW_BUTTONS[ev.button], buttons: ev.buttons, clickCount: c.n, modifiers: bwMods(ev) });
+  });
+  st.addEventListener("pointermove", (ev) => {
+    const p = at(ev);
+    if (b.mode === "pick") {                         // the element under it outlined, as DevTools' picker does
+      b.hoverAt = p;
+      if (!b.hovering) {
+        b.hovering = true;
+        const go = () => { const q = b.hoverAt; b.hoverAt = null;
+          bwPost(b, "hover", q).catch(() => {}).finally(() => { b.hovered = true; if (b.hoverAt && b.mode === "pick") go(); else b.hovering = false; }); };
+        go();
+      }
+      return;
+    }
+    if (b.mode === "area") {
+      if (!b.drag) return;
+      const x = Math.min(b.drag.x, p.x), y = Math.min(b.drag.y, p.y);
+      b.dragBox.hidden = false;
+      Object.assign(b.dragBox.style, { left: `${x}px`, top: `${y}px`, width: `${Math.abs(p.x - b.drag.x)}px`, height: `${Math.abs(p.y - b.drag.y)}px` });
+      return;
+    }
+    bwQueue(b, { type: "mouse", kind: "mouseMoved", ...p, button: ev.buttons ? BW_BUTTONS[[1, 4, 2].indexOf(ev.buttons & 7)] || "left" : "none",
+      buttons: ev.buttons, modifiers: bwMods(ev) });
+  });
+  st.addEventListener("pointerup", (ev) => {
+    const p = at(ev);
+    if (b.mode === "area") {
+      if (!b.drag) return;
+      const box = [Math.min(b.drag.x, p.x), Math.min(b.drag.y, p.y), Math.abs(p.x - b.drag.x), Math.abs(p.y - b.drag.y)];
+      b.drag = null;
+      bwMode(b, null);
+      if (box[2] >= 4 && box[3] >= 4) bwPost(b, "pick", { box }).then(() => document.getElementById("composer-text")?.focus()).catch(bwSay(b));
+      return;
+    }
+    if (b.mode) return;
+    bwQueue(b, { type: "mouse", kind: "mouseReleased", ...p, button: BW_BUTTONS[ev.button] || "left", buttons: ev.buttons,
+      clickCount: b.lastClick.n, modifiers: bwMods(ev) });
+  });
+  st.addEventListener("pointerleave", () => { if (b.mode === "pick" && b.hovered) { b.hovered = false; bwPost(b, "hover", {}).catch(() => {}); } });
+  st.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    const k = ev.deltaMode === 1 ? 40 : ev.deltaMode === 2 ? b.stage.clientHeight : 1;
+    bwQueue(b, { type: "mouse", kind: "mouseWheel", ...at(ev), deltaX: ev.deltaX * k, deltaY: ev.deltaY * k, modifiers: bwMods(ev) });
+  }, { passive: false });
+  st.addEventListener("contextmenu", (ev) => ev.preventDefault());
+  st.addEventListener("keydown", (ev) => {
+    if (ev.isComposing) return;
+    ev.stopPropagation();                            // the page's keys, not the dashboard's (its Esc, its shortcuts)
+    if (b.mode && ev.key === "Escape") { ev.preventDefault(); return bwMode(b, null); }
+    const cmd = ev.metaKey || ev.ctrlKey;
+    if (cmd && (ev.key === "v" || ev.key === "V")) return;   // the paste event brings the clipboard's text
+    if (cmd && (ev.key === "c" || ev.key === "C")) {          // what the page has selected, to the user's clipboard
+      ev.preventDefault();
+      bwPost(b, "copy", {}).then((r) => r.text && navigator.clipboard.writeText(r.text)).catch(bwSay(b));
+      return;
+    }
+    if (cmd && ["r", "R"].includes(ev.key) && !ev.shiftKey) { ev.preventDefault(); bwPost(b, "nav", { action: "reload" }).catch(bwSay(b)); return; }
+    if (cmd && ["l", "L"].includes(ev.key)) { ev.preventDefault(); b.addr.focus(); b.addr.select(); return; }
+    ev.preventDefault();
+    bwQueue(b, { type: "key", down: true, key: ev.key, code: ev.code, keyCode: ev.keyCode, location: ev.location, repeat: ev.repeat, modifiers: bwMods(ev) });
+  });
+  st.addEventListener("keyup", (ev) => {
+    ev.stopPropagation();
+    if (b.mode || ((ev.metaKey || ev.ctrlKey) && /^[cvrlCVRL]$/.test(ev.key))) return;
+    ev.preventDefault();
+    bwQueue(b, { type: "key", down: false, key: ev.key, code: ev.code, keyCode: ev.keyCode, location: ev.location, modifiers: bwMods(ev) });
+  });
+  st.addEventListener("paste", (ev) => {
+    const text = ev.clipboardData && ev.clipboardData.getData("text/plain");
+    if (!text) return;
+    ev.preventDefault();
+    bwQueue(b, { type: "text", text });
+  });
+}
+// The chips of what the user picked, above the message box: each going with the next message, or taken off.
+function bwPicks(k) {
+  const b = bwAll.get(k), picks = (b && b.state && b.state.picks) || [];
+  return el("div", { class: "bw-picks", "aria-label": "Picked in the browser" }, ...picks.map((p) => el("span", { class: "pk", title: `${p.id}: ${p.label} -- goes with your next message` },
+    el("span", { class: "id", text: p.id }), el("span", { class: "nm", text: p.label }),
+    el("button", { type: "button", "aria-label": `Take ${p.id} off`, text: "×", onclick: () => bwPost(b, "unpick", { id: p.id }).catch(bwSay(b)) }))));
+}
+if (!SNAPSHOT) addChatView({
+  id: "browser", name: "Browser", feed: "none", frame: "bw-frame", icon: ICONS.globe,
+  description: "The Browser: a Chrome tab you and this actor use together. Pick an element or an area to point it at what you mean.",
+  when: (info) => !!bwKey(info),
+  render: ({ info }) => {
+    if (!state.home || !state.home.browser)
+      return el("div", { class: "desc", text: "A Browser needs Google Chrome (or Chromium) where the dashboard runs, or one named in config.toml's [dashboard] browser." });
+    const b = bwFor(bwKey(info));
+    bwListen(b);
+    bwDraw(b);
+    requestAnimationFrame(() => bwResize(b));
+    return b.host;
+  },
+  composer: (ctx) => {
+    const form = defaultComposer(ctx);
+    form.prepend(bwPicks(bwKey(ctx.info)));
+    return form;
   },
 });
 

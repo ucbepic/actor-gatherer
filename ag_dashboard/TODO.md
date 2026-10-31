@@ -426,3 +426,39 @@ Not done yet:
 - **The folder-trust question.** A new folder's first message opens Claude Code's (or codex's) terminal, which asks
   whether to trust it before anything is sent; DocWriter says, after 20 s with no word from the actor, to look there.
 - **The bundle is 8.5 MB** in ag_dashboard/vendor/docwriter/: DocWriter's page 2.2 MB, pdf.js's viewer 6.3 MB.
+
+## Browser
+
+A Browser (browser.py) is an actor of its own, like DocWriter's: a gatherer's "+ more" drop-down, "Browser…" (Claude
+Code or Codex), starts one in the folder a new session there would use, and selecting it shows its view -- a Chrome tab
+the user and the agent use together (its Terminal, Chat and History one click away, the message box under it). One
+Chrome serves every Browser: by default the dashboard's own, headless, over a pipe (no port), its profile the home's;
+with `[dashboard] browser_profile = "mine"`, the user's own Chrome (their logins and history), its remote debugging
+turned on at chrome://inspect/#remote-debugging, over a WebSocket once they click Allow, each tab hidden from their
+tab strip. Its tabs are each Browser's own.
+The user's mouse, wheel and keys go to the tab as Chrome's own input, the screen comes back as Chrome's screencast;
+Pick and Area point the agent at an element or a box, each a chip going with the next message (`<browser_state>`,
+with the page and what the user did since) and a ref the agent's tools take. The agent's 18 tools (snapshot, click,
+type, ...) are an MCP server of the dashboard's, run on the tab with or without a page open; what it does now is
+outlined on the user's screen.
+
+Not done yet:
+
+- **The gatherer agent cannot start one.** `ag actors new --docwriter` exists; a `--browser` would go the same way
+  (coordination.py's `new`).
+- **Frames inside frames.** A snapshot is the main frame's accessibility tree; an iframe from another site (a payment
+  widget, a video) shows as one element, and Pick picks the iframe. Its own tree is a `frameId` away.
+- **What the screen lacks.** The pointer's shape (a hand over a link), typing composed by an input method (Chinese,
+  Japanese), dropping a file onto the page, the user's own file chooser (the agent's `upload` tool sets a file input),
+  the page's own context menu, sound.
+- **Frames as JPEG over server-sent events.** Fine on this machine; through an SSH tunnel each frame is 30-150 KB.
+  Binary frames (a WebSocket) or a lower quality while scrolling would cut it.
+- **One dashboard per home.** Chrome locks its profile: a second dashboard on the same home cannot start its own.
+- **The user's Chrome ("mine").** Tried against a stand-in (a Chrome with `--remote-debugging-port`, which asks
+  nothing), not yet the user's own with its Allow dialog. Each new connection asks again: one is kept, but a dashboard
+  restart, or Chrome quitting, means one more Allow. Its tabs are hidden ones, closed with the dashboard; a window the
+  page opens (a login popup) shows in the user's Chrome as a tab of its own. The agent can act on every site the user
+  is logged into.
+- **Downloads** go to <home>/dashboard/downloads, the agent told so; the page only notes that one finished.
+- **Linux** is untested: it needs google-chrome or chromium on the PATH (headless: no display), or
+  `[dashboard] browser` in config.toml.

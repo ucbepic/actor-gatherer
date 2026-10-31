@@ -81,7 +81,11 @@ TEMPLATE = '''# This home's settings, by who reads them:
 #   [dashboard]             ag dashboard: `chat = "headless"` sends a message to an
 #                           actor with no terminal open to an agent with no screen
 #                           (`claude -p`, `codex exec`); the default, "terminal",
-#                           opens the actor's terminal with it
+#                           opens the actor's terminal with it. `browser = "<path>"`:
+#                           the Chrome a Browser runs (else one installed is found);
+#                           `browser_profile = "mine"`: Browsers run in your own Chrome,
+#                           your logins and history (turn on its remote debugging at
+#                           chrome://inspect/#remote-debugging), not a profile of ag's
 #
 # The policies and pollers below are a CATALOG -- what is AVAILABLE, not what
 # runs. What a gatherer runs is its own gatherers/<name>/gatherer.toml, made when

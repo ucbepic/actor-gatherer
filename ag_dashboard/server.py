@@ -125,6 +125,17 @@ context manager's home (data.py), read-only. Standard library only.
                                           DocWriter's own /api routes
     POST /api/docwriter {gatherer, cwd, harness?, model?}   a new DocWriter on `cwd`, its actor a new session of
                                           `harness` in the gatherer (docwriter.py's `create`) -> its settings: {key, ...}
+    GET /browser/w/<key>/stream           server-sent events, until the page goes: a Browser's (browser.py) `state` {tabs,
+                                          active, picks, acting, dialog, error, running, viewport} as it changes, and its
+                                          screen, `frame` {data (a JPEG, base64), w, h (the page's size), seq}, as it does
+    POST /browser/w/<key>/<what>          what the user does in it: input {events}, nav {url | action}, resize {width,
+                                          height, dpr}, hover {x, y}, pick {x, y | box}, unpick {id}, dialog {accept, text?},
+                                          copy -> {text}, tab {action: switch | close | new, index?, url?}; and the MCP
+                                          server its actor calls (mcp)
+    POST /api/browser {gatherer, cwd, harness?, model?}   a new Browser, its actor a new session of `harness` in the
+                                          gatherer, in `cwd` (browser.py's `create`) -> {key, channel, ...}
+    A message to a Browser's actor (/api/send) ends with what the user did and picked in it (browser.py's `compose`).
+    Its Chrome is the dashboard's own, or the user's (config.toml's `[dashboard] browser_profile = "mine"`).
     GET /api/settings                     ag's settings, its config.toml (settings.py)
     POST /api/settings/model {model, api_base?, key_env?}   the Gatherer's model, by `ag model` -> the settings
     POST /api/settings/defaults {version, policy?, pollers?, gatherer?}   a new gatherer's defaults -> the settings
@@ -162,8 +173,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import harness_kit
 
-from . import (actions, avatars, branches, coordination, data, docwriter, editor, files, hiding, history, home, live, mcp,
-               migrating, monitor, naming, saved, seen, sessions, settings)
+from . import (actions, avatars, branches, browser, coordination, data, docwriter, editor, files, hiding, history, home,
+               live, mcp, migrating, monitor, naming, saved, seen, sessions, settings)
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -221,7 +232,8 @@ def _signature(value) -> str:
 
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors,
             crew: coordination.Coordination, known: Optional[data.Kept] = None,
-            branched: Optional[branches.Branches] = None, docwriters: Optional[docwriter.DocWriters] = None):
+            branched: Optional[branches.Branches] = None, docwriters: Optional[docwriter.DocWriters] = None,
+            browsers: Optional[browser.Browsers] = None):
     shared, sharing = {"version": None, "at": 0.0, "value": None}, threading.Lock()
 
     def home_view(woken: bool = False) -> dict:
@@ -252,7 +264,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
                 "home_dir": os.path.expanduser("~"), "editor": editor.AVAILABLE,
                 "branches": branched.listed() if branched is not None else [],
-                "docwriter": docwriter.AVAILABLE and os.path.isfile(os.path.join(docwriter.VENDOR, "index.html"))}
+                "docwriter": docwriter.AVAILABLE and os.path.isfile(os.path.join(docwriter.VENDOR, "index.html")),
+                "browser": browsers is not None and browser.available()}
 
     def codex_dialog(sid: str) -> Optional[dict]:
         """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
@@ -371,12 +384,19 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer(history.extracts(q["gatherer"]))
                 if url.path.startswith("/docwriter/w/"):
                     return self.docwriter("GET", url, b"")
+                if url.path.startswith("/browser/w/"):
+                    m = re.fullmatch(r"/browser/w/([0-9a-f]{16})/stream", url.path)
+                    if m is None or browsers is None:
+                        return self.send(404, b"not found", "text/plain")
+                    return self.browser_stream(browsers.get(m.group(1)))
                 if url.path == "/docwriter-mark.svg":         # DocWriter's mark, which its page asks for at the root
                     got = docwriter.asset("docwriter-mark.svg")
                     return self.send(200, *got) if got else self.send(404, b"not found", "text/plain")
                 return self.send(404, b"not found", "text/plain")
             except editor.EditorError as exc:
                 return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
+            except browser.BrowserError as exc:
+                return self.send(exc.status, json.dumps({"error": str(exc)}).encode(), "application/json")
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
 
@@ -601,6 +621,90 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
             except (sessions.SessionError, ValueError, OSError) as exc:
                 return self.send(400, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
 
+        def browser_stream(self, b: "browser.Browser") -> None:
+            """A Browser's state and screen, as they change (browser.py's `join`), until the page goes."""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")      # it has no length: it ends when the connection does
+            self.close_connection = True
+            self.end_headers()
+            viewer = b.join()
+            try:
+                while True:
+                    got = viewer.take(editor.GONE_CHECK)
+                    if got is None:
+                        return
+                    if not got:
+                        if self.gone():
+                            return
+                        self.wfile.write(b": keepalive\n\n")
+                    for name, value in got:
+                        self.event(name, value)
+                    self.wfile.flush()
+            except OSError:                              # the page went away
+                pass
+            finally:
+                b.leave(viewer)
+
+        def browser_post(self, url, raw: bytes) -> None:
+            """What the user does in a Browser's view, or its actor's MCP server (browser.py)."""
+            m = re.fullmatch(r"/browser/w/([0-9a-f]{16})/([a-z]+)", url.path)
+            if m is None or browsers is None:
+                return self.send(404, b"not found", "text/plain")
+            key, what = m.group(1), m.group(2)
+            try:
+                if what == "mcp":
+                    status, value = mcp.handle(raw, browser.TOOLS, lambda name, args: browsers.call(key, name, args),
+                                               browser.NAME)
+                    return self.answer_status(status, value) if value is not None else self.send(202, b"", "text/plain")
+                try:
+                    body = json.loads(raw or b"{}")
+                except ValueError:
+                    body = None
+                if not isinstance(body, dict):
+                    return self.send(400, json.dumps({"error": "a JSON object, please"}).encode(), "application/json")
+                b = browsers.get(key)
+                num = lambda k: None if body.get(k) is None else float(body[k])    # noqa: E731
+                if what == "input":
+                    b.input(body.get("events") if isinstance(body.get("events"), list) else [])
+                    return self.answer({})
+                if what == "nav":
+                    return self.answer({"done": b.navigate(str(body.get("url") or ""), str(body.get("action") or ""))})
+                if what == "resize":
+                    b.resize(int(body.get("width") or 0), int(body.get("height") or 0), float(body.get("dpr") or 1))
+                    return self.answer({})
+                if what == "hover":
+                    b.hover(num("x"), num("y"))
+                    return self.answer({})
+                if what == "pick":
+                    box = body.get("box")
+                    return self.answer(b.pick(num("x"), num("y"), box if isinstance(box, list) and len(box) == 4 else None))
+                if what == "unpick":
+                    b.unpick(str(body.get("id") or ""))
+                    return self.answer({})
+                if what == "dialog":
+                    return self.answer({"done": b.answer_dialog(bool(body.get("accept")),
+                                                                body.get("text") if isinstance(body.get("text"), str) else None)})
+                if what == "copy":
+                    return self.answer({"text": b.selection()})
+                if what == "tab":
+                    action, i = str(body.get("action") or ""), int(body.get("index") or 0)
+                    if action == "switch":
+                        b.switch(i)
+                    elif action == "close":
+                        b.close_tab(i)
+                    elif action == "new":
+                        b.new_tab(str(body.get("url") or ""))
+                    else:
+                        raise browser.BrowserError("switch, close or new")
+                    return self.answer({})
+                return self.send(404, b"not found", "text/plain")
+            except browser.BrowserError as exc:
+                return self.send(exc.status, json.dumps({"error": str(exc)}).encode(), "application/json")
+            except (ValueError, TypeError, OSError) as exc:
+                return self.send(400, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
+
         def answer_status(self, status: int, value) -> None:
             self.send(status, json.dumps(value).encode("utf-8"), "application/json")
 
@@ -690,6 +794,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.send(403, json.dumps({"error": "only the dashboard's own page may do that"}).encode(),
                                      "application/json")
                 return self.docwriter("POST", url, raw)
+            if url.path.startswith("/browser/w/"):            # a Browser's view, or its actor's MCP server
+                raw = self.body_of(MAX_BODY)
+                if raw is None or not self.own_page():
+                    return self.send(403, json.dumps({"error": "only the dashboard's own page may do that"}).encode(),
+                                     "application/json")
+                return self.browser_post(url, raw)
             try:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -733,6 +843,11 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                         return self.send(404, b"not found", "text/plain")
                     return self.answer(docwriters.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
                                                        str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
+                if url.path == "/api/browser":
+                    if browsers is None:
+                        return self.send(404, b"not found", "text/plain")
+                    return self.answer(browsers.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
+                                                       str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
                 if url.path == "/api/send":
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
@@ -745,8 +860,15 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     if held is not None:
                         raise sessions.SessionError("Codex waits on its question in the terminal: answer it, "
                                                     "or press Esc there to stop the turn, first")
-                    return self.answer(started.send(sid, text, int(body.get("cols") or 120),
-                                                    int(body.get("rows") or 32), bool(body.get("fullscreen"))))
+                    row = next((x for x in started.list() if x["session_id"] == sid), None)
+                    told = None                          # a Browser's actor: what the user did and picked in it, after
+                    if browsers is not None and row is not None and text.strip() and text.lstrip()[0] not in "/!":
+                        text, told = browsers.compose(row, text)
+                    sent = started.send(sid, text, int(body.get("cols") or 120), int(body.get("rows") or 32),
+                                        bool(body.get("fullscreen")))
+                    if told is not None:
+                        told.sent()
+                    return self.answer(sent)
                 if url.path == "/api/upload":
                     return self.answer(home.save_upload(str(body.get("type") or ""), str(body.get("data") or "")))
                 if url.path == "/api/stop":
@@ -860,6 +982,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/api/settings/file":
                     return self.answer(settings.save_text(str(body.get("text") or ""), str(body.get("version") or "")))
                 return self.send(404, b"not found", "text/plain")
+            except browser.BrowserError as exc:
+                return self.send(exc.status, json.dumps({"error": str(exc)}).encode(), "application/json")
             except (sessions.SessionError, ValueError) as exc:     # `box`: a message its terminal's box cannot take now
                 return self.send(400, json.dumps({"error": str(exc), **({"box": exc.box} if isinstance(exc, sessions.NotAtBox)
                                                                          else {})}).encode(), "application/json")
@@ -949,15 +1073,16 @@ class Server(ThreadingHTTPServer):
         self.hub.on_change = known.changed if known else None                                  # ag's notifications
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
-        self.listener = self.fallback = self.rest = self.address_file = self.docwriters = None   # for server_close, which a failed bind calls
+        self.listener = self.fallback = self.rest = self.address_file = self.docwriters = self.browsers = None   # for server_close, which a failed bind calls
         self.docwriters = docwriter.DocWriters(self.sessions)          # the DocWriters' documents, tools and notices
+        self.browsers = browser.Browsers(self.sessions)                # the Browsers' Chrome, tabs and tools
         self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates,   # actors' `ag actors`
                                               docwriters=self.docwriters)
         self.branches = branches.Branches(self.editors, self.sessions, self.hub.ring)   # the actors' own branches
         self.keeps_actions = False
         super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew, known, self.branches,
-                                          self.docwriters))
-        docwriter.ORIGIN = f"http://127.0.0.1:{self.server_address[1]}"   # where its actors reach the dashboard
+                                          self.docwriters, self.browsers))
+        docwriter.ORIGIN = browser.ORIGIN = f"http://127.0.0.1:{self.server_address[1]}"   # where their actors reach it
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once
@@ -972,7 +1097,8 @@ class Server(ThreadingHTTPServer):
             threading.Thread(target=lambda: data.home([], known), name="ag-home-first", daemon=True).start()   # first
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.rest, self.editors, self.crew, self.branches, self.docwriters):
+        for part in (self.listener, self.fallback, self.rest, self.editors, self.crew, self.branches, self.docwriters,
+                     self.browsers):
             if part is not None:
                 part.close()
         if self.keeps_actions:
