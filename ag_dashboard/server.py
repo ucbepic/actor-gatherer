@@ -83,8 +83,8 @@ context manager's home (data.py), read-only. Standard library only.
                                           has none (coordination.py) -> the session
     POST /api/actors/<op> {actor, ...}    what an actor's `ag actors` asks (coordination.py; `actor`, its id): list {all?},
                                           show {ref}, who {path}, send {ref, text}, new {text, cwd?, harness?, model?, like?,
-                                          name?, docwriter?}, when {ref, note?}, watches, unwatch {watch} -> what it answers; an
-                                          error's text for the command to print (400)
+                                          name?, docwriter?, branch?, approve?}, when {ref, note?}, watches, unwatch
+                                          {watch} -> what it answers; an error's text for the command to print (400)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
     POST /api/discard {session_id}        one that never started -- no process of it running, nothing of it in its
                                           gatherer -- forgotten: listed nowhere, nothing of it kept (sessions.py's
@@ -936,7 +936,7 @@ def actors_op(crew: coordination.Coordination, op: str, body: dict):
         return crew.send(me, s("ref"), s("text"))
     if op == "new":
         return crew.new(me, s("text"), opt("cwd"), opt("harness"), opt("model"), opt("like"), opt("name"),
-                        bool(body.get("docwriter")))
+                        bool(body.get("docwriter")), bool(body.get("branch")), bool(body.get("approve")))
     if op == "when":
         return crew.when(me, s("ref"), s("note"))
     if op == "watches":
@@ -1028,9 +1028,9 @@ class Server(ThreadingHTTPServer):
         self.editors = editor.Editors()                                # the files open in the Editor panel
         self.listener = self.fallback = self.rest = self.address_file = self.docwriters = self.previews = None   # for server_close, which a failed bind calls
         self.docwriters = docwriter.DocWriters(self.sessions)          # the DocWriters' documents, tools and notices
-        self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates,   # actors' `ag actors`
-                                              docwriters=self.docwriters)
         self.branches = branches.Branches(self.editors, self.sessions, self.hub.ring)   # the actors' own branches
+        self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates,   # actors' `ag actors`
+                                              docwriters=self.docwriters, branched=self.branches)
         self.previews = preview.Runs()                                 # the projects' previews, run
         self.keeps_actions = False
         super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew, known, self.branches,
