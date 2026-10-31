@@ -1,6 +1,7 @@
 // What the dashboard's Editor panel (ag_dashboard/page.html) uses, as `window.agEditor`: CodeMirror 6 to edit
 // in, Yjs to share each file between everyone editing it (y-codemirror.next binds the two, with each other
-// editor's cursor and selection), and a language for a file's name, coloured with the page's own classes.
+// editor's cursor and selection), and a language for a file's name, coloured with the page's own classes (LaTeX and
+// BibTeX are latex.mjs's).
 // Bundled by build.mjs into ag_dashboard/vendor/editor.js, which the page loads the first time it opens the view.
 import { basicSetup } from "codemirror";
 import { EditorState, StateEffect, StateField, Compartment, RangeSet } from "@codemirror/state";
@@ -23,6 +24,7 @@ import { sql } from "@codemirror/lang-sql";
 import { xml } from "@codemirror/lang-xml";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
+import { latex, bibtex, latexStyles } from "./latex.mjs";
 import * as Y from "yjs";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates } from "y-protocols/awareness";
@@ -42,6 +44,7 @@ const highlight = syntaxHighlighting(tagHighlighter([
   { tag: t.strong, class: "hl-b" },
   { tag: t.inserted, class: "hl-add" },
   { tag: t.deleted, class: "hl-del" },
+  ...latexStyles,
 ]));
 
 const BY_EXTENSION = {
@@ -52,6 +55,7 @@ const BY_EXTENSION = {
   yaml: yaml, yml: yaml, rs: rust, c: cpp, h: cpp, cc: cpp, cpp: cpp, cxx: cpp, hpp: cpp, hh: cpp, java: java, go: go,
   sql: sql, xml: xml, svg: xml, sh: () => StreamLanguage.define(shell), bash: () => StreamLanguage.define(shell),
   zsh: () => StreamLanguage.define(shell), toml: () => StreamLanguage.define(toml),
+  tex: latex, latex: latex, ltx: latex, sty: latex, cls: latex, dtx: latex, bbl: latex, tikz: latex, bib: bibtex,
 };
 
 // The language a file's name says it is in, or none.

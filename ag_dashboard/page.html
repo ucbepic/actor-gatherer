@@ -1092,6 +1092,18 @@ button.ed-person { cursor: pointer; }
 .ed-body .cm-textfield { background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 4px; }
 .ed-body .cm-button { background: var(--wash); background-image: none; color: var(--ink); border: 1px solid var(--ring); border-radius: 4px; }
 .ed-body .cm-tooltip { background: var(--surface); color: var(--ink); border: 1px solid var(--ring); }
+/* LaTeX (assets/src/editor/latex.mjs): titles larger, math tinted, emphasis as it prints, braces and options faint */
+.ed-body .hl-tex-h1 { font-size: 1.3em; font-weight: 700; } .ed-body .hl-tex-h2 { font-size: 1.15em; font-weight: 700; }
+.ed-body .hl-tex-h3 { font-size: 1.04em; font-weight: 650; }
+.ed-body .hl-tex-math { color: var(--hl-num); background: color-mix(in srgb, var(--hl-num) 10%, transparent); }
+.ed-body .hl-tex-mcmd { font-weight: 600; }
+.ed-body .hl-tex-em { font-style: italic; } .ed-body .hl-tex-ul { text-decoration: underline; text-underline-offset: 2px; }
+.ed-body .hl-tex-tt { background: color-mix(in srgb, var(--ink) 7%, transparent); border-radius: 3px; }
+.ed-body .hl-tex-url { color: var(--hl-fn); text-decoration: underline; text-underline-offset: 2px; }
+.ed-body .hl-tex-verb { color: var(--hl-str); }
+.ed-body .hl-tex-special { color: var(--hl-kw); font-weight: 600; }
+.ed-body .hl-tex-opt { color: var(--muted); }
+.ed-body .hl-tex-brace { color: var(--muted); font-weight: 400; font-style: normal; }
 .ed-body .ed-disk { background: color-mix(in srgb, var(--who, var(--s2)) 26%, transparent); }
 /* the conflict zone: the lines edited here since the file was opened, tinted very lightly */
 .ed-body .ed-zone { background: color-mix(in srgb, var(--s1) 7%, transparent); }
