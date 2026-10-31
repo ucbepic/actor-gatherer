@@ -61,9 +61,10 @@ def dashboard_url(env=None) -> Optional[str]:
         return None
 
 
-def ask(url: str, op: str, body: dict) -> dict:
-    """The dashboard's answer to `op`; ActorsError with its error's text."""
-    req = urllib.request.Request(f"{url}/api/actors/{op}", data=json.dumps(body).encode("utf-8"), method="POST",
+def ask(url: str, op: str, body: dict, api: str = "actors") -> dict:
+    """The dashboard's answer to `op` (of /api/<api>/: `ag actors`'s, or `ag preview`'s); ActorsError with its error's
+    text."""
+    req = urllib.request.Request(f"{url}/api/{api}/{op}", data=json.dumps(body).encode("utf-8"), method="POST",
                                  headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
