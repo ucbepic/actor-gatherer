@@ -85,7 +85,9 @@ TEMPLATE = '''# This home's settings, by who reads them:
 #                           the Chrome a Browser runs (else one installed is found);
 #                           `browser_profile = "mine"`: Browsers run in your own Chrome,
 #                           your logins and history (turn on its remote debugging at
-#                           chrome://inspect/#remote-debugging), not a profile of ag's
+#                           chrome://inspect/#remote-debugging), not a profile of ag's;
+#                           `browser_video = false`: ag's own Chrome's screen shown as
+#                           JPEG frames, not as video (sharper, quicker)
 #
 # The policies and pollers below are a CATALOG -- what is AVAILABLE, not what
 # runs. What a gatherer runs is its own gatherers/<name>/gatherer.toml, made when

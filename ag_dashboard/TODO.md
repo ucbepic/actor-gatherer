@@ -436,7 +436,9 @@ Chrome serves every Browser: by default the dashboard's own, headless, over a pi
 with `[dashboard] browser_profile = "mine"`, the user's own Chrome (their logins and history), its remote debugging
 turned on at chrome://inspect/#remote-debugging, over a WebSocket once they click Allow, each tab hidden from their
 tab strip. Its tabs are each Browser's own.
-The user's mouse, wheel and keys go to the tab as Chrome's own input, the screen comes back as Chrome's screencast;
+The user's mouse, wheel and keys go to the tab as Chrome's own input; the screen comes back as video in the dashboard's
+own Chrome (browser_video.py: the tab captured by a page of the dashboard's in that Chrome, H.264, about 30 ms from a
+click to the page, at the screen's density), else as Chrome's screencast (JPEG frames);
 Pick and Area point the agent at an element or a box, each a chip going with the next message (`<browser_state>`,
 with the page and what the user did since) and a ref the agent's tools take. The agent's 18 tools (snapshot, click,
 type, ...) are an MCP server of the dashboard's, run on the tab with or without a page open; what it does now is
@@ -451,8 +453,18 @@ Not done yet:
 - **What the screen lacks.** The pointer's shape (a hand over a link), typing composed by an input method (Chinese,
   Japanese), dropping a file onto the page, the user's own file chooser (the agent's `upload` tool sets a file input),
   the page's own context menu, sound.
-- **Frames as JPEG over server-sent events.** Fine on this machine; through an SSH tunnel each frame is 30-150 KB.
-  Binary frames (a WebSocket) or a lower quality while scrolling would cut it.
+- **Frames as base64 over server-sent events.** Fine on this machine. A video chunk is a few KB, a key frame (a page
+  joining, the view resized, a tab switched) up to ~0.5 MB; a JPEG frame 30-150 KB at 1x, ~1 MB at 2x. Binary frames
+  (a WebSocket) would cut a third.
+- **Video only in the dashboard's own Chrome.** The user's Chrome won't capture a tab hidden from its tab strip, and a
+  capture there would ask the user to share each tab (an extension's capture needs a click on its button in the tab):
+  "mine" keeps the JPEG frames. In its own Chrome, Chrome is started picking the tab titled with a token
+  (--auto-select-tab-capture-source-by-title): the tab is so titled for the moment its capture starts; a page loading
+  then would put its own title back, so a tab loading is waited for (3 s at most).
+- **The video's sizes.** The capture is of the tab's window's page, so each tab has a window of its own, sized to the
+  view: its bars measured once; Chrome's "sharing this tab" bar in the captured tab's window is learned from the first
+  key frame being short (its window grown, a frame drawn again by an invisible devtools highlight). The hardware
+  encoder takes 5-7 s to answer the first time in a Chrome: the software one serves until then.
 - **One dashboard per home.** Chrome locks its profile: a second dashboard on the same home cannot start its own.
 - **The user's Chrome ("mine").** Tried against a stand-in (a Chrome with `--remote-debugging-port`, which asks
   nothing), not yet the user's own with its Allow dialog. Each new connection asks again: one is kept, but a dashboard

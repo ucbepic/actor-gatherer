@@ -1005,7 +1005,7 @@ button:disabled { opacity: .5; cursor: default; }
 .bw-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #fff; outline: none; cursor: default; touch-action: none; }
 .bw-stage:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, #2563EB 50%, transparent); }
 .bw-stage.picking { cursor: crosshair; }
-.bw-stage img { position: absolute; left: 0; top: 0; display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.bw-stage img, .bw-stage canvas.screen { position: absolute; left: 0; top: 0; display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
 .bw-stage .acting { position: absolute; border: 2px solid #E8590C; border-radius: 4px; pointer-events: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, #E8590C 22%, transparent); transition: all .15s ease-out; }
 .bw-stage .acting-label { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px); padding: 4px 10px; border-radius: 999px;
@@ -9713,6 +9713,7 @@ function bwFor(k) {
   b.bar = el("div", { class: "bw-bar" }, b.back, b.fwd, b.reload, b.newTab, form, b.mine, el("span", { class: "sep" }), b.pickBtn, b.areaBtn);
   b.tabs = el("div", { class: "bw-tabs", hidden: "" });
   b.img = el("img", { alt: "" });
+  b.cv = el("canvas", { class: "screen", hidden: "" });   // the screen as video, where it comes so (bwVideo)
   b.acting = el("div", { class: "acting", hidden: "" });
   b.actingLabel = el("div", { class: "acting-label", hidden: "" });
   b.dragBox = el("div", { class: "drag", hidden: "" });
@@ -9720,7 +9721,7 @@ function bwFor(k) {
   b.cover = el("div", { class: "cover" }, el("div", { text: "Opening the browser…" }));
   b.dialog = el("div", { class: "dialog", hidden: "" });
   b.stage = el("div", { class: "bw-stage", tabindex: "0", "aria-label": "The page: click to use it, as the agent does" },
-    b.img, b.acting, b.actingLabel, b.dragBox, b.hint, b.dialog, b.cover);
+    b.img, b.cv, b.acting, b.actingLabel, b.dragBox, b.hint, b.dialog, b.cover);
   b.host = el("div", { class: "bw" }, b.bar, b.tabs, b.stage);
   bwInput(b);
   new ResizeObserver(() => bwResize(b)).observe(b.stage);
@@ -9731,7 +9732,7 @@ const bwSay = (b) => (e) => setLive(`Browser: ${e.message}`);
 // The Browser's stream: its state and screen, while its view is in the page; closed once it is not (bwSweep).
 function bwListen(b) {
   if (b.es || SNAPSHOT) return;
-  const es = b.es = new EventSource(`/browser/w/${b.key}/stream`);
+  const es = b.es = new EventSource(`/browser/w/${b.key}/stream${typeof VideoDecoder === "function" ? "?video=1" : ""}`);
   es.addEventListener("state", (ev) => {
     const was = bwSignature();
     b.state = JSON.parse(ev.data);
@@ -9745,10 +9746,48 @@ function bwListen(b) {
       b.frameSize = [f.w, f.h];
       Object.assign(b.img.style, { width: `${f.w}px`, height: `${f.h}px` });
     }
+    if (b.img.hidden) { b.img.hidden = false; b.cv.hidden = true; }
     b.framed = true;
     b.cover.hidden = true;
   });
+  es.addEventListener("video", (ev) => bwVideo(b, JSON.parse(ev.data)));
   es.onerror = () => { if (es.readyState === EventSource.CLOSED && b.es === es) b.es = null; };
+}
+// The screen as video, where the dashboard sends it so (its own Chrome: browser_video.py): each chunk decoded and drawn
+// on the canvas where the JPEG frames' image is -- the page at its own size, from its top left, so a click lands where
+// it would on the image. A key frame (re)starts the decoder; one failing, the stream is joined again, for a key frame.
+const bwBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+function bwVideo(b, c) {
+  if (c.t === "key" && c.codec) {
+    const kind = `${c.codec} ${c.w}x${c.h}`;
+    if (!b.dec || b.dec.state === "closed" || b.decKind !== kind) {
+      try { if (b.dec && b.dec.state !== "closed") b.dec.close(); } catch (e) { /* gone already */ }
+      b.dec = new VideoDecoder({ output: (f) => bwShowVideo(b, f), error: () => bwVideoLost(b) });
+      b.dec.configure({ codec: c.codec, hardwareAcceleration: "prefer-hardware", optimizeForLatency: true });
+      b.decKind = kind;
+    }
+    b.keyed = true;
+  }
+  if (!b.dec || b.dec.state !== "configured" || !b.keyed) return;
+  try { b.dec.decode(new EncodedVideoChunk({ type: c.t, timestamp: c.ts, data: bwBytes(c.d) })); } catch (e) { bwVideoLost(b); }
+}
+function bwShowVideo(b, f) {
+  const cv = b.cv, vw = (b.state && b.state.viewport && b.state.viewport[0]) || f.displayWidth;
+  const k = f.displayWidth / vw || 1;                 // the screen's pixels per page pixel
+  if (cv.width !== f.displayWidth || cv.height !== f.displayHeight) {
+    cv.width = f.displayWidth; cv.height = f.displayHeight;
+    Object.assign(cv.style, { width: `${f.displayWidth / k}px`, height: `${f.displayHeight / k}px` });
+  }
+  (b.cvCtx || (b.cvCtx = cv.getContext("2d"))).drawImage(f, 0, 0);
+  f.close();
+  if (cv.hidden) { cv.hidden = false; b.img.hidden = true; }
+  b.framed = true;
+  b.cover.hidden = true;
+}
+function bwVideoLost(b) {
+  try { if (b.dec && b.dec.state !== "closed") b.dec.close(); } catch (e) { /* gone already */ }
+  b.dec = null; b.keyed = false;
+  if (b.es) { b.es.close(); b.es = null; bwListen(b); }
 }
 function bwSweep() {
   for (const b of bwAll.values()) if (b.es && !b.host.isConnected) {
@@ -9837,7 +9876,7 @@ async function bwFlush(b) {
 const bwMods = (ev) => (ev.altKey ? 1 : 0) | (ev.ctrlKey ? 2 : 0) | (ev.metaKey ? 4 : 0) | (ev.shiftKey ? 8 : 0);
 const BW_BUTTONS = ["left", "middle", "right"];
 function bwInput(b) {
-  const at = (ev) => { const r = b.img.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
+  const at = (ev) => { const r = (b.cv.hidden ? b.img : b.cv).getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
   const st = b.stage;
   st.addEventListener("pointerdown", (ev) => {
     st.focus({ preventScroll: true });

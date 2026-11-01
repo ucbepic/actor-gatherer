@@ -21,10 +21,12 @@ piece is:
                           session's), started with the tools and instructions (`launch_args`); its own tabs, opened in the
                           Chrome when it is used and again after the Chrome stopped (their pages kept in dashboard.db,
                           `browser`)
-    what the user sees    `Browser.join`: while a page shows the Browser's view, the tab's screen, as Chrome's screencast
-                          sends it (only when it changes), each frame to the page's stream (server.py's `browser_stream`),
-                          and its state -- tabs, what the user picked, what the agent does now, a dialog open; at the
-                          view's size (`resize`), which the agent's screenshots then have too
+    what the user sees    `Browser.join`: while a page shows the Browser's view, the tab's screen, as it changes, to the
+                          page's stream (server.py's `browser_stream`) -- in the dashboard's own Chrome as video (H.264,
+                          `Capture`: browser_video.py) to a page that can decode it, else as the JPEG frames of Chrome's
+                          screencast (also until the video comes, and if it fails: `_recast`) -- and its state -- tabs,
+                          what the user picked, what the agent does now, a dialog open; at the view's size (`resize`),
+                          which the agent's screenshots then have too
     what the user does    `input`: the page's mouse, wheel and keys, given to the tab as Chrome's own input; `navigate`;
                           noted (`log`) as the agent is to hear it: "clicked button "Pay"", "typed into textbox "Email""
                           -- never what was typed
@@ -40,6 +42,7 @@ piece is:
 Standard library only."""
 import base64
 import collections
+import contextlib
 import json
 import os
 import queue
@@ -55,7 +58,7 @@ import threading
 import time
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import home, mcp, naming, sessions
+from . import browser_video, home, mcp, naming, sessions
 
 NAME = "ag-browser"         # the MCP server's name: the tools' names, as the harness shows them, carry it
 ORIGIN = "http://127.0.0.1:4200"   # where the actors reach the dashboard (its MCP server): set by server.py's `serve`
@@ -293,7 +296,7 @@ class PipeCdp(Cdp):
         log = open(os.path.join(log_dir, "browser.log"), "ab")
         try:   # sh hands Chrome the pipes as 3 and 4: they keep the numbers they have here otherwise
             self.proc = subprocess.Popen(["/bin/sh", "-c", f'exec "$0" "$@" 3<&{r3} 4>&{w4}', exe, *ARGS,
-                                          f"--user-data-dir={profile}", "about:blank"],
+                                          browser_video.FLAG, f"--user-data-dir={profile}", "about:blank"],
                                          pass_fds=(r3, w4), stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                          start_new_session=True, env=_chrome_env())
         finally:
@@ -455,6 +458,15 @@ def _chrome_env() -> Dict[str, str]:
 _mode_seen: Dict[str, object] = {"at": None, "mode": "own"}
 
 
+_NO_LOCK = contextlib.nullcontext()
+
+
+def video_on() -> bool:
+    """Whether a Browser in the dashboard's own Chrome is shown as video (browser_video.py): the home's config.toml's
+    `[dashboard] browser_video`, true unless it says false."""
+    return _config().get("browser_video", True) is not False
+
+
 def mode() -> str:
     """Which Chrome the Browsers run in: "mine", the user's own (the home's config.toml's `[dashboard] browser_profile
     = "mine"`: their logins and history), else "own", the dashboard's, its profile the home's. The file read again only
@@ -553,8 +565,8 @@ class Chrome:
     def new_target(self, cdp: Cdp) -> str:
         """A new tab for a Browser: in its own Chrome, a page; in the user's, one hidden from their tab strip (Chrome
         renders it all the same), else in a window of its own, minimized, out of their way."""
-        if cdp.mode != "mine":
-            return cdp.call("Target.createTarget", {"url": "about:blank"})["targetId"]
+        if cdp.mode != "mine":                           # a window of its own: sized to its view, for its video
+            return cdp.call("Target.createTarget", {"url": "about:blank", "newWindow": True})["targetId"]
         try:
             return cdp.call("Target.createTarget", {"url": "about:blank", "hidden": True})["targetId"]
         except CdpError:
@@ -644,26 +656,41 @@ class Tab:
 
 class Viewer:
     """A page showing a Browser: what its stream sends next -- the state if it changed, the latest frame if newer than
-    the one it sent last (frames between are dropped: a slow page gets the screen as it is, not a backlog)."""
+    the one it sent last (frames between are dropped: a slow page gets the screen as it is, not a backlog); and, if
+    the page can decode video (`video`), every video chunk since the last key frame, in order (a chunk can't be
+    dropped: the next is drawn on it; a page too far behind, KEEP_CHUNKS, waits for a new key frame)."""
 
-    def __init__(self):
+    def __init__(self, video: bool = False):
         self.cond = threading.Condition()
         self.state: Optional[dict] = None
         self.frame: Optional[dict] = None
+        self.video = video
+        self.chunks: List[dict] = []
+        self.need_key = True
         self.closed = False
 
-    def give(self, state: Optional[dict] = None, frame: Optional[dict] = None) -> None:
+    def give(self, state: Optional[dict] = None, frame: Optional[dict] = None, chunk: Optional[dict] = None) -> bool:
+        """False: a chunk dropped the page's backlog -- a key frame is wanted."""
         with self.cond:
             if state is not None:
                 self.state = state
             if frame is not None:
                 self.frame = frame
+            wanted = True
+            if chunk is not None:
+                if chunk["t"] == "key":
+                    self.chunks, self.need_key = [chunk], False
+                elif not self.need_key:
+                    self.chunks.append(chunk)
+                    if len(self.chunks) > browser_video.KEEP_CHUNKS:
+                        self.chunks, self.need_key, wanted = [], True, False
             self.cond.notify_all()
+            return wanted
 
     def take(self, timeout: float) -> Optional[List[Tuple[str, dict]]]:
         """What to send now ([] after `timeout` with nothing), or None: closed."""
         with self.cond:
-            if self.state is None and self.frame is None and not self.closed:
+            if self.state is None and self.frame is None and not self.chunks and not self.closed:
                 self.cond.wait(timeout)
             if self.closed:
                 return None
@@ -672,7 +699,9 @@ class Viewer:
                 out.append(("state", self.state))
             if self.frame is not None:
                 out.append(("frame", self.frame))
+            out += [("video", c) for c in self.chunks]
             self.state = self.frame = None
+            self.chunks = []
             return out
 
     def close(self) -> None:
@@ -718,6 +747,9 @@ class Browser:
         self.quick_until = 0.0                           # the screen sent at QUICK_SCALE until then
         self.pressed_at: Optional[Tuple[float, float]] = None   # where the button went down, for a drag
         self.sharpen: Optional[threading.Timer] = None   # what sends it at full density again after
+        self.video = browser_video.Capture(lambda i: self.browsers.owner.__setitem__(i, self.key), home.HOME,
+                                           self.chrome.later, lambda: self.chrome.later(self._video_changed))
+        self.vseq = 0
         self.acting_until = 0.0
         self.error = ""
         self.saving = False
@@ -757,9 +789,10 @@ class Browser:
         """A tab of this Browser's: a new one, opened at `url`; or `target`, one Chrome opened for it, at the page it
         has (`url`)."""
         adopted = target
-        if target is None:
-            target = self.chrome.new_target(cdp)
-        session = cdp.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
+        with browser_video.WINDOWS if cdp.mode == "own" else _NO_LOCK:   # (its windows: browser_video.py)
+            if target is None:
+                target = self.chrome.new_target(cdp)
+            session = cdp.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
         self.browsers.owner[target] = self.key
         self.browsers.owner[session] = self.key
         tab = Tab(target, session, url)
@@ -808,6 +841,10 @@ class Browser:
     def event(self, method: str, params: dict, session: Optional[str]) -> None:
         if method == "Page.screencastFrame":
             return self._frame(params, session)
+        if method == "Runtime.bindingCalled" and session is not None and session == self.video.session:
+            if params.get("name") == browser_video.BINDING:
+                self._chunk(self.video.got(str(params.get("payload") or "")))
+            return
         if method.startswith("Target."):
             return self._target_event(method, params)
         tab = self._tab_of(session=session)
@@ -820,6 +857,8 @@ class Browser:
         elif method == "Page.frameStoppedLoading" and params.get("frameId") == tab.target:
             tab.loading, tab.loads = False, tab.loads + 1
             self._publish()
+            if self.video.waiting is tab:                # its capture waited for it to load: started now
+                self.chrome.later(self._recast)
             self.chrome.later(lambda: self._retitle(tab))
         elif method == "Page.domContentEventFired":
             self.chrome.later(lambda: self._retitle(tab))
@@ -864,11 +903,16 @@ class Browser:
         info = params.get("targetInfo") or {}
         if method == "Target.targetInfoChanged":
             tab = self._tab_of(target=info.get("targetId"))
+            if info.get("title") == browser_video.TOKEN:  # titled so only while its capture starts
+                return
             if tab is not None and (tab.title != info.get("title") or tab.url != info.get("url")):
                 tab.title, tab.url = info.get("title") or "", info.get("url") or tab.url
                 self._publish()
                 self._save()
         elif method == "Target.targetDestroyed":
+            if params.get("targetId") and params.get("targetId") == self.video.target:
+                self.video.gone()
+                self.chrome.later(self._recast)
             self._dropped(params.get("targetId"))
         elif method == "Target.targetCreated" and info.get("type") == "page":
             opener = info.get("openerId")
@@ -907,6 +951,8 @@ class Browser:
         except (BrowserError, KeyError):
             return
         url = info.get("url") or tab.url
+        if info.get("title") == browser_video.TOKEN:     # titled so only while its capture starts
+            return
         if info.get("title") != tab.title or url != tab.url:
             tab.title, tab.url = info.get("title") or "", url
             self._publish()
@@ -936,12 +982,14 @@ class Browser:
                 self.saved = [{"url": t.url, "title": t.title} for t in self.tabs]
                 self.saved_active = self.active
             self.tabs, self.casting, self.refs, self.ref_of = [], None, {}, {}
+        self.video.gone()
         self._publish()
 
     # -- what the page sees
 
-    def join(self) -> Viewer:
-        v = Viewer()
+    def join(self, video: bool = False) -> Viewer:
+        """A page showing it (until `leave`): `video`, the page can decode video (browser_video.py)."""
+        v = Viewer(video)
         with self.lock:
             self.viewers.append(v)
             frame = self.frame
@@ -951,6 +999,8 @@ class Browser:
             try:
                 self.live()
                 self._recast()
+                if video:
+                    self.video.key()                     # the capture running already: a key frame to start it on
             except BrowserError as exc:
                 with self.lock:
                     self.error = str(exc)
@@ -966,12 +1016,23 @@ class Browser:
         self.chrome.later(self._recast)
 
     def _recast(self) -> None:
-        """The screencast on the active tab while a page watches, at the view's size; off otherwise."""
+        """While a page watches, the active tab's screen at the view's size: as video where it can be (the dashboard's
+        own Chrome, a page that decodes it: browser_video.py), as the screencast's frames until it comes and for any
+        other page; off otherwise."""
         cdp = self.chrome.conn
         if cdp is None or not cdp.alive:
             return
         with self.lock:
-            want = self.tabs[self.active] if self.viewers and self.tabs else None
+            shown = self.tabs[self.active] if self.viewers and self.tabs else None
+            some_video = any(v.video for v in self.viewers)
+            all_video = bool(self.viewers) and all(v.video for v in self.viewers)
+            w, h, dpr = self.viewport
+        if shown is not None and some_video and cdp.mode == "own" and video_on() and self.video.usable():
+            self.video.follow(cdp, shown, (w, h, dpr))
+        else:
+            self.video.stop()
+        with self.lock:
+            want = shown if not (all_video and self.video.ok and self.video.tab is shown) else None
             w, h, dpr = self.viewport
             if time.time() < self.quick_until:           # the user scrolling or dragging: quick frames, not sharp ones
                 dpr = min(dpr, QUICK_SCALE)
@@ -1009,6 +1070,21 @@ class Browser:
         for v in viewers:
             v.give(frame=frame)
 
+    def _video_changed(self) -> None:
+        """The video came, or stopped: the screencast stopped or started again, the pages told."""
+        self._recast()
+        self._publish()
+
+    def _chunk(self, chunk: Optional[dict]) -> None:
+        if chunk is None:
+            return
+        with self.lock:
+            self.vseq += 1
+            chunk["seq"] = self.vseq
+            viewers = [v for v in self.viewers if v.video]
+        if not all([v.give(chunk=chunk) for v in viewers]):
+            self.video.key()                             # a page fell behind: a key frame to start it again
+
     def watched(self) -> bool:
         with self.lock:
             return bool(self.viewers)
@@ -1021,7 +1097,7 @@ class Browser:
                     "active": self.active, "picks": [{"id": p["id"], "label": p["label"]} for p in self.picks],
                     "acting": acting, "dialog": tab.dialog if tab else None, "error": self.error,
                     "running": self.chrome.running(), "viewport": list(self.viewport[:2]),
-                    "chrome": self.chrome.which(), "allow": self.chrome.status == "allow"}
+                    "chrome": self.chrome.which(), "allow": self.chrome.status == "allow", "video": self.video.ok}
 
     def _publish(self) -> None:
         with self.lock:
@@ -1087,6 +1163,8 @@ class Browser:
         """The screen sent at QUICK_SCALE while the user scrolls or drags -- the motion hides the softness -- and at
         full density again QUICK_FOR after the last of it. A click, a key or a bare move of the pointer leaves it sharp:
         a soft frame after each would show."""
+        if self.video.ok:                                # video: always sharp, and quick already
+            return
         moving = False
         with self.lock:
             for e in events:

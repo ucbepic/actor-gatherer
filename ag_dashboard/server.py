@@ -125,9 +125,12 @@ context manager's home (data.py), read-only. Standard library only.
                                           DocWriter's own /api routes
     POST /api/docwriter {gatherer, cwd, harness?, model?}   a new DocWriter on `cwd`, its actor a new session of
                                           `harness` in the gatherer (docwriter.py's `create`) -> its settings: {key, ...}
-    GET /browser/w/<key>/stream           server-sent events, until the page goes: a Browser's (browser.py) `state` {tabs,
-                                          active, picks, acting, dialog, error, running, viewport} as it changes, and its
-                                          screen, `frame` {data (a JPEG, base64), w, h (the page's size), seq}, as it does
+    GET /browser/w/<key>/stream[?video=1] server-sent events, until the page goes: a Browser's (browser.py) `state` {tabs,
+                                          active, picks, acting, dialog, error, running, viewport, video} as it changes,
+                                          and its screen, `frame` {data (a JPEG, base64), w, h (the page's size), seq}, as
+                                          it does; with video=1 (the page decodes video), `video` chunks {t: key | delta,
+                                          ts, d (base64), seq; a key's codec, w, h} instead where they can be
+                                          (browser_video.py), every one from a key frame on, in order
     POST /browser/w/<key>/<what>          what the user does in it: input {events}, nav {url | action}, resize {width,
                                           height, dpr}, hover {x, y}, pick {x, y | box}, unpick {id}, dialog {accept, text?},
                                           copy -> {text}, tab {action: switch | close | new, index?, url?}; and the MCP
@@ -388,7 +391,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     m = re.fullmatch(r"/browser/w/([0-9a-f]{16})/stream", url.path)
                     if m is None or browsers is None:
                         return self.send(404, b"not found", "text/plain")
-                    return self.browser_stream(browsers.get(m.group(1)))
+                    return self.browser_stream(browsers.get(m.group(1)), q.get("video") == "1")
                 if url.path == "/docwriter-mark.svg":         # DocWriter's mark, which its page asks for at the root
                     got = docwriter.asset("docwriter-mark.svg")
                     return self.send(200, *got) if got else self.send(404, b"not found", "text/plain")
@@ -621,15 +624,16 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
             except (sessions.SessionError, ValueError, OSError) as exc:
                 return self.send(400, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
 
-        def browser_stream(self, b: "browser.Browser") -> None:
-            """A Browser's state and screen, as they change (browser.py's `join`), until the page goes."""
+        def browser_stream(self, b: "browser.Browser", video: bool = False) -> None:
+            """A Browser's state and screen, as they change (browser.py's `join`), until the page goes; `video`: the
+            page decodes video, so its screen may come as video chunks (browser_video.py)."""
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")      # it has no length: it ends when the connection does
             self.close_connection = True
             self.end_headers()
-            viewer = b.join()
+            viewer = b.join(video)
             try:
                 while True:
                     got = viewer.take(editor.GONE_CHECK)
