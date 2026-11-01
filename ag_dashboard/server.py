@@ -147,7 +147,8 @@ context manager's home (data.py), read-only. Standard library only.
                                           (browser_video.py), every one from a key frame on, in order
     POST /browser/w/<key>/<what>          what the user does in it: input {events}, nav {url | action}, resize {width,
                                           height, dpr}, hover {x, y}, pick {x, y | box}, unpick {id}, dialog {accept, text?},
-                                          copy -> {text}, tab {action: switch | close | new, index?, url?}; choose {n,
+                                          copy {cut?} -> {text?, html?}, tab {action: switch | close | new, index?,
+                                          url?} (input answers {clipboard} for a copy among its events); choose {n,
                                           index | value} (in a drop-down's list or a picker the view showed), find {q,
                                           back?, again?} -> {count, index}, file {name, data (base64)} -> {id} (a file
                                           for the page), chosen {n, ids} (for its file chooser; none: closed), drop {x,
@@ -730,8 +731,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 b = browsers.get(key)
                 num = lambda k: None if body.get(k) is None else float(body[k])    # noqa: E731
                 if what == "input":
-                    b.input(body.get("events") if isinstance(body.get("events"), list) else [])
-                    return self.answer({})
+                    return self.answer(b.input(body.get("events") if isinstance(body.get("events"), list) else []))
                 if what == "nav":
                     return self.answer({"done": b.navigate(str(body.get("url") or ""), str(body.get("action") or ""))})
                 if what == "resize":
@@ -750,7 +750,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer({"done": b.answer_dialog(bool(body.get("accept")),
                                                                 body.get("text") if isinstance(body.get("text"), str) else None)})
                 if what == "copy":
-                    return self.answer({"text": b.selection()})
+                    return self.answer(b.copy(bool(body.get("cut"))))
                 ids = body.get("ids") if isinstance(body.get("ids"), list) else []
                 if what == "choose":
                     b.choose(int(body.get("n") or 0), None if body.get("index") is None else int(body["index"]),

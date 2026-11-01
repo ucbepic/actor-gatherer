@@ -31,6 +31,13 @@ a later user message does not move it and the context only grows at its end. Req
 before the build's mark are in its index section instead. All three are made items,
 remade on every read and never reused as sections.
 
+With no build in use, the requests made before the channel's first row are messages too while
+they fit within all_task_tokens + parallel_index_tokens; past that -- a session that started
+in a busy gatherer and has not taken up its join -- they are one block, the newest that fit
+(`requests_before`), made at the channel's first read without a build and reused after, so
+it neither moves nor changes. Those made since the channel's first row are messages, as
+after a build's mark.
+
 Every context opens, after the harness's own set-up, with the GATHERER GUIDE
 (`gatherer_guide`, `layout.guide`): what ag adds to the context -- the sections, the
 parallel requests, notices, stream messages, left-out notes -- and where the full history
@@ -95,6 +102,7 @@ from .config import ProactiveContextManagerConfig, within_limit
 from .events import CONTEXT_STREAM, ENVIRONMENT_UPDATE, EVENT_TYPES
 
 PARALLEL_REQUEST = "parallel_request"
+PARALLEL_BEFORE = "parallel_before"   # with no build: the other channels' requests before the channel began, as one block
 CURRENT_REQUEST = "Current request"   # the running task a `limit` build starts at the last user message
 LEFT_OUT = "left_out"           # a step stubbed to keep the context within max_context_tokens
 GUIDE = "gatherer_guide"        # the guide every context opens with
@@ -379,16 +387,19 @@ class ProactiveContextManager(Policy):
             tail = [r for r in body if r.row_id >= cut]
             made_items = conn.made_items(made)
         guide = self.guide_item(conn, channel_of(read))
-        items = ([r.payload for r in preamble] + [g[1] for g in guide] + [made_items[m][1] for m in made]
-                 + [r.payload for r in pinned])
+        before, since = self.requests_before(conn, types, rows, channel_of(read)) if build is None else ([], 0)
+        items = ([r.payload for r in preamble] + [g[1] for g in guide] + [b[1] for b in before]
+                 + [made_items[m][1] for m in made] + [r.payload for r in pinned])
         refs = ([Ref(row_id=r.row_id) for r in preamble] + [Ref(made_id=g[0]) for g in guide]
+                + [Ref(made_id=b[0]) for b in before]
                 + [Ref(made_id=m) for m in made] + [Ref(row_id=r.row_id) for r in pinned])
         fixed = self.tokenizer.count(layout.overview(cfg, joined(build))) if made else 0
-        tokens = sum(r.tokens for r in pinned) + sum(made_items[m][2] for m in made) - fixed
+        tokens = (sum(r.tokens for r in pinned) + sum(made_items[m][2] for m in made) - fixed
+                  + sum(b[2] for b in before))
         made_here = (self.shown_messages(conn, types, channel_of(read), cut)
                      + self.notices(conn, types, channel_of(read), cut, preamble + pinned + tail, read.properties))
         entries = list(self.interleave(tail, made_here, types))
-        shown = self.parallel_requests(conn, types, channel_of(read), build["parallel_mark"] if build else 0)
+        shown = self.parallel_requests(conn, types, channel_of(read), build["parallel_mark"] if build else since)
         tokens += sum(cost[1] if kind == "made" else cost for kind, _, _, cost in entries) + sum(c for _, _, c, _ in shown)
         outside = (sum(r.tokens for r in preamble) + sum(g[2] for g in guide) + fixed
                    + read.fixed_tokens)                                          # the model gets these too
@@ -573,6 +584,45 @@ class ProactiveContextManager(Policy):
             out.append((made_id, item, conn.made_items([made_id])[made_id][2], r.row_id))
         return out
 
+    def requests_before(self, conn, types: TypeIds, rows, channel_id) -> Tuple[List[tuple], int]:
+        """With no build in use: ([(made_id, item, tokens)] of one block of the other channels'
+        requests made before the channel's first row, or [] when they fit as messages), and the row
+        after which `parallel_requests` shows them one by one -- 0, all, without a block.
+
+        As messages they would be at most all_task_tokens + parallel_index_tokens, the budget a
+        session that joined gets for them; past it, the block holds the newest that fit it
+        (`layout.requests_before`). Made at the first read without a build that needs it and reused
+        after (the channel's last read, made without a build, has it), so later reads extend the
+        same context."""
+        cfg = self.config
+        start = next((r.row_id for r in rows if channel_of(r) == channel_id), None)
+        if start is None:
+            return [], 0
+        last = conn.last_read(channel.of(channel_id))
+        if last and tables.basis_of(last) is None:
+            made = [r.made_id for r in last["refs"] if r.made_id is not None]
+            kept = [(m, item, tokens) for m, (name, item, tokens) in conn.made_items(made).items()
+                    if name == PARALLEL_BEFORE]
+            if kept:
+                return kept[:1], start
+        unseen = self.unseen(conn, types)
+        before = [(c, e) for c, e in history.other_requests(conn, types, self.groups, self.tokenizer, channel_id,
+                                                            keep=lambda r: channel_of(r) not in unseen and self.shared(r))
+                  if e.row_id < start]
+        budget, used = cfg.all_task_tokens + cfg.parallel_index_tokens, 0
+        for other, e in before:
+            used += self.tokenizer.count(cfg.parallel_message.format(
+                text=e.text or "", channel=other, db_path=conn.path, channel_column=property_column(CHANNEL)))
+            if used > budget:
+                break
+        else:
+            return [], 0                                  # they fit: each a message, as always
+        with_cleaned(conn, [e for _, e in before])
+        item = self.format.make_section(layout.requests_before(before, budget, self.tokenizer), PARALLEL_BEFORE)
+        made_id = conn.make_item(item, self.tokenizer, properties=channel.of(channel_id), name=PARALLEL_BEFORE,
+                                 source=f"requests before {start}")
+        return [(made_id, item, conn.made_items([made_id])[made_id][2])], start
+
     def unseen(self, conn, types: TypeIds) -> set:
         """The channels no other channel is shown: those whose latest ROLE record says `private`."""
         private: Dict[str, bool] = {}
@@ -738,7 +788,7 @@ class ProactiveContextManager(Policy):
         names = conn.made_items(made)
         return tables.get_build(conn, used), [m for m in made
                                               if names[m][0] not in ("context_stream", "environment_update", PARALLEL_REQUEST,
-                                                                     LEFT_OUT, GUIDE)]
+                                                                     PARALLEL_BEFORE, LEFT_OUT, GUIDE)]
 
     def adopt(self, conn, types: TypeIds, rows, build: dict, read: Read) -> Optional[List[int]]:
         """Lay `build`'s analysis out as sections and store them as made

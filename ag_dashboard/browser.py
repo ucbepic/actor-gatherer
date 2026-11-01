@@ -28,7 +28,8 @@ piece is:
                           what the user picked, what the agent does now, a dialog open; at the view's size (`resize`),
                           which the agent's screenshots then have too
     what the user does    `input`: the page's mouse, wheel and keys, given to the tab as Chrome's own input (a page
-                          asking for a passkey keeps taking it: PASSKEYS); `navigate`;
+                          asking for a passkey keeps taking it: PASSKEYS); copy, cut and paste, the page's own,
+                          through Chrome's clipboard to and from the user's (`copy`); `navigate`;
                           noted (`log`) as the agent is to hear it: "clicked button "Pay"", "typed into textbox "Email""
                           -- never what was typed
     what Chrome shows     a Chrome with no window draws nothing of its own: UI_JS, a script of the dashboard's in each
@@ -67,7 +68,7 @@ import sys
 import threading
 import time
 import urllib.parse
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import harness_kit
 
@@ -92,6 +93,7 @@ QUICK_FOR = 0.2             # (wheel notches come ~0.1-0.15 s apart while scroll
 DRAG_PX = 4                 # how far a held button moves before it is a drag, not a shaky click
 MAX_SNAPSHOT = 40_000       # the most characters of a snapshot
 MAX_EVAL = 20_000           # the most characters of an evaluation's result
+MAX_PASTE = 1_000_000       # the most characters of a paste's text, and of its HTML
 MAX_HTML = 1_500            # the most characters of a pick's HTML
 CONSOLE_KEEP = 200          # the console messages kept per tab
 NAME_WAIT = 600.0           # how long a new actor's first call is waited for, to name it (its gatherer has it then)
@@ -1472,11 +1474,14 @@ class Browser:
         else:
             self.chrome.later(self._recast)
 
-    def input(self, events: list) -> None:
+    def input(self, events: list) -> dict:
+        """The user's input, in order. A copy or cut among it answers what it put on the clipboard (`_copy`), for the
+        user's: {"clipboard": {...}}."""
         cdp = self.live()
         tab = self.tab()
+        got: dict = {}
         if tab.dialog:                                   # a page under a dialog takes no input: it would wait on it
-            return
+            return got
         self.chrome.touch()
         self._quick(events)
         for e in events[:200]:
@@ -1499,7 +1504,7 @@ class Browser:
                         self.clicked, self.behind = time.time(), bool(mods & 6) or p["button"] == "middle"
                 cdp.call("Input.dispatchMouseEvent", p, tab.session, until=lambda: tab.dialog is not None)
                 if tab.dialog:
-                    return
+                    return got
                 if what == "mousePressed" and p["button"] == "left":
                     self.chrome.later(lambda x=x, y=y, t=tab: self._note_click(t, x, y))
             elif kind == "key":
@@ -1507,12 +1512,90 @@ class Browser:
                 if p is not None:
                     cdp.call("Input.dispatchKeyEvent", p, tab.session, until=lambda: tab.dialog is not None)
                     if tab.dialog:
-                        return
+                        return got
                     if e.get("down") and (p.get("text") or e.get("key") in ("Backspace", "Delete")):
                         self.chrome.later(lambda t=tab: self._note_typing(t))
+            elif kind == "copy":
+                got = {"clipboard": self._copy(cdp, tab, bool(e.get("cut")), mods)}
+                if tab.dialog:
+                    return got
+            elif kind == "paste":
+                text, html = (v[:MAX_PASTE] if isinstance(v, str) else "" for v in (e.get("text"), e.get("html")))
+                if text or html:
+                    self._paste(cdp, tab, text, html, mods)
+                    self.chrome.later(lambda t=tab: self._note_typing(t))
             elif kind == "text" and isinstance(e.get("text"), str) and e["text"]:
                 cdp.call("Input.insertText", {"text": e["text"][:100_000]}, tab.session, until=lambda: tab.dialog is not None)
                 self.chrome.later(lambda t=tab: self._note_typing(t))
+        return got
+
+    # -- copy and paste. The page's own: Chrome's copy, cut and paste commands, so its copy and paste handlers run as
+    # they would for the user -- Google Docs and code editors keep no selection a script can read and fill the
+    # clipboard themselves. In the dashboard's own Chrome the clipboard is Chrome's, not the Mac's (headless Chrome
+    # keeps its own, in memory): what a copy put there is read back for the user's, and what the user pastes is put
+    # there first. In the user's own Chrome it is the Mac's already.
+
+    def copy(self, cut: bool = False, mods: int = 4) -> dict:
+        """What copying (or cutting) in the page put on the clipboard (`_copy`)."""
+        cdp = self.live()
+        tab = self.tab()
+        return {} if tab.dialog else self._copy(cdp, tab, cut, mods)
+
+    def _copy(self, cdp: Cdp, tab: Tab, cut: bool, mods: int) -> dict:
+        """{"text", "html"}: what the page's copy (or cut) put on the clipboard, for the user's; {} if nothing (none
+        selected: the user's clipboard stays as it is). Chrome's clipboard is emptied first, so that an empty copy
+        isn't taken for the last one. A page that can't have a clipboard (not https or localhost, a blank one):
+        what is selected in it. In the user's own Chrome: {"copied": True}, the Mac's clipboard has it."""
+        mine = cdp.mode == "mine"
+        usable = not mine and self._clipboard(cdp, tab, "navigator.clipboard.writeText('').then(() => 1)", read=False) == 1
+        fallback = "" if mine or usable else self.selection()     # (before a cut takes it)
+        _press_key(cdp, tab, "x" if cut else "c", mods)
+        if mine:
+            return {"copied": True}
+        if usable:
+            got = self._clipboard(cdp, tab, READ_CLIPBOARD_JS, read=True)
+            return {k: v for k, v in got.items() if k in ("text", "html") and isinstance(v, str) and v} \
+                if isinstance(got, dict) else {}
+        return {"text": fallback} if fallback else {}
+
+    def _paste(self, cdp: Cdp, tab: Tab, text: str, html: str, mods: int) -> None:
+        """What the user pasted, pasted by the page: put on Chrome's clipboard, then its paste. A page that can't
+        have a clipboard: the text typed in."""
+        if cdp.mode != "mine":
+            items = {"text/plain": text, **({"text/html": html} if html else {})}
+            if self._clipboard(cdp, tab, WRITE_CLIPBOARD_JS % json.dumps(items), read=False) != 1:
+                if text:
+                    cdp.call("Input.insertText", {"text": text}, tab.session, until=lambda: tab.dialog is not None)
+                return
+        _press_key(cdp, tab, "v", mods)
+
+    def _clipboard(self, cdp: Cdp, tab: Tab, expression: str, read: bool) -> Any:
+        """`expression`'s value (it may be a promise), run with Chrome's clipboard open to it: in a world of its own,
+        which the page's scripts don't see. Writing a page may do as it is (Chrome lets a page in front); to `read`,
+        its origin is let for that moment only -- clipboard-read, never clipboard-write: set back, that one would
+        stop the page's own copy handler filling the clipboard. None if the page can't have one (not a secure
+        page) or it failed."""
+        try:
+            world = cdp.call("Page.createIsolatedWorld", {"frameId": tab.target, "worldName": "ag-clipboard"},
+                             tab.session)["executionContextId"]
+
+            def run(expr: str) -> Any:
+                r = cdp.call("Runtime.evaluate", {"expression": expr, "contextId": world, "returnByValue": True,
+                                                  "awaitPromise": True, "userGesture": True}, tab.session)
+                return None if "exceptionDetails" in r else (r.get("result") or {}).get("value")
+
+            origin = run("isSecureContext && navigator.clipboard ? location.origin : ''")
+            if not origin or origin == "null":
+                return None
+            if not read:
+                return run(expression)
+            cdp.call("Browser.setPermission", {"permission": {"name": "clipboard-read"}, "setting": "granted", "origin": origin})
+            try:
+                return run(expression)
+            finally:
+                cdp.call("Browser.setPermission", {"permission": {"name": "clipboard-read"}, "setting": "prompt", "origin": origin})
+        except CdpError:
+            return None
 
     def _asked_for(self, url: str) -> None:
         """A tab its page means to open, at `url`: Chrome opens it (and `adopt` takes it) -- but not from a tab hidden
@@ -1914,15 +1997,30 @@ def _remote_text(arg: dict) -> str:
     return arg.get("description") or arg.get("type") or ""
 
 
+def _press_key(cdp: Cdp, tab: Tab, letter: str, mods: int) -> None:
+    """Cmd (or Ctrl) and `letter` pressed and let go, with the editing command it is (EDIT_COMMANDS): Shift and
+    Option left out, which would make it another."""
+    e = {"key": letter, "code": "Key" + letter.upper(), "keyCode": ord(letter.upper())}
+    for down in (True, False):
+        cdp.call("Input.dispatchKeyEvent", _key_event(e, down, (mods & 6) or 4), tab.session,
+                 until=lambda: tab.dialog is not None)
+        if tab.dialog:
+            return
+
+
 def _key_event(e: dict, down: bool, mods: int) -> Optional[dict]:
     """The page's key (KeyboardEvent's key, code, keyCode) as Chrome's own: text for a printable key, Enter's "\\r";
-    the editing commands macOS gives Cmd+A, C, X, V, Z (headless Chrome has no menu to give them)."""
+    the editing commands macOS gives Cmd+A, C, X, V, Z (headless Chrome has no menu to give them).
+    No nativeVirtualKeyCode: with one, Chrome on macOS passes a key the page leaves unused (Option or Cmd alone, a
+    letter with nothing focused) on to macOS as a key press, and macOS plays the alert sound. Without one the key
+    stays in the page, which sees it and acts on it the same; only Chrome's own shortcuts (Cmd+W, Cmd+T) no longer
+    act on its window, which no one sees."""
     key, code = str(e.get("key") or ""), str(e.get("code") or "")
     if not key:
         return None
     vk = int(e.get("keyCode") or KEYS.get(key, (None, 0))[1] or 0)
-    p = {"type": "keyUp", "key": key, "code": code, "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk,
-         "modifiers": mods, "location": int(e.get("location") or 0), "autoRepeat": bool(e.get("repeat"))}
+    p = {"type": "keyUp", "key": key, "code": code, "windowsVirtualKeyCode": vk, "modifiers": mods,
+         "location": int(e.get("location") or 0), "autoRepeat": bool(e.get("repeat"))}
     if not down:
         return p
     text = "\r" if key == "Enter" else key if len(key) == 1 and not mods & (2 | 4) else ""
@@ -2270,6 +2368,15 @@ AREA_JS = r"""function (x, y, w, h) {
   }
   return out.join(' ').slice(0, 600);
 }"""
+READ_CLIPBOARD_JS = r"""(async () => { const out = {};
+  for (const item of await navigator.clipboard.read())
+    for (const [type, name] of [['text/plain', 'text'], ['text/html', 'html']])
+      if (item.types.includes(type) && !(name in out)) out[name] = await (await item.getType(type)).text();
+  return out; })()"""
+WRITE_CLIPBOARD_JS = r"""(async () => { const items = %s;
+  await navigator.clipboard.write([new ClipboardItem(Object.fromEntries(Object.entries(items)
+    .map(([type, v]) => [type, new Blob([v], {type})])))]);
+  return 1; })()"""
 SELECTION_JS = r"""(() => { const a = document.activeElement;
   if (a && (a.localName === 'textarea' || (a.localName === 'input' && a.type !== 'password')) && a.selectionStart !== a.selectionEnd)
     return a.value.slice(a.selectionStart, a.selectionEnd);
