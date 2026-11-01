@@ -296,7 +296,7 @@ class PipeCdp(Cdp):
         log = open(os.path.join(log_dir, "browser.log"), "ab")
         try:   # sh hands Chrome the pipes as 3 and 4: they keep the numbers they have here otherwise
             self.proc = subprocess.Popen(["/bin/sh", "-c", f'exec "$0" "$@" 3<&{r3} 4>&{w4}', exe, *ARGS,
-                                          browser_video.FLAG, f"--user-data-dir={profile}", "about:blank"],
+                                          *browser_video.FLAGS, f"--user-data-dir={profile}", "about:blank"],
                                          pass_fds=(r3, w4), stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                          start_new_session=True, env=_chrome_env())
         finally:
@@ -1094,7 +1094,8 @@ class Browser:
                     "active": self.active, "picks": [{"id": p["id"], "label": p["label"]} for p in self.picks],
                     "acting": acting, "dialog": tab.dialog if tab else None, "error": self.error,
                     "running": self.chrome.running(), "viewport": list(self.viewport[:2]),
-                    "chrome": self.chrome.which(), "allow": self.chrome.status == "allow", "video": self.video.ok}
+                    "chrome": self.chrome.which(), "allow": self.chrome.status == "allow", "video": self.video.ok,
+                    "video_off": "" if self.video.ok else self.video.why}
 
     def _publish(self) -> None:
         with self.lock:
@@ -1138,7 +1139,7 @@ class Browser:
         if cdp is not None and cdp.alive:
             for t in tabs:
                 self._size(cdp, t)
-        self._recast()
+        self.chrome.later(self._recast)                  # (its video started again at the size: not on this thread)
         self._publish()
 
     # -- what the user does

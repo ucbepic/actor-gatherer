@@ -467,7 +467,9 @@ Not done yet:
   A capture started on a still page has been seen to send no first frame: one is drawn (an invisible devtools
   highlight) if none came. The hardware encoder takes 5-7 s to answer the first time in a Chrome: the software one
   serves until then. Chrome once stalled 20 s on an attach while a captured tab's window was resized: windows are
-  opened and resized one at a time, a resize waited for 3 s at most.
+  opened and resized one at a time, a resize waited for 3 s at most. A view being resized (a pane dragged) starts the
+  capture again only once it has settled (0.4 s). The dashboard's Chrome runs at 2x, so its JPEG frames, where the
+  video fails, are sharp too; why it failed is in the dashboard's log and the Browser's state (`video_off`).
 - **One dashboard per home.** Chrome locks its profile: a second dashboard on the same home cannot start its own.
 - **The user's Chrome ("mine").** Tried against a stand-in (a Chrome with `--remote-debugging-port`, which asks
   nothing), not yet the user's own with its Allow dialog. Each new connection asks again: one is kept, but a dashboard

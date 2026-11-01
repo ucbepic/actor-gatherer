@@ -24,14 +24,17 @@ JPEG frames, which stay for the user's own Chrome and whenever the video can't r
 Standard library only."""
 import json
 import os
+import sys
 import threading
 import time
 from typing import Callable, Dict, Optional
 
-FLAG = "--enable-unsafe-extension-debugging"   # the dashboard's own Chrome: an extension loaded over its pipe
+FLAGS = ["--enable-unsafe-extension-debugging",   # the dashboard's own Chrome: an extension loaded over its pipe
+         "--force-device-scale-factor=2"]           # its screen at 2x: the JPEG frames, where no video, sharp too
 BINDING = "__agVideo"
-START_TRIES = 3             # a capture's start tried so many times (it can fail on Chrome's side, now and then)
-START_WAIT = 3.0            # seconds a start is waited for
+START_TRIES = 2             # a capture's start tried so many times (it can fail on Chrome's side, now and then)
+START_WAIT = 2.0            # seconds a start is waited for
+SETTLE = 0.4                # seconds a view's size is to stay before its capture starts again at it (a pane dragged)
 GIVE_UP = 3                 # starts failed in a row before the Browser keeps to JPEG frames -- for that tab, until it
                             # goes to another page or another tab is shown
 KEEP_CHUNKS = 120           # a page's backlog of chunks (about 2 s of frames) before it is dropped for a new key frame
@@ -180,6 +183,8 @@ class Capture:
         self.starting = None                # the Tab whose capture is starting: its first chunks come before it has
         self.tab_targets: Dict[str, str] = {}   # a page's target id -> its tab's (the extension's button is a tab's)
         self.view = (0, 0, 1.0)             # the view it was asked for: width, height (the page's pixels), density
+        self.pending = None                 # a new view, and since when, waited on to settle
+        self.pending_at = 0.0
         self.bars = 0                       # the height of a window's own bars in the Chrome (a window is sized so its
                                             # page is the view: the capture is of the window's page, at its size)
         self.extra = 0                      # more, in the captured tab's window, learned from the frames' size (`got`),
@@ -251,18 +256,17 @@ class Capture:
             return known
         info = cdp.call("Target.getTargetInfo", {"targetId": tab.target})["targetInfo"]
         window = cdp.call("Browser.getWindowForTarget", {"targetId": tab.target})["windowId"]
-        found = []
-        for t in cdp.call("Target.getTargets", {"filter": [{"type": "tab"}]})["targetInfos"]:
-            if t.get("url") != info.get("url"):
-                continue
-            try:
+        found = []                                       # the tabs in its window (one, but for a page's popups): the
+        for t in cdp.call("Target.getTargets", {"filter": [{"type": "tab"}]})["targetInfos"]:   # one at its address
+            try:                                         # (a page changes it, at times), else the window's shown one
                 if cdp.call("Browser.getWindowForTarget", {"targetId": t["targetId"]})["windowId"] == window:
                     found.append(t)
             except (ValueError, KeyError):
                 pass
         if not found:
             raise ValueError("its tab was not found")
-        tid = next((t for t in found if (t.get("embedderData") or {}).get("tabActive")), found[0])["targetId"]
+        rank = lambda t: (t.get("url") == info.get("url"), bool((t.get("embedderData") or {}).get("tabActive")))
+        tid = max(found, key=rank)["targetId"]
         with self.lock:
             self.tab_targets[tab.target] = tid
         return tid
@@ -290,7 +294,16 @@ class Capture:
         px = (int(view[0] * view[2]), int(view[1] * view[2]))
         with self.busy:
             with self.lock:                              # the same tab at a new size: started again at it (a capture
-                same = self.tab is tab and self.cdp is cdp and view == self.view   # grows no bigger than it began)
+                on_it = self.tab is tab and self.cdp is cdp            # grows no bigger than it began), once the size
+                if on_it and view != self.view:                         # has settled: until then, as it is
+                    if view != self.pending:
+                        self.pending, self.pending_at = view, time.time()
+                    if time.time() - self.pending_at < SETTLE:
+                        timer = threading.Timer(SETTLE + 0.05, self.on_change)
+                        timer.daemon = True
+                        timer.start()
+                        return
+                same = on_it and view == self.view
                 usable = self.usable(tab)
                 if tab is not self.failed_on:
                     self.failed = 0
@@ -343,6 +356,9 @@ class Capture:
             self.failed_on = tab if tab is not None else self.tab
             self.tab, self.ok, self.why = None, False, why
             cdp, session = self.cdp, self.session
+        print(f"dashboard: a Browser's video stopped ({why}): its JPEG frames instead"
+              + (", for this tab until it goes to another page" if not self.usable(self.failed_on) else ""),
+              file=sys.stderr, flush=True)
         if cdp is not None and session is not None:
             try:
                 cdp.post("Runtime.evaluate", {"expression": "agStop()"}, session)
