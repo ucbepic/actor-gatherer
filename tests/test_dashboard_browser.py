@@ -1,8 +1,11 @@
 """A Browser in the dashboard (ag_dashboard/browser.py): which Chrome it runs, what its actor is started with, the
 user's message with what they did and picked, the snapshot's outline, the keys and addresses it takes, the server's
 /browser/w/<key>/ routes -- and, where a Chrome is installed, the whole of it against a real one: the agent's tools,
-the user's input and picks, the screen streamed, its tabs opened again after the Chrome stopped."""
+the user's input and picks (also on a page asking for a passkey), the screen streamed, its tabs opened again after
+the Chrome stopped."""
 import base64
+import functools
+import http.server
 import json
 import os
 import queue
@@ -29,6 +32,17 @@ PAGE = """<!doctype html><title>Shop checkout</title>
 <button onclick="alert('Are you sure?')">Warn me</button>
 <a href="two.html">Next page</a> <a href="two.html" target="_blank">New tab</a>
 <p id="out">not paid</p></div>"""
+
+
+PASSKEY = """<!doctype html><title>Use Touch ID</title>
+<button onclick="out.textContent = 'other options'">Other options</button> <p id="out">waiting</p>
+<script>
+const key = {challenge: new Uint8Array(32), timeout: 60000};
+window.asked = window.made = 'waiting';
+if (!location.search) navigator.credentials.get({publicKey: {...key, userVerification: 'required',
+    allowCredentials: [{type: 'public-key', id: new Uint8Array(16), transports: ['internal']}]}})
+  .then(() => asked = 'given', (e) => asked = e.name);
+</script>"""
 
 
 class Home(unittest.TestCase):
@@ -464,6 +478,36 @@ class ChromeTest(Home):
         self.assertEqual([t.url.rsplit("/", 1)[-1] for t in self.b.tabs], ["index.html", "two.html", "two.html"])
         self.assertEqual(self.b.active, 0)                                # behind, as Chrome opens them
         self.assertIn("a new tab opened behind", self.b.compose(""))
+
+    def test_a_page_asking_for_a_passkey_still_takes_the_user_s_clicks(self):
+        """No passkey can be given here (PASSKEYS in browser.py): the request waits on the page, and the user can
+        still click its other way -- Chrome's own prompt, unseen, would drop their input -- and no passkey is made."""
+        self.write("passkey.html", PASSKEY)                      # served: a file:// page can't ask for a passkey
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=self.root))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        page = f"http://localhost:{server.server_address[1]}/passkey.html"
+        self.text("navigate", url=page)
+        time.sleep(0.5)
+        x, y = self.middle(self.ref(self.text("snapshot"), 'button "Other options'))
+        self.b.input([{"type": "mouse", "kind": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1},
+                      {"type": "mouse", "kind": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1}])
+        end = time.time() + 3
+        while time.time() < end and self.page_says() != "other options":
+            time.sleep(0.1)
+        self.assertEqual(self.page_says(), "other options")
+        self.assertEqual(self.text("evaluate", expression="asked"), "waiting")
+        self.text("navigate", url=page + "?make")                # its request gone (one at a time), one to make a passkey
+        self.text("evaluate", expression="""navigator.credentials.create({publicKey: {...key,
+            rp: {name: 'x'}, user: {id: new Uint8Array(8), name: 'me', displayName: 'me'},
+            pubKeyCredParams: [{type: 'public-key', alg: -7}]}}).then(() => made = 'made', (e) => made = e.name); 0""")
+        time.sleep(1)
+        self.assertEqual(self.text("evaluate", expression="made"), "waiting")
 
     def test_its_tabs_open_again_after_the_chrome_stopped(self):
         self.text("navigate", url=os.path.join(self.root, "two.html"))
