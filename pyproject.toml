@@ -44,7 +44,8 @@ include = ["ag*", "harness_kit*"]
 
 [tool.setuptools.package-data]
 # what runs from the installed package besides Python: ag's harness entries, and the TypeScript
-# plugins (Pi, OpenCode) with the shared harness-side code they import; and the dashboard's page
-# and its actors' avatars and what they say
+# plugins (Pi, OpenCode) with the shared harness-side code they import; each harness's mark; and the
+# dashboard's page and its actors' avatars and what they say
 ag = ["cli/harnesses.toml", "integrations/**/*.ts"]
+harness_kit = ["marks/*.svg"]
 ag_dashboard = ["page.html", "gatherer_agent.md", "vendor/*", "examples/*.js", "avatars/*/*.svg", "avatars/hello.toml"]

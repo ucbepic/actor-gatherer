@@ -690,6 +690,14 @@ class ClaudeCode(Harness):
     name = "claude"
     label = "Claude Code"
     checked_with = "2.1.310"
+    esc_takes_back = True            # stopped before its answer came, the message is back in its box
+    stopped_says = {"lead": "⎿", "interrupted": "Interrupted · What should Claude do instead?",
+                    "error": "API Error", "error_status": "API Error: {status}"}
+
+    def screen_env(self, fullscreen: bool) -> Dict[str, Optional[str]]:
+        """Its classic screen where not `fullscreen`, its environment's choice: what it prints goes into the
+        terminal's own scrollback, scrolled there (its full screen takes each wheel tick, and redraws)."""
+        return {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": None if fullscreen else "1"}
 
     def call(self, method: str, path: str, headers, body) -> Optional[Call]:
         """The request as a model call: None unless it is a POST to .../messages with messages holding a user's.
@@ -744,11 +752,12 @@ class ClaudeCode(Harness):
         name = " ".join((name or "").split())
         return f"/rename {name}" if name else None
 
-    def rename(self, session: str, name: str, record: Optional[str] = None, env=None) -> str:
+    def rename(self, session: str, name: str, record: Optional[str] = None, env=None, cwd: Optional[str] = None) -> str:
         """A `custom-title` line added to the session's record (its JSONL file), as its own `/rename` adds one: the last
         in a record's tail is the name its /resume list and `--resume` show, "" none. A session running elsewhere takes
         it up on exiting -- unless it holds a name of its own already: its metadata, written again as the record grows,
         writes back the name it holds (`rename_command` reaches it)."""
+        record = record or self.record_path(session, cwd)
         if not record or not os.path.isfile(record):
             raise RenameError("Claude Code's record of the session was not found")
         line = json.dumps({"type": "custom-title", "customTitle": " ".join((name or "").split()), "sessionId": session},

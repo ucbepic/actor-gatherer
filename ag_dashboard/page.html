@@ -2317,52 +2317,37 @@ const GROUP_COLORS = { [PREAMBLE]: "var(--s8)", [NOT_COUNTED]: "var(--axis)", "G
 // a group GROUP_ORDER does not name (or its first, index 0) takes --s6: there is no --s-1
 const color = (group) => GROUP_COLORS[group] || `var(--s${GROUP_ORDER.indexOf(group) > 0 ? GROUP_ORDER.indexOf(group) : 6})`;
 const usd = (v) => v === null || v === undefined ? "–" : v > 0 && v < 0.01 ? "<$0.01" : "$" + v.toFixed(2);
-const HARNESS = { codex: "Codex", claude: "Claude Code", pi: "Pi", opencode: "OpenCode", antigravity: "Antigravity" };
-// Antigravity's arch, from its own favicon (antigravity.google/favicon.svg), less the gradient over it.
-const ANTIGRAVITY_ARCH = "M89.6992 93.695C94.3659 97.195 101.366 94.8617 94.9492 88.445C75.6992 69.7783 79.7825 18.445 55.8659 18.445C31.9492 18.445 36.0325 69.7783 16.7825 88.445C9.78251 95.445 17.3658 97.195 22.0325 93.695C40.1159 81.445 38.9492 59.8617 55.8659 59.8617C72.7825 59.8617 71.6159 81.445 89.6992 93.695Z";
-const harnessName = (h) => HARNESS[h] || "Unknown harness";
-// Each harness's mark, drawn small: Claude's spark, and simple stand-ins for the others.
-function harnessLogo(h) {
-  const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "logo", role: "img", "aria-label": harnessName(h) });
-  const title = svgEl("title"); title.textContent = harnessName(h); svg.append(title);
-  if (h === "claude") {
-    for (let i = 0; i < 12; i++) {
-      const a = i * Math.PI / 6, r = i % 2 ? 7.5 : 10;
-      svg.append(svgEl("line", { x1: 12 + 2.2 * Math.cos(a), y1: 12 + 2.2 * Math.sin(a), x2: 12 + r * Math.cos(a), y2: 12 + r * Math.sin(a),
-        stroke: "#d97757", "stroke-width": 2.4, "stroke-linecap": "round" }));
-    }
-    return svg;
+// Each harness as harness_kit describes it (data.py's `harness_info`), by its name: the page names none itself. A
+// session that names none is the home's `harness_default`'s.
+const harnessInfo = (h) => ((state.home && state.home.harness_info) || {})[h] || null;
+const harnessName = (h) => (harnessInfo(h) || {}).label || "Unknown harness";
+// Each harness's mark (harness_kit/marks/<name>.svg): its logo, white, on its colour, in a 24x24 circle -- as a badge
+// at the corner of an actor's avatar, on what starts one, and alone for an actor with no avatar. One harness_kit has
+// no mark for: a grey circle with "?".
+const HARNESS_MARKS = new Map();                   // each mark's SVG, parsed once
+function harnessMark(h, cls) {
+  const info = harnessInfo(h);
+  let src = info && info.mark ? HARNESS_MARKS.get(info.mark) : null;
+  if (info && info.mark && src === undefined) {
+    const root = new DOMParser().parseFromString(info.mark, "image/svg+xml").documentElement;
+    HARNESS_MARKS.set(info.mark, src = root && root.nodeName === "svg" ? root : null);
   }
-  if (h === "antigravity") {
-    svg.append(svgEl("path", { d: ANTIGRAVITY_ARCH, fill: "#3186ff", transform: "translate(-1.2 -1.45) scale(0.2367)" }));
-    return svg;
+  let svg;
+  if (src) svg = document.importNode(src, true);
+  else {
+    svg = svgEl("svg", { viewBox: "0 0 24 24" });
+    const t = svgEl("text", { x: 12, y: 16, "text-anchor": "middle", fill: "#fff", "font-size": 12, "font-weight": 700, "font-family": "system-ui, sans-serif" });
+    t.textContent = "?";
+    svg.append(svgEl("circle", { cx: 12, cy: 12, r: 12, fill: "#898781" }), t);
   }
-  const glyph = { codex: ">_", pi: "π", opencode: "{}" }[h] || "?";
-  svg.append(svgEl("rect", { x: 1, y: 1, width: 22, height: 22, rx: 6, fill: h in HARNESS ? "var(--ink)" : "var(--axis)" }));
-  const t = svgEl("text", { x: 12, y: 16.5, "text-anchor": "middle", fill: "var(--surface)", "font-size": glyph.length > 1 ? 10.5 : 14,
-    "font-weight": 700, "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace" });
-  t.textContent = glyph; svg.append(t);
-  return svg;
-}
-// Each harness's badge, at the corner of an actor's avatar: its mark in white on its color, as the README's
-// works-with badge has them (assets/src/works_with.py: the marks, their sources), each in a 12x12 box.
-const BADGES = {
-  antigravity: ["#3186ff", `<path transform="translate(-1.26 -1.4) scale(0.1302)" d="${ANTIGRAVITY_ARCH}"/>`],
-  claude: ["#d97757", "<path transform=\"scale(0.5)\" d=\"m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z\"/>"],
-  codex: ["#10a37f", "<path transform=\"scale(0.5)\" d=\"M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z\"/>"],
-  opencode: ["#3a3633", "<g transform=\"translate(1.2 0) scale(0.04)\"><path fill-rule=\"evenodd\" d=\"M180 60H60V240H180V60ZM240 300H0V0H240V300Z\"/><path opacity=\"0.55\" d=\"M180 240H60V120H180V240Z\"/></g>"],
-  pi: ["#24292f", "<g transform=\"scale(0.02553) translate(-165.29 -165.29)\"><path fill=\"#F09082\" d=\"M165.29 165.29H517.36V400H400V282.65H165.29Z\"/><path fill=\"#4D9ABF\" d=\"M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z\"/><path fill=\"#F1BE58\" d=\"M517.36 400H634.72V634.72H517.36Z\"/></g>"],
-};
-function harnessBadge(h) {
-  const [color, mark] = BADGES[h] || ["#898781", null];
-  const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "badge", role: "img", "aria-label": harnessName(h) });
+  svg.querySelectorAll("title").forEach((t) => t.remove());
   const title = svgEl("title"); title.textContent = harnessName(h);
-  const g = svgEl("g", { transform: "translate(4.8 4.8) scale(1.2)", fill: "#fff" });
-  if (mark) g.innerHTML = mark;
-  else { const t = svgEl("text", { x: 6, y: 9.5, "text-anchor": "middle", "font-size": 10, "font-weight": 700, "font-family": "system-ui, sans-serif" }); t.textContent = "?"; g.append(t); }
-  svg.append(title, svgEl("circle", { cx: 12, cy: 12, r: 12, fill: color }), g);
+  svg.prepend(title);
+  for (const [k, v] of Object.entries({ class: cls, role: "img", "aria-label": harnessName(h) })) svg.setAttribute(k, v);
   return svg;
 }
+const harnessLogo = (h) => harnessMark(h, "logo");
+const harnessBadge = (h) => harnessMark(h, "badge");
 // The actor's avatar (avatars.py), its harness's badge small at the corner; an actor with none (no
 // picture to give, or a snapshot from before them) has its harness's mark alone.
 function actorLogo(a) {
@@ -2728,10 +2713,16 @@ const statusOf = (a) => sessionStatus(a.session) || (opened(a) ? ["running", "Ru
   : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
   : a.status === "background" ? ["background", "Background"]
   : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"]);
-// Whether an actor can be messaged here: a session the page started, or any Claude Code or codex session with a directory
-// to resume it in. Its message box works while no other process has it open (data.py's `chattable`).
-const CHAT_HARNESSES = ["claude", "codex", "antigravity"];
-const hasChat = (a) => !!a && (!!a.session || (CHAT_HARNESSES.includes(a.harness) && !!a.cwd));
+// Whether an actor can be messaged here: a session the page started, or any session of a harness the dashboard runs
+// (harness_kit's, that says how to start it: `runs`) with a directory to resume it in. Its message box works while no
+// other process has it open (data.py's `chattable`).
+const runsHere = (h) => !!(harnessInfo(h) || {}).runs;
+const hasChat = (a) => !!a && (!!a.session || (runsHere(a.harness) && !!a.cwd));
+// The harnesses the dashboard runs, by their names for a person: "Claude Code, Codex or Antigravity".
+function runnableNames(join) {
+  const names = Object.keys((state.home && state.home.harness_info) || {}).filter(runsHere).map(harnessName);
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} ${join} ${names[names.length - 1]}` : names[0] || "no harness";
+}
 // A shell: the user's own shell in a terminal, opened from a gatherer's row (sessions.py's `shell`) and listed under it --
 // no actor, but shown as one is, in a pane, by its id in a channel's place ("shell:…", which no channel is).
 const isShell = (c) => typeof c === "string" && c.startsWith("shell:");
@@ -3666,7 +3657,7 @@ const nameAnswers = new Map();                       // what came of each name g
 const nameKey = (gname, c) => `${gname}\u0000${c}`;
 function nameNote(g, a) {
   if (!a.name || !a.name.text) return "";
-  if (a.name.by !== "user") return `${HARNESS[a.name.by] ? `${HARNESS[a.name.by]}'s` : "Its harness's"} name for it\n`;
+  if (a.name.by !== "user") return `${harnessInfo(a.name.by) ? `${harnessName(a.name.by)}'s` : "Its harness's"} name for it\n`;
   const how = nameAnswers.get(nameKey(g.name, a.channel));
   return "Named by you" + (!how ? "" : how.error ? ` · not in ${harnessName(a.harness)}: ${how.error}`
     : how.store || how.terminal ? ` · in ${harnessName(a.harness)} too` : "") + "\n";
@@ -4430,8 +4421,8 @@ function gathererForm() {
 // in ag's config.toml, and installed): a click starts one, on the harness's default model, in the directory of
 // the gatherer's most recently active actor -- or, when no actor has one (or starting there failed), the form
 // asks for the directory first, its buttons the same.
-const startable = () => (state.home.harnesses || []).filter((h) => CHAT_HARNESSES.includes(h));
-const NO_HARNESS = "None of Claude Code, Codex or Antigravity is set up here: install one, or set its command in config.toml ([cli.harnesses])";
+const startable = () => (state.home.harnesses || []).filter(runsHere);
+const noHarness = () => `None of ${runnableNames("or")} is set up here: install one, or set its command in config.toml ([cli.harnesses])`;
 // Last, its terminal button: a shell (isShell), in that same directory -- or, with none, the form asks for it too.
 const SHELL_START = "shell";                       // the terminal button's, where a harness's name goes
 const DW_START = "docwriter:";                     // a DocWriter's, where a harness's name goes: its actor's harness after it
@@ -4477,7 +4468,7 @@ function startButtons(g) {
     crewFace(crew, MANAGER), hidden ? el("i", { class: `crew-dot ${cls}`, "aria-hidden": "true" }) : null) : null;
   const plus = () => el("span", { class: "plus", "aria-hidden": "true", text: "+" });
   const actorKey = `actor:${g.name}`, moreKey = `more:${g.name}`;
-  const actor = !hs.length ? el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+")
+  const actor = !hs.length ? el("button", { class: "act add", type: "button", disabled: "", title: noHarness(), "aria-label": noHarness() }, "+")
     : el("button", { class: "act start new-actor" + (hs.includes(starting) ? " busy" : ""), type: "button", ...off, "data-pop": actorKey,
       title: `New actor in ${g.name}${where ? `, in ${where}` : ""}: ${hs.map(harnessName).join(" or ")}`,
       "aria-label": `New actor in ${g.name}`, ...(hs.length > 1 ? { "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === actorKey) } : {}),
@@ -4844,7 +4835,7 @@ function brRender() {
     ...source,
     el("label", { class: "check", title: "Without it, its changes are merged in as they come, but for lines you are editing in the Editor, and lines you changed too, which wait for you" },
       approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": each change waits in the Editor for you to accept or reject it")),
-    el("div", { class: "err", role: "alert", text: brPick.error || (hs.length ? "" : NO_HARNESS) }),
+    el("div", { class: "err", role: "alert", text: brPick.error || (hs.length ? "" : noHarness()) }),
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => d.close() }, "Cancel"), ...starts),
   ].filter(Boolean));
   form.addEventListener("submit", async (ev) => {
@@ -4873,7 +4864,7 @@ async function startBranch(gatherer, project, harness, approve) {
 function newForm() {
   const adding = state.adding, fixed = adding.gatherer, hs = startable(), shell = adding.harness === SHELL_START;
   const cwd = el("input", { name: "cwd", value: adding.cwd || state.home.cwd || "", spellcheck: "false" });
-  const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length || shell ? "" : NO_HARNESS) });
+  const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length || shell ? "" : noHarness()) });
   const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === adding.harness ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
   if (state.home.docwriter) for (const h of hs) starts.push(el("button", { type: "submit", value: DW_START + h,
@@ -5121,7 +5112,7 @@ function facts(info) {
     ["Harness", harnessName(info.harness || (state.agent && state.agent.harness))],
     ["Gatherer", state.selected[0]], ["Channel", state.selected[1]], ["Directory", info.cwd || (s && s.cwd)],
     ["Process", info.pid ? `PID ${info.pid}` : null],
-    ["Chat", !hasChat(info) ? "Not from the dashboard: only Claude Code and codex sessions with a directory can be messaged here"
+    ["Chat", !hasChat(info) ? `Not from the dashboard: only ${runnableNames("and")} sessions with a directory can be messaged here`
       : s && s.terminal ? "Open in the dashboard's terminal: a message from any view is typed there"
       : s ? `Run by the dashboard, permissions ${s.permission_mode}; let go after each turn`
       : "Started elsewhere: a message resumes it here, permissions auto"],
@@ -5224,7 +5215,7 @@ function chatCard(info) {
     const note = errorNote(info) || askingNote(info, !view.readOnly) || answeredNote(info); if (note) card.append(note); }
   if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
-    if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
+    if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", text: `Read only: the dashboard can message only ${runnableNames("and")} sessions with a known directory.` }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
@@ -6788,9 +6779,10 @@ function xtermTheme() {
   return { ...XTERM_ANSI[css.colorScheme === "dark" ? "dark" : "light"], background: v("--term-bg"), foreground: ink, cursor: ink, cursorAccent: v("--term-bg") };
 }
 window.addEventListener("ag-theme", () => { if (term.xterm) term.xterm.options.theme = xtermTheme(); });
-// Claude Code's terminal runs in its full screen, which scrolls by sending each wheel tick to Claude Code, which
-// redraws; codex's in its classic one, inline, printed into xterm's own scrollback and scrolled here.
-const fullscreenFor = (info) => (info.harness || (info.session && info.session.harness)) !== "codex";
+// The screen a session's terminal runs in, as its harness says (harness_kit's `fullscreen`): its full screen, which
+// scrolls by sending each wheel tick to the harness, which redraws (Claude Code's); or its classic one, inline,
+// printed into xterm's own scrollback and scrolled here (codex's).
+const fullscreenFor = (info) => (harnessInfo(info.harness || (info.session && info.session.harness)) || {}).fullscreen !== false;
 // A mouse report for the pointer moving with no button held (SGR: ESC [ < b;x;y M, motion bit 32, button 3):
 // with any-motion tracking on, every move over the terminal is one, and each would share the one-at-a-time
 // input with the wheel. Claude Code is given clicks, drags and the wheel, not the bare moves.
@@ -7817,23 +7809,19 @@ function filesTalk(d, info, running) {
   requestAnimationFrame(watchCrew);
   return box;
 }
-// How a turn stopped short, under it, as its harness says it there (files.py's `stopped`), in its own words:
-// interrupted (Esc), and what it asks then -- or the error it gave up on. Claude Code: "⎿ Interrupted · What should Claude
-// do instead?", dim; its error in red. Codex (0.164's tui): "■ Conversation interrupted", dim (less its pointer to its
-// own /feedback); "■ <its error>", or "■ Goal budget reached - the turn was stopped.", in red. Not the latest turn's
-// error while the actor is stopped on it: its note says that in full. Null for a turn that ended as turns do.
-const STOPPED_SAYS = {
-  claude: { lead: "⎿", interrupted: "Interrupted · What should Claude do instead?",
-    error: (s) => s.text || (s.status ? `API Error: ${s.status}` : "API Error") },
-  codex: { lead: "■", interrupted: "Conversation interrupted",
-    budget_limited: "Goal budget reached - the turn was stopped.", error: (s) => s.text || "Error" },
-};
+// How a turn stopped short, under it, as its harness says it there (files.py's `stopped`), in its own words (harness_kit's
+// `stopped_says`): interrupted (Esc), and what it asks then -- or the error it gave up on, or another reason it gives.
+// E.g. Claude Code: "⎿ Interrupted · What should Claude do instead?", dim; its error in red. Not the latest turn's error
+// while the actor is stopped on it: its note says that in full. Null for a turn that ended as turns do.
+const STOPPED_ANY = { lead: "⎿", interrupted: "Interrupted", error: "Error" };
 function stoppedLine(info, t, latest) {
   const s = t.stopped;
   if (!s || (s.kind === "error" && latest && info && info.status === "error")) return null;
-  const says = STOPPED_SAYS[info && info.harness] || STOPPED_SAYS.claude;
-  const red = s.kind === "error" || (s.reason === "budget_limited" && !!says.budget_limited);
-  const said = s.kind === "error" ? says.error(s) : red ? says.budget_limited : says.interrupted;
+  const says = (harnessInfo((info && info.harness) || (state.home || {}).harness_default) || {}).stopped || STOPPED_ANY;
+  const reason = s.kind !== "error" && s.reason && (says.reasons || {})[s.reason];
+  const red = s.kind === "error" || !!reason;
+  const said = s.kind === "error" ? s.text || (s.status && says.error_status ? says.error_status.replace("{status}", s.status) : says.error)
+    : reason || says.interrupted;
   return el("div", { class: "fl-stopped" + (red ? " error" : ""), role: "note" },
     el("span", { class: "lead", "aria-hidden": "true", text: says.lead }), el("span", { text: said }));
 }

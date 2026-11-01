@@ -372,6 +372,34 @@ Not yet: its headless mode (`agy -p --output-format stream-json`), its permissio
 dashboard shows the actor running while agy asks to run a command), and a fixtures folder (`tests/probe` drives
 Claude Code's and Codex's terminals).
 
+## A new harness, the dashboard untouched
+
+The test: a harness is added by its module here (its `Harness` subclass, its mark in `marks/<name>.svg`, its line
+in `HARNESSES`), its integration in `ag/integrations/harnesses/<name>/` and its entry in `harnesses.toml` -- no
+file of `ag_dashboard/` changed, nor a shared one (`shell.py`, `file_touches/check.py`, `proxy_hook.py`). agy's two
+PRs (#186, #191) had to change `sessions.py`, `data.py`, `files.py`, `coordination.py` and `page.html`: each such
+change is a fact of the harness to move here, read by the dashboard through a field every harness has. In steps:
+
+1. **Built.** How a harness looks and its terminal behaves: `label`, `mark()` (an SVG file, its logo on its
+   colour), `fullscreen` and `screen_env` (the screen the dashboard's terminal runs it in), `picks_session_id`
+   (started under an id of ag's, renamed to its own), `esc_takes_back` (Claude Code's message put back in its box),
+   `stopped_says` (its words for a turn stopped short), `runs_in_terminal`; `rename` finds its own record from `cwd`;
+   `DEFAULT`, the harness of a session that names none. The home carries them (`harness_info`, `data.py`), so the
+   page names no harness for its logos, badges, lists of what can start or be messaged, terminal screen or stop
+   lines. Pi and OpenCode are here by name and look alone (`Named`): their rules are their TypeScript adaptors'.
+2. A generic view of a conversation's `Part`s: `data.parts`' view per harness, `files._note` and `_interrupted`
+   read `Part.kind` and `detail`; images, other agents' messages and a code-mode script's calls on `Part`/`ToolCall`.
+3. Tools by shape: `ToolCall.view` (read, write, edit, patch, shell, search, web, agent, todo, skill, ask, script,
+   other) and its one-line label, for the page's summaries and the file view; `Harness.tool_output` (`ToolResult`'s
+   exit code, time, output less its harness's headers); `shell.py` and `check.py` read the view, not tool names.
+4. Asks and status: one status rule over events (`_claude_status` and `_codex_status` joined, `RECORDED` gone),
+   questions in one shape from each harness, codex's plan offer an `asked`; `Harness.plan_choices` for the plan
+   card's buttons; whether an ask shows again in a terminal opened after it (`codex_dialog`, `answer`).
+5. Running headless (`Harness.headless`: the run's argv and how its output says a turn ended), DocWriter's MCP
+   arguments, `own_folders` (the harness's folders, not the actor's file changes), `file_role` (its memory's files),
+   and `saves` (where History saves a skill, a memory or an AGENTS.md for it; Claude Code's alone at first).
+6. A test that the dashboard names no harness, and a toy harness, registered in a test, listed, started and drawn.
+
 ## Open questions
 
 - Sessions run outside ag's launcher: the watcher learns a session's file from the launcher's URL.

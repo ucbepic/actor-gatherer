@@ -7,7 +7,7 @@ ones it started:
                      here; codex's thread id, which codex chooses -- until its first call, the id it was
                      started under, then renamed to the thread's (`started_as` keeps the first)
     gatherer         the gatherer it joined (ag makes a new one on its first call)
-    harness          "claude", "codex" or "antigravity"
+    harness          the harness it runs on, as harness_kit names it (of `HARNESSES`: those it can start)
     cwd              where the agent runs
     permission_mode  Claude Code's --permission-mode: auto (the default), acceptEdits, plan, ...; for codex,
                      auto is --approve-for-me, bypassPermissions its bypass, any other none (codex asks)
@@ -125,8 +125,7 @@ try:                                    # a terminal needs a pseudo-terminal: Un
 except ImportError:
     TERMINALS = False
 
-HARNESSES = ("claude", "codex", "antigravity")
-OWN_IDS = ("codex", "antigravity")     # the harnesses that choose their session's id: started under one of ours, renamed
+HARNESSES = tuple(harness_kit.runnable())     # the harnesses a session can be started on here (harness_kit's)
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
 CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
 COORDINATOR = "coordinator"                    # the role of a gatherer's gatherer agent (coordination.py)
@@ -206,9 +205,6 @@ def stored() -> List[dict]:
 
 OUTER_TERMINAL = ("TMUX", "TMUX_PANE", "STY", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "WINDOWID",
                   "VTE_VERSION", "KITTY_WINDOW_ID", "WEZTERM_PANE", "ITERM_SESSION_ID")   # the dashboard's own terminal: not the page's
-# Claude Code's classic screen, unless full screen is asked for: what it prints goes into the page terminal's
-# own scrollback, scrolled there; full screen sends every wheel tick to it and back to redraw.
-CLASSIC = {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"}
 TERM_KEEP = 512 * 1024             # how much of a terminal's output is kept, for a page that comes back
 THREAD_POLL = 1.0                  # how often a new codex terminal's thread is looked for in the gatherer
 PASTE_ENTER = 0.15                 # after a message is pasted into a terminal, how long before its Enter
@@ -312,12 +308,27 @@ def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
     return r[0] if r else None
 
 
+def picks_id(harness: Optional[str]) -> bool:
+    """Whether `harness` picks its session's id itself (harness_kit's `picks_session_id`: codex's thread, agy's
+    conversation): a session started here takes one of ours, `started_as` keeps it, and it is renamed to the
+    harness's once its first call names that."""
+    h = harness_kit.get(harness)
+    return bool(h and h.picks_session_id)
+
+
+def takes_back(harness: Optional[str]) -> bool:
+    """Whether `harness`, stopped (Esc) before any of its answer came, puts the message back in its message box
+    (harness_kit's `esc_takes_back`): `took_back` then asks whether it has."""
+    h = harness_kit.get(harness)
+    return bool(h and h.esc_takes_back)
+
+
 def _session_harness(gatherer: str, session_id: str) -> str:
-    """The harness a session of the gatherer runs on, as its hook recorded it (data.py's `harness_of`): claude when
-    none says."""
+    """The harness a session of the gatherer runs on, as its hook recorded it (data.py's `harness_of`): harness_kit's
+    DEFAULT when none says."""
     from .data import harness_of        # data imports this module: asked here, once it is loaded
     got = harness_of(gatherer, session_id)
-    return got if got in HARNESSES else "claude"
+    return got if got in HARNESSES else harness_kit.DEFAULT
 
 
 def _thread_of(gatherer: str, pid: int, known) -> Optional[str]:
@@ -685,7 +696,7 @@ class Sessions:
                             "since": t.since if t else a.since if a else None})
             return out
 
-    def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude",
+    def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = harness_kit.DEFAULT,
                model: Optional[str] = None, role: Optional[str] = None) -> dict:
         """A new session of `harness` in `gatherer` (a new gatherer if none has the name), to run in `cwd`
         on `model` (None: the harness's default), for `role` (`known_role`; None: an actor like any other). Its agent starts
@@ -710,7 +721,7 @@ class Sessions:
         try:
             conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0, ?)",
                          (session_id, gatherer, harness, cwd, permission_mode, _now(), model,
-                          session_id if harness in OWN_IDS else None, role))
+                          session_id if picks_id(harness) else None, role))
         finally:
             conn.close()
         self._changed(gatherer, session_id)
@@ -751,7 +762,7 @@ class Sessions:
         text, sid = (text or "").strip(), got.get("session_id")
         with self.lock:                          # a codex session still under the id it was started under: no channel yet
             s = self._row(sid)
-            if s is not None and s["harness"] in OWN_IDS and s["started_as"] == sid:
+            if s is not None and picks_id(s["harness"]) and s["started_as"] == sid:
                 self.unsent.setdefault(sid, []).append((text, time.time()))
                 return got
         actions.chat_sent(got.get("gatherer"), sid, text)
@@ -781,7 +792,7 @@ class Sessions:
             if session_id in self.terms:             # its terminal has it: typed there
                 t = self.terms[session_id]
                 if clear is None:
-                    clear = s["harness"] == "claude" and took_back(s["gatherer"], session_id, t.stopped)
+                    clear = takes_back(s["harness"]) and took_back(s["gatherer"], session_id, t.stopped)
                 self._paste(t, text, clear=clear)
                 return next(x for x in self.list() if x["session_id"] == session_id)
             a = self.agents.get(session_id)
@@ -1184,8 +1195,9 @@ class Sessions:
         argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"],     # quiet: ag's notes not on its screen
                 *extra_args(s), *h.command(sid, resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
                            fullscreen=fullscreen, instructions=told), *first]
-        env = {**{k: v for k, v in actor_env(s, agent_env()).items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
-               "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic
+        screen = h.screen_env(fullscreen)            # its screen as asked, whatever the dashboard's own environment says
+        env = {**{k: v for k, v in actor_env(s, agent_env()).items() if k not in OUTER_TERMINAL and k not in screen},
+               "TERM": "xterm-256color", "COLORTERM": "truecolor", **{k: v for k, v in screen.items() if v is not None}}
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
         log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
         log.write(f"--- {_now()} terminal{' (full screen)' if fullscreen else ''} {shlex.join(_unsaid(argv[:len(argv) - len(first)], told))}"
@@ -1210,7 +1222,7 @@ class Sessions:
         self._set(sid, status="terminal", last_error=None, kept=0)
         t.reader = threading.Thread(target=self._read_terminal, args=(sid, t), daemon=True)
         t.reader.start()
-        if s["harness"] in OWN_IDS and not resume:  # its thread's id, once its first call names it
+        if picks_id(s["harness"]) and not resume:  # its own id for the session, once its first call names it
             threading.Thread(target=self._find_thread, args=(sid, s["gatherer"], t), daemon=True).start()
         return t
 
@@ -1537,7 +1549,7 @@ class Sessions:
                 return None
             if box == Box.EMPTY:
                 return False
-            if box == Box.HOLDS and s["harness"] == "claude" and took_back(s["gatherer"], s["session_id"], t.stopped):
+            if box == Box.HOLDS and takes_back(s["harness"]) and took_back(s["gatherer"], s["session_id"], t.stopped):
                 return True
             if time.time() >= end:
                 break

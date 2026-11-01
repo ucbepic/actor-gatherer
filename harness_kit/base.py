@@ -238,6 +238,9 @@ def typed_in(screen, first: int, last: int, start: int = 0) -> str:
     return "".join(out).replace("\xa0", " ")
 
 
+MARKS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "marks")
+
+
 class Harness(ABC):
     """One harness's rules. Subclasses implement `items` and `read`; `call` says what a request
     is (None by default: the harness's calls not known). `name` is how ag and the dashboard name it,
@@ -245,6 +248,45 @@ class Harness(ABC):
     name: str = ""
     label: str = ""
     checked_with: str = ""
+
+    # ---- how a person tells it apart, and how its terminal behaves: what a reader of its sessions shows of it
+
+    def mark(self) -> Optional[str]:
+        """Its mark: an SVG of its logo on its colour, 24x24, as `marks/<name>.svg` has it (shown on its actors'
+        avatars and on what starts one); None where it has none."""
+        try:
+            with open(os.path.join(MARKS, f"{self.name}.svg"), encoding="utf-8") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    #: The screen it runs in, in a terminal a reader's page draws: its full screen (True), redrawn by it as the page
+    #: scrolls; or its classic one (False), what it prints going into the terminal's own scrollback.
+    fullscreen = True
+
+    def screen_env(self, fullscreen: bool) -> Dict[str, Optional[str]]:
+        """The environment that runs it in its full screen or its classic one, where its environment chooses that (its
+        `command` may too): each variable set, or None to unset one. {} by default."""
+        return {}
+
+    #: Whether it picks its session's id itself (codex's thread, agy's conversation): a session it starts takes an id
+    #: of the starter's until its first call names its own, and is renamed to that.
+    picks_session_id = False
+
+    #: Whether, stopped (Esc) before any of its answer came, it puts the user's message back into its message box, to
+    #: be sent again or changed: a message typed in after it then has that to clear first.
+    esc_takes_back = False
+
+    #: How its terminal says, under a turn, that the turn stopped short: `lead`, the mark before the words;
+    #: `interrupted`, its words for Esc; `error`, for an error that came with no words of its own (`error_status`:
+    #: one with an HTTP status, "{status}" in it standing for that); `reasons`, its words for each other reason it
+    #: gives for stopping a turn.
+    stopped_says: Dict[str, Any] = {"lead": "⎿", "interrupted": "Interrupted", "error": "Error"}
+
+    @property
+    def runs_in_terminal(self) -> bool:
+        """Whether it can be started in a terminal from here: it says how (`command`)."""
+        return type(self).command is not Harness.command
 
     # ---- level 1: one model call
 
@@ -288,10 +330,12 @@ class Harness(ABC):
         `/rename`); None: it has no command that takes the name as typed (`rename` alone, then)."""
         return None
 
-    def rename(self, session: str, name: str, record: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> str:
+    def rename(self, session: str, name: str, record: Optional[str] = None, env: Optional[Dict[str, str]] = None,
+               cwd: Optional[str] = None) -> str:
         """The session given `name` in the harness's own store, where its list of sessions to resume, and its next
-        run, read it: `record`, the session's own file, for a harness that keeps the name there; `env`, the
-        environment the harness runs in. What was done, in a few words. Raises RenameError where it cannot."""
+        run, read it: `record`, the session's own file, for a harness that keeps the name there (None: found from
+        `cwd`, where the session runs, as `record_path` finds it); `env`, the environment the harness runs in. What
+        was done, in a few words. Raises RenameError where it cannot."""
         raise RenameError(f"{self.label or self.name or 'this harness'} keeps no name ag can set")
 
     # ---- run in a terminal: started, and what it asks there answered
@@ -365,6 +409,17 @@ class Harness(ABC):
     def follower(self, path: str) -> Optional["Follower"]:
         """A reader of the record at `path`, from its start (None by default: no record known)."""
         return None
+
+
+class Named(Harness):
+    """A harness known here by its name and its look alone: its rules are elsewhere (Pi's and OpenCode's, in the
+    TypeScript adaptor ag runs inside each), so what it sends reads as nothing known -- each piece OTHER."""
+
+    def items(self, history: list) -> list:
+        return list(history)
+
+    def read(self, items: list) -> List[Part]:
+        return [Part(Kind.OTHER) for _ in items]
 
 
 class Facts:

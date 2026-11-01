@@ -5,9 +5,15 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+import harness_kit  # noqa: E402
+from ag_dashboard import data  # noqa: E402
+
 PAGE = os.path.join(ROOT, "ag_dashboard", "page.html")
 START = "// Whether the message Claude Code took back is in its input box untouched"
 END = "// What waits to reach the agent, at the latest turn's end"
@@ -107,6 +113,8 @@ STOPPED = ("// How a turn stopped short, under it, as its harness says it there"
 RUN_STOPPED = r"""
 const el = (tag, attrs, ...kids) => ({ cls: attrs && attrs.class,
   text: attrs && attrs.text !== undefined ? attrs.text : kids.map((k) => k.text).join(" ") });
+const state = { home: %s };                       // each harness's words, as harness_kit says them (data.py's home)
+const harnessInfo = (h) => ((state.home && state.home.harness_info) || {})[h] || null;
 %s
 let input = "";
 process.stdin.on("data", (d) => { input += d; }).on("end", () =>
@@ -116,14 +124,16 @@ process.stdin.on("data", (d) => { input += d; }).on("end", () =>
 
 @unittest.skipUnless(shutil.which("node"), "the page's code runs in Node")
 class StoppedTest(unittest.TestCase):
-    """A turn stopped short says so under it in its harness's own words: Claude Code's, codex's."""
+    """A turn stopped short says so under it in its harness's own words (harness_kit's `stopped_says`): Claude Code's,
+    codex's; a harness that says none its own, plain ones."""
 
     def lines(self, *cases):
         with open(PAGE, encoding="utf-8") as fh:
             text = fh.read()
         code = text[text.index(STOPPED[0]):text.index(STOPPED[1])]
-        got = subprocess.run(["node", "-e", RUN_STOPPED % code], input=json.dumps(cases), capture_output=True, text=True,
-                             timeout=30)
+        home = {"harness_info": data.harness_info(), "harness_default": harness_kit.DEFAULT}
+        got = subprocess.run(["node", "-e", RUN_STOPPED % (json.dumps(home), code)], input=json.dumps(cases),
+                             capture_output=True, text=True, timeout=30)
         if got.returncode:
             raise AssertionError(got.stderr)
         return [x and [x["cls"], x["text"]] for x in json.loads(got.stdout)]
@@ -136,13 +146,17 @@ class StoppedTest(unittest.TestCase):
             [codex, {"stopped": dict(interrupted, reason="budget_limited")}, False], [codex, {"stopped": error}, False],
             [claude, {"stopped": {"kind": "error", "text": None, "status": 529}}, False],
             [dict(claude, status="error"), {"stopped": error}, True],          # the actor's error note says it
-            [claude, {"stopped": None}, True]), [
+            [claude, {"stopped": None}, True],
+            [{"harness": None, "status": "idle"}, {"stopped": interrupted}, False],    # from before it was recorded
+            [{"harness": "antigravity", "status": "idle"}, {"stopped": interrupted}, False]), [
             ["fl-stopped", "⎿ Interrupted · What should Claude do instead?"],
             ["fl-stopped", "■ Conversation interrupted"],
             ["fl-stopped error", "■ Goal budget reached - the turn was stopped."],
             ["fl-stopped error", "■ stream disconnected"],
             ["fl-stopped error", "⎿ API Error: 529"],
-            None, None])
+            None, None,
+            ["fl-stopped", "⎿ Interrupted · What should Claude do instead?"],
+            ["fl-stopped", "⎿ Interrupted"]])
 
 
 if __name__ == "__main__":

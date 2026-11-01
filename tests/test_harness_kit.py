@@ -314,6 +314,42 @@ class RunTest(unittest.TestCase):
         self.assertEqual(CODEX.command("t1", resume=True, permission_mode="manual"), ["resume", "t1"])     # it asks
 
 
+class LookTest(unittest.TestCase):
+    """What a reader of a harness's sessions shows of it, and how its terminal behaves: each harness's own, so the
+    dashboard names none of them."""
+
+    def test_every_harness_has_a_name_for_a_person_and_a_mark(self):
+        import xml.etree.ElementTree as ET
+        self.assertEqual(list(harness_kit.HARNESSES), ["claude", "codex", "antigravity", "pi", "opencode"])
+        for name, h in harness_kit.HARNESSES.items():
+            self.assertEqual(h.name, name)
+            self.assertTrue(h.label, name)
+            root = ET.fromstring(h.mark())                       # an SVG, whole
+            self.assertEqual(root.tag, "{http://www.w3.org/2000/svg}svg", name)
+            self.assertEqual(root.get("viewBox"), "0 0 24 24", name)
+        self.assertEqual(harness_kit.DEFAULT, "claude")
+
+    def test_the_harnesses_a_session_starts_on_say_how_to_run_them(self):
+        self.assertEqual(harness_kit.runnable(), ["claude", "codex", "antigravity"])
+        self.assertFalse(harness_kit.get("pi").runs_in_terminal)                       # its rules are its adaptor's
+        self.assertEqual(harness_kit.get("pi").read_one({"role": "user", "content": "hi"})[0].kind, Kind.OTHER)
+
+    def test_each_terminal_s_screen_its_ids_and_its_esc(self):
+        agy = harness_kit.get("antigravity")
+        self.assertEqual((CLAUDE.fullscreen, CODEX.fullscreen, agy.fullscreen), (True, False, True))
+        self.assertEqual(CLAUDE.screen_env(False), {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"})
+        self.assertEqual(CLAUDE.screen_env(True), {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": None})   # unset
+        self.assertEqual(CODEX.screen_env(False), {})                  # its own option says it (`command`)
+        self.assertEqual([h.picks_session_id for h in (CLAUDE, CODEX, agy)], [False, True, True])
+        self.assertEqual([h.esc_takes_back for h in (CLAUDE, CODEX, agy)], [True, False, False])
+
+    def test_how_its_terminal_says_a_turn_stopped_short(self):
+        self.assertEqual(CLAUDE.stopped_says["error_status"].format(status=529), "API Error: 529")
+        self.assertEqual(CODEX.stopped_says["reasons"]["budget_limited"], "Goal budget reached - the turn was stopped.")
+        for h in harness_kit.HARNESSES.values():
+            self.assertTrue({"lead", "interrupted", "error"} <= set(h.stopped_says), h.name)
+
+
 class WordsTest(unittest.TestCase):
     def test_a_message_s_words_whichever_harness_s_wrapper(self):
         self.assertEqual(harness_kit.words("<bash-input>ls</bash-input>"), (Kind.USER_COMMAND, "! ls"))

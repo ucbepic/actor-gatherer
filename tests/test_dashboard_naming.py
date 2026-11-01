@@ -298,7 +298,7 @@ class EndpointTest(SessionsBase):
             code, got = self.post({"gatherer": "g", "channel": "s1", "name": "x", "harness": "claude"})
         self.assertEqual((code, got["store"], got["error"]), (200, None, "Claude Code's record of the session was not found"))
         code, got = self.post({"gatherer": "g", "channel": "s1", "name": "x", "harness": "pi"})
-        self.assertEqual((code, got["error"]), (200, "no rules for pi: named here only"))
+        self.assertEqual((code, got["error"]), (200, "Pi keeps no name ag can set"))          # its rules are its adaptor's
         self.assertEqual(self.post({"gatherer": "g", "name": "x"})[0], 400)                    # which actor?
 
     @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
