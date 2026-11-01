@@ -5521,7 +5521,9 @@ function backgroundNote(info, term = false) {
 function askingNote(info, answerable = true) {
   const ask = info && (info.status === "asking" || (info.status === "running" && info.asking && info.asking.async)) ? info.asking : null;
   if (!ask) return null;
-  const codex = ask.harness === "codex";
+  // how its harness has a reader answer it (harness_kit's `ask_says`): its words, and the ways to take a plan
+  const says = { plan_verb: "approve", plan_choices: [], plan_change: { label: "Or say what to change" }, own_answer: "Or type your own answer",
+    ...((harnessInfo(ask.harness || (state.home || {}).harness_default) || {}).ask_says || {}) };
   const qs = ask.questions || [];
   const s = info.session || {};
   // the dashboard's terminal, and nothing typed into it since it asked: answered from here
@@ -5529,7 +5531,7 @@ function askingNote(info, answerable = true) {
   const here = answerable && !SNAPSHOT && !!s.terminal && !touched;
   const sent = info.answer && info.answer.call === ask.call ? info.answer : null;
   const who = info.harness ? harnessName(info.harness) : "The agent";
-  const what = ask.kind === "plan" ? `${who} has a plan for you to ${codex ? "implement" : "approve"}`
+  const what = ask.kind === "plan" ? `${who} has a plan for you to ${says.plan_verb}`
     : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}${ask.async ? " as it works" : ""}`;
   const d = draftOf(ask);
   const late = sent && Date.now() / 1000 - sent.at > ANSWER_LATE;
@@ -5578,7 +5580,7 @@ function askingNote(info, answerable = true) {
       q.multiSelect ? el("span", { class: "hint", text: "Pick any" }) : null),
     el(here ? "div" : "ol", { class: "opts" + (q.multiSelect ? " multi" : ""), role: here ? (q.multiSelect ? "group" : "radiogroup") : null,
       "aria-label": q.question || null }, ...(q.options || []).map(option(q, i))),
-    here && !q.multiSelect ? own(i, codex && !ask.async ? "None of these? Say what, instead" : "Or type your own answer", () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
+    here && !q.multiSelect ? own(i, ask.async ? "Or type your own answer" : says.own_answer, () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
   // answered here, several questions: one at a time, as the terminal asks them, a tab each
   const tabs = here && qs.length > 1 ? el("div", { class: "qtabs", role: "tablist", "aria-label": "Questions" }, ...qs.map((q, i) =>
     el("button", { type: "button", class: "qtab", role: "tab", "aria-selected": i === tab ? "true" : "false", onclick: () => go(i) },
@@ -5602,17 +5604,11 @@ function askingNote(info, answerable = true) {
     const change = () => d.change.trim() && send({ plan: "change", text: d.change.trim() });
     foot = el("div", { class: "foot", "data-morph": "" },
       said(true),
-      el("div", { class: "change", "data-morph": "" }, own("plan", `Or tell ${codex ? "Codex" : "Claude"} what to change`, change),
+      el("div", { class: "change", "data-morph": "" }, own("plan", says.plan_change.label, change),
         el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: change,
-          title: codex ? "Codex's “No, stay in Plan mode”, then your words" : null }, "Ask for changes")),
-      codex ? el("div", { class: "acts" },              // its "clear context and implement" starts another thread: the terminal's
-        el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ plan: "implement" }),
-          title: "Codex's “Yes, implement this plan”: Default mode, and it starts coding" }, "Implement the plan")) :
-      el("div", { class: "acts" },
-        el("button", { type: "button", disabled: busy ? "" : null, onclick: () => send({ plan: "manual" }),
-          title: "Claude Code's “Yes, manually approve edits”" }, "Approve, I'll approve edits"),
-        el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ plan: "auto" }),
-          title: "Claude Code's “Yes, and use auto mode”" }, "Approve, auto mode")));
+          title: says.plan_change.title || null }, "Ask for changes")),
+      el("div", { class: "acts" }, ...says.plan_choices.map((c) => el("button", { type: "button", class: c.primary ? "primary" : "",
+        disabled: busy ? "" : null, onclick: () => send({ plan: c.id }), title: c.title || null }, c.label))));
   } else if (here && qs.length) {
     const n = nextOpen();
     foot = el("div", { class: "foot", "data-morph": "" },
@@ -5654,7 +5650,8 @@ function answeredNote(info) {
       el("span", { class: "end" }, el("button", { type: "button", onclick: () => { answersSeen.add(a.call); keepingPlace(renderMain); } }, "Dismiss"))),
     el("div", { class: "body" }, el("div", { class: "pair" },
       el("span", { class: "k", text: "You picked" }), el("span", { class: "v", text: a.summary }),
-      el("span", { class: "k", text: "Claude Code recorded" }), el("span", { class: "v", text: a.result || "nothing" }))));
+      el("span", { class: "k", text: `${info.harness ? harnessName(info.harness) : "The agent"} recorded` }),
+      el("span", { class: "v", text: a.result || "nothing" }))));
 }
 // The model call the agent's turn stopped on, or keeps failing on (data.py's `failing`, `stopped`): why, as ag's hook
 // server saw it and as Claude Code put it, and how many tries failed. While the harness tries again, that it does;
@@ -6512,8 +6509,7 @@ document.addEventListener("click", async (ev) => {
 // ------------------------------------------------------------------ the Transcript view
 // The conversation as a terminal running the harness shows it: what was asked, what the agent said
 // (markdown), each tool call with its result under it, its thinking folded away. The data has made
-// every harness's events the same parts (data.parts); only the tools' names differ, and SUMMARIES
-// says how to show the ones it knows.
+// every harness's events the same parts (data.parts), each call with its shape (SHAPES says how each is shown).
 const NOTES_KEY = "ag-dashboard-transcript-notes";
 let showNotes = (() => { try { return localStorage.getItem(NOTES_KEY) === "1"; } catch (e) { return false; } })();
 const RESULT_LINES = 4;                            // a result's lines shown before "+N lines"
@@ -6525,18 +6521,33 @@ if (markdownReady) {
   marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), code: ({ text, lang }) => codeFence(text, lang) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
-// Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan>, each tag on a
-// line of its own (codex's rule; the closing tag perhaps not streamed yet). markdown() draws it as a card headed
-// "Proposed plan", as codex's own terminal heads it. A tag in a sentence (`<proposed_plan>`) is only words about one.
-const PLAN_TAGS = /^<proposed_plan>[ \t]*(?:\r?\n|$)([\s\S]*?)\s*(?:^<\/proposed_plan>[ \t]*$|(?![\s\S]))/m;
-const unplanned = (t) => String(t ?? "").replace(/^<\/?proposed_plan>[ \t]*(?:\r?\n|$)/gm, "");
+// Where each harness keeps its memory of a directory (harness_kit's `memory_folder`): [the folder's pattern, harness].
+const memoryFolders = () => Object.entries((state.home && state.home.harness_info) || {})
+  .filter(([, h]) => h.memory_folder).map(([n, h]) => [new RegExp(`${h.memory_folder}$`), n]);
+// A block a harness's model writes in a reply that its own terminal draws apart (harness_kit's `reply_block`: codex's
+// proposed plan, between <proposed_plan> and </proposed_plan>), each tag on a line of its own (the closing one perhaps
+// not streamed yet). markdown() draws it as a card headed as the harness heads it. A tag in a sentence is only words.
+const reEscape = (s) => String(s).replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+let blocksOf = null, blocksFrom = null;
+function replyBlocks() {
+  const info = (state.home && state.home.harness_info) || {};
+  if (blocksFrom !== info) {
+    blocksFrom = info;
+    blocksOf = Object.values(info).map((h) => h.reply_block).filter((b) => b && b.open && b.close).map((b) => ({ ...b,
+      re: new RegExp(`^${reEscape(b.open)}[ \\t]*(?:\\r?\\n|$)([\\s\\S]*?)\\s*(?:^${reEscape(b.close)}[ \\t]*$|(?![\\s\\S]))`, "m"),
+      tags: new RegExp(`^(?:${reEscape(b.open)}|${reEscape(b.close)})[ \\t]*(?:\\r?\\n|$)`, "gm") }));
+  }
+  return blocksOf;
+}
+const unplanned = (t) => replyBlocks().reduce((s, b) => s.replace(b.tags, ""), String(t ?? ""));
 // `breaks`: each line break kept, for text written as lines rather than as markdown (a subagent's report)
 function markdown(text, breaks = false) {
-  const plan = typeof text === "string" && text.includes("<proposed_plan>") ? PLAN_TAGS.exec(text) : null;
-  if (plan) {                                      // codex's plan: what is around it as it is, the plan as a card
+  const block = typeof text === "string" ? replyBlocks().find((b) => text.includes(b.open)) : null;
+  const plan = block ? block.re.exec(text) : null;
+  if (plan) {                                      // a harness's block: what is around it as it is, the block as a card
     const before = text.slice(0, plan.index).trim(), after = text.slice(plan.index + plan[0].length).trim();
     return el("div", { class: "md" }, ...[before && markdown(before, breaks),
-      el("div", { class: "proposed-plan" }, el("div", { class: "pp-head", text: "Proposed plan" }), markdown(plan[1], breaks)),
+      el("div", { class: "proposed-plan" }, el("div", { class: "pp-head", text: block.title }), markdown(plan[1], breaks)),
       after && markdown(after, breaks)].filter(Boolean));
   }
   const box = el("div", { class: "md" });
@@ -6596,70 +6607,41 @@ function todoView(todos) {
   }
   return box;
 }
-// How each tool the harnesses have is shown: its title, the argument beside it, a note on the right,
-// and (optionally) what goes under it instead of its plain result. Any other tool: its name and inputs.
-const shell = (i) => Array.isArray(i.command) ? i.command.join(" ") : str(i.command ?? i.cmd ?? i);
-const SUMMARIES = {
-  Bash: (i) => ({ title: "Bash", arg: firstLine(i.command, 200), note: i.description, doing: i.description }),
-  shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
-  exec_command: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
-  local_shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
-  // codex's code-mode script that calls no tool (one that does is shown as its calls: summary()): its first line
-  exec: (i) => ({ title: "Script", arg: firstLine(str(i.input).trim(), 200) }),
-  Read: (i) => ({ title: "Read", arg: shortPath(i.file_path) + (i.offset ? ` (from line ${i.offset})` : ""),
-    result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Read ${plural(n, "line")}` }), el("pre", { text })); } }),
-  Write: (i) => ({ title: "Write", arg: shortPath(i.file_path),
-    body: (id) => { const l = lines(i.content); return el("details", { id: id + "-w" }, el("summary", { text: `Wrote ${plural(l.length, "line")}` }), diffLines("", i.content).box); },
-    quiet: true }),
-  Edit: (i) => { const d = diffLines(i.old_string, i.new_string); return { title: "Update", arg: shortPath(i.file_path),
-    body: () => el("div", {}, el("div", { text: `${plural(d.added, "addition")}, ${plural(d.removed, "removal")}${i.replace_all ? " (all)" : ""}` }), d.box), quiet: true }; },
-  MultiEdit: (i) => ({ title: "Update", arg: shortPath(i.file_path), quiet: true,
-    body: () => el("div", {}, ...(i.edits || []).map((x) => diffLines(x.old_string, x.new_string).box)) }),
-  NotebookEdit: (i) => ({ title: "Update", arg: shortPath(i.notebook_path), quiet: true, body: () => diffLines("", i.new_source).box }),
-  apply_patch: (i) => ({ title: "Patch", arg: (str(i.input ?? i).match(/\*\*\* (?:Update|Add|Delete) File: (.+)/) || [, ""])[1],
-    body: () => patchView(str(i.input ?? i)), quiet: true }),
-  Grep: (i) => ({ title: "Search", arg: `pattern: "${str(i.pattern)}"${i.path ? `, path: "${shortPath(i.path)}"` : ""}${i.glob ? `, glob: "${i.glob}"` : ""}`,
-    result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Found ${plural(n, "line")}` }), el("pre", { text })); } }),
-  Glob: (i) => ({ title: "Search", arg: `pattern: "${str(i.pattern)}"${i.path ? `, path: "${shortPath(i.path)}"` : ""}`,
-    result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Found ${plural(n, "file")}` }), el("pre", { text })); } }),
-  WebFetch: (i) => ({ title: "Fetch", arg: str(i.url) }),
-  WebSearch: (i) => ({ title: "Web Search", arg: `"${str(i.query)}"` }),
-  web_search: (i) => ({ title: "Web Search", arg: `"${str(i.query ?? (i.action && i.action.query))}"` }),
-  Agent: (i) => ({ title: i.subagent_type ? `${i.subagent_type}` : "Agent", arg: str(i.description) }),
-  Task: (i) => ({ title: i.subagent_type ? `${i.subagent_type}` : "Task", arg: str(i.description) }),
-  // codex's: its subagent by its task's name (what it is asked is encrypted)
-  spawn_agent: (i) => ({ title: "Agent", arg: str(i.task_name) }),
-  TodoWrite: (i) => ({ title: "Update Todos", body: () => todoView(i.todos), quiet: true }),
-  update_plan: (i) => ({ title: "Update Plan", body: () => todoView(i.plan), quiet: true }),
-  Skill: (i) => ({ title: "Skill", arg: str(i.skill) }),
-  ToolSearch: (i) => ({ title: "Tool Search", arg: str(i.query) }),
-  // agy's (Antigravity's): its file tools as Claude Code's, its subagents by their role
-  read_file: (i) => SUMMARIES.Read({ file_path: i.Path, offset: i.StartLine }),
-  write_file: (i) => SUMMARIES.Write({ file_path: i.Path, content: str(i.Content) }),
-  edit_file: (i) => SUMMARIES.Edit({ file_path: i.Path, old_string: str(i.Target), new_string: str(i.Replacement) }),
-  run_command: (i) => ({ title: "Bash", arg: firstLine(str(i.CommandLine), 200), note: str(i.toolSummary) || undefined,
-    doing: str(i.toolSummary) || undefined }),
-  search_web: (i) => ({ title: "Web Search", arg: `"${str(i.query)}"` }),
-  invoke_subagent: (i) => ({ title: str(i.Role) || "Agent", arg: firstLine(str(i.Prompt), 160) }),
-  send_message: (i) => ({ title: "Message", arg: firstLine(str(i.Message), 160) }),
-  ask_question: (i) => { let qs = i.questions; if (typeof qs === "string") { try { qs = JSON.parse(qs); } catch (e) { qs = []; } }
-    qs = Array.isArray(qs) ? qs : []; return { title: "Question", arg: firstLine(str((qs[0] || {}).question), 160) + (qs.length > 1 ? ` + ${plural(qs.length - 1, "more")}` : "") }; },
-  manage_task: (i) => ({ title: "Task", arg: [str(i.Action), str(i.TaskId)].filter(Boolean).join(" ") }),
-  manage_subagents: (i) => ({ title: "Subagents", arg: str(i.Action) }),
-  define_subagent: (i) => ({ title: "Define Agent", arg: str(i.Name) }),
-  schedule: (i) => ({ title: "Schedule", arg: firstLine(str(i.Prompt), 160) }),
+// How a call is shown, by its shape (harness_kit's Shape: the harness's rules read each tool's input into it, data.py's
+// `view`): the argument beside its title, a note on the right, and (optionally) what goes under it instead of its
+// plain result. The title is its harness's (`view.title`), as is any argument a shape's own does not give (`view.arg`).
+// A call no rules read (pi's, opencode's): its name and inputs.
+const found = (unit) => (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `${unit === "line" ? "Read" : "Found"} ${plural(n, unit)}` }), el("pre", { text })); };
+const SHAPES = {
+  shell: (v) => ({ arg: firstLine(str(v.command), 200), note: v.description, doing: v.description }),
+  script: (v) => ({ arg: firstLine(str(v.code).trim(), 200) }),       // a script that calls no tool (one that does: its calls)
+  read: (v) => ({ arg: shortPath(v.path) + (v.offset ? ` (from line ${v.offset})` : ""), result: found("line") }),
+  write: (v) => ({ arg: shortPath(v.path), quiet: true,
+    body: (id) => { const l = lines(v.content); return el("details", { id: id + "-w" }, el("summary", { text: `Wrote ${plural(l.length, "line")}` }), diffLines("", str(v.content)).box); } }),
+  edit: (v) => { const ds = (v.edits || []).map((e) => diffLines(str(e.old), str(e.new)));
+    const added = ds.reduce((n, d) => n + d.added, 0), removed = ds.reduce((n, d) => n + d.removed, 0);
+    return { arg: shortPath(v.path), quiet: true,
+      body: () => el("div", {}, el("div", { text: `${plural(added, "addition")}, ${plural(removed, "removal")}${v.all ? " (all)" : ""}` }), ...ds.map((d) => d.box)) }; },
+  patch: (v) => ({ arg: (str(v.patch).match(/\*\*\* (?:Update|Add|Delete) File: (.+)/) || [, ""])[1], body: () => patchView(str(v.patch)), quiet: true }),
+  search: (v) => ({ arg: `pattern: "${str(v.pattern)}"${v.path ? `, path: "${shortPath(v.path)}"` : ""}${v.glob ? `, glob: "${v.glob}"` : ""}`,
+    result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Found ${plural(n, v.finds === "files" ? "file" : "line")}` }), el("pre", { text })); } }),
+  web: (v) => ({ arg: v.url ? str(v.url) : `"${str(v.query)}"` }),
+  agent: () => ({}),
+  todo: (v) => ({ body: () => todoView(v.items), quiet: true }),
+  skill: (v) => ({ arg: str(v.name) }),
+  ask: () => ({}),
 };
 function summary(call) {
   const inner = (call.calls || []).filter((c) => c.input !== null && c.input !== undefined);
-  if (inner.length) {                    // codex's code mode: a script, shown as the calls it makes
+  if (inner.length) {                    // a script (codex's code mode), shown as the calls it makes
     const first = summary(inner[0]), more = call.calls.length - 1;
     return more ? { ...first, arg: `${first.arg || ""}${first.arg ? " " : ""}+ ${plural(more, "more call")}`, body: undefined, quiet: false } : first;
   }
+  const v = call.view || {}, shaped = SHAPES[v.shape];
+  if (shaped) { try { const s = shaped(v); return { ...s, title: v.title || call.name, arg: v.arg ?? s.arg }; } catch (e) { /* shown as any other */ } }
   const input = call.input && typeof call.input === "object" ? call.input : { input: call.input };
-  const known = SUMMARIES[call.name];
-  if (known) { try { return known(input); } catch (e) { /* shown as any other */ } }
-  const args = typeof call.input === "string" ? call.input : Object.entries(input).map(([k, v]) => `${k}: ${firstLine(str(v), 60)}`).join(", ");
-  return { title: call.name.replace(/^mcp__([^_]+(?:_[^_]+)*)__/, "$1 · "), arg: firstLine(args, 200) };
+  const args = v.arg ?? (typeof call.input === "string" ? call.input : Object.entries(input).map(([k, v]) => `${k}: ${firstLine(str(v), 60)}`).join(", "));
+  return { title: v.title || String(call.name || "tool").replace(/^mcp__([^_]+(?:_[^_]+)*)__/, "$1 · "), arg: firstLine(str(args), 200) };
 }
 // One tool call and, under it, its result: running while there is none and the agent is.
 function callBlock(call, result, id, running) {
@@ -6912,7 +6894,7 @@ addChatView({
 const txBlocks = blockCache(), msgRows = blockCache();
 addChatView({
   id: "transcript", name: "Transcript", feed: "transcript", frame: "term", icon: ICONS.page, more: true, readOnly: true,
-  description: "The conversation as Claude Code's terminal shows it.",
+  description: "The conversation as its harness's terminal shows it.",
   tools: () => notesSwitch(),
   render: ({ info, data, running, loadEarlier }) => {
     state.txCwd = info.cwd || "";
@@ -7055,7 +7037,7 @@ async function termOpen(info) {
 }
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
   id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame", icon: ICONS.terminal,
-  description: "The harness's own interface (Claude Code's, codex's), in a terminal: what it would show and ask in one outside, its keys included.",
+  description: "The harness's own interface, in a terminal: what it would show and ask in one outside, its keys included.",
   render: (ctx) => {
     const { info, held } = ctx;
     if (state.home && state.home.terminals === false)
@@ -7308,49 +7290,22 @@ function filesTools() {
   if (!d || !d.turns.length || state.files.turn === null) return [];
   return [el("button", { type: "button", title: "Show the latest turn, and follow it", onclick: () => setFilesTurn(null) }, "Latest")];
 }
-// A shell call's command, whichever harness's (codex's an argv: `bash -lc <it>`, its third); null for any other call.
-const SHELL_TOOLS = words("Bash shell exec_command local_shell shell_command");
-function shellCommand(call) {
-  const i = call && call.input;
-  if (!call || !SHELL_TOOLS.has(call.name) || !i || typeof i !== "object") return null;
-  const c = i.command ?? i.cmd;
-  if (Array.isArray(c)) return c.length >= 3 && ["bash", "sh", "zsh"].includes(c[0]) && ["-lc", "-c"].includes(c[1]) ? String(c[2]) : c.join(" ");
-  return typeof c === "string" ? c : null;
-}
+// A shell call's command, as its harness's rules read it (its view's); null for any other call.
+const shellCommand = (call) => call && call.view && call.view.shape === "shell" ? str(call.view.command) : null;
 const homeDir = () => (state.files && state.files.data && state.files.data.home) || "";
 // A call's line (files.py's `_label`) as the commands list and the turn's latest call show it: a shell command it
 // is (no description given: codex's) in the terminal's type, coloured
 function callLabel(c, n) {
   const text = firstLine(c.text, n);
-  return shellCommand(c.call) !== null && !(c.call.input && c.call.input.description) ? el("span", { class: "cmdline" }, shellSpan(text)) : text;
-}
-// What a call printed, less a harness's own lines about the run, given apart: Claude Code's "Exit code N" before a
-// failure's output and its note after a command that the shell's directory was put back; codex's header (its exit
-// code, how long it ran).
-const CC_EXIT = /^(?:Error: )?Exit code (-?\d+)\n?/;
-const CODEX_HEAD = /^(?:Chunk ID: [^\n]*\n)?(?:Wall time: ([^\n]*)\n)?(?:Process exited with code (-?\d+)\n)?(?:Original token count: [^\n]*\n)?Output:\n/;
-const CWD_NOTE = /\n?Shell cwd was reset to [^\n]*\s*$/;
-// agy's header on each tool's output: when it was made, and when it finished
-const AGY_HEAD = /^Created At: [^\n]*\n(?:Completed At: [^\n]*\n)?/;
-// and on a command's: "Command exited with code 0.", then "Command output:" (after a note when it was cut short)
-const AGY_EXIT = /(^|\n)Command exited with code (-?\d+)\.\n\n?(?:Command output:\n)?/;
-function outputParts(text) {
-  let t = String(text ?? ""), exit = null, took = null, m;
-  if ((m = AGY_HEAD.exec(t))) {
-    t = t.slice(m[0].length);
-    if ((m = AGY_EXIT.exec(t))) { exit = m[2]; t = t.slice(0, m.index) + m[1] + t.slice(m.index + m[0].length); }
-  }
-  if ((m = CODEX_HEAD.exec(t))) { took = m[1] || null; exit = m[2] ?? null; t = t.slice(m[0].length); }
-  else if ((m = CC_EXIT.exec(t))) { exit = m[1]; t = t.slice(m[0].length); }
-  return { text: t.replace(CWD_NOTE, "").replace(/\n+$/, ""), exit, took };
+  return shellCommand(c.call) !== null && !c.call.view.description ? el("span", { class: "cmdline" }, shellSpan(text)) : text;
 }
 // A call opened: its command as a terminal would show it (shellHtml); a script, or a file's new text, coloured in its
 // language; a change as its lines out and in; any other call its inputs one by one, each whole. Under it what it
 // printed (ansiHtml), its exit code and run time beside. Copy takes the call as written.
-function callView(call, output, error) {
-  const box = el("div", { class: "cv" + (error ? " err" : "") });
+function callView(call, ran = {}) {
+  const box = el("div", { class: "cv" + (ran.error ? " err" : "") });
   if (!call) return box;
-  const input = call.input && typeof call.input === "object" ? call.input : {};
+  const input = call.input && typeof call.input === "object" ? call.input : {}, v = call.view || {};
   const code = (cls, html, copy) => {
     const src = el("div", { class: "cv-src" });
     src.innerHTML = html;
@@ -7363,19 +7318,18 @@ function callView(call, output, error) {
   const cmd = shellCommand(call);
   if (cmd !== null) {
     box.append(code("sh", shellHtml(cmd, homeDir()), cmd));
-    const dir = input.workdir || input.cwd;
-    const tags = [dir ? `in ${tildePath(str(dir), homeDir())}` : null, input.run_in_background ? "in the background" : null].filter(Boolean);
+    const tags = [v.cwd ? `in ${tildePath(str(v.cwd), homeDir())}` : null, v.background ? "in the background" : null].filter(Boolean);
     if (tags.length) box.append(el("div", { class: "cv-tags" }, ...tags.map((t) => el("span", { text: t }))));
-  } else if (call.name === "exec" && typeof call.input === "string") {   // codex's code mode: a JavaScript script
-    box.append(code("src", hlLines(call.input, "js").join("\n"), call.input));
-  } else if (call.name === "apply_patch") {
-    const p = str(input.input ?? call.input);
+  } else if (v.shape === "script") {                  // a script (codex's code mode), in its language
+    box.append(code("src", hlLines(str(v.code), v.lang || "js").join("\n"), str(v.code)));
+  } else if (v.shape === "patch") {
+    const p = str(v.patch);
     box.append(code("src", hlLines(p, "diff").join("\n"), p));
-  } else if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(call.name)) {
-    const p = input.file_path || input.notebook_path, lang = call.name === "NotebookEdit" ? "python" : langOfPath(p);
-    const edits = call.name === "MultiEdit" ? input.edits || [] : call.name === "Edit" ? [input] : [];
-    // a change's two sides read from inside a comment or a string they begin in; a whole file, or cell, from its top
-    const whole = str(input.content ?? input.new_source), pair = (e) => hlPart(lang, str(e.old_string), str(e.new_string));
+  } else if (v.shape === "edit" || v.shape === "write") {
+    const p = v.path, lang = v.lang || langOfPath(p);
+    const edits = v.shape === "edit" ? v.edits || [] : [];
+    // a change's two sides read from inside a comment or a string they begin in; a whole file from its top
+    const whole = str(v.content), pair = (e) => hlPart(lang, str(e.old), str(e.new));
     const html = edits.length ? edits.map((e) => { const [was, now] = pair(e); return lined(was, "del", "−") + lined(now, "add", "+"); })
       .join('<div class="cv-sep"></div>') : lined(hlLines(whole, lang === "html" ? guessWeb(whole) : lang), "", "");
     box.append(path(p), code("diff", html));
@@ -7387,11 +7341,13 @@ function callView(call, output, error) {
       return [el("span", { class: "k", text: k }), val];
     })));
   }
-  if (output !== undefined && output !== null && output !== "") {
-    const o = outputParts(output), out = el("pre", { class: "out" });
-    out.innerHTML = o.text ? outputHtml(o.text, cmd) : '<span class="a-dim">no output</span>';
-    if (o.exit !== null || o.took) box.append(el("div", { class: "cv-tags" },
-      o.exit !== null ? el("span", { class: o.exit === "0" ? "ok" : "bad", text: `exit ${o.exit}` }) : null, o.took ? el("span", { text: o.took }) : null));
+  // what it printed, its harness's lines about the run taken off (files.py's `output`), and what they said: its exit
+  // code, how long it ran
+  if (ran.output !== undefined && ran.output !== null && (ran.output !== "" || ran.exit != null)) {
+    const text = str(ran.output).replace(/\n+$/, ""), out = el("pre", { class: "out" });
+    out.innerHTML = text ? outputHtml(text, cmd) : '<span class="a-dim">no output</span>';
+    if (ran.exit != null || ran.took) box.append(el("div", { class: "cv-tags" },
+      ran.exit != null ? el("span", { class: String(ran.exit) === "0" ? "ok" : "bad", text: `exit ${ran.exit}` }) : null, ran.took ? el("span", { text: ran.took }) : null));
     box.append(out);
   }
   return box;
@@ -7545,7 +7501,7 @@ function filesRender({ info, session, running, writable, held }) {
   const folded = state.files.folded || (state.files.folded = new Set());
   // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
   // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
-  const MEMORY = /\/\.claude\/projects\/[^/]+\/memory$/;
+  const MEMORY = memoryFolders();
   const label = (above, path) => path === UNKNOWN ? "relative to an unknown folder"
     : (under(path, home) && !under(above, home) ? "~" + path.slice(home.length)
       : above === null ? path : path.slice(above.length + 1)).replace(/(\.claude\/projects\/)[^/]+(\/memory)$/, "$1…$2") + "/";
@@ -7562,7 +7518,8 @@ function filesRender({ info, session, running, writable, held }) {
         onclick: () => { open ? folded.add(dir.path) : folded.delete(dir.path); keepingPlace(renderMain); } },
         el("span", { class: "tw", text: open ? "▾" : "▸" }), el("span", { class: "name", text: label(above, dir.path) }),
         cwd && dir.path === cwd ? el("span", { class: "wd", title: "The session's working directory", text: "cwd" }) : null,
-        MEMORY.test(dir.path) ? el("span", { class: "wd", title: "Claude Code's memory of a directory: what it keeps for later sessions there", text: "memory" }) : null,
+        MEMORY.find(([re]) => re.test(dir.path)) ? el("span", { class: "wd", text: "memory",
+          title: `${harnessName(MEMORY.find(([re]) => re.test(dir.path))[1])}'s memory of a directory: what it keeps for later sessions there` }) : null,
         open ? null : el("span", { class: "n", text: `${count(dir)}` })));
       if (!open) continue;
       const kids = el("div", { class: "fl-kids", style: `--guide: ${17 + depth * 14}px` });   // under its caret's middle
@@ -7587,7 +7544,7 @@ function filesRender({ info, session, running, writable, held }) {
       cmdFiles(c).length ? el("div", { class: "fl-cmd-files" }, ...cmdFiles(c).map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, ...((c.did || {})[p] || []).map((k) => kindMark(k, 11)),
         showGit && (c.git || {})[p] ? gitMark(c.git[p], 11) : null, rel(p).split("/").pop()))) : null,
-      callView(c.call, c.output, c.error)))));
+      callView(c.call, c)))));
   if (!commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
   if (cmdsShown !== shown) requestAnimationFrame(() => {   // once each time a turn is shown, the latest or one picked: at its end
@@ -8029,7 +7986,7 @@ function lastCall(t, live, status) {
     el("summary", { title: "Show or fold the call and its output" },
       el("span", { class: "dot " + cls, text: "●" }), el("span", { class: "lbl " + cls, text: word }),
       el("span", { class: "first" }, callLabel(c, 200))),
-    callView(c.call, c.output, c.error));
+    callView(c.call, c));
 }
 addChatView({
   // "files": named so once, and kept as its id, with the readers' choices of it
@@ -8608,26 +8565,33 @@ const recText = (r) => r.kind !== "memory" ? r.output : (r.memories || []).lengt
   ? ["# MEMORY.md", ...r.memories.map((m) => `- [${m.title}](${m.name}.md) — ${m.description}`),
     ...r.memories.flatMap((m) => ["", `# ${m.name}.md`, "---", `name: ${JSON.stringify(m.name)}`, `description: ${JSON.stringify(m.description)}`,
       "metadata:", `  type: ${m.type}`, "---", "", m.body])].join("\n") + "\n" : "";
-// Saving a record where Claude Code reads it: where to (this directory's sessions, or every session), then
-// what each file would get -- written only once the reader has seen it (history.py's plan and save).
-const SAVE_WHERE = { agents: "every Codex and Claude Code session there reads it, in full, at its start",
-  claude: "every Codex and Claude Code session there reads it, in full, at its start",
-  skill: "Claude Code sessions there can use it: by its description, or as /name",
-  memory: "your Claude Code sessions there see each memory's line, and read it when it matters" };
+// Saving a record where a harness reads it (harness_kit's `saves`: those that have a place for its kind): which harness,
+// where to (this directory's sessions, or every session), then what each file would get -- written only once the reader
+// has seen it (history.py's plan and save).
+const saveKind = (r) => r.kind === "claude" ? "agents" : r.kind;     // "claude": one made as a CLAUDE.md, before
+const savers = (r) => Object.entries((state.home && state.home.harness_info) || {})
+  .filter(([, h]) => h.saves && h.saves[saveKind(r)]).map(([n]) => n);
 function recSave(r) {
   const sv = hist.saving;
   if (!sv || sv.id !== r.id) return null;
+  const hs = savers(r);
+  if (!hs.includes(sv.harness)) sv.harness = hs[0];
+  const says = (harnessInfo(sv.harness) || {}).saves?.[saveKind(r)] || {};
   const info = selectedInfo() || {};
   const dirs = [...new Set([...(r.dirs || []), info.cwd].filter(Boolean))];
   const box = el("input", { type: "text", value: sv.dir, list: `dirs-${r.id}`, spellcheck: "false", "aria-label": "Directory",
     ...(sv.target === "user" ? { disabled: "" } : {}) });
   box.addEventListener("input", () => { sv.dir = box.value; sv.plan = null; sv.err = ""; });
   box.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); recPlan(r); } });
-  const targets = [["dir", "A directory"], ...(r.kind === "skill" ? [["user", "All my projects"]] : [])];   // memories, AGENTS.md: a directory's
+  const targets = [["dir", "A directory"], ...(says.user === true ? [["user", "All my projects"]] : [])];   // else a directory's
+  const where = says.where || "";
   const p = sv.plan;
   return el("div", { class: "h-save" },
+    hs.length > 1 ? el("div", { class: "row" }, histSwitch("For", hs.map((h) => [h, harnessName(h)]), sv.harness,
+      (h) => { sv.harness = h; sv.plan = null; sv.err = ""; recPlan(r); })) : null,
     el("div", { class: "row" }, histSwitch("Save to", targets, sv.target, (t) => { sv.target = t; sv.plan = null; sv.err = ""; recPlan(r); }),
-      el("span", { class: "where", text: sv.target === "user" ? `${hist.claudeDir || "~/.claude"}: ${SAVE_WHERE[r.kind].replace(" there", "")}` : SAVE_WHERE[r.kind] })),
+      el("span", { class: "where", text: sv.target !== "user" ? where   // for every directory: its folder, once a preview said it
+        : `${(hist.homes || {})[sv.harness] ? `${hist.homes[sv.harness]}: ` : ""}${where.replace(" there", "")}` })),
     sv.target === "dir" ? el("div", { class: "row" }, box, el("datalist", { id: `dirs-${r.id}` }, ...dirs.map((d) => el("option", { value: d }))),
       el("button", { type: "button", onclick: () => recPlan(r) }, "Preview")) : null,
     ...(p ? [el("div", { class: "where", text: `For ${p.where}. ${plural(p.files.length, "file")}, as shown — nothing is written until you press Write:` }),
@@ -8646,16 +8610,16 @@ async function recPlan(r) {
   const sv = hist.saving;
   if (!sv || sv.id !== r.id) return;
   sv.err = ""; sv.done = null;
-  try { sv.plan = await post("/api/history/save", { id: r.id, target: sv.target, dir: sv.dir }); }
+  try { sv.plan = await post("/api/history/save", { id: r.id, target: sv.target, dir: sv.dir, harness: sv.harness }); }
   catch (err) { sv.plan = null; sv.err = err.message; }
-  if (sv.plan && sv.target === "user") { const m = /^(.*)\/(skills\/|CLAUDE\.md)/.exec(sv.plan.files[0].path); if (m) hist.claudeDir = m[1]; }
+  if (sv.plan && sv.plan.home) hist.homes = { ...(hist.homes || {}), [sv.plan.harness]: sv.plan.home };
   hist.version++; histRedraw();
 }
 async function recWrite(r) {
   const sv = hist.saving;
   if (!sv || !sv.plan) return;
   try {
-    const got = await post("/api/history/save", { id: r.id, target: sv.target, dir: sv.dir, version: sv.plan.version });
+    const got = await post("/api/history/save", { id: r.id, target: sv.target, dir: sv.dir, harness: sv.harness, version: sv.plan.version });
     sv.done = got.saved; sv.err = "";
     await loadExtracts(r.gatherer);
   } catch (err) { sv.err = err.message; if (/changed since/.test(err.message)) sv.plan = null; }
@@ -8673,7 +8637,7 @@ function recCard(r) {
   const running = r.status === "running", now = Date.now() / 1000;
   const sv = hist.saving && hist.saving.id === r.id ? hist.saving : null;
   const sig = [r.status, r.output.length, r.error, r.model, (r.saved || []).length,
-    sv ? signature([sv.target, sv.plan && sv.plan.version, sv.err, sv.done, sv.target === "dir" ? "" : hist.claudeDir]) : ""].join("|");
+    sv ? signature([sv.harness, sv.target, sv.plan && sv.plan.version, sv.err, sv.done, sv.target === "dir" ? "" : (hist.homes || {})[sv.harness]]) : ""].join("|");
   return histRecs.get(r.id, sig, () => {
     const [, name, file] = HIST_KINDS[r.kind] || ["", r.kind, "extract.md"];
     const body = el("div", { class: "body" });
@@ -8682,13 +8646,14 @@ function recCard(r) {
     else if (r.status === "failed") body.append(el("div", { class: "fail", text: r.error || "The call failed." }));
     else body.append(...recContent(r));
     const done = r.status === "done";
-    const savable = done && r.kind !== "summary" && !(r.kind === "memory" && !(r.memories || []).length);
+    const savable = done && savers(r).length && !(r.kind === "memory" && !(r.memories || []).length);
     const acts = el("div", { class: "acts" },
-      savable ? el("button", { type: "button", class: sv ? "" : "primary", title: "Write it where Claude Code reads it — you see each file first",
+      savable ? el("button", { type: "button", class: sv ? "" : "primary", title: `Write it where ${savers(r).map(harnessName).join(" or ")} reads it — you see each file first`,
         onclick: () => {
           if (sv) { hist.saving = null; } else {
             const info = selectedInfo() || {};
-            hist.saving = { id: r.id, target: "dir", dir: (r.dirs || [])[0] || info.cwd || "", plan: null, err: "", done: null };
+            hist.saving = { id: r.id, harness: savers(r).includes(info.harness) ? info.harness : savers(r)[0], target: "dir",
+              dir: (r.dirs || [])[0] || info.cwd || "", plan: null, err: "", done: null };
             setTimeout(() => recPlan(r));
           }
           hist.version++; histRedraw();

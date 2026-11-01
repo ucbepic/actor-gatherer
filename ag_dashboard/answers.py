@@ -20,11 +20,10 @@ from typing import List, Optional
 
 import harness_kit
 from harness_kit import AnswerError  # noqa: F401 - raised by keys, expected and summary
-from harness_kit.claude import PLAN_APPROVED  # noqa: F401 - Claude Code's result once a plan is approved
 
 
 def _harness(ask: dict) -> harness_kit.Harness:
-    h = harness_kit.get(ask.get("harness") or "claude")
+    h = harness_kit.get(ask.get("harness") or harness_kit.DEFAULT)
     if h is None:
         raise AnswerError(f"no rules for {ask.get('harness')}: answer it in its terminal")
     return h

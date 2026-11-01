@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from followed import Followed  # noqa: E402
 import harness_kit  # noqa: E402
+from harness_kit.claude import PLAN_APPROVED  # noqa: E402
 from ag_dashboard import answers, data, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 from test_dashboard_sessions import SessionsBase  # noqa: E402
@@ -71,7 +72,7 @@ class KeysTest(unittest.TestCase):
         self.assertEqual(answers.keys(PLAN, {"plan": "auto"}), ["1"])
         self.assertEqual(answers.keys(PLAN, {"plan": "manual"}), ["2"])
         self.assertEqual(answers.keys(PLAN, {"plan": "change", "text": "Say bye"}), ["3", "Say bye", "\r"])
-        self.assertEqual(answers.expected(PLAN, {"plan": "manual"}), [answers.PLAN_APPROVED])
+        self.assertEqual(answers.expected(PLAN, {"plan": "manual"}), [PLAN_APPROVED])
         self.assertEqual(answers.expected(PLAN, {"plan": "change", "text": "Say bye"}), ["Say bye"])
 
     def test_a_choice_that_does_not_answer_is_refused(self):

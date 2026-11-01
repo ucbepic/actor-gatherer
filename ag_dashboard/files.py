@@ -38,13 +38,13 @@ import time
 from typing import Dict, List, Optional
 
 import harness_kit
-from harness_kit import Kind, antigravity as agy_rules, claude as claude_rules, codex as codex_rules
+from harness_kit import Kind, Shape, ToolCall
 
 from . import data, work
 from . import home as paths
 from harness_kit.shell import (  # noqa: F401 - python_changes: tested here
-    CODE_MODE, EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, opened_script,
-    python_changes, runs_git, script_calls, script_output, shell_changes, shell_reads, worktrees_added)
+    GLOB, GREP_PATH_LINE, READ_LINE, _patch_files, _resolve, python_changes, runs_git, shell_changes, shell_reads,
+    worktrees_added)
 
 MAX_ROWS = 4000            # the most lines one file shows in a turn
 HELD_SECONDS = 30          # a message held until its turn ended: stored this close to when Claude Code sent it
@@ -56,22 +56,36 @@ GIT_WINDOW = 600.0         # seconds: how long ag's watcher keeps a change it sa
                            # a call of another session's stored this close to one running git may have been found to
                            # make git's changes
 SAME_ANSWER = 1.0          # seconds: calls of one session stored this close were made in one answer, run side by side
-# as the hook server's file_touches/check.py has them: Claude Code's note after a command's output, codex's header before it
-SHELL_CWD_NOTE = re.compile(r"\n?Shell cwd was reset to [^\n]*\s*$")
-CODEX_HEADER = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: [^\n]*\n)?(?:Process exited with code [^\n]*\n)?"
-                          r"(?:Original token count: [^\n]*\n)?Output:\n")
+def _view(part: dict) -> dict:
+    """How a call is shown, as its harness's rules read it (data.parts' `view`: harness_kit's ToolCall.view); {} where
+    no rules read it."""
+    v = part.get("view")
+    return v if isinstance(v, dict) else {}
 
 
-def _unsplit(name: str, text: str) -> dict:
+def _command(part: dict) -> tuple:
+    """A shell call's command and the directory it runs in (None: the session's), as its harness's rules read it; ("",
+    None) for any other call."""
+    v = _view(part)
+    if v.get("shape") != Shape.SHELL:
+        return "", None
+    return str(v.get("command") or ""), v["cwd"] if isinstance(v.get("cwd"), str) and v["cwd"] else None
+
+
+def _shown(result: Optional[dict]) -> str:
+    """A call's output as it printed it: its harness's own lines about the run taken off (data.parts' `shown`)."""
+    result = result or {}
+    return str(result.get("shown", result.get("text")) or "")
+
+
+def _unsplit(shell: bool, text: str) -> dict:
     """A file a call read whose lines can't be told apart from the rest of its output (`cat a; cat b`),
-    or one a Read showed no numbered lines of: the call's whole output, said to be that."""
-    text = SHELL_CWD_NOTE.sub("", text or "")
-    m = CODEX_HEADER.match(text)
-    text = (text[m.end():] if m else text).rstrip("\n")
+    or one a Read showed no numbered lines of: the call's whole output (`text`, as it printed it), said to be that."""
+    text = (text or "").rstrip("\n")
     if not text:
         return {"t": "note", "text": "read, but the output was empty"}
     note = ("the command's whole output: this file's lines are in it, but which ones can't be told apart from the rest"
-            if name in SHELLS else "the call's whole output: it shows none of the file's lines by number")
+            if shell else "the call's whole output: it shows none of the file's lines by number")
     return {"t": "output", "note": note, "lines": text.split("\n")}
 
 
@@ -87,14 +101,12 @@ TEMPORARY = _temporary_roots()   # the temporary folders: /tmp, macOS's per-user
 
 
 def _harness_folders() -> tuple:
-    folders = set()
-    for var, default in (("CLAUDE_CONFIG_DIR", "~/.claude"), ("CODEX_HOME", "~/.codex"), (None, "~/.claude.json")):
-        for f in {(var and os.environ.get(var)) or default, default}:
-            folders |= {os.path.abspath(os.path.expanduser(f)), os.path.realpath(os.path.expanduser(f))}
-    return tuple(sorted(folders))
+    """Every harness's own folders and files (harness_kit's `own_folders`), as given and resolved."""
+    return tuple(sorted({p for h in harness_kit.HARNESSES.values() for f in h.own_folders()
+                         for p in (os.path.abspath(f), os.path.realpath(f))}))
 
 
-# Claude Code's and Codex's own folders -- the sessions' transcripts, plans, memory -- and Claude Code's settings file
+# the harnesses' own folders -- the sessions' transcripts, plans, memory -- and their settings files
 HARNESS_FOLDERS = _harness_folders()
 
 
@@ -108,18 +120,19 @@ def ags(path: str) -> bool:
     return _under(path, {paths.HOME, os.path.realpath(paths.HOME)})
 
 
-def says_writes(name: str, raw, cwd: str) -> set:
-    """The files a call (its input, `raw`) says it changes: an edit tool's, or a shell command's that says so."""
-    if name in SHELLS:
-        command, workdir = _shell_text(name, raw)
+def says_writes(part: dict, cwd: str) -> set:
+    """The files a call says it changes, as its harness's rules show it (its view): a write's or an edit's file, a
+    patch's, or a shell command's that says so."""
+    v = _view(part)
+    shape = v.get("shape")
+    if shape == Shape.SHELL:
+        command, workdir = _command(part)
         return {p for p, _, _ in shell_changes(command, _resolve(workdir, cwd) if workdir else cwd)[0]}
-    if name not in EDITS:
-        return set()
-    inp = raw if isinstance(raw, dict) else {"input": raw}
-    out = {_resolve(str(inp[k]), cwd) for k in ("file_path", "notebook_path", "Path")       # Path: Antigravity's
-           if isinstance(inp.get(k), str) and inp[k]}
-    body = inp.get("input") if isinstance(inp.get("input"), str) else inp.get("patch") or ""
-    return out | {_resolve(p, cwd) for p, _, _ in _patch_files(str(body))}
+    if shape in (Shape.WRITE, Shape.EDIT):
+        return {_resolve(v["path"], cwd)} if isinstance(v.get("path"), str) and v["path"] else set()
+    if shape == Shape.PATCH:
+        return {_resolve(p, cwd) for p, _, _ in _patch_files(str(v.get("patch") or ""))}
+    return set()
 
 
 def temporary(path: str) -> bool:
@@ -282,9 +295,8 @@ def _git(conn) -> dict:
                 if session not in harnesses:
                     harnesses[session] = data._harness(conn, session)
                 for part in data.parts("tool_call", raw, None, None, harnesses[session]):
-                    ran = [(part.get("name"), part.get("input"))] + [(c.get("name"), c.get("input")) for c in part.get("calls") or []]
-                    if part.get("kind") == "call" and part.get("id") and any(
-                            name in SHELLS and runs_git(_shell_text(name, inp)[0]) for name, inp in ran):
+                    ran = [part] + list(part.get("calls") or [])                   # a script's calls, each
+                    if part.get("kind") == "call" and part.get("id") and any(runs_git(_command(q)[0]) for q in ran):
                         got["calls"][part["id"]] = (at, session)
                 continue
             if cid in got["calls"] and how in ("created", "modified", "deleted") and isinstance(at_path, str):
@@ -414,38 +426,34 @@ class _Turn:
             blocks.append(b)
 
 
-def _label(name: str, inp: dict, raw, cwd: str) -> str:
-    """A call in a line: its own description, else its tool and what it worked on -- a code-mode
-    script, the calls it makes."""
-    if name == CODE_MODE and isinstance(raw, str) and script_calls(raw):
-        return " · ".join(_label(n, a if isinstance(a, dict) else {"input": a}, a, cwd) or n
-                          for n, a in script_calls(raw))[:200]
-    if name == CODE_MODE and isinstance(raw, str):    # a script that calls no tool: its first line
-        first = next((x.strip() for x in raw.split("\n") if x.strip()), "")
+def _label(part: dict, cwd: str) -> str:
+    """A call in a line, as its harness's rules show it (its view): a script's calls; its own description; a shell
+    command's line; a subagent by its name; a question by what it asks; a skill loaded; the harness's own line for it;
+    else its tool and what it worked on."""
+    v, name = _view(part), part.get("name") or ""
+    inp = part.get("input") if isinstance(part.get("input"), dict) else {}
+    shape = v.get("shape")
+    if part.get("calls"):                            # a script, as the calls it makes
+        return " · ".join(_label(c, cwd) or c.get("name") or "" for c in part["calls"])[:200]
+    if shape == Shape.SCRIPT:                        # a script that calls no tool: its first line
+        first = next((x.strip() for x in str(v.get("code") or "").split("\n") if x.strip()), "")
         return f"Script {first}".strip()[:200]
-    if isinstance(inp.get("description"), str) and inp["description"].strip():
-        return inp["description"].strip()[:200]
-    if name in SHELLS:
-        command, _ = _shell_text(name, raw)
-        return re.sub(r"^cd \S+ && ", "", command.strip().split("\n")[0])[:200]
-    if name == CODEX_SPAWN and isinstance(inp.get("task_name"), str):    # codex's subagent (what it is asked: encrypted)
-        return f"Agent {inp['task_name']}"[:200]
-    if name == AGY_SPAWN and isinstance(inp.get("Role"), str):            # agy's subagent, by the role it is given
-        return f"Agent {inp['Role']}"[:200]
-    if name == "ask_question":                                            # agy's question to the user: its first
-        asked = agy_rules.questions_of(inp.get("questions"))
-        if asked:
-            return f"Ask: {asked[0]['question']}"[:200]
-    if name == "Skill" and isinstance(inp.get("skill"), str):
-        args = inp.get("args") if isinstance(inp.get("args"), str) else ""
-        return f"Load skill {inp['skill']}{' ' + args if args.strip() else ''}"[:200]
-    if name == "ToolSearch" and isinstance(inp.get("query"), str):    # Claude Code loading tools it was told of by name
-        q = inp["query"].strip()
-        picked = [tool_name(t.strip()) for t in q[len("select:"):].split(",") if t.strip()] if q.startswith("select:") else []
-        return (f"Load {', '.join(picked)}" if picked else f"Search tools: {q}")[:200]
-    path = inp.get("file_path") or inp.get("notebook_path")
-    target = path if isinstance(path, str) and path else inp.get("pattern") or inp.get("query") \
-        or inp.get("url") or inp.get("skill") or inp.get("prompt") or ""
+    said = v.get("description") or inp.get("description")
+    if isinstance(said, str) and said.strip():
+        return said.strip()[:200]
+    if shape == Shape.SHELL:
+        return re.sub(r"^cd \S+ && ", "", _command(part)[0].strip().split("\n")[0])[:200]
+    if shape == Shape.AGENT and v.get("name"):
+        return f"Agent {v['name']}"[:200]
+    if shape == Shape.ASK and v.get("arg"):
+        return f"Ask: {v['arg']}"[:200]
+    if shape == Shape.SKILL and v.get("name"):
+        return f"Load skill {v['name']}{' ' + v['args'] if str(v.get('args') or '').strip() else ''}"[:200]
+    if isinstance(v.get("label"), str) and v["label"]:
+        return v["label"][:200]
+    path = v.get("path") if shape in (Shape.READ, Shape.WRITE, Shape.EDIT) else inp.get("file_path") or inp.get("notebook_path")
+    target = path if isinstance(path, str) and path else v.get("pattern") or v.get("query") or v.get("url") \
+        or inp.get("pattern") or inp.get("query") or inp.get("url") or inp.get("skill") or inp.get("prompt") or ""
     if isinstance(target, str) and target == path:
         target = short_path(target, cwd)
     elif isinstance(target, str) and cwd and target.startswith(cwd.rstrip("/") + "/"):
@@ -454,7 +462,9 @@ def _label(name: str, inp: dict, raw, cwd: str) -> str:
 
 
 MCP_TOOL = re.compile(r"^mcp__([^_]+(?:_[^_]+)*)__(.+)$")                # an MCP server's tool: mcp__<server>__<tool>
-MEMORY = re.compile(r"/\.claude/projects/[^/]+/memory(/.*)?$")           # Claude Code's memory of a project's directory
+# where a harness keeps its memory of a directory (harness_kit's `memory_folder`), and a file in it
+MEMORY = re.compile("|".join(f"(?:{h.memory_folder})(?P<in{i}>/.*)?$" for i, h in enumerate(harness_kit.HARNESSES.values())
+                             if h.memory_folder) or r"(?!)")
 
 
 def tool_name(name: str) -> str:
@@ -464,42 +474,46 @@ def tool_name(name: str) -> str:
 
 
 def short_path(path: str, cwd: str) -> str:
-    """A file's path in a call's line: from the session's directory; a file of Claude Code's memory as
+    """A file's path in a call's line: from the session's directory; a file of a harness's memory of a directory as
     memory/<file>; else from the home folder (~), or whole."""
     if cwd and path.startswith(cwd.rstrip("/") + "/"):
         return path[len(cwd.rstrip("/")) + 1:]
     m = MEMORY.search(path)
     if m:
-        return "memory" + (m.group(1) or "")
+        return "memory" + next((v for v in m.groupdict().values() if v), "")
     home = os.path.expanduser("~")
     return "~" + path[len(home):] if path.startswith(home + "/") else path
 
 
-def _opened(part: dict, result: Optional[dict]) -> List[tuple]:
-    """[(call, its result)]: a code-mode script's calls, each with its own result (commands.opened_script),
-    as the hook server checked them -- the last also with what the script printed (`printed`), shown as its
-    output; any other call as it is."""
-    raw = part.get("input")
-    inner = opened_script(part.get("id"), raw, None if result is None else (result.get("text") or "", bool(result.get("error")))) \
-        if part.get("name") == CODE_MODE and isinstance(raw, str) and part.get("id") else []
+def _opened(rules, part: dict, result: Optional[dict]) -> List[tuple]:
+    """[(call, its result)]: a script's calls (codex's code mode), each with its own result, as its harness's rules
+    split them (`script_results`) and the hook server checked them -- the last also with what the script printed
+    (`printed`), shown as its output; any other call as it is."""
+    inner, printed = rules.script_results(ToolCall(part.get("id"), part.get("name") or "", part.get("input")),
+                                          None if result is None else (result.get("text") or "", bool(result.get("error")))) \
+        if part.get("calls") and rules is not None else ([], "")
     if not inner:
         return [(part, result)]
-    printed = script_output(result.get("text") or "")[0] if result is not None else ""
-    return [(dict(part, id=iid, name=name, input=inp),
-             None if got is None else dict(result, text=got[0], error=got[1], printed=printed if n == len(inner) else got[0]))
-            for n, (iid, name, inp, got) in enumerate(inner, 1)]
+    views = list(part.get("calls") or [])
+    out = []
+    for n, (iid, name, inp, got) in enumerate(inner, 1):
+        own = views[n - 1] if n - 1 < len(views) else {}
+        q = {k: v for k, v in part.items() if k != "calls"}
+        q.update(id=iid, name=name, input=inp, view=own.get("view") or {}, action=own.get("action"))
+        r = None if got is None else {k: v for k, v in dict(result, text=got[0], error=got[1],
+                                                               printed=printed if n == len(inner) else got[0]).items()
+                                      if k not in ("shown", "exit", "took")}       # the script's, not this call's
+        out.append((q, r))
+    return out
 
 
 def _call_view(part: dict) -> dict:
-    """A call as its source shows it: its tool, and its input clipped."""
-    return {"name": part.get("name"), "input": data._clip(part.get("input"), COMMAND_OUTPUT)}
+    """A call as its source shows it: its tool, its input and its view (data.parts'), clipped."""
+    return {"name": part.get("name"), "input": data._clip(part.get("input"), COMMAND_OUTPUT),
+            "view": data._clip(_view(part), COMMAND_OUTPUT)}
 
 
 # ------------------------------------------------------------------ the harness's notes, as the conversation shows them
-
-AGENT_ID = claude_rules.AGENT_ID                                          # a subagent's id, in its call's result
-CODEX_SPAWN = codex_rules.SPAWN                                           # codex's tool that starts a subagent
-AGY_SPAWN = "invoke_subagent"                                           # agy's subagent, started
 
 
 def _json(text) -> Optional[dict]:
@@ -629,6 +643,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         git = _git(conn) if touched else {"calls": {}, "changed": {}, "trees": []}   # what git did, in any session
         held = data.meanwhile(conn, channel)          # sent when a turn ended, written while it ran (the record's)
         reports = data.record_of(conn, channel).reports()   # what each subagent answered, as its own record had it
+        rules = harness_kit.get(data._harness(conn, channel) or harness_kit.DEFAULT)    # its harness's rules
     finally:
         conn.close()
     known: Dict[str, Sheet] = {}                     # each file's lines as last seen, over the whole session
@@ -698,12 +713,11 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     def from_disk(rec, view, via: str, part: dict, result: dict, rows: List[dict], error: bool) -> None:
         """A call as the hook server found it on disk (`_touches`): the files it read and changed."""
         said = []                                           # the files the call says it writes, once asked
-        name = part.get("name") or ""
-        ran = name in SHELLS and runs_git(_shell_text(name, part.get("input"))[0])
+        ran = runs_git(_command(part)[0])
 
         def says(path: str) -> bool:
             if not said:
-                said.append(says_writes(name, part.get("input"), cwd))
+                said.append(says_writes(part, cwd))
             return path in said[0]
 
         for r in rows:
@@ -737,7 +751,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 if d.get("image") and result.get("row_id") is not None:
                     rec.block(f, src, {"t": "image", "row_id": result["row_id"], "id": part.get("id")})
                 elif d.get("unsplit"):
-                    rec.block(f, src, _unsplit(part.get("name") or "", result.get("text") or ""))
+                    rec.block(f, src, _unsplit(_view(part).get("shape") == Shape.SHELL, _shown(result)))
                 for start, lines in d.get("lines") or []:
                     rec.block(f, src, {"t": "lines", "start": start, "lines": lines})
             elif how == "hit":
@@ -789,81 +803,77 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             return
         rec.current = None
         last = rec.commands[-1] if rec.commands else None
-        call = (last or {}).get("call") or {}
-        inp = call.get("input") if isinstance(call.get("input"), dict) else {}
-        asked = str(inp.get("skill") or "") if call.get("name") == "Skill" else ""
+        v = ((last or {}).get("call") or {}).get("view") or {}
+        asked = str(v.get("name") or "") if v.get("shape") == Shape.SKILL else ""
         if asked and (asked == n["name"] or asked.endswith(":" + n["name"])) and not last.get("loaded"):
             last.update(output=n["text"][:COMMAND_OUTPUT], loaded=True)
             return
         rec.commands.append({"text": f"Load skill {n['name']}{' ' + n['args'] if n['args'] else ''}"[:200], "error": False,
-                             "running": False, "call": {"name": "Skill", "input": {"skill": n["name"], "args": n["args"]}},
+                             "running": False, "call": {"name": "skill", "input": {"skill": n["name"], "args": n["args"]},
+                                                        "view": {"shape": Shape.SKILL, "title": "Skill", "name": n["name"],
+                                                                 "args": n["args"]}},
                              "output": n["text"][:COMMAND_OUTPUT], "files": [], "loaded": True})
 
     def apply(t: Optional[_Turn], part: dict, result: Optional[dict]) -> None:
-        name, inp = part.get("name") or "", part.get("input")
-        inp = inp if isinstance(inp, dict) else {"input": inp}
+        name, v = part.get("name") or "", _view(part)
+        shape = v.get("shape")
         error = bool(result and result.get("error"))
-        text = (result or {}).get("text") or ""
-        if t is not None and name not in ("TodoWrite", "update_plan"):   # counted as `commands` lists it, in every turn
+        text, shown = (result or {}).get("text") or "", _shown(result)
+        if t is not None and shape != Shape.TODO:                  # counted as `commands` lists it, in every turn
             t.head["calls"] += 1
-            t.skill = [str(inp.get("skill") or ""), False] if name == "Skill" else None
+            t.skill = [str(v.get("name") or ""), False] if shape == Shape.SKILL else None
         rec = t if t is not None and t is want else None          # only the asked-for turn is kept in full
         view = _call_view(part) if rec else None
         if rec:                                                 # every call, in order, with the files it touched
-            rec.current = None if name in ("TodoWrite", "update_plan") else {
-                "text": _label(name, inp, part.get("input"), cwd), "error": error, "running": result is None,
-                "call": view, "output": (result or {}).get("printed", text)[:COMMAND_OUTPUT], "files": []}
+            rec.current = None if shape == Shape.TODO else {
+                "text": _label(part, cwd), "error": error, "running": result is None, "call": view,
+                "output": (result or {}).get("printed", shown)[:COMMAND_OUTPUT], "exit": (result or {}).get("exit"),
+                "took": (result or {}).get("took"), "files": []}
             if rec.current:
                 rec.commands.append(rec.current)
         rows = touched.get(part.get("id")) if part.get("id") and result is not None else None
         if rows is not None:                                    # checked on disk as it ran: as found there
-            desc = inp.get("description") if isinstance(inp.get("description"), str) else ""
-            command = _shell_text(name, part.get("input"))[0] if name in SHELLS else ""
+            desc = v.get("description") if isinstance(v.get("description"), str) else ""
+            command = _command(part)[0]
             via = desc.strip()[:200] or (re.sub(r"^cd \S+ && ", "", command.split("\n")[0])[:200] if command else name)
             from_disk(rec, view, via, part, result, rows, error)
             return
-        if name == "Read" and inp.get("file_path"):
-            path = _resolve(str(inp["file_path"]), cwd)
+        if shape == Shape.READ and isinstance(v.get("path"), str) and v["path"]:
+            path = _resolve(v["path"], cwd)
             got = [] if error else [(int(m.group(1)), m.group(2)) for m in map(READ_LINE.match, text.split("\n")) if m]
             for n, line in got:
                 knows(path).rows[n] = {"text": line}
             if rec:
                 f = rec.file(path)
                 image = text.strip() == "[image]"
-                src = rec.source(f, "Read", "read", view, error)     # an image is read like any file: its content an image
+                src = rec.source(f, name, "read", view, error)       # an image is read like any file: its content an image
                 if image and result.get("row_id") is not None:
                     rec.block(f, src, {"t": "image", "row_id": result["row_id"], "id": part.get("id")})
                 for start, lines in _runs(got):
                     rec.block(f, src, {"t": "lines", "start": start, "lines": lines})
             return
-        if name in EDITS:
+        if shape in (Shape.WRITE, Shape.EDIT, Shape.PATCH):
             edits = []                                              # (path, old, new, whole file?)
-            if name == "Edit":
-                edits.append((inp.get("file_path"), str(inp.get("old_string") or ""), str(inp.get("new_string") or ""), False))
-            elif name == "MultiEdit":
-                for e in inp.get("edits") or []:
-                    if isinstance(e, dict):
-                        edits.append((inp.get("file_path"), str(e.get("old_string") or ""), str(e.get("new_string") or ""), False))
-            elif name == "Write":
-                edits.append((inp.get("file_path"), None, str(inp.get("content") or ""), True))
-            elif name == "NotebookEdit":
-                edits.append((inp.get("notebook_path"), "", str(inp.get("new_source") or ""), False))
-            else:                                                   # codex's apply_patch: the patch is its input
-                body = inp.get("input") if isinstance(inp.get("input"), str) else inp.get("patch") or ""
-                for path, how, hunks in _patch_files(str(body)):
+            if shape == Shape.WRITE:
+                edits.append((v.get("path"), None, str(v.get("content") or ""), True))
+            elif shape == Shape.EDIT:
+                for e in v.get("edits") or []:
+                    edits.append((v.get("path"), str(e.get("old") or ""), str(e.get("new") or ""), False))
+            else:                                                   # a patch: each file's hunks
+                for path, how, hunks in _patch_files(str(v.get("patch") or "")):
                     if how == "add":
                         edits.append((path, None, "\n".join(l for _, new in hunks for l in new), True))
                     else:
                         for old, new in hunks:
                             edits.append((path, "\n".join(old), "\n".join(new), False))
             for path, old, new, whole in edits:
-                if path:
-                    change(rec, view, name, _resolve(str(path), cwd), old, new, whole, error)
+                if isinstance(path, str) and path:
+                    change(rec, view, name, _resolve(path, cwd), old, new, whole, error)
             return
-        if name in SHELLS:
-            command, workdir = _shell_text(name, part.get("input"))
+        if shape == Shape.SHELL:
+            command, workdir = _command(part)
             here = _resolve(workdir, cwd) if workdir else cwd
-            found, _ = shell_reads(command, "" if error else text, here)
+            found, _ = shell_reads(command, "" if error else shown, here)
             changes, _ = shell_changes(command, here)
             found = [x for x in found if not GLOB.search(x[0])]      # a pattern: which files, not known here
             changes = [c for c in changes if not GLOB.search(c[0])]
@@ -873,7 +883,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                         knows(path).rows[n + i] = {"text": line}
                 elif how == "hit" and n not in knows(path).rows:  # a match is its whole line
                     knows(path).rows[n] = {"text": got}
-            desc = inp.get("description") if isinstance(inp.get("description"), str) else ""
+            desc = v.get("description") if isinstance(v.get("description"), str) else ""
             via = desc or re.sub(r"^cd \S+ && ", "", command.split("\n")[0])[:200]
             for path, how, what in changes:
                 if how == "write":
@@ -906,22 +916,23 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                         if how == "lines":                  # start None: where in the file is not known
                             rec.block(f, src, {"t": "lines", "start": n, "lines": got})
                         else:
-                            rec.block(f, src, _unsplit(name, text))
+                            rec.block(f, src, _unsplit(True, shown))
             return
-        if name in ("Grep", "Glob") and rec is None:
+        if shape == Shape.SEARCH and rec is None:
             return
-        if name in ("Grep", "Glob"):
-            root = _resolve(str(inp.get("path") or "."), cwd)
+        if shape == Shape.SEARCH:
+            root = _resolve(str(v.get("path") or "."), cwd)
+            via = f"{name} {v.get('pattern') or ''}"
             for line in text.split("\n") if not error else []:
                 m = GREP_PATH_LINE.match(line)
                 if m:
                     p = _resolve(m.group(1), root)
                     f = rec.file(p)
-                    src = rec.source(f, f"{name} {inp.get('pattern', '')}", "hit", view, error)
+                    src = rec.source(f, via, "hit", view, error)
                     rec.block(f, src, {"t": "hits", "rows": [[int(m.group(2)), m.group(3)[:LINE_CHARS]]]})
                 elif line.strip().startswith("/") and " " not in line.strip():
                     f = rec.file(_resolve(line.strip(), root))
-                    rec.block(f, rec.source(f, f"{name} {inp.get('pattern', '')}", "hit", view, error),
+                    rec.block(f, rec.source(f, via, "hit", view, error),
                               {"t": "note", "text": "listed by name"})
             return
 
@@ -970,11 +981,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 order.append((cur, p))
                 if p.get("id"):
                     calls[p["id"]] = p
-                inp = p.get("input") if isinstance(p.get("input"), dict) else {"input": p.get("input")}
-                label = _label(p.get("name") or "", inp, p.get("input"), cwd)
+                label = _label(p, cwd)
                 head["now"] = {"kind": "call", "id": p.get("id"), "text": label}
                 head["last"] = {"id": p.get("id"), "text": label, "call": _call_view(p), "running": True, "error": False, "output": ""}
-                acts[p.get("id") or f"#{len(acts)}"] = {"id": p.get("id"), "kind": work.doing(p.get("name") or "", p.get("input")),
+                acts[p.get("id") or f"#{len(acts)}"] = {"id": p.get("id"), "kind": work.doing(p.get("action"), _view(p)),
                                                          "ended": None, "ok": True}
             elif p["kind"] == "result" and p.get("id"):
                 results[p["id"]] = dict(p, row_id=row_id)      # where it is stored: its image is fetched from there
@@ -984,20 +994,14 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 if (head["now"] or {}).get("id") == p["id"]:
                     head["now"] = None
                 if (head["last"] or {}).get("id") == p["id"]:
-                    head["last"].update(running=False, error=bool(p.get("error")), output=(p.get("text") or "")[:COMMAND_OUTPUT])
+                    head["last"].update(running=False, error=bool(p.get("error")), output=_shown(p)[:COMMAND_OUTPUT],
+                                        exit=p.get("exit"), took=p.get("took"))
                 started = calls.get(p["id"]) or {}
-                m = AGENT_ID.search(p.get("text") or "") if started.get("name") in ("Agent", "Task") else None
-                if m:
-                    agents[m.group(1)] = str((started.get("input") or {}).get("description") or "")
-                if started.get("name") == CODEX_SPAWN:      # {"task_name": "/root/count_a"}: its path
-                    path = (_json(p.get("text")) or {}).get("task_name")
-                    if isinstance(path, str) and path:
-                        agents[path] = path.rsplit("/", 1)[-1]
-                        spawned[path] = {"head": head, "given": False}
-                if started.get("name") == AGY_SPAWN:        # agy's: its subagent's conversation, by the role it was given
-                    made = agy_rules.task_of(AGY_SPAWN, p.get("text") or "")
-                    if made:
-                        agents[made["id"]] = str((started.get("input") or {}).get("Role") or "")
+                made = rules.spawned(ToolCall(started.get("id"), started.get("name") or "", started.get("input")),
+                                     p.get("text") or "") if started and rules is not None else None
+                if made and made.get("id"):                  # a subagent it started: what its report is shown by
+                    agents[made["id"]] = made.get("name") or ""
+                    if made.get("later"):                    # its report handed back with a later call: where it started
                         spawned[made["id"]] = {"head": head, "given": False}
             elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
                 head["replies"].append({"kind": "text", "text": p["text"]})
@@ -1042,7 +1046,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             if said:
                 x["head"]["replies"].append({"kind": "report", "name": agents.get(path, ""), "text": said})
     for p in calls.values():                         # the work trees the session's calls make
-        command, workdir = _shell_text(p["name"], p.get("input")) if p.get("name") in SHELLS else ("", None)
+        command, workdir = _command(p)
         for tree in worktrees_added(command, _resolve(workdir, cwd) if workdir else cwd) if "worktree" in command else []:
             mine.update((tree, os.path.realpath(tree)))
     for t, p in order:
@@ -1053,7 +1057,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         elif p["kind"] == "skill":
             skilled(t, p)
         else:                                        # a codex script: the calls it makes
-            for q, r in _opened(p, results.get(p.get("id")) if p.get("id") else None):
+            for q, r in _opened(rules, p, results.get(p.get("id")) if p.get("id") else None):
                 apply(t, q, r)
     for s in stops:                                  # the record's, by when: in the turn it fell in, where the conversation doesn't say
         h = next((h for h in reversed(heads) if (h.head["at"] or 0) <= s["at"]), None)
@@ -1144,9 +1148,9 @@ def lately_changed(gatherer: str, channel: str, cwd: str = "", within: float = L
         for p in parts:
             if p["kind"] != "call":
                 continue
-            ran = [(p["name"], p.get("input"))] + [(c["name"], c.get("input")) for c in p.get("calls") or []]   # a codex script's
-            if any(name in SHELLS and runs_git(_shell_text(name, inp)[0]) for name, inp in ran):
-                git[p["id"]] = {q for name, inp in ran for w in says_writes(name, inp, cwd) for q in both(w)}
+            ran = [p] + list(p.get("calls") or [])         # a script's calls, each
+            if any(runs_git(_command(q)[0]) for q in ran):
+                git[p["id"]] = {q for c in ran for w in says_writes(c, cwd) for q in both(w)}
     mine = both(cwd) if cwd else set()
     kept = []                                        # (row_id, at, path)
     for row_id, inserted_at, raw in touches:

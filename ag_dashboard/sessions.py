@@ -112,7 +112,6 @@ from urllib.parse import urlsplit
 
 import harness_kit
 from harness_kit.base import Box
-from harness_kit.codex import PERMISSIONS as CODEX_PERMISSIONS
 from harness_kit.screen import Screen
 
 from . import actions, answers, home
@@ -315,6 +314,13 @@ def picks_id(harness: Optional[str]) -> bool:
     harness's once its first call names that."""
     h = harness_kit.get(harness)
     return bool(h and h.picks_session_id)
+
+
+def _headless_of(harness: Optional[str]) -> Optional[str]:
+    """How `harness` runs headless (harness_kit's `headless`: "session", "turn"), None where it cannot: a message to a
+    session of it then opens its terminal, whatever `chat_mode` says."""
+    h = harness_kit.get(harness)
+    return h.headless if h is not None else None
 
 
 def takes_back(harness: Optional[str]) -> bool:
@@ -733,7 +739,7 @@ class Sessions:
         """A session of `gatherer` not started here, taken into the table so the page can message it:
         resumed in the directory its calls named, permissions auto. The one there already, if it is."""
         if not GATHERER.fullmatch(gatherer or "") or not SESSION_ID.fullmatch(session_id or ""):
-            raise SessionError("not a Claude Code or codex session of a gatherer")
+            raise SessionError("not a session of a gatherer")
         with self.lock:
             s = self._row(session_id)
             if s is not None:
@@ -780,7 +786,7 @@ class Sessions:
         with self.lock:
             a = self.agents.get(session_id)
             s = self._row(session_id)
-            opens = session_id not in self.terms and s is not None and (chat_mode() == "terminal" or s["harness"] == "antigravity") \
+            opens = session_id not in self.terms and s is not None and (chat_mode() == "terminal" or not _headless_of(s["harness"])) \
                 and not (a is not None and a.proc.poll() is None and (a.busy or a.queue))
         if opens:                                    # outside the lock: an idle agent's end is recorded by its reader
             return self.terminal(session_id, cols, rows, fullscreen, prompt=text)
@@ -798,7 +804,7 @@ class Sessions:
                 self._paste(t, text, clear=clear)
                 return next(x for x in self.list() if x["session_id"] == session_id)
             a = self.agents.get(session_id)
-            if s["harness"] == "codex":                  # a process per turn: this one now, or after the one running
+            if _headless_of(s["harness"]) == "turn":     # a process per turn: this one now, or after the one running
                 if a is not None and a.proc.poll() is None:
                     a.queue.append(text)
                     self._changed(s["gatherer"], session_id)
@@ -922,14 +928,21 @@ class Sessions:
             self._gone(t)
         return True
 
+    def _headless(self, s: dict, resume: bool) -> List[str]:
+        """ag's command line that runs the session headless, as its harness says (harness_kit's `headless_args`)."""
+        h = harness_kit.get(s["harness"])
+        if h is None or not h.headless:
+            raise SessionError(f"{s['harness']} has no headless mode here: open it in a terminal")
+        return [*ag_command(), "--gatherer", s["gatherer"], s["harness"],
+                *h.headless_args(s["session_id"], resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
+                                 instructions=instructions(s), extra=tuple(extra_args(s)))]
+
     def _start(self, s: dict) -> _Agent:
+        """A session's agent run headless, one process for the session (its harness's `headless` "session"): each
+        message a line on its stdin (`_next`), each turn's end an event on its stdout (`_read`)."""
         sid = s["session_id"]
         told = instructions(s)
-        argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "-p",
-                "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-                "--permission-mode", s["permission_mode"], "--permission-prompts", "none", *extra_args(s),
-                *(harness_kit.get(s["harness"]).instruction_args(told) if told else []),
-                *(["--resume", sid] if s["turns"] else ["--session-id", sid])]
+        argv = self._headless(s, bool(s["turns"]))
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
         log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
         log.write(f"--- {_now()} {shlex.join(_unsaid(argv, told))}\n")
@@ -948,13 +961,12 @@ class Sessions:
         return a
 
     def _exec(self, s: dict, text: str) -> _Agent:
-        """A codex turn: `ag ... codex exec --json [resume <id>] -`, the message on its stdin (the lock held)."""
+        """A turn of a harness run headless a process per turn (its `headless` "turn": `codex exec`), the message on its
+        stdin (the lock held)."""
         sid = s["session_id"]
         told = instructions(s)
-        argv = [*ag_command(), "--gatherer", s["gatherer"], "codex", "exec", "--json", "--skip-git-repo-check",
-                *extra_args(s), *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
-                *(harness_kit.get("codex").instruction_args(told) if told else []),
-                *(["resume", sid] if s["turns"] else []), "-"]
+        argv = self._headless(s, bool(s["turns"]))
+        h = harness_kit.get(s["harness"])
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
         log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
         log.write(f"--- {_now()} {shlex.join(_unsaid(argv, told))}\n")
@@ -969,7 +981,7 @@ class Sessions:
         a.busy = True
         self.agents[sid] = a
         try:
-            proc.stdin.write(text)
+            proc.stdin.write(h.headless_message(text))
             proc.stdin.close()
         except OSError:
             pass
@@ -979,8 +991,10 @@ class Sessions:
         return a
 
     def _read_exec(self, session_id: str, a: _Agent) -> None:
-        """A codex turn's output, until it exits: its thread's id (the session renamed to it), its end; then
-        the next waiting message, as a turn of its own."""
+        """A turn's output, until its process exits, as its harness reads it (`headless_event`): the session's own id
+        (the session renamed to it: codex's thread), its end, an error; then the next waiting message, as a turn of its
+        own."""
+        h = harness_kit.get((self._row(session_id) or {}).get("harness"))
         error = None
         done = False
         for line in a.proc.stdout:
@@ -989,14 +1003,14 @@ class Sessions:
                 event = json.loads(line)
             except ValueError:
                 continue
-            kind = event.get("type") if isinstance(event, dict) else None
-            if kind == "thread.started" and event.get("thread_id"):
+            got = (h.headless_event(event) if h is not None else None) or {}
+            if got.get("session"):
                 with self.lock:
-                    session_id = self._rename(session_id, str(event["thread_id"]))
-            elif kind == "turn.completed":
+                    session_id = self._rename(session_id, got["session"])
+            if got.get("ended"):
                 done = True
-            elif kind in ("turn.failed", "error"):
-                error = str((event.get("error") or {}).get("message") if kind == "turn.failed" else event.get("message"))[:2000]
+            if got.get("error"):
+                error = got["error"]
         code = a.proc.wait()
         try:
             a.proc.stdout.close()
@@ -1018,7 +1032,7 @@ class Sessions:
                       **({"ended": time.time()} if a.ended else      # a turn's own end leaves it ready, not closed:
                          {"kept": time.time()} if ok else {}),       # Idle, though its process is gone
                       **({} if ok or a.ended else {"last_error": error or _why(session_id) or
-                                                   f"codex exited ({code}); see {log_path(session_id)}"}))
+                                                   f"{h.label if h else 'the agent'} exited ({code}); see {log_path(session_id)}"}))
             if a.queue and not a.ended and not self.closing:     # what was sent meanwhile: the next turn
                 b = self._exec(self._row(session_id), a.queue.pop(0))
                 b.queue = a.queue
@@ -1081,7 +1095,7 @@ class Sessions:
             a.yielding = False
         text = a.queue.pop(0)
         try:
-            a.proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n")
+            a.proc.stdin.write(harness_kit.get((self._row(session_id) or {}).get("harness")).headless_message(text))
             a.proc.stdin.flush()
         except (OSError, ValueError) as exc:
             a.queue.insert(0, text)
@@ -1092,19 +1106,20 @@ class Sessions:
 
     def _read(self, session_id: str, a: _Agent) -> None:
         """The agent's stdout, until it exits: each turn's end, and the next waiting message sent."""
+        h = harness_kit.get((self._row(session_id) or {}).get("harness"))
         for line in a.proc.stdout:
             a.log.write(line)
             try:
                 event = json.loads(line)
             except ValueError:
                 continue
-            if not isinstance(event, dict) or event.get("type") != "result":
+            got = (h.headless_event(event) if h is not None else None) or {}
+            if not got.get("ended"):                 # a turn's end, as its harness says
                 continue
             with self.lock:
                 a.busy = False
                 s = self._row(session_id) or {"turns": 0}
-                error = None if event.get("subtype") == "success" and not event.get("is_error") \
-                    else str(event.get("result") or event.get("subtype") or "the turn failed")[:2000]
+                error = got.get("error")
                 self._set(session_id, turns=s["turns"] + 1, status="idle", last_error=error)
                 if a.queue:
                     self._next(session_id, a)
@@ -1480,7 +1495,8 @@ class Sessions:
             typed = max(t.typed or 0, data.typed_at((self._row(session_id) or {}).get("gatherer") or "", session_id) or 0)
             if typed and ask.get("at") and typed >= ask["at"]:      # here, or as the gatherer kept it (terminal_input)
                 raise SessionError("something was typed into its terminal since it asked: finish answering there")
-            if ask.get("harness") == "codex" and ask.get("at") and t.since > ask["at"]:
+            rules = harness_kit.get(ask.get("harness") or harness_kit.DEFAULT)
+            if rules is not None and not rules.asks_shown_again and ask.get("at") and t.since > ask["at"]:
                 raise SessionError("its terminal opened after it asked, and does not ask it: answer in a message")
             keys = answers.keys(ask, choice)             # AnswerError, a ValueError: a choice that does not fit
             sent = {"call": ask.get("call"), "summary": answers.summary(ask, choice),

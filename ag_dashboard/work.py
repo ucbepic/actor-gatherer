@@ -1,7 +1,8 @@
 """What an actor at work is doing, for its avatar to act out in the Chat view (page.html's stages): the
 kind of call it is making, and how the calls it made ended.
 
-A call's kind is read from its tool, or for a shell command from the programs it runs:
+A call's kind is read from what its harness's rules say it does (harness_kit's Action, and its view's Shape), or for a
+shell command from the programs it runs:
 
     read     reading files, listing them, looking at git's history, querying a database
     search   grep, find, glob, the web
@@ -19,17 +20,13 @@ import os
 import re
 from typing import List, Optional
 
-from harness_kit.shell import EDITS, SHELLS, _shell_text, _simple_commands, shell_changes
+from harness_kit import Action, Shape
+from harness_kit.shell import _simple_commands, shell_changes
 
 KINDS = ("test", "ship", "run", "edit", "wait", "search", "read")    # most first: what a command of several is
-TOOLS = {
-    "read": {"Read", "NotebookRead", "LS", "view_image", "read_file", "list_dir", "Skill"},
-    "search": {"Grep", "Glob", "WebSearch", "WebFetch", "web_search", "ToolSearch", "grep_files", "file_search"},
-    "edit": EDITS | {"TodoWrite", "update_plan", "write_file", "create_file"},
-    "ship": {"Artifact"},
-    "wait": {"Monitor", "BashOutput", "TaskOutput", "ScheduleWakeup", "AskUserQuestion", "ExitPlanMode", "wait"},
-    "team": {"Agent", "Task", "Workflow", "spawn_agent", "SendMessage"},
-}
+#: A tool call's kind by what it does (harness_kit's Action); a shell command's, by what it runs.
+ACTIONS = {Action.READ: "read", Action.SKILL: "read", Action.SEARCH: "search", Action.WEB: "search",
+           Action.EDIT: "edit", Action.ASK: "wait", Action.TASK: "wait", Action.DELEGATE: "team", Action.PUBLISH: "ship"}
 TEST = re.compile(r"\b(?:unittest|pytest|py\.test|nosetests|tox|jest|vitest|mocha|karma|rspec|phpunit|ctest)\b"
                   r"|\b(?:go|cargo|npm|yarn|pnpm|bun|deno|mix|dotnet|swift|make)\s+(?:run\s+)?test\b")
 # what a test run's output says when some failed: unittest's, pytest's, jest's, go's, cargo's
@@ -99,14 +96,15 @@ def _one(words: List[str], redirs) -> Optional[str]:
     return "run"
 
 
-def doing(name: str, inp) -> str:
-    """The kind of the call `name` with its input `inp` (the module doc): "run" when nothing tells."""
-    for kind, tools in TOOLS.items():
-        if name in tools:
-            return kind
-    if name not in SHELLS:
-        return "run"                                  # an MCP server's tool, or one not known
-    command, _ = _shell_text(name, inp)
+def doing(action: Optional[str], view: Optional[dict] = None) -> str:
+    """The kind of a call that does `action`, shown as `view` (harness_kit's ToolCall.action and .view; the module doc):
+    "run" when nothing tells -- an MCP server's tool, or one its harness's rules do not know."""
+    view = view or {}
+    if view.get("shape") == Shape.TODO:               # its plan, kept up to date
+        return "edit"
+    if view.get("shape") != Shape.SHELL:
+        return ACTIONS.get(action or "", "run")
+    command = str(view.get("command") or "")
     if TEST.search(command):
         return "test"
     cmds = _simple_commands(command)

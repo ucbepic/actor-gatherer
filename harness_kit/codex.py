@@ -28,8 +28,8 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   ToolCall, ToolResult, one_line, output_of, picked, seconds, typed_in)
-from .shell import CODE_MODE, script_calls
+                   Shape, ToolCall, ToolResult, ask_arg, one_line, other_view, output_of, picked, seconds, typed_in)
+from .shell import CODE_MODE, opened_script, script_calls, script_output
 
 # Codex item type -> Kind. None = a message: its role decides (ROLES). An item type not listed here is OTHER.
 ITEM_KINDS = {
@@ -94,6 +94,7 @@ TOOLS = {"exec_command": (Action.SHELL, None), "shell": (Action.SHELL, None), "s
          "local_shell": (Action.SHELL, None), "apply_patch": (Action.EDIT, None), "write_stdin": (Action.TASK, None),
          "view_image": (Action.READ, "path"), "web_search": (Action.WEB, None), "spawn_agent": (Action.DELEGATE, None),
          "send_message": (Action.DELEGATE, None), "wait": (Action.TASK, None), "update_plan": (Action.OTHER, None),
+         "list_dir": (Action.READ, None), "grep_files": (Action.SEARCH, None), "file_search": (Action.SEARCH, None),
          "request_user_input": (Action.ASK, None), "request_user_input_async": (Action.ASK, None)}
 #: Its tool that asks the user in its terminal, its turn waiting on the answer (Plan mode's); and the one it asks
 #: with as its turn goes on.
@@ -126,6 +127,41 @@ FOOT_ROWS = 3                       # the rows under it at most: its status line
 SHAPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
           "reasoning", "local_shell_call", "web_search_call", "compaction", "compaction_summary"}
 SPAWN = "spawn_agent"                 # its tool that starts a subagent
+#: Its header on a command's output: how long it ran, how it exited, then "Output:".
+OUTPUT_HEAD = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: ([^\n]*)\n)?(?:Process exited with code (-?\d+)\n)?"
+                         r"(?:Original token count: [^\n]*\n)?Output:\n")
+
+
+def command_of(c) -> str:
+    """A shell call's command as a shell reads it: an argv run by a shell (`bash -lc <it>`) its third word, any other
+    argv its words joined."""
+    if isinstance(c, list):
+        return str(c[2]) if len(c) >= 3 and c[0] in ("bash", "sh", "zsh") and c[1] in ("-lc", "-c") else " ".join(map(str, c))
+    return str(c or "")
+
+
+def view_of(name: str, inp, ask: Optional[dict] = None) -> dict:
+    """How a call of codex's tool `name` is shown (Shape's views)."""
+    i = inp if isinstance(inp, dict) else {}
+    s = lambda k: i[k] if isinstance(i.get(k), str) else None              # noqa: E731
+    if name in ("exec_command", "shell", "shell_command", "local_shell"):
+        return {"shape": Shape.SHELL, "title": "Bash", "command": command_of(i.get("command", i.get("cmd"))),
+                "cwd": s("workdir") or s("working_directory")}
+    if name == CODE_MODE and isinstance(inp, str):
+        return {"shape": Shape.SCRIPT, "title": "Script", "code": inp, "lang": "js"}
+    if name == "apply_patch":
+        return {"shape": Shape.PATCH, "title": "Patch", "patch": inp if isinstance(inp, str) else s("input") or s("patch") or ""}
+    if name == "view_image":
+        return {"shape": Shape.READ, "title": "Read", "path": s("path")}
+    if name == "web_search":
+        return {"shape": Shape.WEB, "title": "Web Search", "query": s("query") or (i.get("action") or {}).get("query")}
+    if name == SPAWN:                    # its subagent, by its task's name (what it is asked: encrypted)
+        return {"shape": Shape.AGENT, "title": "Agent", "name": s("task_name"), "arg": s("task_name")}
+    if name == "update_plan":
+        return {"shape": Shape.TODO, "title": "Update Plan", "items": i.get("plan") if isinstance(i.get("plan"), list) else []}
+    if ask is not None:
+        return {"shape": Shape.ASK, "title": "Question", "arg": ask_arg(ask)}
+    return other_view(name)
 
 
 def texts_of(item) -> list:
@@ -428,6 +464,15 @@ class Codex(Harness):
     checked_with = "0.164.0"
     fullscreen = False               # its classic inline screen (`--no-alt-screen`): scrolled in the terminal's own scrollback
     picks_session_id = True          # its thread's id, which it picks
+    record_ends_turns = True         # its rollout's task_complete ends a turn, a call ag saw or not
+    asks_shown_again = False         # a terminal opened after it asked does not ask it again
+    messages_answer_asks = True      # typed into its dialog, a message's keys would pick; its Enter, take the plan
+    reply_block = {"open": "<proposed_plan>", "close": "</proposed_plan>", "title": "Proposed plan"}   # Plan mode's
+    ask_says = {"plan_verb": "implement", "own_answer": "None of these? Say what, instead",   # PLAN_KEYS
+                "plan_choices": [{"id": "implement", "label": "Implement the plan", "primary": True,
+                                  "title": "Codex's “Yes, implement this plan”: Default mode, and it starts coding"}],
+                "plan_change": {"label": "Or tell Codex what to change",
+                                "title": "Codex's “No, stay in Plan mode”, then your words"}}
     stopped_says = {"lead": "■", "interrupted": "Conversation interrupted", "error": "Error",    # 0.164's tui, less its
                     "reasons": {"budget_limited": "Goal budget reached - the turn was stopped."}}  # pointer to /feedback
     NAME_CHARS = 120                 # the longest title kept (codex asks for 36 characters at most)
@@ -523,6 +568,29 @@ class Codex(Harness):
         developer message it sends after its own, on every call -- `codex` and `codex exec` alike, before `resume`."""
         return ["-c", "developer_instructions=" + json.dumps(text)]
 
+    headless = "turn"                # `codex exec`: a process per turn, the message its stdin
+
+    def headless_args(self, session: str, resume: bool = False, model: Optional[str] = None,
+                      permission_mode: Optional[str] = None, instructions: Optional[str] = None,
+                      extra: Tuple[str, ...] = ()) -> List[str]:
+        """`exec --json`, the starter's options, the model, its permissions (PERMISSIONS), the instructions, `resume
+        <thread>`, and `-`: the message from its stdin."""
+        return ["exec", "--json", "--skip-git-repo-check", *extra, *(["-m", model] if model else []),
+                *PERMISSIONS.get(permission_mode or "", []), *(self.instruction_args(instructions) if instructions else []),
+                *(["resume", session] if resume else []), "-"]
+
+    def headless_event(self, event: dict) -> Optional[dict]:
+        """`thread.started` (its thread: the session's own id), `turn.completed`, `turn.failed` and `error`."""
+        kind = event.get("type") if isinstance(event, dict) else None
+        if kind == "thread.started" and event.get("thread_id"):
+            return {"session": str(event["thread_id"])}
+        if kind == "turn.completed":
+            return {"ended": True, "error": None}
+        if kind in ("turn.failed", "error"):
+            said = (event.get("error") or {}).get("message") if kind == "turn.failed" else event.get("message")
+            return {"error": str(said)[:2000]}
+        return None
+
     def models(self, env: Optional[Dict[str, str]] = None) -> dict:
         """Its catalog (`codex debug models`, the ones it lists), and the model its config.toml names."""
         found = []
@@ -570,6 +638,39 @@ class Codex(Harness):
                     for p in picked(ask, choice)]
         return [_json_str(NOTE + p["text"].strip()) if p["text"] is not None else _json_str(p["labels"][0])
                 for p in picked(ask, choice)]
+
+    def own_folders(self, env: Optional[Dict[str, str]] = None) -> List[str]:
+        """Its folder: CODEX_HOME, and ~/.codex."""
+        env = os.environ if env is None else env
+        return sorted({os.path.abspath(os.path.expanduser(env.get("CODEX_HOME") or "~/.codex")),
+                       os.path.abspath(os.path.expanduser("~/.codex"))})
+
+    def mcp_args(self, name: str, url: str) -> Optional[List[str]]:
+        """Its config's `mcp_servers.<name>.url`, set for the run (`-c`)."""
+        return ["-c", f'mcp_servers.{name}.url="{url}"']
+
+    def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """Its header on a command's output (OUTPUT_HEAD), taken off: the exit code and the time it gives."""
+        m = OUTPUT_HEAD.match(text or "")
+        return (text[m.end():], m.group(2), m.group(1)) if m else (text, None, None)
+
+    def spawned(self, call: ToolCall, output: str) -> Optional[dict]:
+        """A spawn_agent call's subagent, by its path ({"task_name": "/root/count_a"}), shown by its last part; its
+        report is handed back with a later call (FINAL_ANSWER)."""
+        if call.name != SPAWN:
+            return None
+        try:
+            path = (json.loads(output) or {}).get("task_name") if output else None
+        except (ValueError, AttributeError):
+            return None
+        return {"id": path, "name": path.rsplit("/", 1)[-1], "later": True} if isinstance(path, str) and path else None
+
+    def script_results(self, call: ToolCall, result: Optional[Tuple[str, bool]]) -> Tuple[List[tuple], str]:
+        """A code-mode script (`exec`) as the calls it makes, each with its own result (shell.py's opened_script), and
+        what it printed (its head taken off)."""
+        if call.name != CODE_MODE or not isinstance(call.input, str) or not call.id:
+            return [], ""
+        return opened_script(call.id, call.input, result), script_output(result[0])[0] if result else ""
 
     def answer_summary(self, ask: dict, choice: dict) -> str:
         if ask.get("kind") == "plan":
@@ -633,17 +734,23 @@ class Codex(Harness):
             name = item.get("name") or t
             args = arguments(item.get("arguments", item.get("input")))
             action = TOOLS.get(name, (Action.OTHER, None))[0]
-            p.tool = ToolCall(item.get("call_id") or item.get("id"), name, args, action, ask=ask_of(name, args))
+            ask = ask_of(name, args)
+            p.tool = ToolCall(item.get("call_id") or item.get("id"), name, args, action, ask=ask, view=view_of(name, args, ask))
             if name == CODE_MODE and isinstance(args, str):      # a code-mode script: the tools it calls
-                p.tool.calls = [ToolCall(None, n, a, TOOLS.get(n, (Action.OTHER, None))[0]) for n, a in script_calls(args)]
+                p.tool.calls = [ToolCall(None, n, a, TOOLS.get(n, (Action.OTHER, None))[0], view=view_of(n, a))
+                                for n, a in script_calls(args)]
         elif t == "local_shell_call":
-            p.tool = ToolCall(item.get("call_id") or item.get("id"), "local_shell", item.get("action") or {}, Action.SHELL)
+            p.tool = ToolCall(item.get("call_id") or item.get("id"), "local_shell", item.get("action") or {}, Action.SHELL,
+                              view=view_of("local_shell", item.get("action") or {}))
         elif t == "web_search_call":
-            p.tool = ToolCall(item.get("id"), "web_search", item.get("action") or {}, Action.WEB)
+            p.tool = ToolCall(item.get("id"), "web_search", item.get("action") or {}, Action.WEB,
+                              view=view_of("web_search", item.get("action") or {}))
         elif t == "image_generation_call":
-            p.tool = ToolCall(item.get("id"), "image_generation", {}, Action.OTHER)
+            p.tool = ToolCall(item.get("id"), "image_generation", {}, Action.OTHER, view=other_view("image_generation"))
         elif kind == Kind.TOOL_RESULT:
             p.result = ToolResult(item.get("call_id"), False, output_of(item.get("output", item.get("tools"))))
+            shown, p.result.exit, p.result.took = self.tool_output(p.result.output)
+            p.result.shown = shown if shown != p.result.output else None
         elif kind == Kind.REASONING:
             p.opaque = True
             p.detail["thinking"] = "\n\n".join(s.get("text", "") for s in item.get("summary") or [] if isinstance(s, dict))

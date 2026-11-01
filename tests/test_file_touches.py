@@ -18,6 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag.integrations.tools.ag_orchestrator.file_touches import Files, check as ck, watch  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.file_touches.calls import calls_in, last_results, results_in  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.file_touches.calls import opened  # noqa: E402
+import harness_kit  # noqa: E402
+from harness_kit.claude import tool_call  # noqa: E402
 from harness_kit.shell import (  # noqa: E402
     opened_script, script_calls, script_output, script_prints_result, shell_changes, shell_reads)
 
@@ -82,10 +84,11 @@ class CheckTest(unittest.TestCase):
     def run_calls(self, *calls, change=None, watched=None):
         """The calls' named files looked at, `change` run (what the calls do), the calls' commands run for
         their output, then checked: {(call id, file name, how): touch}."""
-        was = ck.before({cid: (name, inp) for cid, name, inp in calls}, self.d)
+        read = {cid: tool_call({"type": "tool_use", "id": cid, "name": name, "input": inp}) for cid, name, inp in calls}
+        was = ck.before(read, self.d)                       # each call as Claude Code's rules read it
         if change:
             change()
-        entries = [(cid, name, inp, sh(inp["command"], self.d) if name == "Bash" else inp.get("_out", ""), False)
+        entries = [(cid, read[cid], sh(inp["command"], self.d) if name == "Bash" else inp.get("_out", ""), False)
                    for cid, name, inp in calls]
         got = ck.check(entries, self.d, was, watched or {})
         return {(t["call_id"], os.path.basename(t["path"]) if t.get("path") else None, t.get("how")): t for t in got}
@@ -153,14 +156,20 @@ class CheckTest(unittest.TestCase):
         claude = [{"role": "user", "content": "go"},
                   {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}]},
                   {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "a"}]}]}]
-        self.assertEqual((calls_in(claude), results_in(claude), last_results(claude)),
-                         ({"t1": ("Bash", {"command": "ls"})}, {"t1": ("a", False)}, ["t1"]))
+        seen = lambda calls: {i: (c.name, c.input, c.view["shape"], c.view.get("command")) for i, c in calls.items()}  # noqa: E731
+        self.assertEqual((seen(calls_in(claude)), results_in(claude), last_results(claude)),
+                         ({"t1": ("Bash", {"command": "ls"}, "shell", "ls")}, {"t1": ("a", False)}, ["t1"]))
         codex = [{"type": "function_call", "call_id": "c1", "name": "exec_command", "arguments": '{"cmd": "ls"}'},
                  {"type": "function_call_output", "call_id": "c1", "output": "a"}]
-        self.assertEqual((calls_in(codex), results_in(codex), last_results(codex)),
-                         ({"c1": ("exec_command", {"cmd": "ls"})}, {"c1": ("a", False)}, ["c1"]))
-        self.assertEqual(ck.shell_output("Chunk ID: 1\nWall time: 0.1 seconds\nProcess exited with code 0\nOutput:\nx\n"), "x\n")
-        self.assertEqual(ck.shell_output("x\nShell cwd was reset to /r"), "x")
+        self.assertEqual((seen(calls_in(codex)), results_in(codex), last_results(codex)),     # its harness's, unnamed
+                         ({"c1": ("exec_command", {"cmd": "ls"}, "shell", "ls")}, {"c1": ("a", False)}, ["c1"]))
+        ran = [{"type": "function_call", "call_id": "c1", "name": "exec_command", "arguments": '{"cmd": "ls"}'},
+               {"type": "function_call_output", "call_id": "c1",
+                "output": "Chunk ID: 1\nWall time: 0.1 seconds\nProcess exited with code 0\nOutput:\nx\n"}]
+        self.assertEqual(results_in(ran), {"c1": ("x\n", False)})               # as the command printed it
+        said = [{"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": "ls"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "x\nShell cwd was reset to /r"}]}]
+        self.assertEqual(results_in(said, harness_kit.get("claude")), {"t": ("x", False)})
 
 
 def until(test, timeout=5.0):
@@ -392,8 +401,9 @@ class CodeModeTest(unittest.TestCase):
                  {"type": "custom_tool_call_output", "call_id": "c1", "output": SCRIPT_OUT},
                  {"type": "function_call", "call_id": "f1", "name": "exec_command", "arguments": json.dumps({"cmd": "ls"})},
                  {"type": "function_call_output", "call_id": "f1", "output": "a"}]
-        calls, results = opened(calls_in(items), results_in(items))
-        self.assertEqual({k: v[0] for k, v in calls.items()}, {"c1": "exec_command", "f1": "exec_command"})
+        calls, results = opened(calls_in(items), results_in(items), harness_kit.get("codex"))
+        self.assertEqual({k: (v.name, v.view["shape"]) for k, v in calls.items()},
+                         {"c1": ("exec_command", "shell"), "f1": ("exec_command", "shell")})
         self.assertEqual(results["c1"], ("two\n", False))                    # the output under codex's head
         self.assertEqual(results["f1"], ("a", False))
 
@@ -438,7 +448,8 @@ class FilesTrackerTest(unittest.TestCase):
             with open(f) as fh:
                 text = fh.read()
             write(f, text.replace("return w * h", "return h * w"))                 # the Edit, as the answer streams in
-            files.started("g", "c", d, [edit, sed], since=began)                   # the answer's end: looked at
+            files.started("g", "c", d, [{"role": "assistant", "content": [edit, sed]}],   # the answer's end, as the
+                          since=began)                                                 # hook gives it: looked at
             sh("sed -i.bak 's/2 \\* (w + h)/(w + h) * 2/' shapes.py", d)          # Claude Code runs the sed
             files.arrived("g", "c", d, [{"role": "assistant", "content": [edit, sed]}, {"role": "user", "content": [
                 {"type": "tool_result", "tool_use_id": "e", "content": "ok"}, {"type": "tool_result", "tool_use_id": "s", "content": ""}]}])

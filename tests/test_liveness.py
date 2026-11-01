@@ -133,7 +133,7 @@ class AgentsTest(HomeBase):
         a = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
         self.assertEqual((a["status"], a["running"], a["turn_over"]), (data.ASKING, False, False))
         self.assertEqual((a["asking"]["kind"], a["asking"]["call"]), ("question", "t1"))
-        self.assertEqual(a["asking"]["questions"], [{"header": "Layout", "question": "Which layout?", "multiSelect": False,
+        self.assertEqual(a["asking"]["questions"], [{"id": None, "header": "Layout", "question": "Which layout?", "multiSelect": False,
                                                      "options": [{"label": "Side by side", "description": "Two panes"},
                                                                  {"label": "Tabs", "description": None}]}])
         self.facts(("ask_settled", {"call": "t1", "how": "answered", "result": '"Which layout?"="Tabs"'}))

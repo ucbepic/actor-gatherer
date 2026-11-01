@@ -341,6 +341,11 @@ class ReadableTest(unittest.TestCase):
         self.assertEqual(data.readable('{"a": 1}'), '{"a": 1}')                 # no blocks: the payload itself
 
 
+def drawn(*args, **kw):
+    """data.parts, less how each call is shown and what its result's harness said of the run (their own tests)."""
+    return [{k: v for k, v in p.items() if k not in ("action", "view", "shown", "exit", "took")} for p in data.parts(*args, **kw)]
+
+
 class PartsTest(unittest.TestCase):
     """Each harness's events as the transcript's parts, read by its channel's harness's rules: the same parts whoever
     wrote them."""
@@ -348,49 +353,69 @@ class PartsTest(unittest.TestCase):
     def test_claude_code_s_blocks(self):
         call = {"role": "assistant", "content": [{"type": "thinking", "thinking": "Look first.", "signature": "s"},
                                                  {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}]}
-        self.assertEqual(data.parts("tool_call", json.dumps(call), None, harness="claude"),
+        self.assertEqual(drawn("tool_call", json.dumps(call), None, harness="claude"),
                          [{"kind": "thinking", "text": "Look first."},
                           {"kind": "call", "id": "t1", "name": "Bash", "input": {"command": "ls"}}])
         out = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True,
                                             "content": [{"type": "text", "text": "no such file"}, {"type": "image"}]}]}
-        self.assertEqual(data.parts("tool_output", json.dumps(out), None, harness="claude"),
+        self.assertEqual(drawn("tool_output", json.dumps(out), None, harness="claude"),
                          [{"kind": "result", "id": "t1", "error": True, "text": "no such file\n[image]"}])
         said = {"role": "assistant", "content": [{"type": "text", "text": "**Done.**"}]}
-        self.assertEqual(data.parts("agent_message", json.dumps(said), None, harness="claude"), [{"kind": "text", "role": "assistant", "text": "**Done.**"}])
+        self.assertEqual(drawn("agent_message", json.dumps(said), None, harness="claude"), [{"kind": "text", "role": "assistant", "text": "**Done.**"}])
         system = {"role": "system", "content": [{"type": "text", "text": "env"}]}
-        self.assertEqual(data.parts("context", json.dumps(system), "env", harness="claude"),     # as its rules read it
+        self.assertEqual(drawn("context", json.dumps(system), "env", harness="claude"),     # as its rules read it
                          [{"kind": "note", "name": "context", "text": "env", "said": {"kind": "environment", "detail": {}}}])
 
     def test_codex_s_items(self):
         call = {"type": "function_call", "name": "shell", "arguments": json.dumps({"command": ["ls"]}), "call_id": "c1"}
-        self.assertEqual(data.parts("tool_call", json.dumps(call), None, harness="codex"),
+        self.assertEqual(drawn("tool_call", json.dumps(call), None, harness="codex"),
                          [{"kind": "call", "id": "c1", "name": "shell", "input": {"command": ["ls"]}}])
         out = {"type": "function_call_output", "call_id": "c1", "output": "a\nb"}
-        self.assertEqual(data.parts("tool_output", json.dumps(out), None, harness="codex"), [{"kind": "result", "id": "c1", "error": False, "text": "a\nb"}])
+        self.assertEqual(drawn("tool_output", json.dumps(out), None, harness="codex"), [{"kind": "result", "id": "c1", "error": False, "text": "a\nb"}])
         patch = {"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch", "call_id": "c2"}
-        self.assertEqual(data.parts("tool_call", json.dumps(patch), None, harness="codex")[0]["input"], "*** Begin Patch")
+        self.assertEqual(drawn("tool_call", json.dumps(patch), None, harness="codex")[0]["input"], "*** Begin Patch")
         said = {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Done."}]}
-        self.assertEqual(data.parts("agent_message", json.dumps(said), None, harness="codex"), [{"kind": "text", "role": "assistant", "text": "Done."}])
+        self.assertEqual(drawn("agent_message", json.dumps(said), None, harness="codex"), [{"kind": "text", "role": "assistant", "text": "Done."}])
         hidden = {"type": "reasoning", "summary": [], "encrypted_content": "zz"}
-        self.assertEqual(data.parts("agent_reasoning", json.dumps(hidden), None, harness="codex"), [{"kind": "thinking", "text": ""}])
+        self.assertEqual(drawn("agent_reasoning", json.dumps(hidden), None, harness="codex"), [{"kind": "thinking", "text": ""}])
 
     def test_the_same_view_for_every_harness_from_what_its_rules_read(self):
         image = {"role": "user", "content": [{"type": "image", "source": {"type": "base64", "data": "x"}}]}
-        self.assertEqual(data.parts("user_message", json.dumps(image), None, harness="claude"),      # Part.attachment
+        self.assertEqual(drawn("user_message", json.dumps(image), None, harness="claude"),      # Part.attachment
                          [{"kind": "note", "name": "image", "text": "[image]"}])
         script = {"type": "custom_tool_call", "call_id": "x1", "name": "exec",
                   "input": 'await tools.exec_command({cmd: "ls"}); await tools.apply_patch("*** Begin Patch")'}
-        self.assertEqual(data.parts("tool_call", json.dumps(script), None, harness="codex")[0]["calls"],   # ToolCall.calls
-                         [{"name": "exec_command", "input": {"cmd": "ls"}}, {"name": "apply_patch", "input": "*** Begin Patch"}])
+        self.assertEqual([(c["name"], c["input"], c["view"]["shape"]) for c in           # ToolCall.calls, each as shown
+                          data.parts("tool_call", json.dumps(script), None, harness="codex")[0]["calls"]],
+                         [("exec_command", {"cmd": "ls"}, "shell"), ("apply_patch", "*** Begin Patch", "patch")])
         thought = {"role": "model", "parts": [{"text": "hmm", "thought": True}]}
-        self.assertEqual(data.parts("agent_reasoning", json.dumps(thought), None, harness="antigravity"),
+        self.assertEqual(drawn("agent_reasoning", json.dumps(thought), None, harness="antigravity"),
                          [{"kind": "thinking", "text": "hmm"}])
         # a row stored as the user's under older rules is the harness's own once its rules say so
         withheld = {"role": "user", "content": [{"type": "text", "text": "Your response above was stopped by a safety "
                     "classifier — this is not a tool or API error. The rest of it was withheld, and tool calls in it that had "
                     "not finished did not run. Do not produce that content again, even reworded."}]}
-        got = data.parts("user_message", json.dumps(withheld), None, harness="claude")
+        got = drawn("user_message", json.dumps(withheld), None, harness="claude")
         self.assertEqual((got[0]["kind"], got[0]["said"]["kind"]), ("note", "retry_note"))
+
+    def test_each_call_shown_by_its_shape_and_each_result_less_its_harness_s_lines(self):
+        claude = {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "Edit", "input": {
+            "file_path": "/w/a.py", "old_string": "x", "new_string": "y"}}]}
+        [call] = data.parts("tool_call", json.dumps(claude), None, harness="claude")
+        self.assertEqual((call["action"], call["view"]), ("edit", {"shape": "edit", "title": "Update", "path": "/w/a.py",
+                                                                  "all": False, "edits": [{"old": "x", "new": "y"}]}))
+        agy = {"role": "model", "parts": [{"functionCall": {"id": "t", "name": "edit_file", "args": {
+            "Path": "/w/a.py", "Target": "x", "Replacement": "y"}}}]}
+        self.assertEqual(data.parts("tool_call", json.dumps(agy), None, harness="antigravity")[0]["view"],
+                         {"shape": "edit", "title": "Update", "path": "/w/a.py", "edits": [{"old": "x", "new": "y"}]})
+        failed = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "is_error": True, "content":
+                  "Exit code 2\nls: x: No such file\nShell cwd was reset to /w"}]}
+        [r] = data.parts("tool_output", json.dumps(failed), None, harness="claude")
+        self.assertEqual((r["shown"], r["exit"]), ("ls: x: No such file", "2"))
+        ran = {"type": "function_call_output", "call_id": "c", "output": "Wall time: 0.2 seconds\nProcess exited with code 0\n"
+                                                                        "Output:\nhi\n"}
+        [r] = data.parts("tool_output", json.dumps(ran), None, harness="codex")
+        self.assertEqual((r["shown"], r["exit"], r["took"]), ("hi\n", "0", "0.2 seconds"))
 
     def test_a_note_says_what_its_rules_read_of_it(self):
         report = {"type": "agent_message", "author": "/root/count_a", "content": [{"type": "input_text",

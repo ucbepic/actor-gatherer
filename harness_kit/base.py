@@ -26,6 +26,7 @@ each line it cares about giving `Fact`s (`follow`).
 
 import json
 import os
+import re
 import zlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -92,6 +93,44 @@ class Action:
     DELEGATE = "delegate"                # starts or messages a subagent
     ASK = "ask"                          # asks the user, the turn waiting on the answer
     TASK = "task"                        # watches, waits on or stops a background task
+    PUBLISH = "publish"                  # publishes the work for others to see (a page)
+    OTHER = "other"
+
+
+class Shape:
+    """How a tool call is shown, whichever harness's (ToolCall.view's `shape`), and what its view holds for it:
+
+        read     path; offset (its first line, from 1; None: from the top)
+        write    path; content (the file's whole new text)
+        edit     path; edits ([{old, new}]: old "" for text put in); all (every match replaced); lang (its language,
+                 where its path does not say: a notebook's cell, "python")
+        patch    patch (a patch's text, `*** Update File: <path>` before each file's hunks)
+        shell    command (as a shell reads it); cwd (where it runs; None: the session's directory); background
+        search   pattern; path (where; None: the session's directory); glob; finds ("lines": matching lines, as
+                 `grep -n` prints them; "files": paths)
+        web      query, or url
+        agent    name (a type, a role, a task's name; None: none given)
+        todo     items ([{content or step, status}])
+        skill    name; args
+        ask      (ToolCall.ask has what it asks)
+        script   code; lang (ToolCall.calls has the tools it calls)
+        other    anything else
+
+    Every view has `title` (the tool, as a person calls it: "Bash", "Update"), and may have `arg` (the argument a
+    reader sees beside the title, where the shape's own does not do: an agent's task), `description` (what it is for,
+    in the agent's words) and `label` (the call in a line, where the harness says it better than its shape)."""
+    READ = "read"
+    WRITE = "write"
+    EDIT = "edit"
+    PATCH = "patch"
+    SHELL = "shell"
+    SEARCH = "search"
+    WEB = "web"
+    AGENT = "agent"
+    TODO = "todo"
+    SKILL = "skill"
+    ASK = "ask"
+    SCRIPT = "script"
     OTHER = "other"
 
 
@@ -117,7 +156,9 @@ class ToolCall:
     what it asks (`ask`: {kind: "question", questions: [{id, header, question, multiSelect, options:
     [{label, description}]}]} or {kind: "plan", plan: its text, None when the call carries none}). A call
     that runs a script calling other tools (codex's code mode) has those calls, in the order written
-    (`calls`: each a ToolCall with no id, its input None where the script does not write it out)."""
+    (`calls`: each a ToolCall with no id, its input None where the script does not write it out). `view`, how it is
+    shown, whichever harness's (a Shape and what it holds: `Shape`'s doc). `server`: a tool the model's provider ran
+    itself (Claude Code's web search), not the harness."""
     id: Optional[str]
     name: str
     input: Any = None
@@ -125,6 +166,8 @@ class ToolCall:
     paths: List[str] = field(default_factory=list)
     ask: Optional[dict] = None
     calls: List["ToolCall"] = field(default_factory=list)
+    view: Dict[str, Any] = field(default_factory=dict)
+    server: bool = False
 
 
 @dataclass
@@ -132,11 +175,16 @@ class ToolResult:
     """A tool's result: its call's id, whether it is an error, its words as a reader sees them, and -- when
     it says a background task started, resumed or was stopped -- that task (`task`: {id, kind (command,
     agent, monitor, workflow), how: "started" or "stopped", output: the file it writes to, label: what it
-    is for, when the result says})."""
+    is for, when the result says}). Where the harness wraps a call's output in lines of its own about the run
+    (`Harness.tool_output`): `shown`, the output without them; `exit`, the exit code they give; `took`, how long
+    they say it ran."""
     call_id: Optional[str]
     error: bool = False
     output: str = ""
     task: Optional[dict] = None
+    shown: Optional[str] = None
+    exit: Optional[str] = None
+    took: Optional[str] = None
 
 
 @dataclass
@@ -167,6 +215,10 @@ class Part:
     opaque: bool = False
     detail: Dict[str, Any] = field(default_factory=dict)
     attachment: Optional[str] = None
+
+
+class SaveError(ValueError):
+    """What a harness cannot save where it reads it (`Harness.save_files`): why, in a few words."""
 
 
 class RenameError(ValueError):
@@ -289,6 +341,33 @@ class Harness(ABC):
     #: gives for stopping a turn.
     stopped_says: Dict[str, Any] = {"lead": "⎿", "interrupted": "Interrupted", "error": "Error"}
 
+    # ---- what it asks the user in its terminal, and when its turn is over: what a reader of its sessions goes by
+
+    #: Whether its record says when a turn is over where no model call ag saw ends it (codex's rollout: a turn's
+    #: `task_complete`): a turn its record ends is over. Else its record's "over" says nothing ag's calls don't.
+    record_ends_turns = False
+
+    #: Whether a terminal opened after it asked something still asks it (its dialog drawn again when the session is
+    #: resumed): else it is answered in a message, not with its dialog's keys.
+    asks_shown_again = True
+
+    #: Whether a message typed into its terminal while it asks would answer what it asks -- its keys picking an option,
+    #: its Enter taking the plan it offers -- rather than wait in its message box: a message to it then answers its plan
+    #: (the reader's own words for it), or waits for its question to be answered first.
+    messages_answer_asks = False
+
+    #: How a reader answers what it asks (`answer_keys` types it into its dialog): `plan_verb`, what they do with a plan
+    #: it proposes; `plan_choices`, the ways to take one, each a button ({id: the `plan` answer_keys takes, label, title:
+    #: its own words for it, primary}); `plan_change` ({label, title}): their own words instead; `own_answer`, the words
+    #: for answering a question its turn waits on in their own words.
+    ask_says: Dict[str, Any] = {"plan_verb": "approve", "plan_choices": [],
+                                "plan_change": {"label": "Or say what to change", "title": None},
+                                "own_answer": "Or type your own answer"}
+
+    #: A block its model writes in a reply that its own terminal draws apart: {open, close (each on a line of its own;
+    #: the closing one perhaps not streamed yet), title (the card's head)} -- codex's proposed plan. None: none.
+    reply_block: Optional[Dict[str, str]] = None
+
     @property
     def runs_in_terminal(self) -> bool:
         """Whether it can be started in a terminal from here: it says how (`command`)."""
@@ -330,6 +409,24 @@ class Harness(ABC):
         wrappers around them taken off. By default, the text as it is."""
         return Kind.USER, text
 
+    # ---- its tools' calls and results, as a reader shows them
+
+    def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """(a tool's output without the harness's own lines about the run, the exit code they give, how long they say
+        it ran): its header or note around a command's output. By default the output as it is."""
+        return text, None, None
+
+    def spawned(self, call: ToolCall, output: str) -> Optional[dict]:
+        """The subagent a call started, as its result (`output`) says: {id (what its report is handed back by), name
+        (what it was started for, to show it by), later (its report comes with a later call, not this one's
+        result)}; None for a call that started none."""
+        return None
+
+    def script_results(self, call: ToolCall, result: Optional[Tuple[str, bool]]) -> Tuple[List[tuple], str]:
+        """A call that runs a script calling other tools (`call.calls`), as those calls, each a call of its own: ([(id,
+        name, input, its own result (text, failed) or None)], what the script printed); ([], "") for any other."""
+        return [], ""
+
     # ---- a session's name, as the harness keeps it
 
     def rename_command(self, name: str) -> Optional[str]:
@@ -357,6 +454,77 @@ class Harness(ABC):
         full-screen interface where it has another; `instructions`, added to its own system prompt for this run
         (`instruction_args`). The message it starts with goes after them, after `--`."""
         raise NotImplementedError(f"{self.label or self.name or 'this harness'} is not run in a terminal here")
+
+    # ---- its own files: what it keeps for itself, and where a reader saves what it reads
+
+    def own_folders(self, env: Optional[Dict[str, str]] = None) -> List[str]:
+        """The folders and files it keeps for itself (its sessions' records, settings, memory), absolute, as `env` (else
+        this process's environment) has them: what changes there is not a session's work. None by default."""
+        return []
+
+    #: Where it keeps its memory of a directory, as a pattern the folder's path matches (a regular expression Python and
+    #: JavaScript both read, not anchored at its end); None: it keeps none.
+    memory_folder: Optional[str] = None
+
+    #: What a reader can save where it reads it (History's records), by kind -- "agents" (instructions every session in a
+    #: directory reads at its start), "skill", "memory" --: each {where: who reads it, in a line ("there": the directory
+    #: it is saved in), user: True where it can be saved for every directory of the user's at once, else why not}. A
+    #: kind not listed it has no place for.
+    saves: Dict[str, dict] = {}
+
+    def save_files(self, kind: str, directory: Optional[str], made: dict) -> dict:
+        """What saving `made` -- a record of `kind`: {output: the model's answer, memories: [{name, title, description,
+        type, body}], name: a skill's} -- where it reads it writes, as it would be written now: {files: [{path, action
+        ("create", "append", "replace"), text: all the file gets, or what is added at its end}], where (who reads it),
+        note (what may keep it from being read, or ""), home (its own folder, for one saved for every directory)}.
+        `directory`: the directory whose sessions read it (real, existing); None, every directory of the user's.
+        Raises SaveError where it cannot."""
+        raise SaveError(f"{self.label or self.name or 'this harness'} has no place for a {kind} here")
+
+    # ---- what a run is given: tools, and its edits guarded
+
+    def mcp_args(self, name: str, url: str) -> Optional[List[str]]:
+        """Its own options that give it, for one run, the tools of an MCP server (`name`, over HTTP at `url`); None: it
+        takes none here."""
+        return None
+
+    def edit_guard_args(self, command: str) -> List[str]:
+        """Its own options that run `command` before each call of its own file-editing tools, which may refuse the edit
+        (its hook: `guard_path`, `guard_refusal`); [] where it runs none."""
+        return []
+
+    def guard_path(self, given) -> Optional[str]:
+        """The file an edit is of, from what its hook gives the guard it runs before the edit (`given`, read from its
+        stdin); None: none said."""
+        return None
+
+    def guard_refusal(self, why: str) -> str:
+        """What its guard prints to refuse the edit, `why` its reason for the model."""
+        return ""
+
+    # ---- run headless: no terminal, its messages on its stdin, its events on its stdout
+
+    #: How it runs headless, where it can: "session" (one process for the session, each message a line on its stdin,
+    #: each turn's end an event on its stdout: Claude Code's stream-json), "turn" (a process per turn, the message its
+    #: stdin, then closed: `codex exec`); None, no headless mode -- a session of it is run in a terminal.
+    headless: Optional[str] = None
+
+    def headless_args(self, session: str, resume: bool = False, model: Optional[str] = None,
+                      permission_mode: Optional[str] = None, instructions: Optional[str] = None,
+                      extra: Tuple[str, ...] = ()) -> List[str]:
+        """Its own arguments, after its name on ag's command line, that run `session` headless (`headless`), as `command`
+        takes them; `extra`, the starter's own options for this run, where the harness takes options."""
+        raise NotImplementedError(f"{self.label or self.name or 'this harness'} has no headless mode here")
+
+    def headless_message(self, text: str) -> str:
+        """What goes on its stdin for a message, headless: by default the text as it is."""
+        return text
+
+    def headless_event(self, event: dict) -> Optional[dict]:
+        """What one event it writes on its stdout, headless (a JSON line), says: {"ended": True, "error": its words, or
+        None} for a turn's end; {"error": ...} for a turn that failed; {"session": its own id for the session}; None
+        for anything else."""
+        return None
 
     def first_prompt(self, text: str) -> List[str]:
         """Its own arguments that start a session in its terminal with `text` as the first message, after `command`'s:
@@ -564,6 +732,26 @@ def seconds(stamp) -> Optional[float]:
     except ValueError:
         return None
     return (got if got.tzinfo else got.replace(tzinfo=timezone.utc)).timestamp()
+
+
+def tool_title(name: str) -> str:
+    """A tool's name as a person reads it: an MCP server's tool (mcp__<server>__<tool>) as "<server> · <tool>"."""
+    m = re.match(r"^mcp__([^_]+(?:_[^_]+)*)__(.+)$", name or "")
+    return f"{m.group(1)} · {m.group(2)}" if m else name or "tool"
+
+
+def other_view(name: str, title: Optional[str] = None, arg: Optional[str] = None) -> Dict[str, Any]:
+    """The view of a tool its harness's rules show no other way (Shape.OTHER)."""
+    return {"shape": Shape.OTHER, "title": title or tool_title(name), **({"arg": arg} if arg is not None else {})}
+
+
+def ask_arg(ask: Optional[dict]) -> Optional[str]:
+    """What a call that asks the user asks, in a line: its first question, and how many more; None for a plan."""
+    qs = (ask or {}).get("questions") or []
+    if not qs:
+        return None
+    first = str(qs[0].get("question") or qs[0].get("title") or "").strip().split("\n")[0][:160]
+    return first + (f" + {len(qs) - 1} more" if len(qs) > 1 else "")
 
 
 def _said(reply: List[Part]) -> Optional[str]:

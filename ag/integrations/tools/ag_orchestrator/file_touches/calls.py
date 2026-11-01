@@ -1,131 +1,78 @@
-"""The tool calls and results in a harness's messages: read by the harness's own rules (harness_kit's `read`, its
-parts' `tool` and `result`) where the harness is given -- else, whichever harness, from the blocks as they are: Claude
-Code's (Anthropic Messages: `tool_use` and `tool_result` blocks) or codex's (Responses items: `function_call`,
-`custom_tool_call`, `local_shell_call` and their outputs). A codex
-code-mode call (`exec`) is one call to its harness, but its script makes others: `opened` reads them
-out of it (commands.opened_script), for what they do to files."""
-import json
-from typing import Any, Dict, List, Optional, Tuple
+"""The tool calls and results in a harness's messages, read by the harness's own rules (harness_kit's `read`, its
+parts' `tool` and `result`): the harness given, else whichever harness's rules find calls or results among them. A
+call is a ToolCall -- its name, input, what it does and how it is shown (its `view`), which is what the file checks
+go by; a result its output as the call printed it (the harness's own lines about the run taken off: `shown`). A
+call that runs a script calling other tools (codex's code mode) is one call to its harness, but its script makes
+others: `opened` reads them out of it (the harness's `script_results`), for what they do to files."""
+from typing import Dict, List, Optional, Tuple
 
-from harness_kit.shell import CODE_MODE, opened_script
-
-CALLS = ("function_call", "custom_tool_call")
-OUTPUTS = ("function_call_output", "custom_tool_call_output")
+import harness_kit
+from harness_kit import MODELS, Harness, ToolCall
 
 
-def _blocks(items) -> List[dict]:
-    """Every block among the messages or items: a message's content blocks, an item as it is."""
-    out = []
-    for x in items or []:
-        if not isinstance(x, dict):
-            continue
-        if isinstance(x.get("content"), list) and x.get("role") and x.get("type") in (None, "message"):
-            out += [b for b in x["content"] if isinstance(b, dict)]
-        else:
-            out.append(x)
-    return out
-
-
-def _arguments(raw):
-    """A codex call's arguments: a JSON string, read as its object when it is one."""
-    if isinstance(raw, str):
-        try:
-            got = json.loads(raw)
-            return got if isinstance(got, dict) else raw
-        except ValueError:
-            return raw
-    return raw
-
-
-def _output(value) -> str:
-    """A tool result's words: a string, or the text of its blocks ("[image]" for an image)."""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        words = []
-        for b in value:
-            if isinstance(b, str):
-                words.append(b)
-            elif isinstance(b, dict):
-                if isinstance(b.get("text"), str):
-                    words.append(b["text"])
-                elif b.get("type") in ("image", "input_image"):
-                    words.append("[image]")
-        return "\n".join(words)
-    if isinstance(value, dict):
-        for k in ("output", "content", "text"):
-            if k in value:
-                return _output(value[k])
-    return "" if value is None else json.dumps(value, ensure_ascii=False)
-
-
-def _parts(harness, items) -> list:
+def _parts(harness: Harness, items) -> list:
     return harness.read(harness.items([x for x in items or [] if isinstance(x, dict)]))
 
 
-def calls_in(items, harness=None) -> Dict[str, Tuple[str, Any]]:
-    """The tool calls among the messages (or an answer's items), by id: (name, input) -- the agent's own, not a server
-    tool the provider ran (Claude Code's web search)."""
+def reader(items, harness: Optional[Harness] = None) -> Optional[Harness]:
+    """The harness whose rules read `items`: `harness`, else the first of harness_kit's whose rules find a tool call
+    or a result among them; None: none does."""
     if harness is not None:
-        return {p.tool.id: (p.tool.name, p.tool.input) for p in _parts(harness, items)
-                if p.tool is not None and p.tool.id and p.detail.get("block") != "server_tool_use"}
-    out = {}
-    for b in _blocks(items):
-        t = b.get("type")
-        if t == "tool_use" and b.get("id"):
-            out[b["id"]] = (str(b.get("name") or ""), b.get("input"))
-        elif t in CALLS and (b.get("call_id") or b.get("id")):
-            out[b.get("call_id") or b["id"]] = (str(b.get("name") or t), _arguments(b.get("arguments", b.get("input"))))
-        elif t == "local_shell_call" and (b.get("call_id") or b.get("id")):
-            out[b.get("call_id") or b["id"]] = ("local_shell", b.get("action") or {})
-    return out
+        return harness
+    for h in harness_kit.HARNESSES.values():
+        try:
+            if any(p.tool is not None or p.result is not None for p in _parts(h, items)):
+                return h
+        except Exception:  # noqa: BLE001 - rules that trip on another harness's items do not read them
+            continue
+    return None
 
 
-def results_in(items, harness=None) -> Dict[str, Tuple[str, bool]]:
-    """The tool results among the messages, by their call's id: (text, whether it failed)."""
-    if harness is not None:
-        return {p.result.call_id: (p.result.output, p.result.error) for p in _parts(harness, items)
-                if p.result is not None and p.result.call_id}
-    out = {}
-    for b in _blocks(items):
-        t = b.get("type")
-        if t == "tool_result" and b.get("tool_use_id"):
-            out[b["tool_use_id"]] = (_output(b.get("content")), bool(b.get("is_error")))
-        elif t in OUTPUTS and b.get("call_id"):
-            out[b["call_id"]] = (_output(b.get("output")), False)
-    return out
+def calls_in(items, harness: Optional[Harness] = None) -> Dict[str, ToolCall]:
+    """The tool calls among the messages (or an answer's items), by id, as the harness's rules read them -- the agent's
+    own, not a tool the provider ran (`server`: Claude Code's web search)."""
+    h = reader(items, harness)
+    return {p.tool.id: p.tool for p in _parts(h, items) if p.tool is not None and p.tool.id and not p.tool.server} \
+        if h is not None else {}
 
 
-def opened(calls: Dict[str, Tuple[str, Any]], results: Optional[Dict[str, Tuple[str, bool]]] = None):
-    """(calls, results): those given, each codex code-mode script among the calls in place of the calls it
-    makes (commands.opened_script: by the script's id, or `<id>#<n>` for several), and each of those with
-    its own result, where the script's came in. A script whose calls can't be found stays as it is."""
+def results_in(items, harness: Optional[Harness] = None) -> Dict[str, Tuple[str, bool]]:
+    """The tool results among the messages, by their call's id: (its output as the call printed it -- the harness's
+    own lines about the run taken off --, whether it failed)."""
+    h = reader(items, harness)
+    return {p.result.call_id: (p.result.output if p.result.shown is None else p.result.shown, p.result.error)
+            for p in _parts(h, items) if p.result is not None and p.result.call_id} if h is not None else {}
+
+
+def opened(calls: Dict[str, ToolCall], results: Optional[Dict[str, Tuple[str, bool]]] = None,
+           harness: Optional[Harness] = None):
+    """(calls, results): those given, each script among the calls (one whose `calls` its rules read: codex's code
+    mode) in place of the calls it makes (the harness's `script_results`: by the script's id, or `<id>#<n>` for
+    several), and each of those with its own result, where the script's came in. A script whose calls can't be found,
+    or no harness's rules to split it, stays as it is."""
     out_calls, out_results = {}, dict(results or {})
-    for cid, (name, inp) in calls.items():
-        inner = opened_script(cid, inp, out_results.get(cid)) if name == CODE_MODE and isinstance(inp, str) else []
+    for cid, call in calls.items():
+        inner = harness.script_results(call, out_results.get(cid))[0] if call.calls and harness is not None else []
         if not inner:
-            out_calls[cid] = (name, inp)
+            out_calls[cid] = call
             continue
         out_results.pop(cid, None)
-        for iid, iname, iinp, result in inner:
-            out_calls[iid] = (iname, iinp)
+        for n, (iid, name, inp, result) in enumerate(inner):
+            own = call.calls[n] if n < len(call.calls) else ToolCall(None, name, inp)
+            out_calls[iid] = ToolCall(iid, name, inp, own.action, view=own.view)
             if result is not None:
                 out_results[iid] = result
     return out_calls, out_results
 
 
-def last_results(items) -> List[str]:
-    """The ids of the results the messages end with -- after the last thing the model said: those of
-    the calls its last answer made."""
-    ids = []
-    for x in reversed(items or []):
-        if not isinstance(x, dict):
-            continue
-        if x.get("role") == "assistant" or x.get("type") in CALLS + ("local_shell_call", "reasoning"):
+def last_results(items, harness: Optional[Harness] = None) -> List[str]:
+    """The ids of the results the messages end with -- after the last thing the model said (its words, its reasoning,
+    a call): those of the calls its last answer made."""
+    h = reader(items, harness)
+    ids: List[str] = []
+    for p in reversed(_parts(h, items) if h is not None else []):
+        if p.kind in MODELS:
             break
-        for b in reversed(_blocks([x])):
-            if b.get("type") == "tool_result" and b.get("tool_use_id"):
-                ids.append(b["tool_use_id"])
-            elif b.get("type") in OUTPUTS and b.get("call_id"):
-                ids.append(b["call_id"])
+        if p.result is not None and p.result.call_id:
+            ids.append(p.result.call_id)
     return ids[::-1]

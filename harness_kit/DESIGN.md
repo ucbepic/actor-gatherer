@@ -396,15 +396,34 @@ change is a fact of the harness to move here, read by the dashboard through a fi
    `_interrupted`, `_loaded`), not from each harness's text rules. A channel whose harness is not known reads its notes
    by `DEFAULT`'s rules. A row stored under older rules draws as its rules read it now (a safety classifier's note,
    stored as the user's before #114, is Claude Code's own).
-3. Tools by shape: `ToolCall.view` (read, write, edit, patch, shell, search, web, agent, todo, skill, ask, script,
-   other) and its one-line label, for the page's summaries and the file view; `Harness.tool_output` (`ToolResult`'s
-   exit code, time, output less its harness's headers); `shell.py` and `check.py` read the view, not tool names.
-4. Asks and status: one status rule over events (`_claude_status` and `_codex_status` joined, `RECORDED` gone),
-   questions in one shape from each harness, codex's plan offer an `asked`; `Harness.plan_choices` for the plan
-   card's buttons; whether an ask shows again in a terminal opened after it (`codex_dialog`, `answer`).
-5. Running headless (`Harness.headless`: the run's argv and how its output says a turn ended), DocWriter's MCP
-   arguments, `own_folders` (the harness's folders, not the actor's file changes), `file_role` (its memory's files),
-   and `saves` (where History saves a skill, a memory or an AGENTS.md for it; Claude Code's alone at first).
+3. Tools by shape.
+   a. **Built.** Each harness reads its tools' input into a view (`ToolCall.view`: a `Shape` -- read, write, edit,
+      patch, shell, search, web, agent, todo, skill, ask, script, other -- with its fields, its `title`, and `arg`,
+      `description` or `label` where its shape's own does not do), and its output's own lines about the run off
+      (`Harness.tool_output`: `ToolResult.shown`, `exit`, `took`). The page's summaries (`SHAPES`), its call view and
+      its shell command go by the view; Chat's labels, the files a call read and changed, its work kind (`work.doing`:
+      `Action` and shape) too. A subagent a call started is the harness's to say (`spawned`), and a script's calls'
+      results (`script_results`). `Action.PUBLISH` for a tool that publishes (Claude Code's Artifact).
+   b. **Built.** ag's file checks read each call as its harness's rules do (`ToolCall`: its view and `Action`), not by
+      tool names and input keys: `check.py` (what a call names, reads, writes and says it changes), `calls.py` (calls
+      and results by the harness's rules -- else whichever harness's rules find calls among the items --, a result's
+      output as `shown`, a script's calls by `script_results`, the last results by the parts' kinds). `shell.py`'s
+      SHELLS, EDITS and `_shell_text` are gone; `ToolCall.server` marks a tool the provider ran.
+4. **Built.** One status rule for every harness (`data._status`: `_claude_status` and `_codex_status` joined,
+   `RECORDED` gone), its differences the harness's: `record_ends_turns` (its record ends a turn no call of ag's did:
+   codex's), `esc_takes_back`. What it asks, one view (`ask_view`: a question's title, an option given as its label
+   alone, read as such) and one rule (`_asking`: what the turn waits on, else a question asked as it goes on; its turn
+   over, a plan it offers). `asks_shown_again` (a terminal opened after it asked still asks it), `messages_answer_asks`
+   (a message typed into its dialog would answer it: the server's `dialog`), `ask_says` (the plan card's buttons and
+   words) and `reply_block` (codex's proposed plan, drawn as a card) are the harness's.
+5. **Built.** Running headless: `headless` ("session": one process, a message a line, Claude Code's stream-json;
+   "turn": a process per turn, `codex exec`; None: a terminal), `headless_args`, `headless_message` and
+   `headless_event` (a turn's end, an error, the session's own id); sessions.py's two runners name no harness.
+   DocWriter's and the Browser's tools (`mcp_args`), and DocWriter's guard on the harness's own edits
+   (`edit_guard_args`, `guard_path`, `guard_refusal`: Claude Code's hook). `own_folders` (the harness's own folders,
+   not an actor's file changes: agy's now too) and `memory_folder` (its memory of a directory: Chat's "memory/" and
+   the Editor's badge). `saves` and `save_files` (where History saves an AGENTS.md, a skill or memories for it, its
+   paths and formats: Claude Code's alone so far); the Save panel offers each harness that has a place for the kind.
 6. A test that the dashboard names no harness, and a toy harness, registered in a test, listed, started and drawn.
 
 ## Open questions

@@ -363,6 +363,42 @@ class LaunchTest(Home):
         self.assertTrue(parsed["mcp_servers"]["docwriter-doc"]["url"].endswith("/mcp"))
         self.assertIn(self.root, parsed["developer_instructions"])
 
+    def test_the_guard_asks_the_dashboard_and_refuses_as_the_harness_has_it(self):
+        """The guard as Claude Code's hook runs it: the path from the hook's input, asked of the dashboard, and the
+        refusal in the hook's own words; a path not asked about, or a dashboard it cannot reach, lets the edit go."""
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        asked = []
+
+        class Guard(BaseHTTPRequestHandler):
+            def do_POST(self):
+                path = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["path"]
+                asked.append(path)
+                body = json.dumps({"deny": "open in DocWriter: use edit_doc" if path.endswith("draft.md") else None}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+        server = HTTPServer(("127.0.0.1", 0), Guard)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}/guard"
+
+        def run(given, where=url):
+            return subprocess.run([sys.executable, docwriter.GUARD, where, "claude"], input=json.dumps(given),
+                                  capture_output=True, text=True, timeout=30)
+        got = run({"tool_name": "Edit", "tool_input": {"file_path": "/w/draft.md", "old_string": "a", "new_string": "b"}})
+        self.assertEqual(json.loads(got.stdout)["hookSpecificOutput"],
+                         {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                          "permissionDecisionReason": "open in DocWriter: use edit_doc"})
+        self.assertEqual(run({"tool_name": "Write", "tool_input": {"file_path": "/w/notes.md"}}).stdout, "")
+        self.assertEqual(run({"tool_name": "Edit", "tool_input": {}}).stdout, "")          # no path: not asked
+        self.assertEqual(asked, ["/w/draft.md", "/w/notes.md"])
+        gone = run({"tool_input": {"file_path": "/w/draft.md"}}, "http://127.0.0.1:9/guard")
+        self.assertEqual((gone.returncode, gone.stdout), (0, ""))                          # unreachable: the edit goes
+
     def test_any_other_session_gets_nothing_more(self):
         for role in (None, "", "null", json.dumps({"docwriter": "not a key"})):
             self.assertEqual(docwriter.launch_args({"role": role, "harness": "claude"}), [])
