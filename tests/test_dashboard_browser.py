@@ -55,6 +55,33 @@ document.addEventListener('paste', (ev) => { parent.log.push(ev.clipboardData.ge
 </script>"""
 
 
+WIDGETS = """<!doctype html><title>Widgets</title>
+<style>body{margin:0;font:16px sans-serif} .r{position:absolute;left:20px;margin:0}</style>
+<select class=r id=size aria-label=Size style="top:20px;width:160px"><optgroup label=Small><option>Tiny</option>
+<option>Small</option></optgroup><option disabled>Medium</option><option>Large</option></select>
+<input class=r id=day type=date style="top:70px;width:180px">
+<input class=r id=hue type=color style="top:120px">
+<button class=r id=tip title="Saves the draft" style="top:170px">Save</button>
+<input class=r id=up type=file style="top:220px">
+<a class=r id=go href="two.html" style="top:270px">A link</a>
+<p class=r id=words style="top:300px">Some words to point at</p>
+<div class=r id=grab style="top:340px;width:100px;height:30px;cursor:grab">grab</div>
+<div class=r id=own style="top:380px;width:100px;height:30px" oncontextmenu="event.preventDefault()">its own menu</div>
+<div class=r id=drop style="top:420px;width:200px;height:60px;border:1px dashed">drop here</div>
+<a class=r id=dl download="hello.txt" href="data:text/plain,hi" style="top:490px">Download</a>
+<p class=r id=out style="top:520px"></p>
+<p class=r style="top:560px">apple, Apple and apples</p>
+<input class=r id=fruit list=fruits aria-label=Fruit style="top:600px">
+<datalist id=fruits><option value=apple><option value=apricot><option value=banana label=Yellow></datalist>
+<script>
+const log = (s) => document.getElementById('out').textContent += s + ' ';
+for (const id of ['size', 'day', 'hue', 'up', 'fruit']) document.getElementById(id).addEventListener('change',
+  (e) => log(id + '=' + (e.target.files ? [...e.target.files].map((f) => f.name).join() : e.target.value)));
+drop.addEventListener('dragover', (e) => e.preventDefault());
+drop.addEventListener('drop', (e) => { e.preventDefault(); log('dropped=' + [...e.dataTransfer.files].map((f) => f.name).join()); });
+</script>"""
+
+
 class Home(unittest.TestCase):
     """A dashboard home of its own, and a folder with a page in it."""
 
@@ -201,6 +228,31 @@ def ax(nid, role, name="", kids=(), parent=None, node=None, value=None, ignored=
     return n
 
 
+class ShownTest(unittest.TestCase):
+    """What UI_JS reports, from a page the dashboard doesn't control, as the view is told it: checked, cut to size."""
+
+    def test_the_pointer_s_shape_is_css_s_its_images_from_the_web_or_data_only(self):
+        for ok in ("pointer", "text", "grab", 'url("data:image/png;base64,AAAA") 4 4, pointer',
+                   'url("https://x.org/c.svg"), url("https://x.org/c.png") 2 2, default'):
+            self.assertEqual(browser._cursor(ok), ok)
+        for bad in ('url("javascript:alert(1)"), pointer', 'url("https://x.org/a.png"); color: red', "pointer;", 42, None,
+                    'url("data:x,' + "a" * 30_000 + '"), pointer'):
+            self.assertEqual(browser._cursor(bad), "default")
+
+    def test_a_list_picker_or_menu_is_cut_to_size_and_its_links_web_ones(self):
+        got = browser._popup("select", {"i": 1, "name": "Size" * 50, "box": [1, 2, 3, 4], "options": [
+            {"t": "x" * 400, "d": 1, "g": "G"}, "junk", {"t": "y"}] + [{"t": "z"}] * 3000})
+        self.assertEqual((len(got["options"]), len(got["options"][0]["t"]), len(got["name"])), (1999, 300, 80))   # 2000 taken, one junk
+        self.assertEqual(got["options"][:2], [{"t": "x" * 300, "d": True, "g": "G"}, {"t": "y", "d": False, "g": None}])
+        self.assertEqual(browser._popup("select", {"i": "1", "box": [1, 2]})["i"], -1)
+        self.assertIsNone(browser._popup("select", {"box": [1, 2]})["box"])
+        self.assertEqual(browser._popup("picker", {"type": "evil"})["type"], "date")
+        got = browser._popup("suggest", {"options": [{"t": "a" * 400, "l": 5}, {"t": ""}, "junk"] + [{"t": "b"}] * 300})
+        self.assertEqual((len(got["options"]), got["options"][0]), (198, {"t": "a" * 300, "l": "5"}))   # 200 taken
+        menu = browser._popup("menu", {"link": "javascript:alert(1)", "img": "https://x.org/a.png", "at": [1, 2]})
+        self.assertEqual((menu["link"], menu["img"], menu["at"]), ("", "https://x.org/a.png", [1.0, 2.0]))
+
+
 class OutlineTest(unittest.TestCase):
     """The snapshot's outline of Chrome's accessibility tree."""
 
@@ -341,6 +393,21 @@ class ServerTest(Home):
             self.post(f"/browser/w/{self.cfg['key']}/nav", {"url": "example.com"}, {"Origin": "http://evil.example"})
         self.assertEqual(got.exception.code, 403)
 
+    def test_what_the_page_shows_is_answered_and_a_file_kept_for_it_through_the_routes(self):
+        key = self.cfg["key"]
+        with self.assertRaises(urllib.error.HTTPError) as got:     # a list gone (or never there): nothing set
+            self.post(f"/browser/w/{key}/choose", {"n": 7, "index": 0})
+        self.assertEqual(got.exception.code, 409)
+        fid = self.post(f"/browser/w/{key}/file", {"name": "a.txt", "data": base64.b64encode(b"hi").decode()})["id"]
+        with open(self.httpd.browsers.get(key).uploads[fid]) as fh:
+            self.assertEqual(fh.read(), "hi")
+        with self.assertRaises(urllib.error.HTTPError) as got:
+            self.post(f"/browser/w/{key}/file", {"name": "a.txt", "data": "not base64!"})
+        self.assertEqual(got.exception.code, 400)
+        with self.assertRaises(urllib.error.HTTPError) as got:
+            self.post(f"/browser/w/{key}/reveal", {"i": 3})
+        self.assertEqual(got.exception.code, 404)
+
     def test_an_unknown_browser_is_not_found(self):
         for path in (f"/browser/w/{'0' * 16}/nav", "/browser/w/zz/nav"):
             with self.assertRaises(urllib.error.HTTPError) as got:
@@ -382,6 +449,25 @@ class ChromeTest(Home):
 
     def page_says(self) -> str:
         return self.text("evaluate", expression="document.getElementById('out').textContent")
+
+    def serve(self, name: str, text: str) -> str:
+        """The page `name`, served from the test's folder over http://localhost (a file: page can't do everything)."""
+        self.write(name, text)
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=self.root))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://localhost:{server.server_address[1]}/{name}"
+
+    def until(self, check, wait: float = 3.0):
+        end = time.time() + wait
+        while time.time() < end and not check():
+            time.sleep(0.05)
+        return check()
 
     def test_the_agent_and_the_user_use_one_tab(self):
         self.assertIn('"Shop checkout"', self.text("navigate", url=os.path.join(self.root, "index.html")))
@@ -494,16 +580,7 @@ class ChromeTest(Home):
     def test_a_page_asking_for_a_passkey_still_takes_the_user_s_clicks(self):
         """No passkey can be given here (PASSKEYS in browser.py): the request waits on the page, and the user can
         still click its other way -- Chrome's own prompt, unseen, would drop their input -- and no passkey is made."""
-        self.write("passkey.html", PASSKEY)                      # served: a file:// page can't ask for a passkey
-
-        class Quiet(http.server.SimpleHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=self.root))
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        page = f"http://localhost:{server.server_address[1]}/passkey.html"
+        page = self.serve("passkey.html", PASSKEY)               # served: a file:// page can't ask for a passkey
         self.text("navigate", url=page)
         time.sleep(0.5)
         x, y = self.middle(self.ref(self.text("snapshot"), 'button "Other options'))
@@ -521,6 +598,163 @@ class ChromeTest(Home):
         time.sleep(1)
         self.assertEqual(self.text("evaluate", expression="made"), "waiting")
 
+    # -- what Chrome would show itself (UI_JS), the view draws
+
+    def widgets(self) -> None:
+        self.text("navigate", url=self.serve("w.html", WIDGETS))
+        self.assertTrue(self.until(lambda: self.b.tab().ui_ctx is not None))
+
+    def at(self, el: str, across: float = 0.5):
+        r = json.loads(self.text("evaluate", expression=f"JSON.stringify(document.getElementById('{el}').getBoundingClientRect())"))
+        return r["x"] + r["width"] * across, r["y"] + r["height"] / 2
+
+    def mouse(self, *kinds: str, at, button: str = "left") -> None:
+        x, y = at
+        self.b.input([{"type": "mouse", "kind": k, "x": x, "y": y, "button": "none" if k == "mouseMoved" else button,
+                       "buttons": {"left": 1, "right": 2}[button] if k == "mousePressed" else 0, "clickCount": 1}
+                      for k in kinds])
+
+    def click_at(self, at, button: str = "left") -> None:
+        self.mouse("mouseMoved", "mousePressed", "mouseReleased", at=at, button=button)
+
+    def popup(self, k: str):
+        self.assertTrue(self.until(lambda: (self.b.state()["popup"] or {}).get("k") == k), self.b.state()["popup"])
+        return self.b.state()["popup"]
+
+    def test_the_pointer_takes_the_page_s_shape(self):
+        self.widgets()
+        for el, shape in (("go", "pointer"), ("words", "text"), ("grab", "grab"), ("size", "default"), ("tip", "default")):
+            self.mouse("mouseMoved", at=self.at(el))
+            self.assertTrue(self.until(lambda: self.b.tab().cursor == shape), (el, self.b.tab().cursor))
+        self.mouse("mouseMoved", at=(700, 300))                     # nothing there
+        self.assertTrue(self.until(lambda: self.b.state()["cursor"] == "default"))
+
+    def test_a_drop_down_s_list_is_the_view_s_and_what_the_user_chose_is_set(self):
+        self.widgets()
+        self.click_at(self.at("size"))
+        p = self.popup("select")
+        self.assertEqual([o["t"] for o in p["options"]], ["Tiny", "Small", "Medium", "Large"])
+        self.assertEqual([o["g"] for o in p["options"]], ["Small", "Small", None, None])
+        self.assertEqual([o["d"] for o in p["options"]], [False, False, True, False])
+        self.assertEqual((p["name"], p["i"], len(p["box"])), ("Size", 0, 4))
+        self.assertNotIn("ctx", p)
+        self.assertEqual(self.text("evaluate", expression="document.activeElement.id"), "size")   # keys go to it next
+        self.b.choose(p["n"], index=3)
+        self.assertIn("size=Large", self.page_says())               # as if chosen there: its change sent
+        self.assertIn('chose "Large" in drop-down "Size"', self.b.log)
+        with self.assertRaises(browser.BrowserError):
+            self.b.choose(p["n"] + 100, index=1)
+        # the agent's click on it: told to choose with the select tool
+        said = self.text("click", ref=self.ref(self.text("snapshot"), 'combobox "Size"'))
+        self.assertIn("select tool", said)
+
+    def test_a_date_s_or_a_color_s_picker_is_the_view_s(self):
+        self.widgets()
+        self.click_at(self.at("day", 0.2))                          # its digits: typed into, no picker
+        time.sleep(0.4)
+        self.assertIsNone(self.b.state()["popup"])
+        self.click_at(self.at("day", 0.95))                         # its icon, at its end
+        p = self.popup("picker")
+        self.assertEqual((p["type"], p["value"]), ("date", ""))
+        self.b.choose(p["n"], value="2026-11-01")
+        self.assertIn("day=2026-11-01", self.page_says())
+        self.click_at(self.at("hue"))
+        p = self.popup("picker")
+        self.assertEqual((p["type"], p["value"]), ("color", "#000000"))
+        self.b.choose(p["n"], value="#ff0000")
+        self.assertIn("hue=#ff0000", self.page_says())
+
+    def test_a_field_s_suggestions_are_the_view_s_and_the_one_chosen_fills_it(self):
+        self.widgets()
+        self.click_at(self.at("fruit"))
+        p = self.popup("suggest")
+        self.assertEqual([(o["t"], o["l"]) for o in p["options"]], [("apple", ""), ("apricot", ""), ("banana", "Yellow")])
+        self.assertEqual((p["name"], len(p["box"])), ("Fruit", 4))
+        self.b.input([{"type": "text", "text": "ap"}])               # typed: those matching, each keystroke
+        self.assertTrue(self.until(lambda: [o["t"] for o in self.b.state()["popup"]["options"]] == ["apple", "apricot"]))
+        p = self.b.state()["popup"]
+        self.b.choose(p["n"], index=1)
+        self.assertIn("fruit=apricot", self.page_says())
+        self.assertIn('chose the suggestion "apricot" for field "Fruit"', self.b.log)
+        self.assertTrue(self.until(lambda: self.b.state()["popup"]["options"] == []))   # none left: gone
+        with self.assertRaises(browser.BrowserError):
+            self.b.choose(self.b.state()["popup"]["n"], index=0)
+
+    def test_a_tooltip_shows_after_a_hover_and_goes_with_a_click(self):
+        self.widgets()
+        x, y = self.at("tip")
+        self.mouse("mouseMoved", at=(x, y))
+        self.assertTrue(self.until(lambda: self.b.state()["tip"] is not None))
+        tip = self.b.state()["tip"]
+        self.assertEqual(tip["text"], "Saves the draft")
+        self.assertTrue(abs(tip["at"][0] - x) <= 1 and abs(tip["at"][1] - y) <= 1, (tip["at"], x, y))   # (whole pixels)
+        self.click_at((x, y))
+        self.assertTrue(self.until(lambda: self.b.state()["tip"] is None))
+
+    def test_the_right_click_menu_where_the_page_shows_none_of_its_own(self):
+        self.widgets()
+        self.click_at(self.at("go"), button="right")
+        p = self.popup("menu")
+        self.assertTrue(p["link"].startswith("http://localhost:") and p["link"].endswith("/two.html"), p["link"])
+        self.assertEqual((p["linkText"], p["editable"]), ("A link", False))
+        self.click_at(self.at("own"), button="right")               # the page's own menu: none of the dashboard's
+        time.sleep(0.5)
+        self.assertEqual(self.b.state()["popup"]["n"], p["n"])
+
+    def test_text_is_found_as_chrome_s_find_bar_finds_it(self):
+        self.widgets()
+        self.assertEqual(self.b.find("apple"), {"count": 3, "index": 0})
+        self.assertEqual(self.text("evaluate", expression="String(getSelection())"), "apple")
+        self.assertEqual(self.b.find("apple", again=True), {"count": 3, "index": 1})
+        self.assertEqual(self.text("evaluate", expression="String(getSelection())"), "Apple")
+        self.assertEqual(self.b.find("apple", back=True, again=True), {"count": 3, "index": 0})
+        self.assertEqual(self.b.find("nowhere at all"), {"count": 0, "index": -1})
+        self.text("evaluate", expression="document.getElementById('fruit').value = 'apple pie', 0")   # in a field too
+        self.assertEqual(self.b.find("apple"), {"count": 4, "index": 0})
+        for i in (1, 2, 3):
+            self.assertEqual(self.b.find("apple", again=True), {"count": 4, "index": i})
+        self.assertEqual(self.text("evaluate", expression="document.activeElement.id"), "fruit")
+        cmd_f = [{"type": "key", "down": d, "key": "f", "code": "KeyF", "keyCode": 70, "modifiers": 4} for d in (True, False)]
+        self.b.input(cmd_f)
+        n = self.popup("find")["n"]
+        self.text("evaluate", expression="addEventListener('keydown', (e) => e.preventDefault()), 0")   # its own Cmd+F
+        self.b.input(cmd_f)
+        time.sleep(0.5)
+        self.assertEqual(self.b.state()["popup"]["n"], n)
+
+    def test_the_page_s_file_chooser_is_the_user_s_and_files_dropped_on_it_land(self):
+        self.widgets()
+        self.click_at(self.at("up"))
+        self.assertTrue(self.until(lambda: self.b.state()["chooser"] is not None))
+        c = self.b.state()["chooser"]
+        self.assertEqual(c["mode"], "single")
+        self.assertNotIn("node", c)
+        fid = self.b.upload("../../notes.txt", base64.b64encode(b"hi").decode())
+        self.assertEqual(os.path.dirname(os.path.dirname(self.b.uploads[fid])), browser.uploads_dir())   # kept there only
+        self.assertEqual(self.b.chosen(c["n"], [fid]), 1)
+        self.assertTrue(self.until(lambda: "up=notes.txt" in self.page_says()))
+        self.assertIsNone(self.b.state()["chooser"])
+        self.assertIn('gave the page the file "notes.txt"', self.b.log)
+        self.click_at(self.at("up"))                                # again, closed unanswered
+        self.assertTrue(self.until(lambda: self.b.state()["chooser"] is not None))
+        self.assertEqual(self.b.chosen(self.b.state()["chooser"]["n"], []), 0)
+        self.assertIsNone(self.b.state()["chooser"])
+        self.assertEqual(self.b.drop(*self.at("drop"), [fid]), 1)
+        self.assertTrue(self.until(lambda: "dropped=notes.txt" in self.page_says()))
+        with mock.patch.object(browser, "MAX_UPLOAD", 1), self.assertRaises(browser.BrowserError):
+            self.b.upload("big.bin", base64.b64encode(b"too big").decode())
+
+    def test_a_download_done_is_told(self):
+        self.widgets()
+        self.click_at(self.at("dl"))
+        self.assertTrue(self.until(lambda: self.b.state()["downloads"], 5))
+        d = self.b.downloads[-1]
+        self.assertEqual(self.b.state()["downloads"], [{"i": d["i"], "name": "hello.txt"}])
+        with open(d["path"]) as fh:
+            self.assertEqual(fh.read(), "hi")
+        self.assertIn(f"a download finished: {d['path']}", self.b.log)
+        with self.assertRaises(browser.BrowserError):
+            self.b.reveal(d["i"] + 100)
     def test_copy_cut_and_paste_are_the_page_s_own_through_its_clipboard(self):
         """Cmd+C, X and V as the page would have them: its copy and paste handlers run (Google Docs has no selection
         to read); what a copy put on Chrome's clipboard comes back for the user's, and a paste is put there first."""

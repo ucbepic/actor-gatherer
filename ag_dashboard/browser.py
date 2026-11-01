@@ -32,6 +32,15 @@ piece is:
                           through Chrome's clipboard to and from the user's (`copy`); `navigate`;
                           noted (`log`) as the agent is to hear it: "clicked button "Pay"", "typed into textbox "Email""
                           -- never what was typed
+    what Chrome shows     a Chrome with no window draws nothing of its own: UI_JS, a script of the dashboard's in each
+    itself                of the tab's pages, in a world of its own (the page neither sees nor changes it), tells it
+                          (`_ui`) what Chrome would show -- the pointer's shape, a tooltip, a drop-down's list or a
+                          date or color picker (whose opening it stops: they open unseen, if at all), the right-click
+                          menu where the page has none of its own, Cmd+F where the page takes it not -- for the view
+                          to draw (a list or picker in the user's own Chrome: `choose` sets what they chose); a file
+                          chooser the page opens (`chooser`): the user's own, the files sent here (`upload`) and given
+                          it (`chosen`); files dropped on the view, dropped on the page (`drop`); text found
+                          (`find`); a download done, shown in its folder (`reveal`)
     what the user points  `pick`: an element (the one under a click, its tag, text, CSS path, HTML, styles, role and name,
     at                    and a picture of it) or an area (a picture of it, its text): p1, p2, ... a ref the tools take
     the agent's tools     `TOOLS` + mcp.py: snapshot, click, type, press, select, hover, scroll, navigate, back, forward,
@@ -88,6 +97,11 @@ MAX_PASTE = 1_000_000       # the most characters of a paste's text, and of its 
 MAX_HTML = 1_500            # the most characters of a pick's HTML
 CONSOLE_KEEP = 200          # the console messages kept per tab
 NAME_WAIT = 600.0           # how long a new actor's first call is waited for, to name it (its gatherer has it then)
+UI_WORLD = "ag-ui"          # the world UI_JS runs in, in each of a tab's pages: of its own, apart from the page's
+UI_BINDING = "__agUISay"    # how it tells the dashboard (Runtime.addBinding, in that world only)
+UPLOAD_KEEP = 86400.0       # seconds a file the user gave a page is kept (the page reads it when it sends it, later)
+MAX_UPLOAD = 22_000_000     # the largest file the user gives a page through the view (sent as base64, in JSON)
+DOWNLOADS_SHOWN = 5         # the downloads done the view is told of, the latest
 ARGS = ["--headless=new", "--remote-debugging-pipe", "--no-first-run", "--no-default-browser-check",
         "--use-mock-keychain", "--password-store=basic", "--mute-audio", "--hide-crash-restore-bubble",
         "--disable-features=Translate,OptimizationHints,MediaRouter", "--disable-search-engine-choice-screen"]
@@ -174,6 +188,11 @@ def profile_dir() -> str:
 
 def downloads_dir() -> str:
     return os.path.join(home.HOME, "dashboard", "downloads")
+
+
+def uploads_dir() -> str:
+    """Where the files the user gives a page (its file chooser, a file dropped on it) are kept, UPLOAD_KEEP."""
+    return os.path.join(home.HOME, "dashboard", "uploads")
 
 
 # ---- the Chrome: its own, over a pipe; or the user's, over a WebSocket ------------------------------------------
@@ -696,6 +715,12 @@ class Tab:
         self.console: "collections.deque" = collections.deque(maxlen=CONSOLE_KEEP)
         self.dialog: Optional[dict] = None
         self.cast: Optional[Tuple[int, int]] = None   # the screencast's size, while it runs
+        # what Chrome would show of it itself (UI_JS: `Browser._ui`), the view draws
+        self.cursor = ""                                # the pointer's shape, as CSS has it
+        self.tip: Optional[dict] = None                 # the tooltip shown: {text, at: [x, y] | None}
+        self.popup: Optional[dict] = None               # the list, picker, menu or find bar asked for last: {n, k}
+        self.chooser: Optional[dict] = None             # its file chooser, open: {n, mode, accept, node}
+        self.ui_ctx: Optional[int] = None               # UI_JS's world in its main frame (Runtime's context id)
 
 
 class Viewer:
@@ -797,7 +822,9 @@ class Browser:
         self.acting_until = 0.0
         self.error = ""
         self.saving = False
-        self.downloads: List[str] = []
+        self.downloads: List[dict] = []                  # done: {i, name, path}, the latest DOWNLOADS_SHOWN
+        self.ui_n = 0                                    # the lists, pickers, menus and choosers asked for, so far
+        self.uploads: Dict[str, str] = {}                # a file the user sent for a page: its id -> where it is kept
 
     # -- its tabs, opened in the Chrome
 
@@ -846,8 +873,11 @@ class Browser:
                 self.active = len(self.tabs) - 1
         for method, params in (("Page.enable", {}), ("Runtime.enable", {}), ("Log.enable", {}), ("DOM.enable", {}),
                                ("Overlay.enable", {}), ("Emulation.setFocusEmulationEnabled", {"enabled": True}),
-                               ("Page.setInterceptFileChooserDialog", {"enabled": False}),
-                               ("WebAuthn.enable", {"enableUI": False})):   # passkeys: PASSKEYS
+                               ("Page.setInterceptFileChooserDialog", {"enabled": True}),   # the user's own: `chooser`
+                               ("WebAuthn.enable", {"enableUI": False}),   # passkeys: PASSKEYS
+                               ("Runtime.addBinding", {"name": UI_BINDING, "executionContextName": UI_WORLD}),
+                               ("Page.addScriptToEvaluateOnNewDocument", {"source": UI_JS, "worldName": UI_WORLD,
+                                                                          "runImmediately": True})):
             try:
                 cdp.call(method, params, session)
             except CdpError:
@@ -915,6 +945,8 @@ class Browser:
             self.chrome.later(lambda: self._retitle(tab))
         elif method == "Page.frameNavigated" and not frame.get("parentId"):
             url = frame.get("url", "") + frame.get("urlFragment", "")
+            with self.lock:                              # what the page it had showed went with it
+                tab.tip = tab.popup = tab.chooser = None
             if url != tab.url:
                 tab.url = url
                 self._forget_refs(tab.target)
@@ -942,6 +974,16 @@ class Browser:
         elif method == "Page.javascriptDialogClosed":
             tab.dialog = None
             self._publish()
+        elif method == "Runtime.bindingCalled" and params.get("name") == UI_BINDING:
+            self._ui(tab, params)
+        elif method == "Runtime.executionContextCreated":
+            c = params.get("context") or {}
+            if c.get("name") == UI_WORLD and (c.get("auxData") or {}).get("frameId") == tab.target:
+                tab.ui_ctx = c.get("id")
+        elif method == "Runtime.executionContextsCleared":
+            tab.ui_ctx = None
+        elif method == "Page.fileChooserOpened":
+            self.chrome.later(lambda: self._chooser(tab, params))
         elif method == "Runtime.consoleAPICalled":
             text = " ".join(_remote_text(a) for a in params.get("args") or [])
             tab.console.append(f"[{params.get('type', 'log')}] {text}"[:2000])
@@ -1148,7 +1190,11 @@ class Browser:
                     "acting": acting, "dialog": tab.dialog if tab else None, "error": self.error,
                     "running": self.chrome.running(), "viewport": list(self.viewport[:2]),
                     "chrome": self.chrome.which(), "allow": self.chrome.status == "allow", "video": self.video.ok,
-                    "video_off": "" if self.video.ok else self.video.why}
+                    "video_off": "" if self.video.ok else self.video.why,
+                    "cursor": tab.cursor if tab else "", "tip": tab.tip if tab else None,
+                    "popup": {k: v for k, v in tab.popup.items() if k != "ctx"} if tab and tab.popup else None,
+                    "chooser": {k: v for k, v in tab.chooser.items() if k != "node"} if tab and tab.chooser else None,
+                    "downloads": [{"i": d["i"], "name": d["name"]} for d in self.downloads]}
 
     def _publish(self) -> None:
         with self.lock:
@@ -1194,6 +1240,179 @@ class Browser:
                 self._size(cdp, t)
         self.chrome.later(self._recast)                  # (its video started again at the size: not on this thread)
         self._publish()
+
+    # -- what Chrome would show itself, the view draws (module doc; UI_JS)
+
+    def _ui(self, tab: Tab, params: dict) -> None:
+        """A report of UI_JS's, from a page of `tab`: the pointer's shape; a tooltip shown or gone; a drop-down's list,
+        a date or color picker, the right-click menu or the find bar asked for -- its `popup`, numbered (`ui_n`: the
+        view opens each once), with the world it came from, to answer in (`choose`)."""
+        try:
+            m = json.loads(str(params.get("payload") or ""))
+        except ValueError:
+            return
+        if not isinstance(m, dict):
+            return
+        k = m.get("k")
+        with self.lock:
+            if k == "cursor":
+                c = _cursor(m.get("c"))
+                if c == tab.cursor:
+                    return
+                tab.cursor = c
+            elif k == "tip":
+                text = str(m.get("text") or "")[:1000]
+                tab.tip = {"text": text, "at": _point(m.get("at"))} if text.strip() else None
+            elif k in ("select", "picker", "menu", "find", "suggest"):
+                self.ui_n += 1
+                tab.popup = {"n": self.ui_n, "k": k, "ctx": params.get("executionContextId"), **_popup(k, m)}
+            else:
+                return
+        self._publish()
+
+    def choose(self, n: int, index: Optional[int] = None, value: Optional[str] = None) -> None:
+        """What the user chose in the drop-down's list or the picker `n` (`_ui`), shown by the view: set in the page,
+        its `input` and `change` sent, as if chosen there."""
+        with self.lock:
+            tab = next((t for t in self.tabs if t.popup and t.popup["n"] == n
+                        and t.popup["k"] in ("select", "picker", "suggest")), None)
+            p = dict(tab.popup) if tab is not None else None
+        if tab is None or p is None:
+            raise BrowserError("that list is gone: the page changed", 409)
+        name = f' "{p["name"]}"' if p.get("name") else ""
+        if p["k"] == "select":
+            if index is None or not 0 <= index < len(p["options"]):
+                raise BrowserError("no such option")
+            what, said = index, f'chose "{p["options"][index]["t"]}" in drop-down{name}'
+        elif p["k"] == "suggest":
+            if index is None or not 0 <= index < len(p["options"]):
+                raise BrowserError("no such suggestion")
+            what = p["options"][index]["t"]
+            said = f'chose the suggestion "{what}" for field{name}'
+        else:
+            if value is None:
+                raise BrowserError("a value, please")
+            what, said = str(value)[:100], f"set {p['type']} field{name} to {str(value)[:100]}"
+        got = self.live().call("Runtime.evaluate", {"expression": f"__agUI.choose({json.dumps(what)})",
+                                                    "contextId": p["ctx"], "returnByValue": True}, tab.session)
+        if not (got.get("result") or {}).get("value"):
+            raise BrowserError("that field is gone from the page", 409)
+        self.note(said)
+
+    def find(self, q: str, back: bool = False, again: bool = False) -> dict:
+        """`q` found on the page shown, as Chrome's find bar finds it -- the first, else (`again`) the next or the one
+        before (`back`), selected and scrolled to: {count, index} (index -1: not found, or not one it can place)."""
+        cdp = self.live()
+        tab = self.tab()
+        if tab.ui_ctx is None:
+            raise BrowserError("the page is not ready yet", 409)
+        args = ", ".join(json.dumps(a) for a in (str(q)[:500], bool(back), bool(again)))
+        got = cdp.call("Runtime.evaluate", {"expression": f"__agUI.find({args})", "contextId": tab.ui_ctx,
+                                            "returnByValue": True}, tab.session)
+        v = (got.get("result") or {}).get("value")
+        v = v if isinstance(v, dict) else {}
+        return {"count": int(v.get("count") or 0), "index": int(v.get("index", -1))}
+
+    def _chooser(self, tab: Tab, params: dict) -> None:
+        """The page opened a file chooser (Page.fileChooserOpened: Chrome shows none, the dashboard taking it): for the
+        view to open the user's own (`chosen`), and the agent to hear of (`_after`)."""
+        node, accept = params.get("backendNodeId"), ""
+        if node:
+            try:
+                attrs = self.chrome.cdp().call("DOM.describeNode", {"backendNodeId": node},
+                                               tab.session)["node"].get("attributes") or []
+                accept = next((attrs[i + 1] for i in range(0, len(attrs) - 1, 2) if attrs[i] == "accept"), "")
+            except (BrowserError, KeyError):
+                pass
+        with self.lock:
+            self.ui_n += 1
+            tab.chooser = {"n": self.ui_n, "mode": "multiple" if params.get("mode") == "selectMultiple" else "single",
+                           "accept": str(accept)[:500], "node": node}
+        self._publish()
+
+    def upload(self, name: str, data: str) -> str:
+        """A file the user gives a page -- for its file chooser, or dropped on it -- sent by the view (base64): kept in
+        uploads_dir for UPLOAD_KEEP (the page reads it when it sends it) -> its id, for `chosen` and `drop`."""
+        raw = base64.b64decode(data or "", validate=True)
+        if len(raw) > MAX_UPLOAD:
+            raise BrowserError(f"the file is larger than {MAX_UPLOAD // 1_000_000} MB", 413)
+        base = re.sub(r"[\x00-\x1f/\\]", "_", os.path.basename(str(name or "").replace("\\", "/")).strip())[:200]
+        _sweep_uploads()
+        fid = secrets.token_hex(8)
+        folder = os.path.join(uploads_dir(), fid)
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, base if base not in ("", ".", "..") else "file")
+        with open(path, "wb") as f:
+            f.write(raw)
+        with self.lock:
+            self.uploads[fid] = path
+        return fid
+
+    def _uploaded(self, ids: list) -> List[str]:
+        with self.lock:
+            paths = [self.uploads[i] for i in ids if isinstance(i, str) and i in self.uploads]
+        paths = [p for p in paths if os.path.isfile(p)]
+        if not paths:
+            raise BrowserError("those files are gone: give them again", 409)
+        return paths
+
+    def chosen(self, n: int, ids: Optional[list]) -> int:
+        """The files the user chose for the page's file chooser `n` (sent first: `upload`), given to it; none: it is
+        closed, unanswered -> how many it got."""
+        with self.lock:
+            tab = next((t for t in self.tabs if t.chooser and t.chooser["n"] == n), None)
+            if tab is None:
+                raise BrowserError("the page's file chooser is gone", 409)
+            c = tab.chooser
+        if not ids:
+            with self.lock:
+                tab.chooser = None
+            self._publish()
+            return 0
+        paths = self._uploaded(ids)
+        if c.get("node") is None:
+            raise BrowserError("the page asked for files in a way the dashboard can't answer")
+        paths = paths if c["mode"] == "multiple" else paths[:1]
+        self.live().call("DOM.setFileInputFiles", {"files": paths, "backendNodeId": c["node"]}, tab.session)
+        with self.lock:
+            tab.chooser = None
+        self._publish()
+        self.note("gave the page " + _files_said(paths))
+        return len(paths)
+
+    def drop(self, x: float, y: float, ids: list) -> int:
+        """Files the user dropped on the view (sent first: `upload`), dropped on the page there, as from the desktop."""
+        paths = self._uploaded(ids)
+        cdp = self.live()
+        tab = self.tab()
+        data = {"items": [], "files": paths, "dragOperationsMask": 1}
+        for kind in ("dragEnter", "dragOver", "drop"):
+            cdp.call("Input.dispatchDragEvent", {"type": kind, "x": x, "y": y, "data": data, "modifiers": 0},
+                     tab.session)
+        self.note(f"dropped {_files_said(paths)} on the page")
+        return len(paths)
+
+    def downloaded(self, path: str) -> None:
+        """A download done, from one of its tabs: for the agent's next message, and the view (`reveal`)."""
+        with self.lock:
+            self.ui_n += 1
+            self.downloads.append({"i": self.ui_n, "name": os.path.basename(path), "path": path})
+            del self.downloads[:-DOWNLOADS_SHOWN]
+        self.note(f"a download finished: {path}")
+        self._publish()
+
+    def reveal(self, i: int) -> None:
+        """Download `i` shown in its folder: in the Finder, else the desktop's file manager -- never opened."""
+        with self.lock:
+            d = next((d for d in self.downloads if d["i"] == i), None)
+        if d is None or not os.path.exists(d["path"]):
+            raise BrowserError("that download is gone", 404)
+        cmd = ["open", "-R", d["path"]] if sys.platform == "darwin" else ["xdg-open", os.path.dirname(d["path"])]
+        try:
+            subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        except OSError as exc:
+            raise BrowserError(f"it could not be shown: {exc}") from None
 
     # -- what the user does
 
@@ -1832,6 +2051,312 @@ MODIFIERS = {"alt": 1, "option": 1, "control": 2, "ctrl": 2, "meta": 4, "cmd": 4
 HIGHLIGHT = {"showInfo": True, "showAccessibilityInfo": True, "contentColor": {"r": 80, "g": 140, "b": 255, "a": 0.22},
              "paddingColor": {"r": 80, "g": 200, "b": 120, "a": 0.18}, "borderColor": {"r": 40, "g": 100, "b": 230, "a": 1}}
 
+# The dashboard's script in each of a tab's pages (and the frames of the page's own origin), in UI_WORLD: a world of
+# its own, which the page neither sees nor changes, the DOM shared. It tells the dashboard (UI_BINDING, `Browser._ui`)
+# what Chrome would show itself and a Chrome with no window doesn't: the pointer's shape (CSS's, its "auto" made what
+# Chrome makes it); a tooltip, after a hover; a drop-down's list or a date or color picker -- whose opening it
+# stops (they open unseen, if at all) -- for the view to show in the user's own Chrome, what they choose set back
+# (`choose`); the right-click menu, where the page shows none of its own; Cmd+F, where the page takes it not; text
+# found (`find`).
+# Places are the page's (a frame's own offset added, where it can be: else none, the view using the pointer's).
+UI_JS = r"""(() => {
+  if (globalThis.__agUI) return;
+  const say = (m) => { try { globalThis.__agUISay(JSON.stringify(m)); } catch (e) { /* not bound (yet) */ } };
+  const offset = () => {
+    let x = 0, y = 0, w = window;
+    try {
+      while (w !== w.top) {
+        const f = w.frameElement;
+        if (!f) return null;
+        const r = f.getBoundingClientRect();
+        x += r.left + f.clientLeft; y += r.top + f.clientTop; w = w.parent;
+      }
+    } catch (e) { return null; }
+    return [x, y];
+  };
+  const at = (x, y) => { const o = offset(); return o ? [Math.round(x + o[0]), Math.round(y + o[1])] : null; };
+  const box = (el) => {
+    const r = el.getBoundingClientRect(), o = offset();
+    return o ? [r.left + o[0], r.top + o[1], r.width, r.height].map(Math.round) : null;
+  };
+  const real = (e) => { const n = (e.composedPath && e.composedPath()[0]) || e.target; return n && n.nodeType === 1 ? n : n && n.parentElement; };
+  const TEXTY = new Set(['', 'text', 'search', 'email', 'url', 'tel', 'password', 'number']);
+  const editable = (el) => !!el && (el.isContentEditable || el.localName === 'textarea'
+    || (el.localName === 'input' && TEXTY.has((el.getAttribute('type') || '').toLowerCase())));
+  const nameOf = (el) => ((el.labels && el.labels[0] && el.labels[0].textContent) || el.getAttribute('aria-label')
+    || el.getAttribute('name') || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+
+  // the pointer's shape
+  const overText = (x, y) => {
+    const r = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y), t = r && r.startContainer;
+    if (!t || t.nodeType !== 3 || !t.data.trim()) return false;
+    if (t.parentElement && getComputedStyle(t.parentElement).userSelect === 'none') return false;
+    const q = document.createRange(), i = r.startOffset;
+    for (const [a, b] of [[i, i + 1], [i - 1, i]]) {
+      if (a < 0 || b > t.length) continue;
+      q.setStart(t, a); q.setEnd(t, b);
+      for (const c of q.getClientRects()) if (x >= c.left - 1 && x <= c.right + 1 && y >= c.top && y <= c.bottom) return true;
+    }
+    return false;
+  };
+  const auto = (el, e) => editable(el) ? 'text' : el.closest('a[href]') ? 'pointer'
+    : el.closest('button,select,option,summary,input,[role=button]') ? 'default' : overText(e.clientX, e.clientY) ? 'text' : 'default';
+  let cursor = '';
+  const pointer = (e) => {
+    const el = real(e);
+    if (!el) return;
+    if (el.localName === 'iframe' || el.localName === 'frame') {    // a frame of this origin says its own
+      let inside = null;
+      try { inside = el.contentDocument; } catch (x) { /* another site's */ }
+      if (inside) { cursor = ''; return; }
+    }
+    let c = getComputedStyle(el).cursor || 'auto';
+    if (c === 'auto') c = auto(el, e);
+    else if (/,\s*auto$/.test(c)) c = c.replace(/auto$/, auto(el, e));
+    if (c !== cursor) { cursor = c; say({ k: 'cursor', c }); }
+  };
+  for (const t of ['mousemove', 'mousedown', 'mouseup']) addEventListener(t, pointer, { capture: true, passive: true });
+
+  // a tooltip: the nearest title (an SVG element's <title>), after a hover; put away by a click, a key, a scroll
+  const SVG = 'http://www.w3.org/2000/svg';
+  const titleOf = (el) => {
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement || (n.parentNode && n.parentNode.host)) {
+      if (n.namespaceURI === SVG) {
+        const t = [...n.children].find((c) => c.localName === 'title');
+        if (t) return [n, t.textContent || ''];
+      }
+      if (n.hasAttribute('title')) return [n, n.getAttribute('title') || ''];
+    }
+    return null;
+  };
+  let tipOn = null, quiet = null, tipTimer = 0, tipShown = false, last = [0, 0];
+  const hideTip = () => {
+    clearTimeout(tipTimer); tipOn = null;
+    if (tipShown) { tipShown = false; say({ k: 'tip', text: '' }); }
+  };
+  const putAway = () => { quiet = tipOn; hideTip(); };
+  addEventListener('mousemove', (e) => {
+    last = [e.clientX, e.clientY];
+    const el = real(e), got = el && titleOf(el), on = got && got[1].trim() ? got[0] : null;
+    if (on === tipOn || (on && on === quiet)) return;
+    hideTip(); quiet = null;
+    if (!on) return;
+    tipOn = on;
+    tipTimer = setTimeout(() => {
+      if (tipOn !== on) return;
+      tipShown = true;
+      say({ k: 'tip', text: got[1].trim().slice(0, 1000), at: at(last[0], last[1]) });
+    }, 600);
+  }, { capture: true, passive: true });
+  for (const t of ['mousedown', 'keydown', 'wheel', 'scroll']) addEventListener(t, putAway, { capture: true, passive: true });
+  document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) { cursor = ''; hideTip(); } }, true);
+
+  // a drop-down's list, a date's or color's picker: not opened here, shown by the dashboard
+  const PICKERS = new Set(['date', 'time', 'datetime-local', 'month', 'week']);
+  const dropdown = (s) => !!s && s.localName === 'select' && !s.multiple && !(s.size > 1) && !s.disabled
+    && getComputedStyle(s).appearance !== 'base-select';
+  const choices = (s) => ({ i: s.selectedIndex, options: [...s.options].slice(0, 2000).map((o) => {
+    const g = o.parentElement && o.parentElement.localName === 'optgroup' ? o.parentElement : null;
+    return { t: (o.label || o.text || '').trim().slice(0, 300), d: o.disabled || !!(g && g.disabled), g: g ? g.label : null };
+  }) });
+  const values = (i) => ({ type: i.type, value: i.value, min: i.min, max: i.max, step: i.step });
+  let open = null, unclick = null;
+  const ask = (el, m) => { open = el; el.focus(); say({ ...m, box: box(el), name: nameOf(el) }); };
+  addEventListener('mousedown', (e) => {
+    unclick = null;
+    if (e.button !== 0) return;
+    const path = e.composedPath(), s = path.find((n) => n.localName === 'select');
+    if (s) {
+      if (dropdown(s)) { e.preventDefault(); unclick = s; ask(s, { k: 'select', ...choices(s) }); }
+      return;
+    }
+    const i = path[0];
+    if (!i || i.localName !== 'input' || i.disabled || i.readOnly) return;
+    const type = (i.type || '').toLowerCase();
+    if (type !== 'color' && !PICKERS.has(type)) return;
+    if (type !== 'color') {                        // a date's picker opens from its icon, at its end
+      const r = i.getBoundingClientRect(), rtl = getComputedStyle(i).direction === 'rtl';
+      if (rtl ? e.clientX > r.left + 28 : e.clientX < r.right - 28) return;
+    }
+    e.preventDefault(); unclick = i;
+    ask(i, { k: 'picker', ...values(i) });
+  }, true);
+  addEventListener('click', (e) => {               // (a color's picker opens on the click)
+    if (unclick && e.composedPath().includes(unclick)) e.preventDefault();
+    unclick = null;
+  }, true);
+  addEventListener('keydown', (e) => {
+    const el = real(e);
+    if (!el || e.metaKey || e.ctrlKey) return;
+    if (dropdown(el) && [' ', 'ArrowDown', 'ArrowUp', 'F4'].includes(e.key)) {
+      e.preventDefault(); ask(el, { k: 'select', ...choices(el) });
+    } else if (el.localName === 'input' && !el.disabled && !el.readOnly) {
+      const type = (el.type || '').toLowerCase();
+      if ((type === 'color' && (e.key === ' ' || e.key === 'Enter')) || (PICKERS.has(type) && (e.key === 'F4' || (e.altKey && e.key === 'ArrowDown')))) {
+        e.preventDefault(); ask(el, { k: 'picker', ...values(el) });
+      }
+    }
+  }, true);
+
+  // a field's suggestions (its <datalist>): those matching what it has, shown by the dashboard under it, as the
+  // user clicks into it or types; none: gone
+  let suggesting = null;
+  const listed = (el) => !!el && el.localName === 'input' && !!el.list && !el.disabled && !el.readOnly;
+  const suggest = (i) => {
+    const want = (i.value || '').toLowerCase();
+    const options = [...i.list.options].filter((o) => !o.disabled && o.value && o.value !== i.value
+      && (o.value.toLowerCase().includes(want) || (o.label || '').toLowerCase().includes(want)))
+      .slice(0, 200).map((o) => ({ t: o.value.slice(0, 300), l: o.label && o.label !== o.value ? o.label.slice(0, 300) : '' }));
+    if (!options.length && suggesting !== i) return;
+    suggesting = options.length ? i : null;
+    open = i;
+    say({ k: 'suggest', options, box: box(i), name: nameOf(i) });
+  };
+  const unsuggest = () => { if (suggesting) { suggesting = null; say({ k: 'suggest', options: [] }); } };
+  addEventListener('input', (e) => { const i = real(e); if (listed(i)) suggest(i); }, true);
+  addEventListener('mousedown', (e) => {
+    const i = real(e);
+    if (e.button === 0 && listed(i)) setTimeout(() => { if (i.getRootNode().activeElement === i) suggest(i); }, 0);
+  }, true);
+  addEventListener('focusout', (e) => { if (suggesting && real(e) === suggesting) unsuggest(); }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && suggesting && real(e) === suggesting) unsuggest(); }, true);
+
+  // the right-click menu, where the page shows none of its own; Cmd+F, where the page takes it not
+  addEventListener('contextmenu', (e) => {
+    const path = e.composedPath(), el = real(e), p = at(e.clientX, e.clientY);
+    const a = path.find((n) => n.localName === 'a' && typeof n.href === 'string' && n.href);
+    const img = path.find((n) => n.localName === 'img');
+    setTimeout(() => {
+      if (e.defaultPrevented) return;
+      say({ k: 'menu', at: p, link: a ? a.href : '', linkText: a ? (a.textContent || '').trim().slice(0, 200) : '',
+            img: img ? img.currentSrc || img.src || '' : '', sel: String(getSelection() || '').slice(0, 100000), editable: editable(el) });
+    }, 0);
+  }, true);
+  const mac = /Mac/.test(navigator.platform);
+  addEventListener('keydown', (e) => {
+    if (!(mac ? e.metaKey : e.ctrlKey) || e.altKey || e.shiftKey || (e.key !== 'f' && e.key !== 'F')) return;
+    setTimeout(() => { if (!e.defaultPrevented) say({ k: 'find' }); }, 0);
+  }, true);
+
+  globalThis.__agUI = {
+    choose(v) {                                    // what the user chose in the dashboard's list or picker
+      const el = open;
+      if (!el || !el.isConnected) return false;
+      if (el.localName === 'select') { if (el.selectedIndex === v) return true; el.selectedIndex = v; }
+      else { if (el.value === v) return true; el.value = v; }
+      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    },
+    find(q, back, again) {                         // as Chrome's find bar: the match selected and scrolled to
+      const sel = getSelection();
+      if (!again) sel.removeAllRanges();
+      else if (sel.rangeCount) { if (back) sel.collapseToStart(); else sel.collapseToEnd(); }
+      const found = !!q && window.find(q, false, back, true, false, false, false);
+      // every match, in the page's order: in its text, and in its text fields' values (Chrome's find looks there too)
+      const want = q.toLowerCase(), hits = [];
+      const field = (n) => n.localName === 'textarea' || (n.localName === 'input' && TEXTY.has((n.getAttribute('type') || '').toLowerCase()));
+      if (want) {
+        const walk = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+        for (let n = walk.nextNode(); n && hits.length < 1000; n = walk.nextNode()) {
+          const box = n.nodeType === 1 ? n : n.parentElement;
+          if (n.nodeType === 1 && !field(n)) continue;
+          if (n.nodeType === 3 && box && box.localName === 'textarea') continue;   // (its first value, not its value)
+          const s = (n.nodeType === 1 ? n.value || '' : n.data).toLowerCase();
+          let i = s.indexOf(want);
+          if (i < 0 || (box && box.checkVisibility && !box.checkVisibility())) continue;
+          for (; i >= 0 && hits.length < 1000; i = s.indexOf(want, i + want.length)) hits.push([n, i]);
+        }
+      }
+      let index = -1;
+      const now = document.activeElement;
+      if (found && now && field(now) && now.selectionEnd > now.selectionStart) {
+        index = hits.findIndex(([n, i]) => n === now && i === now.selectionStart);
+      } else if (found && sel.rangeCount) {
+        const r = sel.getRangeAt(0);
+        index = hits.findIndex(([n, i]) => n === r.startContainer && i === r.startOffset);
+      }
+      return { count: hits.length, index };
+    },
+  };
+})()"""
+PICKER_TYPES = {"date", "time", "datetime-local", "month", "week", "color"}
+CURSOR = re.compile(r'(?:url\("(?:https?|data):[^"\\]*"\)(?: -?\d+(?:\.\d+)? -?\d+(?:\.\d+)?)?, )*[a-z-]+')
+
+
+def _cursor(c) -> str:
+    """The pointer's shape UI_JS saw, as CSS has it: keywords, images by an http(s) or data address only -- else the
+    arrow."""
+    c = str(c or "")
+    return c if len(c) <= 20_000 and CURSOR.fullmatch(c) else "default"
+
+
+def _numbers(v, n: int) -> Optional[List[float]]:
+    if not isinstance(v, list) or len(v) != n or not all(isinstance(x, (int, float)) for x in v):
+        return None
+    return [round(float(x), 1) for x in v]
+
+
+def _point(v) -> Optional[List[float]]:
+    return _numbers(v, 2)
+
+
+def _link(v) -> str:
+    """An address the view may open in a tab, or copy: a web page's or a file's, not a script's; not a long one."""
+    v = str(v or "")
+    return v if len(v) <= 4000 and re.match(r"(?i)(https?|file):", v) else ""
+
+
+def _popup(k: str, m: dict) -> dict:
+    """What a list, picker, a field's suggestions or a menu UI_JS asked for has, as the view is to be told it,
+    cut to size."""
+    def s(key: str, n: int) -> str:
+        return str(m.get(key) or "")[:n]
+    if k == "select":
+        options = m.get("options") if isinstance(m.get("options"), list) else []
+        return {"box": _numbers(m.get("box"), 4), "name": s("name", 80),
+                "i": m["i"] if isinstance(m.get("i"), int) else -1,
+                "options": [{"t": str(o.get("t") or "")[:300], "d": bool(o.get("d")),
+                             "g": str(o["g"])[:120] if o.get("g") else None}
+                            for o in options[:2000] if isinstance(o, dict)]}
+    if k == "picker":
+        kind = s("type", 20).lower()
+        return {"box": _numbers(m.get("box"), 4), "name": s("name", 80),
+                "type": kind if kind in PICKER_TYPES else "date", "value": s("value", 100), "min": s("min", 100),
+                "max": s("max", 100), "step": s("step", 40)}
+    if k == "suggest":
+        options = m.get("options") if isinstance(m.get("options"), list) else []
+        return {"box": _numbers(m.get("box"), 4), "name": s("name", 80),
+                "options": [{"t": str(o.get("t") or "")[:300], "l": str(o.get("l") or "")[:300]}
+                            for o in options[:200] if isinstance(o, dict) and o.get("t")]}
+    if k == "menu":
+        return {"at": _point(m.get("at")), "link": _link(m.get("link")), "linkText": s("linkText", 200),
+                "img": _link(m.get("img")), "sel": s("sel", 100_000), "editable": bool(m.get("editable"))}
+    return {}
+
+
+def _files_said(paths: List[str]) -> str:
+    names = [json.dumps(os.path.basename(p)) for p in paths]
+    return f"the file {names[0]}" if len(names) == 1 else \
+        f"{len(names)} files: {', '.join(names[:5])}{', …' if len(names) > 5 else ''}"
+
+
+def _sweep_uploads() -> None:
+    """The files given pages longer ago than UPLOAD_KEEP, deleted."""
+    try:
+        names = os.listdir(uploads_dir())
+    except OSError:
+        return
+    old = time.time() - UPLOAD_KEEP
+    for name in names:
+        folder = os.path.join(uploads_dir(), name)
+        try:
+            if os.path.isdir(folder) and os.path.getmtime(folder) < old:
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            pass
+
+
 # An element's name as a person would say it: its role or tag and its words (a password field's value never).
 LABEL_JS = r"""function (el) {
   if (!el || el.nodeType !== 1 || el === document.body || el === document.documentElement) return "";
@@ -2026,6 +2551,7 @@ class Browsers:
         self.lock = threading.Lock()
         self.open: Dict[str, Browser] = {}
         self.owner: Dict[str, str] = {}                  # a tab's target id, and its session id -> its Browser's key
+        self.begun: Dict[str, dict] = {}                 # a download begun, by its guid: {key (its Browser's), name}
         self.chrome = Chrome(self)
         self.logins_lock = threading.Lock()
         self.logins: Optional[Tuple[float, list]] = None   # the user's Chrome's cookies, read to pick from (`login_sites`)
@@ -2179,9 +2705,24 @@ class Browsers:
             b.event(method, params, session)
 
     def _download(self, method: str, params: dict) -> None:
-        if method == "Browser.downloadProgress" and params.get("state") == "completed":
-            for b in list(self.open.values()):
-                b.note(f"a download finished in {downloads_dir()}")
+        """A download begun (the Browser of the tab it came from kept, and its name) or done: told to that Browser --
+        to each, if it came from no tab's own frame -- for its agent and its view (`downloaded`)."""
+        guid = str(params.get("guid") or "")
+        if method == "Browser.downloadWillBegin":
+            with self.lock:
+                self.begun[guid] = {"key": self.owner.get(params.get("frameId") or ""),
+                                    "name": os.path.basename(str(params.get("suggestedFilename") or "")) or "download"}
+                while len(self.begun) > 50:
+                    self.begun.pop(next(iter(self.begun)))
+        elif method == "Browser.downloadProgress" and params.get("state") in ("completed", "canceled"):
+            with self.lock:
+                d = self.begun.pop(guid, None) or {"key": None, "name": "download"}
+            if params.get("state") != "completed":
+                return
+            path = str(params.get("filePath") or "") or os.path.join(downloads_dir(), d["name"])
+            b = self.open.get(d["key"]) if d["key"] else None
+            for b in [b] if b is not None else list(self.open.values()):
+                b.downloaded(path)
 
     def chrome_gone(self) -> None:
         self.owner.clear()
@@ -2203,8 +2744,9 @@ class Browsers:
         self.name_actor(key)
         return b.compose(text), b
 
-    def name_actor(self, key: str) -> None:
-        """Its actor named "Browser · <folder>", once, as its first message is sent -- once its gatherer has it."""
+    def name_actor(self, key: str, name: Optional[str] = None) -> None:
+        """Its actor named `name`, else "Browser · <folder>", once, as its first message is sent -- once its gatherer
+        has it."""
         r = self.row(key)
         if r.get("named"):
             return
@@ -2221,7 +2763,7 @@ class Browsers:
                 time.sleep(2)
                 now = (self._session(sid) or {}).get("session_id") or sid
             try:
-                naming.record(r["gatherer"], now, f"Browser · {os.path.basename(r['root']) or r['root']}")
+                naming.record(r["gatherer"], now, name or f"Browser · {os.path.basename(r['root']) or r['root']}")
             except naming.NamingError:
                 pass
         threading.Thread(target=name, name="ag-browser-name", daemon=True).start()
@@ -2270,8 +2812,9 @@ class Browsers:
         b.acting_on(f"{verb} {label}", box)
         return cdp, tab, node, obj, label, [sum(xs) / 4, sum(ys) / 4]
 
-    def _after(self, b: Browser, tab: Tab, starts: int, tabs: int, did: str) -> dict:
-        """What an action did, told: the page it went to, a tab it opened, a dialog it brought up."""
+    def _after(self, b: Browser, tab: Tab, starts: int, tabs: int, did: str, ui: Optional[int] = None) -> dict:
+        """What an action did, told: the page it went to, a tab it opened, a dialog it brought up -- and (`ui`: the
+        Browser's `ui_n` before it) a file chooser it opened, or a drop-down or picker, whose list doesn't open."""
         time.sleep(SETTLE)
         if tab.starts > starts:
             end = time.time() + LOAD_WAIT
@@ -2296,6 +2839,16 @@ class Browsers:
         if tab.dialog:
             out.append(f"{_a(tab.dialog.get('type'))} dialog opened: {json.dumps(tab.dialog.get('message', ''))} -- "
                        "answer it with the dialog tool.")
+        with b.lock:
+            chooser, popup = tab.chooser, tab.popup
+        if ui is not None and chooser and chooser["n"] > ui:
+            out.append("It opened the page's file chooser: give it files with the upload tool, on the file input (its "
+                       "ref from a snapshot). The user is shown a bar to choose them too.")
+        if ui is not None and popup and popup["n"] > ui and popup["k"] == "select":
+            out.append("It is a drop-down, whose list doesn't open for you: choose an option with the select tool.")
+        elif ui is not None and popup and popup["n"] > ui and popup["k"] == "picker":
+            out.append(f"It is a {popup.get('type')} field, whose picker doesn't open for you: type its value into it, "
+                       "or set it with evaluate.")
         return mcp.result(" ".join(out))
 
     def _t_snapshot(self, b: Browser, args: dict) -> dict:
@@ -2333,6 +2886,7 @@ class Browsers:
         starts, tabs = tab.starts, len(b.tabs)
         with b.lock:
             b.clicked, b.behind = time.time(), bool(mods & 6) or button == "middle"
+            ui = b.ui_n
         cdp.call("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y, "modifiers": mods}, tab.session)
         for n in (1, 2) if args.get("double") else (1,):
             for kind in ("mousePressed", "mouseReleased"):
@@ -2342,7 +2896,8 @@ class Browsers:
                          tab.session, until=lambda: tab.dialog is not None)
                 if tab.dialog:
                     break
-        return self._after(b, tab, starts, tabs, f"{'Double-clicked' if args.get('double') else 'Clicked'} {label}.")
+        did = f"{'Double-clicked' if args.get('double') else 'Clicked'} {label}."
+        return self._after(b, tab, starts, tabs, did, ui)
 
     def _t_type(self, b: Browser, args: dict) -> dict:
         text = str(args.get("text") or "")
@@ -2545,6 +3100,12 @@ class Browsers:
             raise BrowserError(f"no file {missing[0]}")
         cdp, tab, node, _, label, _ = self._act(b, str(args.get("ref") or ""), "giving files to")
         cdp.call("DOM.setFileInputFiles", {"files": paths, "backendNodeId": node}, tab.session)
+        with b.lock:                                     # the file chooser it opened, answered
+            answered = tab.chooser is not None and tab.chooser.get("node") == node
+            if answered:
+                tab.chooser = None
+        if answered:
+            b._publish()
         return mcp.result(f"Gave {label} {len(paths)} file{'s' if len(paths) != 1 else ''}.")
 
 

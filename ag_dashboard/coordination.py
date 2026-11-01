@@ -16,7 +16,8 @@ reach them: `ag actors` (ag/cli/actors.py), run in its shell, asks this dashboar
               (`branch`): a new worktree of the repository the directory is in (branches.py's `create`, as the page's
               branch button makes one; the repository made one of the gatherer's projects if it is not yet), what the
               actor changes there merged into the repository's checkout by the dashboard (`approve`: each change
-              waiting for the user in the Editor)
+              waiting for the user in the Editor) -- or a Browser's actor (`browser`): a new Browser (browser.py's
+              `create`), a Chrome tab in the dashboard the actor and the user use together
     when      the asker told, by an update in its conversation, once an actor's turn is over (WATCHES)
     watches   what the asker asked to be told and has not been yet; `unwatch`, one of them dropped
 
@@ -75,7 +76,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import harness_kit
 
-from . import actions, branches, data, docwriter as dw, editor, files, naming, sessions
+from . import actions, branches, browser as bw, data, docwriter as dw, editor, files, naming, sessions
 
 COORDINATOR = sessions.COORDINATOR
 ALIASES = ("gatherer", "gatherer-agent", "coordinator")   # what `send`, `show` and `when` take for the gatherer agent
@@ -189,8 +190,9 @@ class Coordination:
 
     def __init__(self, started: "sessions.Sessions", ring: Optional[Callable[[Optional[str]], None]] = None,
                  watch: bool = True, docwriters: Optional["dw.DocWriters"] = None,
-                 branched: Optional["branches.Branches"] = None):
+                 branched: Optional["branches.Branches"] = None, browsers: Optional["bw.Browsers"] = None):
         self.started, self.ring, self.docwriters, self.branched = started, ring, docwriters, branched
+        self.browsers = browsers
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.marked: set = set()                 # the gatherer agents' channels marked private by this dashboard
@@ -289,7 +291,8 @@ class Coordination:
                 "asked": _clip(_unwrapped(a.get("last_user_message")), ASKED_CHARS),
                 "recap": _clip((a.get("recap") or {}).get("text"), ASKED_CHARS),
                 "last": a.get("last"), "you": bool(me) and a["channel"] == me["channel"],
-                "gatherer_agent": self._is_coordinator(a), "docwriter": _docwriter_of(s) is not None}
+                "gatherer_agent": self._is_coordinator(a), "docwriter": _docwriter_of(s) is not None,
+                "browser": bw.key_of(s) is not None}
 
     # ---- what an actor asks
 
@@ -334,11 +337,13 @@ class Coordination:
 
     def new(self, actor: str, text: str, cwd: Optional[str] = None, harness: Optional[str] = None,
             model: Optional[str] = None, like: Optional[str] = None, name: Optional[str] = None,
-            docwriter: bool = False, branch: bool = False, approve: bool = False) -> dict:
+            docwriter: bool = False, branch: bool = False, approve: bool = False, browser: bool = False) -> dict:
         g, me, agents = self._asker(actor)
         text = _message(text)
         if docwriter and branch:
             raise CoordinationError("a DocWriter writes in its folder, not on a branch: --docwriter or --branch, not both")
+        if browser and (docwriter or branch):
+            raise CoordinationError("a Browser's actor is neither a DocWriter nor on a branch: --browser alone")
         if approve and not branch:
             raise CoordinationError("--approve is for an actor on a branch of its own (--branch): each change it makes "
                                     "there waits for the user in the Editor")
@@ -356,6 +361,8 @@ class Coordination:
         mode = bs.get("permission_mode") or "auto"
         if docwriter:
             row, made = self._new_docwriter(g, cwd or "", harness, model, name)
+        elif browser:
+            row, made = self._new_browser(g, cwd or "", harness, model, name)
         else:
             if branch:
                 row, on = self._new_on_branch(g, cwd or "", harness, model, mode, approve)
@@ -369,7 +376,7 @@ class Coordination:
         self._keep(g, me["channel"], "new", to, text)
         if self.ring is not None:
             self.ring(g)
-        return {"started": True, "actor": self._view(to, me), **({"docwriter": made} if made else {}),
+        return {"started": True, "actor": self._view(to, me), **({"browser" if browser else "docwriter": made} if made else {}),
                 **({"branch": on} if on else {})}
 
     def _new_on_branch(self, gatherer: str, cwd: str, harness: str, model: Optional[str], mode: str,
@@ -404,6 +411,20 @@ class Coordination:
         except dw.DocWriterError as exc:
             raise CoordinationError(f"no DocWriter started: {exc}") from None
         self.docwriters.name_actor(got["key"], name)
+        row = next(r for r in self.started.list() if r["session_id"] == got["channel"])
+        return row, {"key": got["key"], "root": got["root"]}
+
+    def _new_browser(self, gatherer: str, cwd: str, harness: str, model: Optional[str],
+                     name: Optional[str]) -> Tuple[dict, dict]:
+        """A new Browser in `cwd` (browser.py's `create`), its actor named `name`, else "Browser · <folder>", once its
+        first message is sent: (its actor's session, as the dashboard's table has it; {key, root})."""
+        if self.browsers is None:
+            raise CoordinationError("this dashboard runs no Browser")
+        try:
+            got = self.browsers.create(gatherer, cwd, harness, model)
+        except bw.BrowserError as exc:
+            raise CoordinationError(f"no Browser started: {exc}") from None
+        self.browsers.name_actor(got["key"], name)
         row = next(r for r in self.started.list() if r["session_id"] == got["channel"])
         return row, {"key": got["key"], "root": got["root"]}
 
