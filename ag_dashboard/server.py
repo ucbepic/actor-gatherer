@@ -83,7 +83,7 @@ context manager's home (data.py), read-only. Standard library only.
                                           has none (coordination.py) -> the session
     POST /api/actors/<op> {actor, ...}    what an actor's `ag actors` asks (coordination.py; `actor`, its id): list {all?},
                                           show {ref}, who {path}, send {ref, text}, new {text, cwd?, harness?, model?, like?,
-                                          name?, docwriter?, branch?, approve?}, when {ref, note?}, watches, unwatch
+                                          name?, docwriter?, branch?, approve?, browser?}, when {ref, note?}, watches, unwatch
                                           {watch} -> what it answers; an error's text for the command to print (400)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
     POST /api/discard {session_id}        one that never started -- no process of it running, nothing of it in its
@@ -147,8 +147,12 @@ context manager's home (data.py), read-only. Standard library only.
                                           (browser_video.py), every one from a key frame on, in order
     POST /browser/w/<key>/<what>          what the user does in it: input {events}, nav {url | action}, resize {width,
                                           height, dpr}, hover {x, y}, pick {x, y | box}, unpick {id}, dialog {accept, text?},
-                                          copy -> {text}, tab {action: switch | close | new, index?, url?}; and the MCP
-                                          server its actor calls (mcp)
+                                          copy -> {text}, tab {action: switch | close | new, index?, url?}; choose {n,
+                                          index | value} (in a drop-down's list or a picker the view showed), find {q,
+                                          back?, again?} -> {count, index}, file {name, data (base64)} -> {id} (a file
+                                          for the page), chosen {n, ids} (for its file chooser; none: closed), drop {x,
+                                          y, ids}, reveal {i} (a download, in its folder); and the MCP server its actor
+                                          calls (mcp)
     POST /api/browser {gatherer, cwd, harness?, model?}   a new Browser, its actor a new session of `harness` in the
                                           gatherer, in `cwd` (browser.py's `create`) -> {key, channel, ...}
     POST /api/browser/logins {action?: sites | import, sites?}   the user's Chrome's logins, for every Browser of the
@@ -747,6 +751,23 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                                                                 body.get("text") if isinstance(body.get("text"), str) else None)})
                 if what == "copy":
                     return self.answer({"text": b.selection()})
+                ids = body.get("ids") if isinstance(body.get("ids"), list) else []
+                if what == "choose":
+                    b.choose(int(body.get("n") or 0), None if body.get("index") is None else int(body["index"]),
+                             None if body.get("value") is None else str(body["value"]))
+                    return self.answer({})
+                if what == "find":
+                    q = str(body.get("q") or "")
+                    return self.answer(b.find(q, bool(body.get("back")), bool(body.get("again"))))
+                if what == "file":
+                    return self.answer({"id": b.upload(str(body.get("name") or ""), str(body.get("data") or ""))})
+                if what == "chosen":
+                    return self.answer({"given": b.chosen(int(body.get("n") or 0), ids)})
+                if what == "drop":
+                    return self.answer({"given": b.drop(num("x") or 0.0, num("y") or 0.0, ids)})
+                if what == "reveal":
+                    b.reveal(int(body.get("i") or 0))
+                    return self.answer({})
                 if what == "tab":
                     action, i = str(body.get("action") or ""), int(body.get("index") or 0)
                     if action == "switch":
@@ -1077,7 +1098,8 @@ def actors_op(crew: coordination.Coordination, op: str, body: dict):
         return crew.send(me, s("ref"), s("text"))
     if op == "new":
         return crew.new(me, s("text"), opt("cwd"), opt("harness"), opt("model"), opt("like"), opt("name"),
-                        bool(body.get("docwriter")), bool(body.get("branch")), bool(body.get("approve")))
+                        bool(body.get("docwriter")), bool(body.get("branch")), bool(body.get("approve")),
+                        bool(body.get("browser")))
     if op == "when":
         return crew.when(me, s("ref"), s("note"))
     if op == "watches":
@@ -1172,7 +1194,8 @@ class Server(ThreadingHTTPServer):
         self.browsers = browser.Browsers(self.sessions)                # the Browsers' Chrome, tabs and tools
         self.branches = branches.Branches(self.editors, self.sessions, self.hub.ring)   # the actors' own branches
         self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates,   # actors' `ag actors`
-                                              docwriters=self.docwriters, branched=self.branches)
+                                              docwriters=self.docwriters, branched=self.branches,
+                                              browsers=self.browsers)
         self.previews = preview.Runs()                                 # the projects' previews, run
         self.keeps_actions = False
         super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew, known, self.branches,

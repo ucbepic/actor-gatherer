@@ -473,19 +473,27 @@ The user's mouse, wheel and keys go to the tab as Chrome's own input; the screen
 own Chrome (browser_video.py: the tab captured by an extension of the dashboard's loaded in that Chrome, H.264, about
 30 ms from a click to the page, at the screen's density), else as Chrome's screencast (JPEG frames);
 Pick and Area point the agent at an element or a box, each a chip going with the next message (`<browser_state>`,
-with the page and what the user did since) and a ref the agent's tools take. The agent's 18 tools (snapshot, click,
+with the page and what the user did since) and a ref the agent's tools take. What Chrome would show itself, and a
+Chrome with no window doesn't, the view draws, told by a script of the dashboard's in each page (UI_JS, in a world of
+its own): the pointer's shape, tooltips, a drop-down's list and a date or color picker (opened in the user's own
+Chrome, the choice set back in the page), the right-click menu where the page has none, a find bar on Cmd+F where the
+page takes it not; the page's file chooser is the user's own (the files sent to the dashboard, kept a day in
+<home>/dashboard/uploads), files dropped on the view are dropped on the page, a download done is a click from its
+folder. The gatherer agent starts one with `ag actors new --browser`. The agent's 18 tools (snapshot, click,
 type, ...) are an MCP server of the dashboard's, run on the tab with or without a page open; what it does now is
 outlined on the user's screen.
 
 Not done yet:
 
-- **The gatherer agent cannot start one.** `ag actors new --docwriter` exists; a `--browser` would go the same way
-  (coordination.py's `new`).
 - **Frames inside frames.** A snapshot is the main frame's accessibility tree; an iframe from another site (a payment
   widget, a video) shows as one element, and Pick picks the iframe. Its own tree is a `frameId` away.
-- **What the screen lacks.** The pointer's shape (a hand over a link), typing composed by an input method (Chinese,
-  Japanese), dropping a file onto the page, the user's own file chooser (the agent's `upload` tool sets a file input),
-  the page's own context menu, sound.
+- **What the screen lacks.** Typing composed by an input method (Chinese, Japanese); sound; zoom; a field's suggestion
+  list (`<datalist>`, autofill); a site asking for the camera, the microphone or the place. In a frame from another
+  site (a payment widget), the pointer's shape, tooltips, drop-downs and pickers stay as Chrome has them -- the page's
+  script runs only in the frames of its own origin (another site's runs in a process of its own, a target the
+  dashboard would attach to: `Target.setAutoAttach`). A drop-down's list, opened with `showPicker` in the user's
+  Chrome, was seen opened there only headless (which closes it at once); a page calling `showPicker` itself opens
+  nothing. A file is sent to the dashboard as base64 JSON, 22 MB at most.
 - **Frames as base64 over server-sent events.** Fine on this machine. A video chunk is a few KB, a key frame (a page
   joining, the view resized, a tab switched) up to ~0.5 MB; a JPEG frame 30-150 KB at 1x, ~1 MB at 2x. Binary frames
   (a WebSocket) would cut a third.
@@ -509,6 +517,7 @@ Not done yet:
   restart, or Chrome quitting, means one more Allow. Its tabs are hidden ones, closed with the dashboard; a window the
   page opens (a login popup) shows in the user's Chrome as a tab of its own. The agent can act on every site the user
   is logged into.
-- **Downloads** go to <home>/dashboard/downloads, the agent told so; the page only notes that one finished.
+- **Downloads** go to <home>/dashboard/downloads, the agent told so; the view shows one done, with its folder a click
+  away (never opened: it may be anything).
 - **Linux** is untested: it needs google-chrome or chromium on the PATH (headless: no display), or
   `[dashboard] browser` in config.toml.

@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import harness_kit  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag.cli import actors as cli  # noqa: E402
-from ag_dashboard import branches, coordination, data, docwriter, editor, files, server, sessions  # noqa: E402
+from ag_dashboard import branches, browser, coordination, data, docwriter, editor, files, server, sessions  # noqa: E402
 from test_dashboard_sessions import FAKE_AG, SessionsBase  # noqa: E402
 
 # the fake ag, also saying who the dashboard told it it is, and where the dashboard is
@@ -292,6 +292,32 @@ class CoordinationTest(CoordinationBase):
             self.crew.new(self.a, "Write.", cwd=paper, docwriter=True)
         self.assertEqual(len(self.s.list()), 3)                 # neither started an actor
 
+    @unittest.skipUnless(browser.available(), "no Chrome here")
+    def test_a_new_browser_is_a_browsers_actor_in_the_folder_started_with_the_message(self):
+        bs = browser.Browsers(self.s)
+        self.addCleanup(bs.close)
+        crew = coordination.Coordination(self.s, watch=False, browsers=bs)
+        site = os.path.join(self.tmp.name, "site")
+        os.makedirs(site)
+        with unittest.mock.patch.object(bs, "name_actor") as name_actor:
+            got = crew.new(self.a, "Find the conference's deadline.", cwd=site, name="Deadlines", browser=True)
+        new = got["actor"]["channel"]
+        row = next(r for r in self.s.list() if r["session_id"] == new)
+        key = json.loads(row["role"])["browser"]
+        self.assertEqual((row["cwd"], row["harness"], row["gatherer"]), (os.path.realpath(site), "claude", "g"))
+        self.assertEqual(got["browser"], {"key": key, "root": os.path.realpath(site)})
+        self.assertEqual(bs.config(key)["channel"], new)
+        self.assertTrue(got["actor"]["browser"])
+        name_actor.assert_called_once_with(key, "Deadlines")
+        self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Find the conference's deadline.")
+        with self.assertRaisesRegex(coordination.CoordinationError, "--browser alone"):
+            crew.new(self.a, "Go.", cwd=site, browser=True, docwriter=True)
+        with self.assertRaisesRegex(coordination.CoordinationError, "no Browser started: no directory"):
+            crew.new(self.a, "Go.", cwd=os.path.join(self.tmp.name, "nope"), browser=True)
+        with self.assertRaisesRegex(coordination.CoordinationError, "runs no Browser"):
+            self.crew.new(self.a, "Go.", cwd=site, browser=True)
+        self.assertEqual(len(self.s.list()), 3)                 # none of those started an actor
+
     def test_show_says_what_an_actor_was_asked_said_and_changed(self):
         got = self.crew.show(self.a, self.b)
         self.assertEqual((got["asked"], got["said"], got["changed"]), ("write the docs", "The docs are written.", ["/w/README.md"]))
@@ -459,6 +485,19 @@ class CommandTest(CoordinationBase):
         self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Tighten the introduction.")
         code, out, _ = self.run_cli()
         self.assertIn(f"{new} (a DocWriter) -- idle, claude, in", out)
+
+    @unittest.skipUnless(browser.available(), "no Chrome here")
+    def test_the_gatherer_agent_starts_a_browser_from_its_shell(self):
+        self.crew.browsers = self.httpd.browsers
+        with unittest.mock.patch.object(browser.Browsers, "name_actor"):   # no ag to name it in
+            code, out, err = self.run_cli("new", "--browser", "--cwd", self.tmp.name, "Find", "the", "deadline.")
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("a Browser, with your message", out)
+        new = re.match(r"Started actor (\S+) ", out).group(1)
+        row = next(r for r in self.s.list() if r["session_id"] == new)
+        self.assertEqual((json.loads(row["role"]).keys(), row["cwd"]), ({"browser"}, os.path.realpath(self.tmp.name)))
+        code, out, _ = self.run_cli()
+        self.assertIn(f"{new} (a Browser) -- idle, claude, in", out)
 
     @unittest.skipIf(not docwriter.AVAILABLE, "pycrdt is not installed")
     def test_the_gatherer_agent_starts_an_actor_on_a_branch_from_its_shell(self):

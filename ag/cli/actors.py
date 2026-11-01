@@ -8,7 +8,7 @@ the dashboard that runs them (ag_dashboard/coordination.py), over its local API 
     ag actors send <actor> <message>    a message to the actor (`gatherer`: the gatherer agent; - for the message: read
                                         from stdin), which it gets in its conversation now -- as a new turn, or in the
                                         one it is running -- saying who it is from
-    ag actors new [--like A] [--cwd D] [--harness H] [--model M] [--name N] [--docwriter | --branch [--approve]] <message>
+    ag actors new [--like A] [--cwd D] [--harness H] [--model M] [--name N] [--docwriter | --browser | --branch [--approve]] <message>
                                         a new actor in the gatherer, started with the message: in D, on H and M, as given,
                                         else as actor A has them, else as this one. --docwriter: a DocWriter's actor,
                                         writing with the user on D's documents in DocWriter, in the dashboard, where its
@@ -110,6 +110,9 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--docwriter", action="store_true",
                      help="a DocWriter's actor: it writes with the user on the directory's documents in DocWriter, in "
                           "the dashboard, where its edits are proposals the user accepts or rejects")
+    new.add_argument("--browser", action="store_true",
+                     help="a Browser's actor: it uses a Chrome tab in the dashboard together with the user, who sees "
+                          "and uses the page in its Browser view")
     new.add_argument("--branch", action="store_true",
                      help="on a branch of its own: a new git worktree of the repository its directory is in, what it "
                           "changes there merged into that repository's checkout by the dashboard as it goes")
@@ -153,7 +156,7 @@ def main(argv: List[str]) -> int:
             body.update({k: getattr(opts, k) for k in ("like", "cwd", "harness", "model", "name") if getattr(opts, k)})
             if body.get("cwd"):
                 body["cwd"] = os.path.abspath(os.path.expanduser(body["cwd"]))
-            for flag in ("docwriter", "branch", "approve"):
+            for flag in ("docwriter", "browser", "branch", "approve"):
                 if getattr(opts, flag):
                     body[flag] = True
         if op == "when":
@@ -182,6 +185,7 @@ def _place(cwd: Optional[str]) -> str:
 def _who(a: dict) -> str:
     """An actor in a line: its id, its name, whether it is the gatherer agent or the asker, its status, harness, place."""
     marks = [m for m in ("the gatherer agent" if a.get("gatherer_agent") else None, "a DocWriter" if a.get("docwriter") else None,
+                         "a Browser" if a.get("browser") else None,
                          "you" if a.get("you") else None) if m]
     name = ' "%s"' % a["name"] if a.get("name") and not a.get("gatherer_agent") else ""
     what = ", ".join(x for x in (a.get("status"), a.get("harness")) if x)
@@ -236,6 +240,10 @@ def shown(op: str, got: dict) -> str:
             return (f"Started actor {a['id']} ({a.get('harness')},{_place(a.get('cwd'))}), a DocWriter, with your message. "
                     f"Its edits to the documents are proposals: they reach the files once the user accepts them in its "
                     f"DocWriter view (the dashboard, its actor selected).")
+        if got.get("browser"):
+            return (f"Started actor {a['id']} ({a.get('harness')},{_place(a.get('cwd'))}), a Browser, with your message. "
+                    f"It uses a Chrome tab in the dashboard together with the user, who sees the page in its Browser view "
+                    f"(the dashboard, its actor selected) and can log in there for it.")
         b = got.get("branch")
         if b:
             merged = (" each change waiting for the user to accept it in the Editor" if b.get("approve") else

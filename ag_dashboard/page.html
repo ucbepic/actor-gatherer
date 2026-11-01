@@ -1115,7 +1115,8 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .bw-tabs .t .x { border: 0; background: none; color: inherit; padding: 0 3px; cursor: pointer; border-radius: 4px; line-height: 1; }
 .bw-tabs .t .x:hover { background: var(--wash); }
 .bw-tabs .add { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 8px; }
-.bw-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #fff; outline: none; cursor: default; touch-action: none; }
+.bw-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #fff; outline: none;
+  cursor: var(--bw-cursor, default); touch-action: none; }   /* the page's pointer shape (bwUiDraw) */
 .bw-stage:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, #2563EB 50%, transparent); }
 .bw-stage.picking { cursor: crosshair; }
 .bw-stage img, .bw-stage canvas.screen { position: absolute; left: 0; top: 0; display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
@@ -1137,6 +1138,43 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .bw-stage .dialog .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
 .bw-stage .dialog input { font: inherit; padding: 4px 8px; border: 1px solid var(--grid); border-radius: 6px; background: var(--page); color: var(--ink); }
 .bw-stage .dialog .row { display: flex; gap: 6px; justify-content: flex-end; }
+.bw-stage .dialog { cursor: default; }
+/* what Chrome would show itself (bwUi): a tooltip, a list or menu, a download done, a file dropped on the page */
+.bw-stage.dropping::after { content: ""; position: absolute; inset: 0; border: 2px dashed #2563EB; pointer-events: none;
+  background: color-mix(in srgb, #2563EB 8%, transparent); }
+.bw-stage .tip { position: absolute; z-index: 3; max-width: min(360px, calc(100% - 8px)); box-sizing: border-box; padding: 4px 8px;
+  border-radius: 5px; background: #2b2b2b; color: #fff; font-size: 12px; line-height: 1.35; white-space: pre-wrap;
+  overflow-wrap: anywhere; pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+.bw-stage .pop-native { position: absolute; opacity: 0; pointer-events: none; margin: 0; padding: 0; border: 0; font-size: 13px; }
+.bw-menu { position: absolute; z-index: 4; min-width: 200px; max-width: 340px; max-height: 60%; overflow-y: auto; box-sizing: border-box;
+  padding: 4px; border-radius: 8px; background: var(--surface); color: var(--ink); border: 1px solid var(--grid);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .22); font-size: 13px; cursor: default; }
+.bw-menu button { display: block; position: relative; width: 100%; box-sizing: border-box; text-align: left; border: 0; background: none;
+  color: inherit; font: inherit; padding: 5px 10px; border-radius: 5px; cursor: default; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.bw-menu button:hover:not([disabled]), .bw-menu button:focus-visible { background: var(--wash); outline: none; }
+.bw-menu button[disabled] { opacity: .45; }
+.bw-menu.list button { padding-left: 26px; }
+.bw-menu.list button.on::before { content: "✓"; position: absolute; left: 9px; }
+.bw-menu .grp { padding: 5px 10px 2px; color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.bw-menu hr { border: 0; border-top: 1px solid var(--ring); margin: 4px 2px; }
+.bw-menu.field { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px; }
+.bw-menu.field button { width: auto; color: #2563EB; }
+.bw-stage .dl { position: absolute; right: 10px; bottom: 10px; z-index: 3; display: flex; align-items: center; gap: 2px;
+  max-width: calc(100% - 20px); box-sizing: border-box; padding: 4px 4px 4px 12px; border-radius: 8px; background: var(--surface);
+  color: var(--ink); border: 1px solid var(--grid); box-shadow: 0 4px 16px rgba(0, 0, 0, .18); font-size: 12.5px; cursor: default; }
+.bw-stage .dl .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.bw-stage .dl button { flex: none; border: 0; background: none; color: #2563EB; font: inherit; padding: 3px 8px; border-radius: 5px; cursor: pointer; }
+.bw-stage .dl button:hover { background: var(--wash); }
+.bw-stage .dl .x { color: var(--muted); padding: 3px 6px; }
+.bw-bar .bw-find { flex: none; display: flex; align-items: center; gap: 1px; margin: 0 2px; padding: 0 2px 0 10px;
+  border: 1px solid var(--grid); border-radius: 999px; background: var(--page); }
+.bw-bar .bw-find input { width: 140px; flex: none; border: 0; border-radius: 0; background: none; padding: 3px 0; outline: none;
+  font: 12.5px/1.4 system-ui, -apple-system, sans-serif; }
+.bw-bar .bw-find input:focus { outline: none; }
+.bw-bar .bw-find .n { font-size: 11.5px; color: var(--muted); white-space: nowrap; padding: 0 4px; }
+.bw-bar .bw-find .n.none { color: var(--critical); }
+.bw-bar .bw-find button { width: 22px; height: 22px; }
 .bw-picks { display: flex; flex-wrap: wrap; gap: 4px; }
 .bw-picks:empty { display: none; }
 .bw-picks .pk { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 1px 4px 1px 8px; border-radius: 999px;
@@ -10448,7 +10486,8 @@ function bwFor(k) {
   b.areaBtn = btn(ICONS.area, "Pick an area: drag a box over the page (Esc to stop)", () => bwMode(b, b.mode === "area" ? null : "area"), { "aria-pressed": "false" });
   b.mine = el("span", { class: "mine", hidden: "", text: "Your Chrome",
     title: "This page runs in your own Chrome (config.toml's [dashboard] browser_profile = \"mine\"): your logins and history, a tab hidden from its tab strip" });
-  b.bar = el("div", { class: "bw-bar" }, b.back, b.fwd, b.reload, b.newTab, form, b.mine, el("span", { class: "sep" }), b.pickBtn, b.areaBtn);
+  b.find = bwFindBar(b);
+  b.bar = el("div", { class: "bw-bar" }, b.back, b.fwd, b.reload, b.newTab, form, b.find, b.mine, el("span", { class: "sep" }), b.pickBtn, b.areaBtn);
   b.tabs = el("div", { class: "bw-tabs", hidden: "" });
   b.img = el("img", { alt: "" });
   b.cv = el("canvas", { class: "screen", hidden: "" });   // the screen as video, where it comes so (bwVideo)
@@ -10458,10 +10497,14 @@ function bwFor(k) {
   b.hint = el("div", { class: "hint", hidden: "" });
   b.cover = el("div", { class: "cover" }, el("div", { text: "Opening the browser…" }));
   b.dialog = el("div", { class: "dialog", hidden: "" });
+  b.tip = el("div", { class: "tip", role: "tooltip", hidden: "" });
+  b.chooser = bwShield(el("div", { class: "dialog chooser", hidden: "" }));
+  b.dl = bwShield(el("div", { class: "dl", hidden: "" }));
   b.stage = el("div", { class: "bw-stage", tabindex: "0", "aria-label": "The page: click to use it, as the agent does" },
-    b.img, b.cv, b.acting, b.actingLabel, b.dragBox, b.hint, b.dialog, b.cover);
+    b.img, b.cv, b.acting, b.actingLabel, b.dragBox, b.hint, b.tip, b.dl, b.dialog, b.chooser, b.cover);
   b.host = el("div", { class: "bw" }, b.bar, b.tabs, b.stage);
   bwInput(b);
+  bwUi(b);
   new ResizeObserver(() => bwResize(b)).observe(b.stage);
   bwAll.set(k, b);
   return b;
@@ -10582,6 +10625,7 @@ function bwDraw(b) {
   b.cover.hidden = !!b.framed && !err && !st.allow;
   if (!b.cover.hidden) b.cover.replaceChildren(...[el("div", { text: st.allow ? "Waiting for your Chrome: click Allow in its “Allow remote debugging?” dialog"
     : err ? "The browser did not open." : "Opening the browser…" }), err ? el("div", { class: "err", text: err }) : null].filter(Boolean));
+  bwUiDraw(b);
 }
 // Pick (an element) and Area (a box): what the pointer does on the screen meanwhile; Esc, or the button again, stops it.
 function bwMode(b, mode) {
@@ -10704,6 +10748,260 @@ function bwInput(b) {
     ev.preventDefault();
     bwQueue(b, { type: "text", text });
   });
+}
+// What Chrome would show itself, which a Chrome with no window doesn't (browser.py's UI_JS tells it, in the state): the
+// pointer's shape; a tooltip; a drop-down's list or a date or color picker, opened here, in the user's own Chrome (what
+// they choose set in the page: choose); the right-click menu; the find bar; the page's file chooser (the user's own,
+// the files sent: file, chosen); files dropped on the view (drop); a download done (shown in its folder: reveal).
+const BW_USER_WAIT = 4000;   // ms after the user's click or key in the view that a list, picker or file chooser the page
+                             // asks for opens by itself (the browser opens one only just after the user acted)
+const BW_FILE_MAX = 22e6;    // the largest file sent for the page (browser.py's MAX_UPLOAD)
+function bwUi(b) {
+  const st = b.stage;
+  b.userAt = 0; b.pointer = { x: 0, y: 0 }; b.pop = null;
+  const at = (ev) => { const r = st.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
+  const inPop = (ev) => b.pop && b.pop.contains(ev.target);
+  st.addEventListener("pointerdown", (ev) => { if (inPop(ev)) return; b.userAt = Date.now(); b.pointer = at(ev); bwPopClose(b); }, true);
+  st.addEventListener("pointermove", (ev) => { b.pointer = at(ev); }, true);
+  st.addEventListener("wheel", (ev) => { if (!inPop(ev)) bwPopClose(b); }, { capture: true, passive: true });
+  st.addEventListener("keydown", (ev) => {
+    if (inPop(ev)) return;
+    b.userAt = Date.now();
+    if (ev.key === "Escape" && b.pop) { ev.preventDefault(); ev.stopImmediatePropagation(); bwPopClose(b); }   // ours, not the page's
+  }, true);
+  const files = (ev) => ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
+  st.addEventListener("dragover", (ev) => {
+    if (!files(ev)) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = "copy";
+    st.classList.add("dropping");
+  });
+  st.addEventListener("dragleave", (ev) => { if (!st.contains(ev.relatedTarget)) st.classList.remove("dropping"); });
+  st.addEventListener("drop", (ev) => {
+    st.classList.remove("dropping");
+    if (!files(ev)) return;
+    ev.preventDefault();
+    const p = at(ev), list = [...ev.dataTransfer.files];
+    if (list.length) bwUpload(b, list).then((ids) => bwPost(b, "drop", { ...p, ids })).catch(bwSay(b));
+  });
+}
+// A box of the dashboard's over the page: what is done in it is not the page's.
+function bwShield(node) {
+  for (const t of ["pointerdown", "pointerup", "pointermove", "click", "dblclick", "wheel", "keydown", "keyup", "paste", "copy"])
+    node.addEventListener(t, (ev) => ev.stopPropagation());
+  node.addEventListener("contextmenu", (ev) => { ev.stopPropagation(); ev.preventDefault(); });
+  return node;
+}
+// Files the user gives the page, sent to the dashboard, one at a time -> their ids.
+async function bwUpload(b, files) {
+  const ids = [];
+  for (const f of files) {
+    if (f.size > BW_FILE_MAX) throw new Error(`${f.name} is larger than ${Math.round(BW_FILE_MAX / 1e6)} MB`);
+    const data = await new Promise((ok, no) => {
+      const r = new FileReader();
+      r.onload = () => ok(String(r.result).split(",")[1] || "");
+      r.onerror = () => no(r.error);
+      r.readAsDataURL(f);
+    });
+    ids.push((await bwPost(b, "file", { name: f.name, data })).id);
+  }
+  return ids;
+}
+function bwUiDraw(b) {
+  const st = b.state || {};
+  b.stage.style.setProperty("--bw-cursor", st.cursor || "default");
+  // the page's tooltip, by the pointer
+  const tip = st.tip;
+  b.tip.hidden = !tip;
+  if (tip) {
+    b.tip.textContent = tip.text;
+    const [x, y] = tip.at || [b.pointer.x, b.pointer.y], w = b.stage.clientWidth, h = b.stage.clientHeight;
+    b.tip.style.left = `${Math.max(4, Math.min(x + 10, w - b.tip.offsetWidth - 4))}px`;
+    b.tip.style.top = `${y + 24 + b.tip.offsetHeight > h ? Math.max(4, y - b.tip.offsetHeight - 8) : y + 20}px`;
+  }
+  // a list, picker, menu or find bar the page asked for: opened once, and only if the user just acted in the view
+  const p = st.popup;
+  if (p && p.n !== b.popSeen) {
+    b.popSeen = p.n;
+    if (Date.now() - b.userAt < BW_USER_WAIT) bwPopOpen(b, p);
+  }
+  if (!p && b.pop) bwPopClose(b);                  // the page it was on went
+  // the page's file chooser: the user's own, at once if they just acted, else from the bar
+  const c = st.chooser;
+  b.chooser.hidden = !c;
+  if (c && b.chooserSeen !== c.n) {
+    b.chooserSeen = c.n;
+    const many = c.mode === "multiple";
+    b.chooser.replaceChildren(el("div", { text: `The page asks for ${many ? "files" : "a file"}` }),
+      el("div", { class: "row" }, el("button", { type: "button", onclick: () => bwPost(b, "chosen", { n: c.n, ids: [] }).catch(bwSay(b)) }, "Cancel"),
+        el("button", { type: "button", class: "primary", onclick: () => bwChoose(b, c) }, many ? "Choose files…" : "Choose a file…")));
+    if (Date.now() - b.userAt < BW_USER_WAIT) bwChoose(b, c);
+  }
+  // a download done, from now on: shown in its folder
+  const d = (st.downloads || []).at(-1);
+  if (b.dlSeen === undefined) b.dlSeen = d ? d.i : 0;
+  b.dl.hidden = !d || d.i <= b.dlSeen;
+  if (d && !b.dl.hidden && b.dl.dataset.i !== String(d.i)) {
+    b.dl.dataset.i = String(d.i);
+    b.dl.replaceChildren(el("span", { class: "nm", title: d.name, text: `Downloaded ${d.name}` }),
+      el("button", { type: "button", onclick: () => bwPost(b, "reveal", { i: d.i }).catch(bwSay(b)) },
+        /Mac/.test(navigator.platform) ? "Show in Finder" : "Show in folder"),
+      el("button", { type: "button", class: "x", "aria-label": "Dismiss", title: "Dismiss", text: "×",
+        onclick: () => { b.dlSeen = d.i; b.dl.hidden = true; } }));
+  }
+}
+// The user's own file chooser, for the page's: the files chosen sent, then given to the page.
+function bwChoose(b, c) {
+  const input = el("input", { type: "file" });
+  if (c.mode === "multiple") input.multiple = true;
+  if (c.accept) input.accept = c.accept;
+  input.addEventListener("change", () => {
+    const list = [...input.files];
+    if (list.length) bwUpload(b, list).then((ids) => bwPost(b, "chosen", { n: c.n, ids })).catch(bwSay(b));
+  });
+  input.click();
+}
+const bwPlace = (node, box) => Object.assign(node.style, { left: `${box[0]}px`, top: `${box[1]}px`,
+  width: `${Math.max(box[2], 1)}px`, height: `${Math.max(box[3], 1)}px` });
+function bwPopClose(b) {
+  if (b.pop) { b.pop.remove(); b.pop = null; }
+}
+function bwPopOpen(b, p) {
+  bwPopClose(b);
+  const box = p.box || [b.pointer.x, b.pointer.y, 0, 0];
+  const back = () => b.stage.focus({ preventScroll: true });
+  if (p.k === "select") {                          // a drop-down: the user's Chrome's own list, at the page's
+    const s = el("select", { class: "pop-native", tabindex: "-1", "aria-hidden": "true" });
+    let group = null;
+    for (const o of p.options) {
+      const opt = el("option", { text: o.t });
+      opt.disabled = !!o.d;
+      if (o.g && !(group && group.label === o.g)) s.append(group = el("optgroup", { label: o.g }));
+      else if (!o.g) group = null;
+      (group || s).append(opt);
+    }
+    s.selectedIndex = p.i;
+    bwPlace(s, box);
+    b.stage.append(s);
+    s.addEventListener("change", () => { const i = s.selectedIndex; bwPopClose(b); back(); bwPost(b, "choose", { n: p.n, index: i }).catch(bwSay(b)); });
+    try { s.showPicker(); b.pop = s; return; } catch (e) { s.remove(); }
+    const items = [];                              // the browser shows none now: a list of the dashboard's
+    let last = null;
+    p.options.forEach((o, i) => {
+      if (o.g && o.g !== last) items.push({ head: o.g });
+      last = o.g;
+      items.push({ label: o.t, on: i === p.i, disabled: o.d, run: () => bwPost(b, "choose", { n: p.n, index: i }).catch(bwSay(b)) });
+    });
+    return bwMenu(b, box[0], box[1] + box[3], items, "list");
+  }
+  if (p.k === "picker") {                          // a date's or a color's: the user's Chrome's own picker
+    const input = el("input", { type: p.type, class: "pop-native", tabindex: "-1", "aria-hidden": "true" });
+    for (const k of ["min", "max", "step"]) if (p[k]) input.setAttribute(k, p[k]);
+    input.value = p.value;
+    const send = () => bwPost(b, "choose", { n: p.n, value: input.value }).catch(bwSay(b));
+    input.addEventListener("change", () => { clearTimeout(b.colorT); send(); bwPopClose(b); back(); });
+    if (p.type === "color") input.addEventListener("input", () => { clearTimeout(b.colorT); b.colorT = setTimeout(send, 150); });
+    bwPlace(input, box);
+    b.stage.append(input);
+    try { input.showPicker(); b.pop = input; return; } catch (e) { input.remove(); }
+    input.className = "";                          // the browser opens none now: the field, to open it from
+    input.removeAttribute("style");
+    const m = bwShield(el("div", { class: "bw-menu field" }, input,
+      el("button", { type: "button", text: "Set", onclick: () => { send(); bwPopClose(b); back(); } })));
+    b.stage.append(m);
+    b.pop = m;
+    bwPlace(m, [box[0], box[1] + box[3] + 2, 0, 0]);
+    Object.assign(m.style, { width: "", height: "" });
+    return;
+  }
+  if (p.k === "menu") {                            // the right-click menu, where the page has none of its own
+    const [x, y] = p.at || [b.pointer.x, b.pointer.y];
+    const copy = (text) => navigator.clipboard.writeText(text).catch(bwSay(b));
+    const nav = (action) => () => bwPost(b, "nav", { action }).catch(bwSay(b));
+    const tab = (url) => () => bwPost(b, "tab", { action: "new", url }).catch(bwSay(b));
+    const items = [];
+    if (p.link) items.push({ label: "Open link in new tab", run: tab(p.link) }, { label: "Copy link address", run: () => copy(p.link) }, null);
+    if (p.img) items.push({ label: "Open image in new tab", run: tab(p.img) }, { label: "Copy image address", run: () => copy(p.img) }, null);
+    if (p.sel) items.push({ label: "Copy", run: () => copy(p.sel) });
+    if (p.editable) items.push({ label: "Paste", run: () => navigator.clipboard.readText().then((text) => { if (text) bwQueue(b, { type: "text", text }); }).catch(bwSay(b)) });
+    if (p.sel || p.editable) items.push(null);
+    items.push({ label: "Back", run: nav("back") }, { label: "Forward", run: nav("forward") }, { label: "Reload", run: nav("reload") }, null,
+      { label: "Find in page…", run: () => bwFindOpen(b) },
+      { label: "Point the agent at this", run: () => bwPost(b, "pick", { x, y }).then(() => document.getElementById("composer-text")?.focus()).catch(bwSay(b)) });
+    return bwMenu(b, x, y, items);
+  }
+  if (p.k === "find") bwFindOpen(b);
+}
+// A menu of the dashboard's over the page, at (x, y): items {label, run, on?, disabled?} | {head} | null (a line).
+function bwMenu(b, x, y, items, kind = "") {
+  bwPopClose(b);
+  const m = bwShield(el("div", { class: `bw-menu ${kind}`.trim(), role: "menu" }));
+  for (const it of items) {
+    if (!it) { if (m.lastChild && m.lastChild.localName !== "hr") m.append(el("hr")); continue; }
+    if (it.head) { m.append(el("div", { class: "grp", text: it.head })); continue; }
+    const btn = el("button", { type: "button", role: "menuitem", class: it.on ? "on" : "", text: it.label, title: it.label });
+    btn.disabled = !!it.disabled;
+    btn.addEventListener("click", () => { bwPopClose(b); b.stage.focus({ preventScroll: true }); it.run(); });
+    m.append(btn);
+  }
+  if (m.lastChild && m.lastChild.localName === "hr") m.lastChild.remove();
+  m.addEventListener("keydown", (ev) => {
+    const all = [...m.querySelectorAll("button:not([disabled])")], i = all.indexOf(document.activeElement);
+    if (ev.key === "Escape") { ev.preventDefault(); bwPopClose(b); b.stage.focus({ preventScroll: true }); }
+    else if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && all.length) {
+      ev.preventDefault();
+      const down = ev.key === "ArrowDown", n = all.length;
+      all[i < 0 ? (down ? 0 : n - 1) : (i + (down ? 1 : n - 1)) % n].focus();
+    }
+  });
+  b.stage.append(m);
+  b.pop = m;
+  const w = b.stage.clientWidth, h = b.stage.clientHeight;
+  m.style.left = `${Math.max(4, Math.min(x, w - m.offsetWidth - 4))}px`;
+  m.style.top = `${y + m.offsetHeight + 4 > h ? Math.max(4, y - m.offsetHeight) : y}px`;
+  (m.querySelector("button.on:not([disabled])") || m.querySelector("button:not([disabled])"))?.focus({ preventScroll: true });
+}
+// The find bar, in the Browser's bar (Cmd+F, where the page takes it not; or the right-click menu): Enter for the
+// next, Shift+Enter the one before, Esc to close it.
+function bwFindBar(b) {
+  const input = el("input", { type: "text", spellcheck: "false", "aria-label": "Find in page", placeholder: "Find in page" });
+  const count = el("span", { class: "n", "aria-live": "polite" });
+  let seq = 0, timer = 0;
+  const run = async (back, again) => {
+    const q = input.value, mine = ++seq;
+    if (!q) { count.textContent = ""; count.classList.remove("none"); return; }
+    try {
+      const r = await bwPost(b, "find", { q, back, again });
+      if (mine !== seq) return;
+      count.textContent = !r.count ? "No matches" : r.index >= 0 ? `${r.index + 1} of ${r.count}` : `${r.count} ${r.count === 1 ? "match" : "matches"}`;
+      count.classList.toggle("none", !r.count);
+    } catch (e) { if (mine === seq) count.textContent = ""; bwSay(b)(e); }
+  };
+  b.findRun = run;
+  input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => run(false, false), 150); });
+  input.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();                          // the bar's keys, not the dashboard's
+    if (ev.key === "Enter") { ev.preventDefault(); run(ev.shiftKey, true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); bwFindClose(b); }
+    else if ((ev.metaKey || ev.ctrlKey) && (ev.key === "f" || ev.key === "F")) { ev.preventDefault(); input.select(); }
+  });
+  const btn = (d, label, onclick) => el("button", { type: "button", title: label, "aria-label": label, onclick }, strokeIcon(d, 14));
+  b.findInput = input; b.findCount = count;
+  return el("div", { class: "bw-find", hidden: "" }, input, count,
+    btn("M4 10 8 6l4 4", "The one before (Shift+Enter)", () => run(true, true)),
+    btn("M4 6l4 4 4-4", "The next (Enter)", () => run(false, true)),
+    btn("M4.5 4.5l7 7M11.5 4.5l-7 7", "Close (Esc)", () => bwFindClose(b)));
+}
+function bwFindOpen(b) {
+  b.find.hidden = false;
+  b.findInput.focus();
+  b.findInput.select();
+  if (b.findInput.value) b.findRun(false, false);
+}
+function bwFindClose(b) {
+  b.find.hidden = true;
+  b.findCount.textContent = "";
+  b.stage.focus({ preventScroll: true });
 }
 // The chips of what the user picked, above the message box: each going with the next message, or taken off.
 function bwPicks(k) {
