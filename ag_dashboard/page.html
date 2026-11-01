@@ -1087,6 +1087,13 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .chat .chat-frame.bw-frame { position: relative; overflow: hidden; padding: 0; display: flex; flex-direction: column; }
 .bw { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .bw [hidden] { display: none !important; }
+/* a Browser's actor: its status (actorStatus) at the message box's right, as a minimized pane has it */
+.chat:has(> .bw-frame) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-areas: "frame frame" "box st" "err st"; }
+.chat:has(> .bw-frame) > .bw-frame { grid-area: frame; }
+.chat:has(> .bw-frame) > :is(.composer, .readonly) { grid-area: box; }
+.chat:has(> .bw-frame) > .err { grid-area: err; }
+.chat:has(> .bw-frame) > .mini-st { grid-area: st; border-top: 1px solid var(--ring); }
 .bw-bar { flex: none; display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 1px solid var(--ring); }
 .bw-bar button { flex: none; display: grid; place-items: center; width: 28px; height: 26px; border: 0; border-radius: 6px;
   background: none; color: var(--muted); cursor: pointer; }
@@ -10186,7 +10193,12 @@ const MINI_VIEW = { id: "mini", name: "Chat", feed: "files", mini: true, backgro
   render: () => [], footer: (ctx) => miniFoot(ctx) };
 const miniBack = () => el("button", { type: "button", class: "mini-back", title: "Show the chat again", "aria-label": "Show the chat again",
   onclick: () => setChatMin(false) }, strokeIcon(ICONS.restore, 14));
-function miniFoot({ info, running }) {
+const miniFoot = (ctx) => [miniBack(), actorStatus(ctx, () => setChatMin(false))];
+// The actor's status, small, at the right of a message box with no conversation over it -- a minimized pane's (miniFoot), a
+// Browser's: its avatar moving while it works, or while a message sent from here waits to open its turn, ✓ when the turn is
+// done, ?/! when it asks or failed; under it the latest turn's commands and lines changed (from the files' feed). Pressed:
+// `show`, the chat.
+function actorStatus({ info, running }, show) {
   const d = state.files && state.selected && state.files.key === key(...state.selected) ? state.files.data : null;
   const [st0, word0] = statusOf(info);
   // working: its turn, or a message sent from here that has yet to open one -- for a while: not seen for long, its terminal
@@ -10208,12 +10220,12 @@ function miniFoot({ info, running }) {
   const said = [live ? (info.failing ? "Retrying" : "Working") : word,
     t ? plural(cmds.length, "command") + (failed ? `, ${full(failed)} failed` : "") : null,
     lines ? `${plural(lines[0], "line")} added, ${full(lines[1])} removed` : null].filter(Boolean).join(" · ");
-  return [miniBack(), el("button", { type: "button", class: "mini-st" + (live ? " live" : ""), "data-morph": "",
-    title: `${said}. Show the chat`, "aria-label": `${said}. Show the chat`, onclick: () => setChatMin(false) },
+  return el("button", { type: "button", class: "mini-st" + (live ? " live" : ""), "data-morph": "",
+    title: `${said}. Show the chat`, "aria-label": `${said}. Show the chat`, onclick: show },
     el("span", { class: "pic", "data-morph": "" }, pic),
     el("span", { class: "n" }, t ? el("span", { class: "c" + (failed ? " err" : "") }, strokeIcon(ICONS.terminal, 11), full(cmds.length)) : null,
       lines && lines[0] ? el("span", { class: "chg-a", text: `+${full(lines[0])}` }) : null,
-      lines && lines[1] ? el("span", { class: "chg-r", text: `−${full(lines[1])}` }) : null))];
+      lines && lines[1] ? el("span", { class: "chg-r", text: `−${full(lines[1])}` }) : null));
 }
 // A shell's pane, minimized: what it is, and the way back.
 function shellMini(id) {
@@ -10732,14 +10744,18 @@ function bwPicks(k) {
     el("span", { class: "id", text: p.id }), el("span", { class: "nm", text: p.label }),
     el("button", { type: "button", "aria-label": `Take ${p.id} off`, text: "×", onclick: () => bwPost(b, "unpick", { id: p.id }).catch(bwSay(b)) }))));
 }
+// The actor's status at the message box's right, as a minimized pane has it (actorStatus): from the files' feed -- the latest
+// turn's, and what tells a message sent from here seen -- and none of the history, nor what waits or asks, drawn.
 if (!SNAPSHOT) addChatView({
-  id: "browser", name: "Browser", feed: "none", frame: "bw-frame", icon: ICONS.globe,
+  id: "browser", name: "Browser", feed: "files", frame: "bw-frame", icon: ICONS.globe,
+  background: false, asking: false, queued: false, greets: true,
   description: "The Browser: a Chrome tab you and this actor use together. Pick an element or an area to point it at what you mean.",
   when: (info) => !!bwKey(info),
   render: ({ info }) => {
     if (!state.home || !state.home.browser)
       return el("div", { class: "desc", text: "A Browser needs Google Chrome (or Chromium) where the dashboard runs, or one named in config.toml's [dashboard] browser." });
     const b = bwFor(bwKey(info));
+    if (state.files && state.files.turn !== null) setFilesTurn(null);   // an earlier turn picked in Chat: the status is the latest's
     bwListen(b);
     bwDraw(b);
     requestAnimationFrame(() => bwResize(b));
@@ -10750,6 +10766,7 @@ if (!SNAPSHOT) addChatView({
     form.prepend(bwPicks(bwKey(ctx.info)));
     return form;
   },
+  footer: (ctx) => actorStatus(ctx, () => setChatView("files")),
 });
 
 // What a view gets to draw with -- and, for one in a file of its own, how it adds itself.
