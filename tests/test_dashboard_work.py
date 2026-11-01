@@ -6,19 +6,38 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import harness_kit  # noqa: E402
 from ag_dashboard import work  # noqa: E402
 
 
 def shell(command):
-    return work.doing("Bash", {"command": command})
+    return work.doing(harness_kit.Action.SHELL, {"shape": "shell", "command": command})
+
+
+def tool(harness, name, inp=None):
+    """A call of `harness`'s tool `name`, as its rules read it: its kind."""
+    if harness == "claude":
+        item = {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": name, "input": inp or {}}]}
+    elif harness == "codex":
+        item = {"type": "function_call", "call_id": "t", "name": name, "arguments": "{}"}
+    else:
+        item = {"role": "model", "parts": [{"functionCall": {"id": "t", "name": name, "args": inp or {}}}]}
+    [p] = harness_kit.get(harness).read_one(item)
+    return work.doing(p.tool.action, p.tool.view)
 
 
 class DoingTest(unittest.TestCase):
 
     def test_tools(self):
-        self.assertEqual([work.doing(n, {}) for n in ("Read", "Grep", "WebFetch", "Edit", "apply_patch", "Agent", "Monitor",
-                                                      "mcp__x__y")],
-                         ["read", "search", "search", "edit", "edit", "team", "wait", "run"])
+        self.assertEqual([tool("claude", n) for n in ("Read", "Grep", "WebFetch", "Edit", "Agent", "Monitor", "TodoWrite",
+                                                      "Artifact", "mcp__x__y")],
+                         ["read", "search", "search", "edit", "team", "wait", "edit", "ship", "run"])
+        self.assertEqual([tool("codex", n) for n in ("apply_patch", "spawn_agent", "update_plan", "view_image", "web_search")],
+                         ["edit", "team", "edit", "read", "search"])
+        self.assertEqual([tool("antigravity", n) for n in ("read_file", "edit_file", "invoke_subagent", "search_web")],
+                         ["read", "edit", "team", "search"])
+        self.assertEqual(tool("antigravity", "run_command", {"CommandLine": "npm test"}), "test")   # its shell, read so
+        self.assertEqual(work.doing(None, None), "run")                     # no rules read it (pi's, opencode's)
 
     def test_shell_commands_by_what_they_run(self):
         self.assertEqual(shell("cd /r && sed -n 1,80p a.py && git log --oneline -3"), "read")

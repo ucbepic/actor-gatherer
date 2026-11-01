@@ -28,7 +28,7 @@ what reads harnesses (ag's integrations, the dashboard) reads it through this pa
 from typing import Dict, List, Optional
 
 from .base import (MODELS, USERS, Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower,  # noqa: F401 - the
-                   Harness, InstructionsError, Kind, Named, Part, RenameError, ToolCall, ToolResult,
+                   Harness, InstructionsError, Kind, Named, Part, RenameError, Shape, ToolCall, ToolResult,
                    follow)  # package's API
 from . import codex  # noqa: F401 - harness_kit.codex, as before
 from .antigravity import Antigravity

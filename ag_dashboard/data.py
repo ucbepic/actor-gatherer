@@ -1668,33 +1668,38 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
     """An event as the transcript shows it, whatever harness wrote it: its parts, each one of
         {"kind": "text", "role": user/assistant/system, "text"}
         {"kind": "thinking", "text"}                ("" when it is encrypted)
-        {"kind": "call", "id", "name", "input"}     a tool call (input: its object, or a string); a script that
-                                                    calls tools (codex's code mode) also has `calls`: [{name,
-                                                    input}], the calls it makes (input None: not written out)
-        {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
+        {"kind": "call", "id", "name", "input", "action"?, "view"?}
+                                                    a tool call (input: its object, or a string), what it does and
+                                                    how it is shown, as its harness's rules read it (harness_kit's
+                                                    Action, ToolCall.view); a script that calls tools (codex's code
+                                                    mode) also has `calls`: [{name, input, action, view}], the calls
+                                                    it makes (input None: not written out)
+        {"kind": "result", "id", "error", "text", "shown"?, "exit"?, "took"?}
+                                                    a tool's result, `id` its call's; its harness's lines about the
+                                                    run taken off (`shown`), and what they said (ToolResult's)
         {"kind": "note", "name", "text", "said"?}   anything else: the harness's or ag's own messages; an attachment
                                                     (`name` "image", "document"). `said`, where its harness's rules
                                                     read it: {kind (a Kind), detail} (harness_kit's Part)
     The channel's harness's own format (`harness`, as `_harness` has it) is read by its rules (harness_kit's `read_one`;
     `kind`, the Kind the event was stored as, for a piece its neighbours decided) and drawn here the same for every
     harness (`_view`); a format its rules do not read (pi's, opencode's) is drawn from its content blocks, and anything
-    else shows as its readable text. A note of a channel whose harness is not known is read by DEFAULT's rules (whose
-    notes it was, before the harness was recorded). Each text, input and what was said is clipped at `chars` (None:
-    kept whole)."""
+    else shows as its readable text. A channel whose harness is not known is read by DEFAULT's rules (whose channels
+    they were, before the harness was recorded). Each text, input and what was said is clipped at `chars` (None: kept
+    whole)."""
     try:
         p = json.loads(payload_json) if payload_json else None
     except ValueError:
         p = None
     role = ROLES.get(event_type)
-    h = harness_kit.get(harness)
+    h = harness_kit.get(harness or harness_kit.DEFAULT)
     if role is None:                         # not the conversation: a system message, the harness's or ag's notices
         out = [{"kind": "note", "name": event_type, "text": text or readable(payload_json)}]
-        said = next(iter(_read(h or harness_kit.get(harness_kit.DEFAULT), p, kind)), None)
+        said = next(iter(_read(h, p, kind)), None)
         if said is not None and said.text is not None:
             out[0]["said"] = _reading(said)
     else:
         read = _read(h, p, kind)
-        out = [v for x in read for v in _view(x, role)] if h is not None else []
+        out = [v for x in read for v in _view(x, role)]
         if not out and isinstance(p, dict) and isinstance(p.get("content"), list):
             out = _blocks_view(p["content"], "system" if p.get("role") in ("system", "developer") else role)
         if not out:                          # a format this does not read: its words, as its type says
@@ -1704,7 +1709,7 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
             elif words:
                 out.append({"kind": "text", "role": role, "text": words})
     for part in out if chars is not None else []:
-        for k in ("text", "input", "calls", "said"):
+        for k in ("text", "input", "calls", "said", "view", "shown"):
             if k in part:
                 part[k] = _clip(part[k], chars)
     return out
@@ -1730,12 +1735,16 @@ def _view(x: "harness_kit.Part", role: str) -> List[dict]:
     harness: a tool call (and the calls of a script), a result, thinking, an attachment, the user's or the model's
     words in the role they came in (a system message's as the system's), and the harness's own text a note."""
     if x.tool is not None:
-        call = {"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input}
+        bare = lambda v: {k: x for k, x in (v or {}).items() if x is not None}     # noqa: E731 - what it says, no more
+        call = {"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input, "action": x.tool.action,
+                "view": bare(x.tool.view)}
         if x.tool.calls:
-            call["calls"] = [{"name": c.name, "input": c.input} for c in x.tool.calls]
+            call["calls"] = [{"name": c.name, "input": c.input, "action": c.action, "view": bare(c.view)} for c in x.tool.calls]
         return [call]
     if x.result is not None:
-        return [{"kind": "result", "id": x.result.call_id, "error": x.result.error, "text": x.result.output}]
+        r = x.result
+        return [{"kind": "result", "id": r.call_id, "error": r.error, "text": r.output,
+                 **{k: v for k, v in (("shown", r.shown), ("exit", r.exit), ("took", r.took)) if v is not None}}]
     if x.kind == Kind.REASONING:
         return [{"kind": "thinking", "text": x.detail.get("thinking", x.text) or ""}]
     if x.attachment:

@@ -396,9 +396,15 @@ change is a fact of the harness to move here, read by the dashboard through a fi
    `_interrupted`, `_loaded`), not from each harness's text rules. A channel whose harness is not known reads its notes
    by `DEFAULT`'s rules. A row stored under older rules draws as its rules read it now (a safety classifier's note,
    stored as the user's before #114, is Claude Code's own).
-3. Tools by shape: `ToolCall.view` (read, write, edit, patch, shell, search, web, agent, todo, skill, ask, script,
-   other) and its one-line label, for the page's summaries and the file view; `Harness.tool_output` (`ToolResult`'s
-   exit code, time, output less its harness's headers); `shell.py` and `check.py` read the view, not tool names.
+3. Tools by shape.
+   a. **Built.** Each harness reads its tools' input into a view (`ToolCall.view`: a `Shape` -- read, write, edit,
+      patch, shell, search, web, agent, todo, skill, ask, script, other -- with its fields, its `title`, and `arg`,
+      `description` or `label` where its shape's own does not do), and its output's own lines about the run off
+      (`Harness.tool_output`: `ToolResult.shown`, `exit`, `took`). The page's summaries (`SHAPES`), its call view and
+      its shell command go by the view; Chat's labels, the files a call read and changed, its work kind (`work.doing`:
+      `Action` and shape) too. A subagent a call started is the harness's to say (`spawned`), and a script's calls'
+      results (`script_results`). `Action.PUBLISH` for a tool that publishes (Claude Code's Artifact).
+   b. ag's file checks (`shell.py`'s SHELLS and EDITS, `check.py`) read the view, not tool names.
 4. Asks and status: one status rule over events (`_claude_status` and `_codex_status` joined, `RECORDED` gone),
    questions in one shape from each harness, codex's plan offer an `asked`; `Harness.plan_choices` for the plan
    card's buttons; whether an ask shows again in a terminal opened after it (`codex_dialog`, `answer`).

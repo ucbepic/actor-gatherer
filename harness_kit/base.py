@@ -26,6 +26,7 @@ each line it cares about giving `Fact`s (`follow`).
 
 import json
 import os
+import re
 import zlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -92,6 +93,44 @@ class Action:
     DELEGATE = "delegate"                # starts or messages a subagent
     ASK = "ask"                          # asks the user, the turn waiting on the answer
     TASK = "task"                        # watches, waits on or stops a background task
+    PUBLISH = "publish"                  # publishes the work for others to see (a page)
+    OTHER = "other"
+
+
+class Shape:
+    """How a tool call is shown, whichever harness's (ToolCall.view's `shape`), and what its view holds for it:
+
+        read     path; offset (its first line, from 1; None: from the top)
+        write    path; content (the file's whole new text)
+        edit     path; edits ([{old, new}]: old "" for text put in); all (every match replaced); lang (its language,
+                 where its path does not say: a notebook's cell, "python")
+        patch    patch (a patch's text, `*** Update File: <path>` before each file's hunks)
+        shell    command (as a shell reads it); cwd (where it runs; None: the session's directory); background
+        search   pattern; path (where; None: the session's directory); glob; finds ("lines": matching lines, as
+                 `grep -n` prints them; "files": paths)
+        web      query, or url
+        agent    name (a type, a role, a task's name; None: none given)
+        todo     items ([{content or step, status}])
+        skill    name; args
+        ask      (ToolCall.ask has what it asks)
+        script   code; lang (ToolCall.calls has the tools it calls)
+        other    anything else
+
+    Every view has `title` (the tool, as a person calls it: "Bash", "Update"), and may have `arg` (the argument a
+    reader sees beside the title, where the shape's own does not do: an agent's task), `description` (what it is for,
+    in the agent's words) and `label` (the call in a line, where the harness says it better than its shape)."""
+    READ = "read"
+    WRITE = "write"
+    EDIT = "edit"
+    PATCH = "patch"
+    SHELL = "shell"
+    SEARCH = "search"
+    WEB = "web"
+    AGENT = "agent"
+    TODO = "todo"
+    SKILL = "skill"
+    ASK = "ask"
+    SCRIPT = "script"
     OTHER = "other"
 
 
@@ -117,7 +156,8 @@ class ToolCall:
     what it asks (`ask`: {kind: "question", questions: [{id, header, question, multiSelect, options:
     [{label, description}]}]} or {kind: "plan", plan: its text, None when the call carries none}). A call
     that runs a script calling other tools (codex's code mode) has those calls, in the order written
-    (`calls`: each a ToolCall with no id, its input None where the script does not write it out)."""
+    (`calls`: each a ToolCall with no id, its input None where the script does not write it out). `view`, how it is
+    shown, whichever harness's (a Shape and what it holds: `Shape`'s doc)."""
     id: Optional[str]
     name: str
     input: Any = None
@@ -125,6 +165,7 @@ class ToolCall:
     paths: List[str] = field(default_factory=list)
     ask: Optional[dict] = None
     calls: List["ToolCall"] = field(default_factory=list)
+    view: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -132,11 +173,16 @@ class ToolResult:
     """A tool's result: its call's id, whether it is an error, its words as a reader sees them, and -- when
     it says a background task started, resumed or was stopped -- that task (`task`: {id, kind (command,
     agent, monitor, workflow), how: "started" or "stopped", output: the file it writes to, label: what it
-    is for, when the result says})."""
+    is for, when the result says}). Where the harness wraps a call's output in lines of its own about the run
+    (`Harness.tool_output`): `shown`, the output without them; `exit`, the exit code they give; `took`, how long
+    they say it ran."""
     call_id: Optional[str]
     error: bool = False
     output: str = ""
     task: Optional[dict] = None
+    shown: Optional[str] = None
+    exit: Optional[str] = None
+    took: Optional[str] = None
 
 
 @dataclass
@@ -329,6 +375,24 @@ class Harness(ABC):
         """(the Kind, the user's words as they typed them) of the text of a message in the user's name -- the harness's
         wrappers around them taken off. By default, the text as it is."""
         return Kind.USER, text
+
+    # ---- its tools' calls and results, as a reader shows them
+
+    def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """(a tool's output without the harness's own lines about the run, the exit code they give, how long they say
+        it ran): its header or note around a command's output. By default the output as it is."""
+        return text, None, None
+
+    def spawned(self, call: ToolCall, output: str) -> Optional[dict]:
+        """The subagent a call started, as its result (`output`) says: {id (what its report is handed back by), name
+        (what it was started for, to show it by), later (its report comes with a later call, not this one's
+        result)}; None for a call that started none."""
+        return None
+
+    def script_results(self, call: ToolCall, result: Optional[Tuple[str, bool]]) -> Tuple[List[tuple], str]:
+        """A call that runs a script calling other tools (`call.calls`), as those calls, each a call of its own: ([(id,
+        name, input, its own result (text, failed) or None)], what the script printed); ([], "") for any other."""
+        return [], ""
 
     # ---- a session's name, as the harness keeps it
 
@@ -564,6 +628,26 @@ def seconds(stamp) -> Optional[float]:
     except ValueError:
         return None
     return (got if got.tzinfo else got.replace(tzinfo=timezone.utc)).timestamp()
+
+
+def tool_title(name: str) -> str:
+    """A tool's name as a person reads it: an MCP server's tool (mcp__<server>__<tool>) as "<server> · <tool>"."""
+    m = re.match(r"^mcp__([^_]+(?:_[^_]+)*)__(.+)$", name or "")
+    return f"{m.group(1)} · {m.group(2)}" if m else name or "tool"
+
+
+def other_view(name: str, title: Optional[str] = None, arg: Optional[str] = None) -> Dict[str, Any]:
+    """The view of a tool its harness's rules show no other way (Shape.OTHER)."""
+    return {"shape": Shape.OTHER, "title": title or tool_title(name), **({"arg": arg} if arg is not None else {})}
+
+
+def ask_arg(ask: Optional[dict]) -> Optional[str]:
+    """What a call that asks the user asks, in a line: its first question, and how many more; None for a plan."""
+    qs = (ask or {}).get("questions") or []
+    if not qs:
+        return None
+    first = str(qs[0].get("question") or qs[0].get("title") or "").strip().split("\n")[0][:160]
+    return first + (f" + {len(qs) - 1} more" if len(qs) > 1 else "")
 
 
 def _said(reply: List[Part]) -> Optional[str]:

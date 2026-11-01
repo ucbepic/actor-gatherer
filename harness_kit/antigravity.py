@@ -56,7 +56,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   ToolCall, ToolResult, output_of, picked, rule, typed_in)
+                   Shape, ToolCall, ToolResult, ask_arg, other_view, output_of, picked, rule, typed_in)
 
 MODEL_CALL = re.compile(r"/models/([^/:]+):(?:stream)?[gG]enerateContent$")
 CONVERSATION = re.compile(r"^Conversation ID:\s*([0-9a-fA-F-]{36})\s*$", re.M)
@@ -241,6 +241,44 @@ def task_of(name: str, output: str) -> Optional[dict]:
         if m:
             return {"id": m.group(1), "kind": "agent", "how": "started", "output": m.group(2), "label": None}
     return None
+
+
+#: Its header on each tool's output (when it was made, when it finished), and a command's line saying how it exited
+#: before what it printed.
+OUTPUT_HEAD = re.compile(r"^Created At: [^\n]*\n(?:Completed At: [^\n]*\n)?")
+EXIT_LINE = re.compile(r"(^|\n)Command exited with code (-?\d+)\.\n\n?(?:Command output:\n)?")
+
+
+def view_of(name: str, args: dict, ask: Optional[dict] = None) -> dict:
+    """How a call of agy's tool `name` is shown (Shape's views): its file tools as Claude Code's, its subagents by role."""
+    s = lambda k: args[k] if isinstance(args.get(k), str) else None         # noqa: E731
+    if name == "read_file":
+        return {"shape": Shape.READ, "title": "Read", "path": s("Path"), "offset": args.get("StartLine")}
+    if name == "write_file":
+        return {"shape": Shape.WRITE, "title": "Write", "path": s("Path"), "content": str(args.get("Content") or "")}
+    if name == "edit_file":
+        return {"shape": Shape.EDIT, "title": "Update", "path": s("Path"),
+                "edits": [{"old": str(args.get("Target") or ""), "new": str(args.get("Replacement") or "")}]}
+    if name == "run_command":
+        return {"shape": Shape.SHELL, "title": "Bash", "command": s("CommandLine") or "", "cwd": s("Cwd"),
+                "description": s("toolSummary")}
+    if name == "search_web":
+        return {"shape": Shape.WEB, "title": "Web Search", "query": s("query")}
+    if name == "invoke_subagent":
+        return {"shape": Shape.AGENT, "title": s("Role") or "Agent", "name": s("Role"), "arg": s("Prompt")}
+    if name == ASK:
+        return {"shape": Shape.ASK, "title": "Question", "arg": ask_arg(ask)}
+    if name == "send_message":
+        return other_view(name, "Message", s("Message"))
+    if name == "manage_task":
+        return other_view(name, "Task", " ".join(x for x in (s("Action"), s("TaskId")) if x))
+    if name == "manage_subagents":
+        return other_view(name, "Subagents", s("Action"))
+    if name == "define_subagent":
+        return other_view(name, "Define Agent", s("Name"))
+    if name == "schedule":
+        return other_view(name, "Schedule", s("Prompt"))
+    return other_view(name)
 
 
 def label_of(call: Optional[ToolCall]) -> Optional[str]:
@@ -481,12 +519,15 @@ class Antigravity(Harness):
             path = args.get(key) if key else None
             ask = {"kind": "question", "questions": questions_of(args.get("questions"))} if name == ASK else None
             return Part(Kind.TOOL_CALL, role, text, tool=ToolCall(c.get("id"), name, args, action,
-                                                                  [path] if isinstance(path, str) else [], ask))
+                                                                  [path] if isinstance(path, str) else [], ask,
+                                                                  view=view_of(name, args, ask)))
         if isinstance(p.get("functionResponse"), dict):
             r = p["functionResponse"]
             error = isinstance(r.get("response"), dict) and "error" in r["response"]
-            return Part(Kind.TOOL_RESULT, role, text, result=ToolResult(r.get("id"), error, text or "",
-                                                                        task_of(r.get("name") or "", text or "")))
+            result = ToolResult(r.get("id"), error, text or "", task_of(r.get("name") or "", text or ""))
+            shown, result.exit, result.took = self.tool_output(result.output)
+            result.shown = shown if shown != result.output else None
+            return Part(Kind.TOOL_RESULT, role, text, result=result)
         if text is None:
             return Part(Kind.OTHER, role, None)
         if role == "model":
@@ -575,6 +616,24 @@ class Antigravity(Harness):
         return [*(["--model", model] if model else []), *PERMISSIONS.get(permission_mode or "", []),
                 *(self.instruction_args(instructions) if instructions else []),
                 *(["--conversation", session] if resume else [])]
+
+    def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """Its header on each tool's output (OUTPUT_HEAD), and a command's exit line in it (EXIT_LINE), taken off."""
+        m = OUTPUT_HEAD.match(text or "")
+        if not m:
+            return text, None, None
+        text, code = text[m.end():], None
+        e = EXIT_LINE.search(text)
+        if e:
+            code, text = e.group(2), text[:e.start()] + e.group(1) + text[e.end():]
+        return text, code, None
+
+    def spawned(self, call: ToolCall, output: str) -> Optional[dict]:
+        """An invoke_subagent call's subagent, by the conversation its result names, shown by the role it was given; its
+        messages come with later calls."""
+        made = task_of(call.name, output) if call.name == "invoke_subagent" else None
+        role = call.input.get("Role") if isinstance(call.input, dict) else None
+        return {"id": made["id"], "name": str(role or ""), "later": True} if made else None
 
     def first_prompt(self, text: str) -> List[str]:
         """`--prompt-interactive=<text>`: agy takes no prompt after `--`. The `=` keeps a message starting with `-` its value."""

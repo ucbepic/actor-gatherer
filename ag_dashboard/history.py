@@ -152,9 +152,8 @@ class HistoryError(ValueError):
 def _call_label(payload: Optional[str], text: Optional[str], cwd: str, harness: Optional[str]) -> str:
     """A tool call in a line, as the Files view names it: its own description, else its command, else its tool
     and what it worked on; "" when the event holds no call. `harness`: its channel's (data.py's `_harness`)."""
-    labels = [files._label(p.get("name") or "", p["input"] if isinstance(p.get("input"), dict) else {"input": p.get("input")},
-                           p.get("input"), cwd)
-              for p in data.parts("tool_call", payload, text, chars=None, harness=harness) if p.get("kind") == "call"]
+    labels = [files._label(p, cwd) for p in data.parts("tool_call", payload, text, chars=None, harness=harness)
+              if p.get("kind") == "call"]
     return "; ".join(x for x in labels if x)[:PREVIEW]
 
 

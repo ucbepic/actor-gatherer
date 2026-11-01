@@ -471,8 +471,10 @@ class DashboardTest(unittest.TestCase):
 
     def test_its_calls_and_results_drawn(self):
         from ag_dashboard import data
-        self.assertEqual(data.parts("tool_call", json.dumps(RUN), None, harness="antigravity"),
-                         [{"kind": "call", "id": "call_9", "name": "run_command", "input": RUN["parts"][0]["functionCall"]["args"]}])
+        [call] = data.parts("tool_call", json.dumps(RUN), None, harness="antigravity")
+        self.assertEqual({k: call[k] for k in ("kind", "id", "name", "input")},
+                         {"kind": "call", "id": "call_9", "name": "run_command", "input": RUN["parts"][0]["functionCall"]["args"]})
+        self.assertEqual((call["action"], call["view"]["shape"], call["view"]["title"]), ("shell", "shell", "Bash"))
         got = data.parts("tool_output", json.dumps(BACKGROUNDED), None, harness="antigravity")
         self.assertEqual((got[0]["kind"], got[0]["id"], got[0]["error"]), ("result", "call_9", False))
         thought = {"role": "model", "parts": [{"text": "hmm", "thought": True}]}
@@ -484,10 +486,9 @@ class DashboardTest(unittest.TestCase):
         note = lambda event: data.parts("context", json.dumps(event), None, None, "antigravity")[0]   # noqa: E731
         self.assertEqual(files._note(note(REPORT)), {"kind": "report", "from": CHILD, "text": "The numerical answer is 391."})
         self.assertIsNone(files._note(note(FINISHED)))                                # a task's notice: no report
-        self.assertEqual(files._label("invoke_subagent", INVOKE["parts"][0]["functionCall"]["args"], None, ""),
-                         "Agent Math Calculator")
-        self.assertEqual(files._label("ask_question", ASK["parts"][0]["functionCall"]["args"], None, ""),
-                         "Ask: Which color do you like?")
+        call = lambda event: data.parts("tool_call", json.dumps(event), None, None, "antigravity")[0]   # noqa: E731
+        self.assertEqual(files._label(call(INVOKE), ""), "Agent Math Calculator")
+        self.assertEqual(files._label(call(ASK), ""), "Ask: Which color do you like? + 1 more")
 
     def test_what_it_asks_is_answered_by_its_own_dialog(self):
         from ag_dashboard import answers, data

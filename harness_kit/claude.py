@@ -29,7 +29,8 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   ToolCall, ToolResult, one_line, output_of, picked, seconds, typed_in)
+                   Shape, ToolCall, ToolResult, ask_arg, one_line, other_view, output_of, picked, seconds, tool_title,
+                   typed_in)
 
 # ---------------------------------------------------------------- Claude Code's own text, in the user's name
 
@@ -217,7 +218,8 @@ TOOLS = {"Read": (Action.READ, "file_path"), "NotebookRead": (Action.READ, "note
          "Skill": (Action.SKILL, None), "Agent": (Action.DELEGATE, None), "Task": (Action.DELEGATE, None),
          "SendMessage": (Action.DELEGATE, None), "Workflow": (Action.DELEGATE, None),
          "AskUserQuestion": (Action.ASK, None), "ExitPlanMode": (Action.ASK, None),
-         "Monitor": (Action.TASK, None), "TaskStop": (Action.TASK, None), "TaskOutput": (Action.TASK, None)}
+         "Monitor": (Action.TASK, None), "TaskStop": (Action.TASK, None), "TaskOutput": (Action.TASK, None),
+         "ScheduleWakeup": (Action.TASK, None), "Artifact": (Action.PUBLISH, None)}
 #: Its tools that wait for the user in its terminal before the turn goes on: a question, with options to pick
 #: from; a plan, to approve.
 ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
@@ -586,7 +588,60 @@ def tool_call(b: dict) -> ToolCall:
     action, key = TOOLS.get(name, (Action.OTHER, None))
     inp = b.get("input")
     path = inp.get(key) if key and isinstance(inp, dict) else None
-    return ToolCall(b.get("id"), name, inp, action, [path] if isinstance(path, str) and path else [], ask_of(name, inp))
+    ask = ask_of(name, inp)
+    return ToolCall(b.get("id"), name, inp, action, [path] if isinstance(path, str) and path else [], ask,
+                    view=view_of(name, inp, ask))
+
+
+def view_of(name: str, inp, ask: Optional[dict] = None) -> dict:
+    """How a call of Claude Code's tool `name` is shown (Shape's views), as its own terminal shows it."""
+    i = inp if isinstance(inp, dict) else {}
+    s = lambda k: i[k] if isinstance(i.get(k), str) else None              # noqa: E731
+    if name == "Bash":
+        return {"shape": Shape.SHELL, "title": "Bash", "command": s("command") or "", "description": s("description"),
+                "background": bool(i.get("run_in_background"))}
+    if name in ("Read", "NotebookRead"):
+        return {"shape": Shape.READ, "title": "Read", "path": s("file_path") or s("notebook_path"), "offset": i.get("offset")}
+    if name == "Write":
+        return {"shape": Shape.WRITE, "title": "Write", "path": s("file_path"), "content": str(i.get("content") or "")}
+    if name == "Edit":
+        return {"shape": Shape.EDIT, "title": "Update", "path": s("file_path"), "all": bool(i.get("replace_all")),
+                "edits": [{"old": str(i.get("old_string") or ""), "new": str(i.get("new_string") or "")}]}
+    if name == "MultiEdit":
+        return {"shape": Shape.EDIT, "title": "Update", "path": s("file_path"),
+                "edits": [{"old": str(e.get("old_string") or ""), "new": str(e.get("new_string") or "")}
+                          for e in i.get("edits") or [] if isinstance(e, dict)]}
+    if name == "NotebookEdit":
+        return {"shape": Shape.EDIT, "title": "Update", "path": s("notebook_path"), "lang": "python",
+                "edits": [{"old": "", "new": str(i.get("new_source") or "")}]}
+    if name in ("Grep", "Glob"):
+        return {"shape": Shape.SEARCH, "title": "Search", "pattern": str(i.get("pattern") or ""), "path": s("path"),
+                "glob": s("glob"), "finds": "lines" if name == "Grep" else "files"}
+    if name == "WebFetch":
+        return {"shape": Shape.WEB, "title": "Fetch", "url": s("url")}
+    if name == "WebSearch":
+        return {"shape": Shape.WEB, "title": "Web Search", "query": s("query")}
+    if name in ("Agent", "Task"):
+        return {"shape": Shape.AGENT, "title": s("subagent_type") or name, "name": s("subagent_type"),
+                "arg": s("description"), "description": s("description")}
+    if name == "TodoWrite":
+        return {"shape": Shape.TODO, "title": "Update Todos", "items": i.get("todos") if isinstance(i.get("todos"), list) else []}
+    if name == "Skill":
+        return {"shape": Shape.SKILL, "title": "Skill", "name": s("skill") or "", "args": s("args") or ""}
+    if name in ASKS:
+        return {"shape": Shape.ASK, "title": "Question" if ASKS[name] == "question" else "Plan", "arg": ask_arg(ask)}
+    if name == "ToolSearch":                       # loading tools it was told of by name, or searching for some
+        q = (s("query") or "").strip()
+        picked = [tool_title(t.strip()) for t in q[len("select:"):].split(",") if t.strip()] if q.startswith("select:") else []
+        return {**other_view(name, "Tool Search", s("query")),
+                "label": f"Load {', '.join(picked)}" if picked else f"Search tools: {q}"}
+    return {**other_view(name), **({"description": s("description")} if s("description") else {})}
+
+
+#: Its lines about a command's run, around what it printed: "Exit code N" before a failure's output, and its note that
+#: the shell's directory was put back, after it.
+EXIT_LINE = re.compile(r"^(?:Error: )?Exit code (-?\d+)\n?")
+CWD_NOTE = re.compile(r"\n?Shell cwd was reset to [^\n]*\s*$")
 
 
 def is_model_call(method: str, path: str, body) -> bool:
@@ -915,6 +970,22 @@ class ClaudeCode(Harness):
                     out[i].kind = Kind.COMPACTION_REPEAT
         return out
 
+    def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """A failed command's "Exit code N" before its output, and the note after it that the shell's directory was put
+        back, taken off (EXIT_LINE, CWD_NOTE)."""
+        text, code = text or "", None
+        m = EXIT_LINE.match(text)
+        if m:
+            code, text = m.group(1), text[m.end():]
+        return CWD_NOTE.sub("", text).rstrip("\n") if (m or CWD_NOTE.search(text)) else text, code, None
+
+    def spawned(self, call: ToolCall, output: str) -> Optional[dict]:
+        """An Agent (or Task) call's subagent, by the id its result names (AGENT_ID), shown by what it was started for;
+        its report comes back as the call's result, or as a note handed back."""
+        m = AGENT_ID.search(output or "") if call.name in ("Agent", "Task") else None
+        i = call.input if isinstance(call.input, dict) else {}
+        return {"id": m.group(1), "name": str(i.get("description") or ""), "later": False} if m else None
+
     def read_one(self, payload, kind: Optional[str] = None) -> List[Part]:
         """A stored piece read on its own: one stored as a skill's instructions (`kind` SKILL, read so after the Skill
         call that loaded it: `launched`) read as those again where its words alone do not say so -- a skill's bare
@@ -965,6 +1036,8 @@ class ClaudeCode(Harness):
             p.result = ToolResult(b.get("tool_use_id"), bool(b.get("is_error")), output_of(b.get("content")))
             if b.get("type") == "tool_result":
                 p.result.task = task_of(p.text)
+            shown, p.result.exit, p.result.took = self.tool_output(p.result.output)
+            p.result.shown = shown if shown != p.result.output else None
         elif p.kind == Kind.REASONING:
             p.opaque = b.get("type") == "redacted_thinking" or not (b.get("thinking") or "").strip()
             p.detail["thinking"] = b.get("thinking") or b.get("text") or ""

@@ -28,8 +28,8 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   ToolCall, ToolResult, one_line, output_of, picked, seconds, typed_in)
-from .shell import CODE_MODE, script_calls
+                   Shape, ToolCall, ToolResult, ask_arg, one_line, other_view, output_of, picked, seconds, typed_in)
+from .shell import CODE_MODE, opened_script, script_calls, script_output
 
 # Codex item type -> Kind. None = a message: its role decides (ROLES). An item type not listed here is OTHER.
 ITEM_KINDS = {
@@ -94,6 +94,7 @@ TOOLS = {"exec_command": (Action.SHELL, None), "shell": (Action.SHELL, None), "s
          "local_shell": (Action.SHELL, None), "apply_patch": (Action.EDIT, None), "write_stdin": (Action.TASK, None),
          "view_image": (Action.READ, "path"), "web_search": (Action.WEB, None), "spawn_agent": (Action.DELEGATE, None),
          "send_message": (Action.DELEGATE, None), "wait": (Action.TASK, None), "update_plan": (Action.OTHER, None),
+         "list_dir": (Action.READ, None), "grep_files": (Action.SEARCH, None), "file_search": (Action.SEARCH, None),
          "request_user_input": (Action.ASK, None), "request_user_input_async": (Action.ASK, None)}
 #: Its tool that asks the user in its terminal, its turn waiting on the answer (Plan mode's); and the one it asks
 #: with as its turn goes on.
@@ -126,6 +127,41 @@ FOOT_ROWS = 3                       # the rows under it at most: its status line
 SHAPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
           "reasoning", "local_shell_call", "web_search_call", "compaction", "compaction_summary"}
 SPAWN = "spawn_agent"                 # its tool that starts a subagent
+#: Its header on a command's output: how long it ran, how it exited, then "Output:".
+OUTPUT_HEAD = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: ([^\n]*)\n)?(?:Process exited with code (-?\d+)\n)?"
+                         r"(?:Original token count: [^\n]*\n)?Output:\n")
+
+
+def command_of(c) -> str:
+    """A shell call's command as a shell reads it: an argv run by a shell (`bash -lc <it>`) its third word, any other
+    argv its words joined."""
+    if isinstance(c, list):
+        return str(c[2]) if len(c) >= 3 and c[0] in ("bash", "sh", "zsh") and c[1] in ("-lc", "-c") else " ".join(map(str, c))
+    return str(c or "")
+
+
+def view_of(name: str, inp, ask: Optional[dict] = None) -> dict:
+    """How a call of codex's tool `name` is shown (Shape's views)."""
+    i = inp if isinstance(inp, dict) else {}
+    s = lambda k: i[k] if isinstance(i.get(k), str) else None              # noqa: E731
+    if name in ("exec_command", "shell", "shell_command", "local_shell"):
+        return {"shape": Shape.SHELL, "title": "Bash", "command": command_of(i.get("command", i.get("cmd"))),
+                "cwd": s("workdir") or s("working_directory")}
+    if name == CODE_MODE and isinstance(inp, str):
+        return {"shape": Shape.SCRIPT, "title": "Script", "code": inp, "lang": "js"}
+    if name == "apply_patch":
+        return {"shape": Shape.PATCH, "title": "Patch", "patch": inp if isinstance(inp, str) else s("input") or s("patch") or ""}
+    if name == "view_image":
+        return {"shape": Shape.READ, "title": "Read", "path": s("path")}
+    if name == "web_search":
+        return {"shape": Shape.WEB, "title": "Web Search", "query": s("query") or (i.get("action") or {}).get("query")}
+    if name == SPAWN:                    # its subagent, by its task's name (what it is asked: encrypted)
+        return {"shape": Shape.AGENT, "title": "Agent", "name": s("task_name"), "arg": s("task_name")}
+    if name == "update_plan":
+        return {"shape": Shape.TODO, "title": "Update Plan", "items": i.get("plan") if isinstance(i.get("plan"), list) else []}
+    if ask is not None:
+        return {"shape": Shape.ASK, "title": "Question", "arg": ask_arg(ask)}
+    return other_view(name)
 
 
 def texts_of(item) -> list:
@@ -571,6 +607,29 @@ class Codex(Harness):
         return [_json_str(NOTE + p["text"].strip()) if p["text"] is not None else _json_str(p["labels"][0])
                 for p in picked(ask, choice)]
 
+    def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """Its header on a command's output (OUTPUT_HEAD), taken off: the exit code and the time it gives."""
+        m = OUTPUT_HEAD.match(text or "")
+        return (text[m.end():], m.group(2), m.group(1)) if m else (text, None, None)
+
+    def spawned(self, call: ToolCall, output: str) -> Optional[dict]:
+        """A spawn_agent call's subagent, by its path ({"task_name": "/root/count_a"}), shown by its last part; its
+        report is handed back with a later call (FINAL_ANSWER)."""
+        if call.name != SPAWN:
+            return None
+        try:
+            path = (json.loads(output) or {}).get("task_name") if output else None
+        except (ValueError, AttributeError):
+            return None
+        return {"id": path, "name": path.rsplit("/", 1)[-1], "later": True} if isinstance(path, str) and path else None
+
+    def script_results(self, call: ToolCall, result: Optional[Tuple[str, bool]]) -> Tuple[List[tuple], str]:
+        """A code-mode script (`exec`) as the calls it makes, each with its own result (shell.py's opened_script), and
+        what it printed (its head taken off)."""
+        if call.name != CODE_MODE or not isinstance(call.input, str) or not call.id:
+            return [], ""
+        return opened_script(call.id, call.input, result), script_output(result[0])[0] if result else ""
+
     def answer_summary(self, ask: dict, choice: dict) -> str:
         if ask.get("kind") == "plan":
             return "Implement the plan" if choice.get("plan") == "implement" else f"Change: {(choice.get('text') or '').strip()}"
@@ -633,17 +692,23 @@ class Codex(Harness):
             name = item.get("name") or t
             args = arguments(item.get("arguments", item.get("input")))
             action = TOOLS.get(name, (Action.OTHER, None))[0]
-            p.tool = ToolCall(item.get("call_id") or item.get("id"), name, args, action, ask=ask_of(name, args))
+            ask = ask_of(name, args)
+            p.tool = ToolCall(item.get("call_id") or item.get("id"), name, args, action, ask=ask, view=view_of(name, args, ask))
             if name == CODE_MODE and isinstance(args, str):      # a code-mode script: the tools it calls
-                p.tool.calls = [ToolCall(None, n, a, TOOLS.get(n, (Action.OTHER, None))[0]) for n, a in script_calls(args)]
+                p.tool.calls = [ToolCall(None, n, a, TOOLS.get(n, (Action.OTHER, None))[0], view=view_of(n, a))
+                                for n, a in script_calls(args)]
         elif t == "local_shell_call":
-            p.tool = ToolCall(item.get("call_id") or item.get("id"), "local_shell", item.get("action") or {}, Action.SHELL)
+            p.tool = ToolCall(item.get("call_id") or item.get("id"), "local_shell", item.get("action") or {}, Action.SHELL,
+                              view=view_of("local_shell", item.get("action") or {}))
         elif t == "web_search_call":
-            p.tool = ToolCall(item.get("id"), "web_search", item.get("action") or {}, Action.WEB)
+            p.tool = ToolCall(item.get("id"), "web_search", item.get("action") or {}, Action.WEB,
+                              view=view_of("web_search", item.get("action") or {}))
         elif t == "image_generation_call":
-            p.tool = ToolCall(item.get("id"), "image_generation", {}, Action.OTHER)
+            p.tool = ToolCall(item.get("id"), "image_generation", {}, Action.OTHER, view=other_view("image_generation"))
         elif kind == Kind.TOOL_RESULT:
             p.result = ToolResult(item.get("call_id"), False, output_of(item.get("output", item.get("tools"))))
+            shown, p.result.exit, p.result.took = self.tool_output(p.result.output)
+            p.result.shown = shown if shown != p.result.output else None
         elif kind == Kind.REASONING:
             p.opaque = True
             p.detail["thinking"] = "\n\n".join(s.get("text", "") for s in item.get("summary") or [] if isinstance(s, dict))
