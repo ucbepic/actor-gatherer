@@ -358,7 +358,8 @@ class PartsTest(unittest.TestCase):
         said = {"role": "assistant", "content": [{"type": "text", "text": "**Done.**"}]}
         self.assertEqual(data.parts("agent_message", json.dumps(said), None, harness="claude"), [{"kind": "text", "role": "assistant", "text": "**Done.**"}])
         system = {"role": "system", "content": [{"type": "text", "text": "env"}]}
-        self.assertEqual(data.parts("context", json.dumps(system), "env", harness="claude"), [{"kind": "note", "name": "context", "text": "env"}])
+        self.assertEqual(data.parts("context", json.dumps(system), "env", harness="claude"),     # as its rules read it
+                         [{"kind": "note", "name": "context", "text": "env", "said": {"kind": "environment", "detail": {}}}])
 
     def test_codex_s_items(self):
         call = {"type": "function_call", "name": "shell", "arguments": json.dumps({"command": ["ls"]}), "call_id": "c1"}
@@ -372,6 +373,36 @@ class PartsTest(unittest.TestCase):
         self.assertEqual(data.parts("agent_message", json.dumps(said), None, harness="codex"), [{"kind": "text", "role": "assistant", "text": "Done."}])
         hidden = {"type": "reasoning", "summary": [], "encrypted_content": "zz"}
         self.assertEqual(data.parts("agent_reasoning", json.dumps(hidden), None, harness="codex"), [{"kind": "thinking", "text": ""}])
+
+    def test_the_same_view_for_every_harness_from_what_its_rules_read(self):
+        image = {"role": "user", "content": [{"type": "image", "source": {"type": "base64", "data": "x"}}]}
+        self.assertEqual(data.parts("user_message", json.dumps(image), None, harness="claude"),      # Part.attachment
+                         [{"kind": "note", "name": "image", "text": "[image]"}])
+        script = {"type": "custom_tool_call", "call_id": "x1", "name": "exec",
+                  "input": 'await tools.exec_command({cmd: "ls"}); await tools.apply_patch("*** Begin Patch")'}
+        self.assertEqual(data.parts("tool_call", json.dumps(script), None, harness="codex")[0]["calls"],   # ToolCall.calls
+                         [{"name": "exec_command", "input": {"cmd": "ls"}}, {"name": "apply_patch", "input": "*** Begin Patch"}])
+        thought = {"role": "model", "parts": [{"text": "hmm", "thought": True}]}
+        self.assertEqual(data.parts("agent_reasoning", json.dumps(thought), None, harness="antigravity"),
+                         [{"kind": "thinking", "text": "hmm"}])
+        # a row stored as the user's under older rules is the harness's own once its rules say so
+        withheld = {"role": "user", "content": [{"type": "text", "text": "Your response above was stopped by a safety "
+                    "classifier — this is not a tool or API error. The rest of it was withheld, and tool calls in it that had "
+                    "not finished did not run. Do not produce that content again, even reworded."}]}
+        got = data.parts("user_message", json.dumps(withheld), None, harness="claude")
+        self.assertEqual((got[0]["kind"], got[0]["said"]["kind"]), ("note", "retry_note"))
+
+    def test_a_note_says_what_its_rules_read_of_it(self):
+        report = {"type": "agent_message", "author": "/root/count_a", "content": [{"type": "input_text",
+                  "text": "Message Type: FINAL_ANSWER\nTask name: count\nSender: /root/count_a\nPayload:\n391"}]}
+        said = data.parts("context", json.dumps(report), None, harness="codex")[0].get("said")
+        self.assertEqual(said, {"kind": "agent_report", "detail": {"between": True, "from": "/root/count_a", "text": "391"}})
+        bare = {"role": "user", "content": [{"type": "text", "text": "Draw it plainly.\n\nARGUMENTS: a bar chart"}]}
+        self.assertEqual(data.parts("context", json.dumps(bare), None, harness="claude")[0]["said"]["kind"], "user")
+        said = data.parts("context", json.dumps(bare), None, harness="claude", kind="skill")[0]["said"]   # as stored
+        self.assertEqual(said, {"kind": "skill", "detail": {"name": "", "args": "a bar chart", "instructions": "Draw it plainly."}})
+        skill = {"role": "user", "content": [{"type": "text", "text": "Base directory for this skill: /s/greet\n\nSay hi."}]}
+        self.assertEqual(data.parts("context", json.dumps(skill), None)[0]["said"]["kind"], "skill")   # its harness not known
 
     def test_an_unknown_shape_shows_its_words_and_long_text_is_clipped(self):
         self.assertEqual(data.parts("user_message", json.dumps({"info": {}, "text": "x"}), "hello"),

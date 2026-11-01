@@ -350,6 +350,26 @@ class LookTest(unittest.TestCase):
             self.assertTrue({"lead", "interrupted", "error"} <= set(h.stopped_says), h.name)
 
 
+class ReadOneTest(unittest.TestCase):
+    """A stored piece read on its own, with all a reader draws from it -- whichever harness's."""
+
+    def test_an_attachment_a_script_s_calls_and_a_kind_its_neighbours_decided(self):
+        [img] = CLAUDE.read_one({"role": "user", "content": [{"type": "image", "source": {}}]})
+        self.assertEqual((img.attachment, img.text), ("image", "[image]"))
+        [doc] = CLAUDE.read_one({"role": "user", "content": [{"type": "document", "source": {}}]})
+        self.assertEqual(doc.attachment, "document")
+        [script] = CODEX.read_one({"type": "custom_tool_call", "call_id": "x", "name": "exec",
+                                   "input": 'await tools.exec_command({cmd: "ls"}); await tools.view_image(p)'})
+        self.assertEqual([(c.name, c.input, c.action) for c in script.tool.calls],
+                         [("exec_command", {"cmd": "ls"}, Action.SHELL), ("view_image", None, Action.READ)])
+        bare = {"role": "user", "content": [{"type": "text", "text": "Draw it plainly."}]}
+        self.assertEqual(CLAUDE.read_one(bare)[0].kind, Kind.USER)                        # alone: the user's words
+        [skill] = CLAUDE.read_one(bare, Kind.SKILL)                                       # stored as a skill's
+        self.assertEqual((skill.kind, skill.words, skill.detail["instructions"]), (Kind.SKILL, None, "Draw it plainly."))
+        self.assertEqual(CODEX.read_one({"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]},
+                                        Kind.SKILL)[0].kind, Kind.USER)                   # a harness whose neighbours decide none
+
+
 class WordsTest(unittest.TestCase):
     def test_a_message_s_words_whichever_harness_s_wrapper(self):
         self.assertEqual(harness_kit.words("<bash-input>ls</bash-input>"), (Kind.USER_COMMAND, "! ls"))

@@ -387,8 +387,15 @@ change is a fact of the harness to move here, read by the dashboard through a fi
    `DEFAULT`, the harness of a session that names none. The home carries them (`harness_info`, `data.py`), so the
    page names no harness for its logos, badges, lists of what can start or be messaged, terminal screen or stop
    lines. Pi and OpenCode are here by name and look alone (`Named`): their rules are their TypeScript adaptors'.
-2. A generic view of a conversation's `Part`s: `data.parts`' view per harness, `files._note` and `_interrupted`
-   read `Part.kind` and `detail`; images, other agents' messages and a code-mode script's calls on `Part`/`ToolCall`.
+2. **Built.** One view of a conversation for every harness (`data._view`), from the `Part`s its rules read
+   (`read_one`; `kind`, the Kind a piece was stored as, for a piece its neighbours decided: Claude Code's bare skill
+   instructions): a call (`ToolCall.calls`, a script's calls: codex's code mode), a result, thinking (`detail`'s
+   `thinking`, else its text), an attachment (`Part.attachment`), the user's or the model's words, and the harness's
+   own text a note. A note carries what its rules read of it (`said`: its Kind and detail), and Chat takes reports,
+   messages, skills, commands, `!` output, interrupts and the files a note loaded from that (`files._note`,
+   `_interrupted`, `_loaded`), not from each harness's text rules. A channel whose harness is not known reads its notes
+   by `DEFAULT`'s rules. A row stored under older rules draws as its rules read it now (a safety classifier's note,
+   stored as the user's before #114, is Claude Code's own).
 3. Tools by shape: `ToolCall.view` (read, write, edit, patch, shell, search, web, agent, todo, skill, ask, script,
    other) and its one-line label, for the page's summaries and the file view; `Harness.tool_output` (`ToolResult`'s
    exit code, time, output less its harness's headers); `shell.py` and `check.py` read the view, not tool names.

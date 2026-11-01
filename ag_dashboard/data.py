@@ -87,9 +87,8 @@ from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
 from . import answers, avatars, hiding, live, saved, sessions
 import harness_kit
-from harness_kit import Kind, codex as codex_rules
+from harness_kit import USERS, Kind
 from harness_kit.base import output_of as _output  # noqa: F401 - a tool result's words, as files.py reads them
-from harness_kit.shell import CODE_MODE, script_calls
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
@@ -1256,9 +1255,6 @@ def _settle_background(a: dict, now: float) -> None:
         a["status"], a["running"] = BACKGROUND, True
 
 
-CODEX_TYPES = codex_rules.SHAPES
-
-
 def _harness(conn, channel: str) -> Optional[str]:
     """The harness the channel runs on: as its hook recorded it with its newest model call (`model_call`), or for a
     session from before, as its gatherer's old tables were copied into records (`harness`); None: neither says."""
@@ -1668,103 +1664,87 @@ def _clip(value, chars: int = TEXT_CHARS):
 
 
 def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
-          chars: Optional[int] = TEXT_CHARS, harness: Optional[str] = None) -> List[dict]:
+          chars: Optional[int] = TEXT_CHARS, harness: Optional[str] = None, kind: Optional[str] = None) -> List[dict]:
     """An event as the transcript shows it, whatever harness wrote it: its parts, each one of
         {"kind": "text", "role": user/assistant/system, "text"}
         {"kind": "thinking", "text"}                ("" when it is encrypted)
-        {"kind": "call", "id", "name", "input"}     a tool call (input: its object, or a string); a codex
-                                                    code-mode script also has `calls`: [{name, input}], the
-                                                    calls it makes (input None: not written out)
+        {"kind": "call", "id", "name", "input"}     a tool call (input: its object, or a string); a script that
+                                                    calls tools (codex's code mode) also has `calls`: [{name,
+                                                    input}], the calls it makes (input None: not written out)
         {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
-        {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages (codex's
-                                                    message from another agent, "agent_message", among them)
-    The channel's harness's own format (`harness`, as `_harness` has it) is read by its rules (harness_kit: Claude
-    Code's content blocks, codex's Responses items), and drawn here; a format they do not know (pi's, opencode's) is
-    drawn from its content blocks, and anything else shows as its readable text. Each text and input is clipped at
-    `chars` (None: kept whole)."""
+        {"kind": "note", "name", "text", "said"?}   anything else: the harness's or ag's own messages; an attachment
+                                                    (`name` "image", "document"). `said`, where its harness's rules
+                                                    read it: {kind (a Kind), detail} (harness_kit's Part)
+    The channel's harness's own format (`harness`, as `_harness` has it) is read by its rules (harness_kit's `read_one`;
+    `kind`, the Kind the event was stored as, for a piece its neighbours decided) and drawn here the same for every
+    harness (`_view`); a format its rules do not read (pi's, opencode's) is drawn from its content blocks, and anything
+    else shows as its readable text. A note of a channel whose harness is not known is read by DEFAULT's rules (whose
+    notes it was, before the harness was recorded). Each text, input and what was said is clipped at `chars` (None:
+    kept whole)."""
     try:
         p = json.loads(payload_json) if payload_json else None
     except ValueError:
         p = None
     role = ROLES.get(event_type)
-    if role is None:                         # not the conversation: a system message, ag's notices
-        return [{"kind": "note", "name": event_type, "text": text or readable(payload_json)}]
-    out: Optional[List[dict]] = None
     h = harness_kit.get(harness)
-    if h is not None and h.name == "codex" and isinstance(p, dict) and p.get("type") is not None:
-        out = _codex_view(h.read_one(p), chars)
-    elif h is not None and h.name == "claude" and isinstance(p, dict) and isinstance(p.get("content"), list):
-        speaker = "system" if p.get("role") in ("system", "developer") else role
-        out = [v for x in h.read_one(p) for v in _claude_view(x, speaker)]
-    elif h is not None and h.name == "antigravity" and isinstance(p, dict) and isinstance(p.get("parts"), list):
-        out = [v for x in h.read_one(p) for v in _agy_view(x, role)]
-    if out is None and isinstance(p, dict) and isinstance(p.get("content"), list):
-        out = _blocks_view(p["content"], "system" if p.get("role") in ("system", "developer") else role)
-    out = out or []
-    if not out:                              # a format this does not read: its words, as its type says
-        words = text or readable(payload_json)
-        if event_type == "agent_reasoning":
-            out.append({"kind": "thinking", "text": words if words != payload_json else ""})
-        elif words:
-            out.append({"kind": "text", "role": role, "text": words})
+    if role is None:                         # not the conversation: a system message, the harness's or ag's notices
+        out = [{"kind": "note", "name": event_type, "text": text or readable(payload_json)}]
+        said = next(iter(_read(h or harness_kit.get(harness_kit.DEFAULT), p, kind)), None)
+        if said is not None and said.text is not None:
+            out[0]["said"] = _reading(said)
+    else:
+        read = _read(h, p, kind)
+        out = [v for x in read for v in _view(x, role)] if h is not None else []
+        if not out and isinstance(p, dict) and isinstance(p.get("content"), list):
+            out = _blocks_view(p["content"], "system" if p.get("role") in ("system", "developer") else role)
+        if not out:                          # a format this does not read: its words, as its type says
+            words = text or readable(payload_json)
+            if event_type == "agent_reasoning":
+                out.append({"kind": "thinking", "text": words if words != payload_json else ""})
+            elif words:
+                out.append({"kind": "text", "role": role, "text": words})
     for part in out if chars is not None else []:
-        for k in ("text", "input"):
+        for k in ("text", "input", "calls", "said"):
             if k in part:
                 part[k] = _clip(part[k], chars)
     return out
 
 
-def _claude_view(x: "harness_kit.Part", speaker: str) -> List[dict]:
-    """A piece of Claude Code's, read (harness_kit.claude), as the transcript draws it."""
-    block = x.detail.get("block")
-    if block == "text":
-        return [{"kind": "text", "role": speaker, "text": x.text}] if (x.text or "").strip() else []
-    if x.kind == Kind.REASONING:
-        return [{"kind": "thinking", "text": x.detail.get("thinking") or ""}]
+def _read(h: Optional["harness_kit.Harness"], payload, kind: Optional[str] = None) -> List["harness_kit.Part"]:
+    """A stored piece as `h`'s rules read it on its own ([] where there are none, or it is no piece of theirs)."""
+    if h is None or not isinstance(payload, dict):
+        return []
+    try:
+        return h.read_one(payload, kind)
+    except Exception:  # noqa: BLE001 - a piece the rules trip on is drawn as its words, not an error
+        return []
+
+
+def _reading(x: "harness_kit.Part") -> dict:
+    """What a harness's rules read of a note: its Kind, and what that kind says besides (Part.detail)."""
+    return {"kind": x.kind, "detail": {k: v for k, v in x.detail.items() if k != "block"}}
+
+
+def _view(x: "harness_kit.Part", role: str) -> List[dict]:
+    """A piece, as its harness's rules read it (harness_kit's Part), as the transcript draws it -- the same for every
+    harness: a tool call (and the calls of a script), a result, thinking, an attachment, the user's or the model's
+    words in the role they came in (a system message's as the system's), and the harness's own text a note."""
     if x.tool is not None:
-        return [{"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input}]
+        call = {"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input}
+        if x.tool.calls:
+            call["calls"] = [{"name": c.name, "input": c.input} for c in x.tool.calls]
+        return [call]
     if x.result is not None:
         return [{"kind": "result", "id": x.result.call_id, "error": x.result.error, "text": x.result.output}]
-    if block == "image":
-        return [{"kind": "note", "name": "image", "text": "[image]"}]
-    return []
-
-
-def _agy_view(x: "harness_kit.Part", role: str) -> List[dict]:
-    """A part of agy's (harness_kit.antigravity), as the transcript draws it: its call, its result, its thinking, its
-    words; its own text in the user's role, a note."""
-    if x.tool is not None:
-        return [{"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input}]
-    if x.result is not None:
-        return [{"kind": "result", "id": x.result.call_id, "error": x.result.error, "text": x.result.output}]
     if x.kind == Kind.REASONING:
-        return [{"kind": "thinking", "text": x.text or ""}]
-    if x.kind in (Kind.AGENT, Kind.USER, Kind.USER_COMMAND, Kind.MID_TURN):
-        return [{"kind": "text", "role": role, "text": x.text}] if (x.text or "").strip() else []
-    return [{"kind": "note", "name": "context", "text": x.text or ""}] if x.text else []
-
-
-def _codex_view(read: List["harness_kit.Part"], chars: Optional[int]) -> Optional[List[dict]]:
-    """A codex item, read (harness_kit.codex), as the transcript draws it: its call, its result, its reasoning's summary,
-    or another agent's message to it; [] for a message (its words, by its type) -- None for an item drawn from its
-    content blocks instead."""
-    out: List[dict] = []
-    for x in read:
-        t = x.detail.get("block")
-        if t == "agent_message" and x.detail.get("between"):  # codex's: another agent's message to this one
-            out.append({"kind": "note", "name": "agent_message", "text": x.text or ""})
-        elif t not in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
-            return None
-        elif x.tool is not None:
-            call = {"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input}
-            if call["name"] == CODE_MODE and isinstance(call["input"], str) and script_calls(call["input"]):
-                call["calls"] = [{"name": n, "input": _clip(a, chars) if chars else a} for n, a in script_calls(call["input"])]
-            out.append(call)
-        elif x.result is not None:
-            out.append({"kind": "result", "id": x.result.call_id, "error": False, "text": x.result.output})
-        elif x.kind == Kind.REASONING:
-            out.append({"kind": "thinking", "text": x.detail.get("thinking") or ""})
-    return out
+        return [{"kind": "thinking", "text": x.detail.get("thinking", x.text) or ""}]
+    if x.attachment:
+        return [{"kind": "note", "name": x.attachment, "text": f"[{x.attachment}]"}]
+    if not (x.text or "").strip():
+        return []
+    if x.kind in USERS or x.kind == Kind.AGENT:
+        return [{"kind": "text", "role": "system" if x.role in ("system", "developer") else role, "text": x.text}]
+    return [{"kind": "note", "name": "context", "text": x.text, "said": _reading(x)}]
 
 
 def _blocks_view(content: list, speaker: str) -> List[dict]:

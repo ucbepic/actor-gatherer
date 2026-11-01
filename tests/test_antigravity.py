@@ -480,10 +480,10 @@ class DashboardTest(unittest.TestCase):
                          [{"kind": "thinking", "text": "hmm"}])
 
     def test_a_subagents_message_a_report_and_its_calls_labelled(self):
-        from ag_dashboard import files
-        self.assertEqual(files._note(REPORT["parts"][0]["text"]),
-                         {"kind": "report", "from": CHILD, "text": "The numerical answer is 391."})
-        self.assertIsNone(files._note(FINISHED["parts"][0]["text"]))                 # a task's notice: no report
+        from ag_dashboard import data, files
+        note = lambda event: data.parts("context", json.dumps(event), None, None, "antigravity")[0]   # noqa: E731
+        self.assertEqual(files._note(note(REPORT)), {"kind": "report", "from": CHILD, "text": "The numerical answer is 391."})
+        self.assertIsNone(files._note(note(FINISHED)))                                # a task's notice: no report
         self.assertEqual(files._label("invoke_subagent", INVOKE["parts"][0]["functionCall"]["args"], None, ""),
                          "Agent Math Calculator")
         self.assertEqual(files._label("ask_question", ASK["parts"][0]["functionCall"]["args"], None, ""),
