@@ -104,6 +104,9 @@ FAILED_READS = 50              # how many of its newest reads `failing` looks at
 #: A call the harness hung up on before its answer was through, as ag's hook server reports it (its HUNG_UP: nginx's
 #: "client closed request"): the user stopped it (Esc) -- not a failure.
 HUNG_UP = 499
+#: The harnesses (besides codex, read apart) whose own record of a session says how a turn stopped (`turn_stopped`, the
+#: hook following it): Claude Code's, agy's; None, a channel from before the harness was recorded -- Claude Code's.
+RECORDED = ("claude", "antigravity", None)
 ERROR_CHARS = 2000             # the most of an error's words it returns
 #: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
 #: turn, or ag's "streaming": the parts of an answer complete while the rest still streams), or is
@@ -596,7 +599,7 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     error or was interrupted, and the background tasks it left running (`record_background`)."""
     rec = record_of(conn, ch) if a["status"] in (RUNNING, IDLE) else Record()
     a["record_background"] = rec.tasks()
-    a["asking"] = ask_view(rec.asking()) if a["status"] == RUNNING else None
+    a["asking"] = ask_view(rec.asking(), a["harness"]) if a["status"] == RUNNING else None
     if a["asking"]:
         a["status"] = ASKING
     cut = since_said(a, hung_up(conn, ch)) if a["status"] == RUNNING else None
@@ -604,7 +607,7 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
         a["status"], a["turn_over"] = IDLE, True
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
     a["stopped"] = rec.stopped(newest(a)) if (a["status"] == RUNNING or cut is not None) \
-        and a["harness"] in ("claude", None) else None
+        and a["harness"] in RECORDED else None
     if a["stopped"] and a["stopped"]["kind"] == "interrupted":
         a["status"], a["turn_over"], a["failing"] = IDLE, True, None
     elif (a["stopped"] and a["stopped"]["kind"] == "error") or (a["failing"] and given_up(a["failing"], rec.followed, now)):
@@ -739,11 +742,12 @@ def replies(conn, channel: str, tables: Optional[set] = None) -> List[dict]:
     return out
 
 
-def ask_view(f: Optional[dict]) -> Optional[dict]:
-    """What an `asked` fact asks, for the page: {kind, at, call, questions (clipped) or plan}; None for None."""
+def ask_view(f: Optional[dict], harness: Optional[str] = None) -> Optional[dict]:
+    """What an `asked` fact asks, for the page: {kind, harness (whose dialog answers it: answers.py; None, Claude
+    Code's), at, call, questions (clipped) or plan}; None for None."""
     if not f:
         return None
-    out = {"kind": f.get("kind") or "question", "at": f.get("at"), "call": f.get("call")}
+    out = {"kind": f.get("kind") or "question", "harness": harness, "at": f.get("at"), "call": f.get("call")}
     if out["kind"] == "plan":
         out["plan"] = _clip(f.get("plan"), PLAN_CHARS)
     else:
@@ -801,7 +805,7 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
         if _harness(conn, channel) == "codex":
             over = turn_over(conn, channel, tables)[0]
             return codex_asking(conn, channel, tables, IDLE if over else RUNNING, rec)
-        return ask_view(rec.asking())
+        return ask_view(rec.asking(), _harness(conn, channel))
     finally:
         conn.close()
 
@@ -1673,6 +1677,8 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
     elif h is not None and h.name == "claude" and isinstance(p, dict) and isinstance(p.get("content"), list):
         speaker = "system" if p.get("role") in ("system", "developer") else role
         out = [v for x in h.read_one(p) for v in _claude_view(x, speaker)]
+    elif h is not None and h.name == "antigravity" and isinstance(p, dict) and isinstance(p.get("parts"), list):
+        out = [v for x in h.read_one(p) for v in _agy_view(x, role)]
     if out is None and isinstance(p, dict) and isinstance(p.get("content"), list):
         out = _blocks_view(p["content"], "system" if p.get("role") in ("system", "developer") else role)
     out = out or []
@@ -1703,6 +1709,20 @@ def _claude_view(x: "harness_kit.Part", speaker: str) -> List[dict]:
     if block == "image":
         return [{"kind": "note", "name": "image", "text": "[image]"}]
     return []
+
+
+def _agy_view(x: "harness_kit.Part", role: str) -> List[dict]:
+    """A part of agy's (harness_kit.antigravity), as the transcript draws it: its call, its result, its thinking, its
+    words; its own text in the user's role, a note."""
+    if x.tool is not None:
+        return [{"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input}]
+    if x.result is not None:
+        return [{"kind": "result", "id": x.result.call_id, "error": x.result.error, "text": x.result.output}]
+    if x.kind == Kind.REASONING:
+        return [{"kind": "thinking", "text": x.text or ""}]
+    if x.kind in (Kind.AGENT, Kind.USER, Kind.USER_COMMAND, Kind.MID_TURN):
+        return [{"kind": "text", "role": role, "text": x.text}] if (x.text or "").strip() else []
+    return [{"kind": "note", "name": "context", "text": x.text or ""}] if x.text else []
 
 
 def _codex_view(read: List["harness_kit.Part"], chars: Optional[int]) -> Optional[List[dict]]:

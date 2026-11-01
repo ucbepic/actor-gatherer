@@ -11,6 +11,9 @@ nothing is written to agy's settings.json (`--settings` is for the session only 
 
 agy's title call names no conversation: the run (`/r/<run>`, this process's id, as agy is exec'd) says which it is
 for. A conversation resumed by id (`--conversation <id>`) is claimed by ag (`Launch.session`); a new one is not.
+
+`--append-system-prompt <text>` is ag's, not agy's (harness_kit's `instruction_args`: agy has no option for it):
+taken out of agy's arguments and kept for the run (told.py), for agy's hook to add to each of the run's calls.
 """
 
 import json
@@ -18,13 +21,35 @@ import os
 from typing import List, Optional, Tuple
 from urllib.parse import urlsplit
 
+from harness_kit.antigravity import APPEND
+
 from ag.cli.launch import Launch, Launcher, LaunchError, Run
+from . import told as told_of
 from .hook_servers import HookServers
 
 SETUP = "ag.integrations.harnesses.antigravity.setup.setup"     # agy's setup: the hook server with its hook
 DEFAULT_API = "https://generativelanguage.googleapis.com"
 BASE_URL, KEY = "GOOGLE_GEMINI_BASE_URL", "GEMINI_API_KEY"
 PROVIDER = {"modelProvider": "gemini"}                          # agy's Gemini API route (its 1.1.13 changelog)
+
+
+def instructions_of(args: List[str]) -> Tuple[Optional[str], List[str]]:
+    """(the run's instructions, `--append-system-prompt`'s -- the last given -- or None; the arguments without it)."""
+    out, told, i = [], None, 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            out += args[i:]
+            break
+        if a == APPEND and i + 1 < len(args):
+            told, i = args[i + 1], i + 2
+            continue
+        if a.startswith(APPEND + "="):
+            told, i = a[len(APPEND) + 1:], i + 1
+            continue
+        out.append(a)
+        i += 1
+    return told, out
 
 
 def session_args(args: List[str]) -> Tuple[List[str], Optional[str]]:
@@ -67,7 +92,8 @@ class AntigravityLauncher(Launcher):
     def launch(self, run: Run) -> Launch:
         """agy on its Gemini API route, GOOGLE_GEMINI_BASE_URL pointed at the hook server -- started if none with its
         upstream is running (not in a dry run)."""
-        args, session = session_args(run.args)
+        told, args = instructions_of(run.args)
+        args, session = session_args(args)
         if not run.env.get(KEY) and not run.dry_run:
             raise LaunchError(f"agy's Gemini API route needs a key: set {KEY}")
         url = urlsplit(run.env.get(BASE_URL) or DEFAULT_API)
@@ -84,5 +110,9 @@ class AntigravityLauncher(Launcher):
             except RuntimeError as exc:
                 raise LaunchError(str(exc)) from exc
         server_url += (f"/h/{run.gatherer}" if run.gatherer else "") + ("" if run.dry_run else f"/r/{os.getpid()}")
+        if not run.dry_run:
+            told_of.tidy(self.home)
+            if told:
+                told_of.keep(self.home, str(os.getpid()), told)
         return Launch([*run.command, *args], {**run.env, BASE_URL: server_url + path},
                       [f"{BASE_URL}={server_url + path} -> {origin}{path}"], session)

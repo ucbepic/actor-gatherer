@@ -222,6 +222,12 @@ class Box:
                          # would pick in it, and the message be lost
 
 
+def rule(line: str) -> bool:
+    """A row of a screen that is one of a message box's rules: "─" across it, a label in it or not."""
+    line = line.strip()
+    return len(line) >= 20 and line.count("─") >= 0.8 * len(line)
+
+
 def typed_in(screen, first: int, last: int, start: int = 0) -> str:
     """What is typed in rows `first`..`last` of `screen` (harness_kit.screen's), from column `start` of the first: a
     box's placeholder, drawn faint, left out."""
@@ -417,7 +423,32 @@ class Fact:
 class Follower:
     """A harness's record of one session, read as it grows: `take` each line it `wanted`, in order -- what it keeps
     between lines (a queue, the questions open) its own -- and `due`, what is known only once time has passed with
-    no line to say otherwise. A subclass gives `take`, and `wanted` where most lines are not worth parsing."""
+    no line to say otherwise. A subclass gives `take`, and `wanted` where most lines are not worth parsing.
+
+    A record that is not a file of lines (agy's, a database whose rows change in place) is read by the follower
+    itself: it gives `read_on`, `stamp` and `anew`, and says it is one (`database`), so its reads go off the hook's
+    loop."""
+
+    #: Whether its record is a database it reads itself (`read_on`), not a file of lines.
+    database = False
+
+    def stamp(self, path: str) -> Optional[Tuple[int, int, int]]:
+        """What tells the record changed since it was last read: (inode, size, mtime in ns) of its file; None when it
+        is not there. The third is when it was last written."""
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        return st.st_ino, st.st_size, st.st_mtime_ns
+
+    def anew(self, now: Tuple[int, int, int], seen: Tuple[int, int, int], offset: int) -> bool:
+        """Whether the record was written anew since it was `seen` (`stamp`'s), so to be read again from its start:
+        another file at its path, or a shorter one than was read (`offset`)."""
+        return now[0] != seen[0] or now[1] < offset
+
+    def read_on(self, path: str, offset: int) -> Tuple[List["Fact"], int]:
+        """(its facts past `offset`, where the next read goes on from): its whole lines (`follow`), by default."""
+        return follow(path, self, offset)
 
     def wanted(self, line: bytes) -> bool:
         return True

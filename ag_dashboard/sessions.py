@@ -505,10 +505,23 @@ def models(harness: str) -> dict:
     kept = _models.get(harness)
     if kept and time.time() - kept["at"] < MODELS_KEEP:
         return kept["value"]
-    value = h.models(agent_env())
+    value = h.models({**agent_env(), **entry_env(harness)})
     if value.get("models"):
         _models[harness] = {"at": time.time(), "value": value}
     return value
+
+
+def entry_env(harness: str) -> Dict[str, str]:
+    """The environment ag's config.toml sets for `harness` alone ([cli.harnesses.<name>] env: agy's GEMINI_API_KEY),
+    {} where it sets none: what the harness lists its models with, as ag runs it."""
+    try:
+        import tomllib
+        with open(os.path.join(home.HOME, "config.toml"), "rb") as fh:
+            entry = ((tomllib.load(fh).get("cli") or {}).get("harnesses") or {}).get(harness)
+    except (OSError, ValueError, AttributeError):
+        return {}
+    env = entry.get("env") if isinstance(entry, dict) else None
+    return {str(k): os.path.expanduser(str(v)) for k, v in env.items()} if isinstance(env, dict) else {}
 
 
 def _unsaid(argv: List[str], told: Optional[str]) -> List[str]:
