@@ -463,8 +463,13 @@ class Harness(ABC):
         return []
 
     #: Where it keeps its memory of a directory, as a pattern the folder's path matches (a regular expression Python and
-    #: JavaScript both read, not anchored at its end); None: it keeps none.
+    #: JavaScript both read, not anchored at its end), its one group the part named after the directory (shortened
+    #: where it is shown); None: it keeps none.
     memory_folder: Optional[str] = None
+
+    #: The environment variables a session of it sets for what it runs, saying a process runs inside that session: not
+    #: passed on to another session, nor to anything a process started inside one starts as its own.
+    session_env: Tuple[str, ...] = ()
 
     #: What a reader can save where it reads it (History's records), by kind -- "agents" (instructions every session in a
     #: directory reads at its start), "skill", "memory" --: each {where: who reads it, in a line ("there": the directory

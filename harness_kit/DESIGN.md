@@ -424,7 +424,13 @@ change is a fact of the harness to move here, read by the dashboard through a fi
    not an actor's file changes: agy's now too) and `memory_folder` (its memory of a directory: Chat's "memory/" and
    the Editor's badge). `saves` and `save_files` (where History saves an AGENTS.md, a skill or memories for it, its
    paths and formats: Claude Code's alone so far); the Save panel offers each harness that has a place for the kind.
-6. A test that the dashboard names no harness, and a toy harness, registered in a test, listed, started and drawn.
+6. **Built.** `tests/test_harness_untouched.py`: the dashboard's code names no harness (its Python read by tokens, its
+   page's script line by line; comments and docstrings aside; what is left, and why it is no harness's rule, listed);
+   and a toy harness, registered from outside (`harness_kit.register`) before the dashboard loads, is listed (runnable,
+   available, its looks), its own folders, session variables and memory folder known, started headless (a fake ag
+   for it), and drawn -- its messages and calls in the Transcript's parts, its commands and files in Chat. Found on
+   the way: Claude Code's session variables (`session_env`), stripped from what the dashboard starts, and the Editor's
+   shortened memory folder (`memory_folder`'s group).
 
 ## Open questions
 

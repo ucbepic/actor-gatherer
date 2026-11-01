@@ -7492,12 +7492,14 @@ function filesRender({ info, session, running, writable, held }) {
     el("span", { class: "badges" }, ...f.kinds.map((k) => kindMark(k, 12, k === "write" && f.created ? "created" : undefined)),
       showGit && (f.git || []).length ? gitMark(f.git) : null));
   const folded = state.files.folded || (state.files.folded = new Set());
-  // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
-  // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
+  // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. A
+  // harness's memory of a directory (harness_kit's `memory_folder`) marked, the long name it gives the directory cut.
   const MEMORY = memoryFolders();
+  const memoryKey = MEMORY.length ? new RegExp(MEMORY.map(([re]) => re.source).join("|")) : /(?!)/;
   const label = (above, path) => path === UNKNOWN ? "relative to an unknown folder"
     : (under(path, home) && !under(above, home) ? "~" + path.slice(home.length)
-      : above === null ? path : path.slice(above.length + 1)).replace(/(\.claude\/projects\/)[^/]+(\/memory)$/, "$1…$2") + "/";
+      : above === null ? path : path.slice(above.length + 1))
+      .replace(memoryKey, (m, ...g) => m.replace(g.slice(0, MEMORY.length).find((k) => k !== undefined) ?? "", "…")) + "/";
   const grow = (node, into, depth, above) => {
     for (const [, sub] of [...node.dirs].sort((x, y) => (x[0] === UNKNOWN) - (y[0] === UNKNOWN) || x[0].localeCompare(y[0]))) {
       let dir = sub;
