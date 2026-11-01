@@ -38,7 +38,7 @@ import time
 from typing import Dict, List, Optional
 
 import harness_kit
-from harness_kit import Kind, claude as claude_rules, codex as codex_rules
+from harness_kit import Kind, antigravity as agy_rules, claude as claude_rules, codex as codex_rules
 
 from . import data, work
 from . import home as paths
@@ -431,6 +431,12 @@ def _label(name: str, inp: dict, raw, cwd: str) -> str:
         return re.sub(r"^cd \S+ && ", "", command.strip().split("\n")[0])[:200]
     if name == CODEX_SPAWN and isinstance(inp.get("task_name"), str):    # codex's subagent (what it is asked: encrypted)
         return f"Agent {inp['task_name']}"[:200]
+    if name == AGY_SPAWN and isinstance(inp.get("Role"), str):            # agy's subagent, by the role it is given
+        return f"Agent {inp['Role']}"[:200]
+    if name == "ask_question":                                            # agy's question to the user: its first
+        asked = agy_rules.questions_of(inp.get("questions"))
+        if asked:
+            return f"Ask: {asked[0]['question']}"[:200]
     if name == "Skill" and isinstance(inp.get("skill"), str):
         args = inp.get("args") if isinstance(inp.get("args"), str) else ""
         return f"Load skill {inp['skill']}{' ' + args if args.strip() else ''}"[:200]
@@ -494,6 +500,7 @@ def _call_view(part: dict) -> dict:
 
 AGENT_ID = claude_rules.AGENT_ID                                          # a subagent's id, in its call's result
 CODEX_SPAWN = codex_rules.SPAWN                                           # codex's tool that starts a subagent
+AGY_SPAWN = "invoke_subagent"                                           # agy's subagent, started
 
 
 def _json(text) -> Optional[dict]:
@@ -511,7 +518,8 @@ NOTES = {Kind.SKILL: "skill", Kind.AGENT_REPORT: "report", Kind.PEER_MESSAGE: "p
 
 def _note(text: str, loaded_by: Optional[dict] = None) -> Optional[dict]:
     """What a note of the harness's in the conversation is, as the Chat view shows it (its harness's rules read it:
-    harness_kit.claude's `note_detail`, harness_kit.codex's `report_of`); None for one it doesn't:
+    harness_kit.claude's `note_detail`, harness_kit.codex's and harness_kit.antigravity's `report_of`); None for one it
+    doesn't:
         {kind: "skill", name, args, text}   a skill's instructions, loaded by the Skill tool or the user's /name -- or,
                                             stored as a skill's (`_events`), loaded by `loaded_by`, the Skill call
                                             ({} where it is not known), named by it where its instructions don't
@@ -521,7 +529,8 @@ def _note(text: str, loaded_by: Optional[dict] = None) -> Optional[dict]:
         {kind: "command", name}             a command the user ran that Claude Code runs itself (/context, /mcp): not
                                             shown, only matched with what was sent from the page
         {kind: "printed", text}             what a command the user ran with ! printed"""
-    said = claude_rules.note_detail(text, Kind.SKILL if loaded_by is not None else None) or codex_rules.report_of(text)
+    said = claude_rules.note_detail(text, Kind.SKILL if loaded_by is not None else None) or codex_rules.report_of(text) \
+        or agy_rules.report_of(text)
     if said is None:
         return None
     kind = NOTES[said.pop("kind")]
@@ -974,6 +983,11 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     if isinstance(path, str) and path:
                         agents[path] = path.rsplit("/", 1)[-1]
                         spawned[path] = {"head": head, "given": False}
+                if started.get("name") == AGY_SPAWN:        # agy's: its subagent's conversation, by the role it was given
+                    made = agy_rules.task_of(AGY_SPAWN, p.get("text") or "")
+                    if made:
+                        agents[made["id"]] = str((started.get("input") or {}).get("Role") or "")
+                        spawned[made["id"]] = {"head": head, "given": False}
             elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
                 head["replies"].append({"kind": "text", "text": p["text"]})
                 head["now"] = head["last"] = None

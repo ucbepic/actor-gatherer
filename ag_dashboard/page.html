@@ -6474,6 +6474,21 @@ const SUMMARIES = {
   update_plan: (i) => ({ title: "Update Plan", body: () => todoView(i.plan), quiet: true }),
   Skill: (i) => ({ title: "Skill", arg: str(i.skill) }),
   ToolSearch: (i) => ({ title: "Tool Search", arg: str(i.query) }),
+  // agy's (Antigravity's): its file tools as Claude Code's, its subagents by their role
+  read_file: (i) => SUMMARIES.Read({ file_path: i.Path, offset: i.StartLine }),
+  write_file: (i) => SUMMARIES.Write({ file_path: i.Path, content: str(i.Content) }),
+  edit_file: (i) => SUMMARIES.Edit({ file_path: i.Path, old_string: str(i.Target), new_string: str(i.Replacement) }),
+  run_command: (i) => ({ title: "Bash", arg: firstLine(str(i.CommandLine), 200), note: str(i.toolSummary) || undefined,
+    doing: str(i.toolSummary) || undefined }),
+  search_web: (i) => ({ title: "Web Search", arg: `"${str(i.query)}"` }),
+  invoke_subagent: (i) => ({ title: str(i.Role) || "Agent", arg: firstLine(str(i.Prompt), 160) }),
+  send_message: (i) => ({ title: "Message", arg: firstLine(str(i.Message), 160) }),
+  ask_question: (i) => { let qs = i.questions; if (typeof qs === "string") { try { qs = JSON.parse(qs); } catch (e) { qs = []; } }
+    qs = Array.isArray(qs) ? qs : []; return { title: "Question", arg: firstLine(str((qs[0] || {}).question), 160) + (qs.length > 1 ? ` + ${plural(qs.length - 1, "more")}` : "") }; },
+  manage_task: (i) => ({ title: "Task", arg: [str(i.Action), str(i.TaskId)].filter(Boolean).join(" ") }),
+  manage_subagents: (i) => ({ title: "Subagents", arg: str(i.Action) }),
+  define_subagent: (i) => ({ title: "Define Agent", arg: str(i.Name) }),
+  schedule: (i) => ({ title: "Schedule", arg: firstLine(str(i.Prompt), 160) }),
 };
 function summary(call) {
   const inner = (call.calls || []).filter((c) => c.input !== null && c.input !== undefined);
@@ -7152,8 +7167,16 @@ function callLabel(c, n) {
 const CC_EXIT = /^(?:Error: )?Exit code (-?\d+)\n?/;
 const CODEX_HEAD = /^(?:Chunk ID: [^\n]*\n)?(?:Wall time: ([^\n]*)\n)?(?:Process exited with code (-?\d+)\n)?(?:Original token count: [^\n]*\n)?Output:\n/;
 const CWD_NOTE = /\n?Shell cwd was reset to [^\n]*\s*$/;
+// agy's header on each tool's output: when it was made, and when it finished
+const AGY_HEAD = /^Created At: [^\n]*\n(?:Completed At: [^\n]*\n)?/;
+// and on a command's: "Command exited with code 0.", then "Command output:" (after a note when it was cut short)
+const AGY_EXIT = /(^|\n)Command exited with code (-?\d+)\.\n\n?(?:Command output:\n)?/;
 function outputParts(text) {
   let t = String(text ?? ""), exit = null, took = null, m;
+  if ((m = AGY_HEAD.exec(t))) {
+    t = t.slice(m[0].length);
+    if ((m = AGY_EXIT.exec(t))) { exit = m[2]; t = t.slice(0, m.index) + m[1] + t.slice(m.index + m[0].length); }
+  }
   if ((m = CODEX_HEAD.exec(t))) { took = m[1] || null; exit = m[2] ?? null; t = t.slice(m[0].length); }
   else if ((m = CC_EXIT.exec(t))) { exit = m[1]; t = t.slice(m[0].length); }
   return { text: t.replace(CWD_NOTE, "").replace(/\n+$/, ""), exit, took };

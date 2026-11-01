@@ -14,7 +14,7 @@ from harness_kit import Action, CallKind, Kind  # noqa: E402
 from ag.cli.launch import LaunchError  # noqa: E402
 from ag.integrations.harnesses.antigravity.adaptor.adaptor import AntigravityAdaptor  # noqa: E402
 from ag.integrations.harnesses.antigravity.adaptor.to_messages import ag_message  # noqa: E402
-from ag.integrations.harnesses.antigravity.setup.launch import session_args  # noqa: E402
+from ag.integrations.harnesses.antigravity.setup.launch import instructions_of, session_args  # noqa: E402
 from ag.integrations.tools.hook_server.trace import response_of, streamed_of  # noqa: E402
 
 AGY = harness_kit.get("antigravity")
@@ -81,8 +81,7 @@ class ReadTest(unittest.TestCase):
     def test_command(self):
         self.assertEqual(AGY.command("s1", resume=True, model="m", permission_mode="acceptEdits"),
                          ["--model", "m", "--mode", "accept-edits", "--conversation", "s1"])
-        with self.assertRaises(harness_kit.InstructionsError):
-            AGY.command("s1", instructions="be brief")
+        self.assertEqual(AGY.command("s1", instructions="be brief"), ["--append-system-prompt", "be brief"])
 
 
 class AdaptorTest(unittest.TestCase):
@@ -153,6 +152,350 @@ class LaunchArgsTest(unittest.TestCase):
     def test_another_provider_refused(self):
         with self.assertRaises(LaunchError):
             session_args(['--settings={"modelProvider": "cloudcode"}'])
+
+
+
+# ---- what a live run of agy 1.4.12 sent (trimmed): a question, a background command, a subagent, a compaction
+
+PARENT = CONVERSATION
+CHILD = "483a8f62-a915-44c3-aa25-f0022e60ea6b"
+SUB_SYSTEM = (SYSTEM.replace(CONVERSATION, CHILD) + '\n<subagent_reminder>\nYou are running as a subagent, invoked by a '
+              f'caller agent (name: "parent", id: "{PARENT}"). You MUST use send_message to communicate all results.'
+              '\n</subagent_reminder>')
+ASK = {"role": "model", "parts": [{"functionCall": {"name": "ask_question", "id": "call_356537", "args": {"questions": [
+    {"is_multi_select": False, "question": "Which color do you like?", "options": ["(Recommended) Red", "Blue"]},
+    {"is_multi_select": True, "question": "Which pets do you have?", "options": ["(Recommended) Cat", "Dog", "Fish"]}]}}}]}
+ANSWERED = {"role": "model", "parts": [{"functionResponse": {"id": "call_356537", "name": "ask_question", "response": {
+    "output": "Created At: 2026-10-31T16:35:06-07:00\nCompleted At: 2026-10-31T16:35:33-07:00\nA1: Blue\nA2: (Recommended) Cat, Fish"}}}]}
+RUN = {"role": "model", "parts": [{"functionCall": {"name": "run_command", "id": "call_9", "args": {
+    "CommandLine": "sleep 25", "WaitMsBeforeAsync": 100, "toolSummary": "Wait 25 s"}}}]}
+TASK = f"{PARENT}/task-18"
+BACKGROUNDED = {"role": "model", "parts": [{"functionResponse": {"id": "call_9", "name": "run_command", "response": {
+    "output": f"Created At: 2026-10-31T16:36:58-07:00\nTool is running as a background task with task id: {TASK}\n"
+              "Task Description: sleep 25\nTask logs are available at: file:///home/u/.gemini/antigravity-cli/brain/"
+              f"{PARENT}/.system_generated/tasks/task-18.log\nYOU MUST TAKE ONE OF THE FOLLOWING TWO ACTIONS"}}}]}
+
+
+def system_message(sender, content):
+    return {"role": "user", "parts": [{"text": "The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is "
+                                               "provided by the system as important information to pay attention to.\n\n"
+                                               f"<SYSTEM_MESSAGE>\n[Message] timestamp=2026-10-31T23:37:36Z sender={sender} "
+                                               f"priority=MESSAGE_PRIORITY_HIGH content={content}\n</SYSTEM_MESSAGE>"}]}
+
+
+FINISHED = system_message(TASK, f'Task id "{TASK}" finished with result:\nCommand exited with code 0.\n\nNo output.')
+INVOKE = {"role": "model", "parts": [{"functionCall": {"name": "invoke_subagent", "id": "call_243119", "args": {
+    "Role": "Math Calculator", "TypeName": "self", "Prompt": "Calculate 17 times 23."}}}]}
+SPAWNED = {"role": "model", "parts": [{"functionResponse": {"id": "call_243119", "name": "invoke_subagent", "response": {
+    "output": 'Created At: x\nCompleted At: x\nCreated the following subagent:\n{\n  "conversationId":  "' + CHILD
+              + '",\n  "logAbsoluteUri":  "file:///home/u/.gemini/antigravity-cli/brain/' + CHILD
+              + '/.system_generated/logs/transcript.jsonl",\n  "workspaceUris":  [\n    "file:///work/here"\n  ]\n}\nThe s'}}}]}
+REPORT = system_message(CHILD, "The numerical answer is 391.")
+SUMMARY_PROMPT = {"role": "user", "parts": [{"text": "You have been working on the task described above but have not yet "
+                                                     "completed\nit. Write a continuation summary that will allow you ..."}]}
+COMPACT = {"role": "user", "parts": [{"text": "<USER_REQUEST>\n/compact\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nx\n"
+                                              "</ADDITIONAL_METADATA>"}]}
+SUMMARY = {"role": "user", "parts": [{"text": "<CONTEXT_SUMMARY>\nThe following is a summary of the conversation ..."}]}
+
+
+class SubagentAndCompactionCallTest(unittest.TestCase):
+    def test_a_subagent_is_its_callers(self):
+        call = AGY.call("POST", TURN_PATH, {}, body([REPORT], SUB_SYSTEM))
+        self.assertEqual((call.kind, call.session, call.detail["agent"]), (CallKind.SUBAGENT, PARENT, CHILD))
+
+    def test_a_compaction_asks_last(self):
+        call = AGY.call("POST", TURN_PATH, {}, body([USER, COMPACT, SUMMARY_PROMPT]))
+        self.assertEqual((call.kind, call.session), (CallKind.COMPACTION, CONVERSATION))
+        self.assertEqual((call.history, call.own), ([USER, COMPACT], [SUMMARY_PROMPT]))
+
+
+class OwnTextTest(unittest.TestCase):
+    def test_what_each_is(self):
+        parts = AGY.read(AGY.items([SUMMARY, COMPACT, FINISHED, REPORT, NOTICE]))
+        self.assertEqual([p.kind for p in parts], [Kind.COMPACTION_SUMMARY, Kind.USER_COMMAND, Kind.TASK_NOTICE,
+                                                   Kind.AGENT_REPORT, Kind.ENVIRONMENT])
+        self.assertEqual(parts[1].words, "/compact")
+        self.assertEqual(parts[2].detail["notices"], [{"id": TASK, "status": "completed", "event": None, "ended": True,
+                                                       "waiting": False}])
+        self.assertEqual(parts[3].detail, {"from": CHILD, "text": "The numerical answer is 391."})
+
+    def test_a_question_and_the_tasks_results_start(self):
+        parts = AGY.read(AGY.items([ASK, BACKGROUNDED, SPAWNED]))
+        self.assertEqual(parts[0].tool.ask["questions"][1],
+                         {"id": None, "header": "", "question": "Which pets do you have?", "multiSelect": True,
+                          "options": [{"label": "(Recommended) Cat", "description": ""},
+                                      {"label": "Dog", "description": ""}, {"label": "Fish", "description": ""}]})
+        self.assertEqual((parts[1].result.task["id"], parts[1].result.task["kind"], parts[1].result.task["label"]),
+                         (TASK, "command", "sleep 25"))
+        self.assertTrue(parts[1].result.task["output"].endswith("/tasks/task-18.log"))
+        self.assertEqual((parts[2].result.task["id"], parts[2].result.task["kind"]), (CHILD, "agent"))
+
+    def test_the_summary_is_not_stored(self):
+        events = AntigravityAdaptor().to_events([SUMMARY, USER])
+        self.assertEqual([e["type"] for e in events], ["user_message"])
+
+
+class DerivedTest(unittest.TestCase):
+    def facts(self, parts, history=None):
+        return [(f.type, f.key, f.data) for f in AGY.derived(AGY.read(AGY.items(parts)), 1.0, history)]
+
+    def test_asked_then_answered(self):
+        asked = self.facts([ASK])
+        self.assertEqual([(t, k) for t, k, _ in asked], [("asked", "call_356537")])
+        self.assertEqual(asked[0][2]["kind"], "question")
+        got = self.facts([ASK, ANSWERED])
+        self.assertEqual(got[1][:2], ("ask_settled", "call_356537"))
+        self.assertEqual(got[1][2]["how"], "answered")
+        self.assertIn("A1: Blue", got[1][2]["result"])
+
+    def test_a_background_command_starts_and_ends(self):
+        got = self.facts([RUN, BACKGROUNDED, FINISHED])
+        self.assertEqual([(t, d["task"]) for t, _, d in got], [("task_started", TASK), ("task_ended", TASK)])
+        self.assertEqual((got[0][2]["kind"], got[1][2]["status"]), ("command", "completed"))
+
+    def test_a_subagent_starts_and_speaks(self):
+        got = self.facts([INVOKE, SPAWNED, REPORT])
+        self.assertEqual([(t, d["task"]) for t, _, d in got], [("task_started", CHILD), ("task_activity", CHILD)])
+        self.assertEqual(got[0][2]["label"], "Math Calculator")
+
+    def test_where_a_calls_new_pieces_begin(self):
+        from harness_kit.antigravity import answer_start
+        items = AGY.items([USER, ASK, ANSWERED, NOTICE])
+        self.assertEqual(answer_start(items), 1)
+        self.assertEqual(answer_start(AGY.items([USER])), 0)
+
+
+class AnswerTest(unittest.TestCase):
+    ASKED = AGY.read(AGY.items([ASK]))[0].tool.ask
+
+    def test_keys(self):
+        keys = AGY.answer_keys(self.ASKED, {"answers": [{"options": [1]}, {"options": [0, 2]}]})
+        self.assertEqual(keys, ["\x1b[B", "\r", " ", "\x1b[B", "\x1b[B", " ", "\r"])
+        self.assertEqual(AGY.answer_expected(self.ASKED, {"answers": [{"options": [1]}, {"options": [0, 2]}]}),
+                         ["A1: Blue", "A2: (Recommended) Cat, Fish"])
+
+    def test_several_then_more_go_on_with_next_and_own_words_are_written_in(self):
+        ask = {"kind": "question", "questions": list(reversed(self.ASKED["questions"]))}
+        keys = AGY.answer_keys(ask, {"answers": [{"options": [1]}, {"text": "Green"}]})
+        self.assertEqual(keys, ["\x1b[B", " ", "\x1b[C", "\x1b[B", "\x1b[B", "\r", "Green", "\r"])
+        self.assertEqual(AGY.answer_expected(ask, {"answers": [{"options": [1]}, {"text": "Green"}]}),
+                         ["A1: Dog", "A2: Green"])
+
+
+def agy_screen(box_row, cursor=True):
+    """agy's screen as its message box shows (its prompt row between two rules), the cursor in it or hidden."""
+    from harness_kit.screen import Screen
+    screen = Screen(60, 8)
+    rule_ = "─" * 60
+    rows = ["  Antigravity CLI 1.4.12", "> earlier message", "  answer", rule_, box_row, rule_, "? for shortcuts"]
+    screen.feed(("\r\n".join(rows) + f"\x1b[5;{len(box_row) + 1}H" + ("" if cursor else "\x1b[?25l")).encode())
+    return screen
+
+
+class BoxTest(unittest.TestCase):
+    def test_its_message_box(self):
+        self.assertEqual(AGY.box(agy_screen(">")), harness_kit.Box.EMPTY)
+        self.assertEqual(AGY.box(agy_screen("> half a messa")), harness_kit.Box.HOLDS)
+        self.assertEqual(AGY.box(agy_screen(">", cursor=False)), harness_kit.Box.AWAY)     # a dialog has the keys
+
+
+def varint(n):
+    out = b""
+    while True:
+        b, n = n & 0x7f, n >> 7
+        out += bytes([b | (0x80 if n else 0)])
+        if not n:
+            return out
+
+
+def pb(*fields):
+    """A protobuf message of (number, value) fields: an int a varint, bytes or str length-delimited."""
+    out = b""
+    for n, v in fields:
+        if isinstance(v, int):
+            out += varint(n << 3) + varint(v)
+        else:
+            v = v.encode() if isinstance(v, str) else v
+            out += varint(n << 3 | 2) + varint(len(v)) + v
+    return out
+
+
+class RecordTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.dir, "conversations"))
+        self.db = os.path.join(self.dir, "conversations", f"{CONVERSATION}.db")
+        import sqlite3
+        conn = sqlite3.connect(self.db)
+        conn.execute("CREATE TABLE steps (idx integer PRIMARY KEY, step_type integer, status integer, step_payload blob)")
+        error = pb((1, 17), (5, pb((1, pb((1, 1793490285), (2, 0))))),
+                   (24, pb((3, pb((2, "agent executor error: Error 400, Message: API key not valid., Details: [map]"),
+                                  (7, 400))))))
+        conn.executemany("INSERT INTO steps VALUES (?, ?, ?, ?)",
+                         [(0, 14, 3, pb((1, 14))), (1, 17, 3, error), (2, 15, 2, pb((1, 15)))])
+        conn.commit()
+        conn.close()
+
+    def test_a_turn_given_up_and_where_to_read_on(self):
+        rec = AGY.follower(self.db)
+        facts, offset = rec.read_on(self.db, 0)
+        self.assertEqual([(f.type, f.data["how"], f.data["status"]) for f in facts], [("turn_stopped", "error", 400)])
+        self.assertEqual(facts[0].data["error"], "agent executor error: Error 400, Message: API key not valid.")
+        self.assertEqual(facts[0].at, 1793490285)
+        self.assertEqual(offset, 2)                        # step 2 still runs: read again from there
+        self.assertEqual(rec.read_on(self.db, offset), ([], 2))
+
+    def test_its_name(self):
+        rec = AGY.follower(self.db)
+        os.makedirs(os.path.join(self.dir, "annotations"))
+        with open(os.path.join(self.dir, "annotations", f"{CONVERSATION}.pbtxt"), "w") as fh:
+            fh.write('title:"Capture \\"one\\""\n')
+        facts, _ = rec.read_on(self.db, 3)
+        self.assertEqual([(f.type, f.data) for f in facts], [("name", {"text": 'Capture "one"', "by": "antigravity"})])
+
+    def test_found_by_the_conversation(self):
+        self.assertEqual(AGY.record_path(CONVERSATION, config=self.dir), self.db)
+        self.assertIsNone(AGY.record_path("0" * 36, config=self.dir))
+
+    def test_renamed_where_it_keeps_its_name(self):
+        home = os.path.dirname(os.path.dirname(self.dir))
+        base = os.path.join(self.dir, "home", ".gemini", "antigravity-cli")
+        os.makedirs(os.path.join(base, "conversations"))
+        open(os.path.join(base, "conversations", f"{CONVERSATION}.db"), "w").close()
+        AGY.rename(CONVERSATION, "New  name", env={"HOME": os.path.join(self.dir, "home")})
+        with open(os.path.join(base, "annotations", f"{CONVERSATION}.pbtxt")) as fh:
+            self.assertEqual(fh.read(), 'title:"New name"\n')
+        with self.assertRaises(harness_kit.RenameError):
+            AGY.rename("0" * 36, "x", env={"HOME": os.path.join(self.dir, "home")})
+        self.assertEqual(AGY.rename_command("New\nname"), "/rename New name")
+        del home
+
+
+class InstructionsTest(unittest.TestCase):
+    def test_taken_out_of_agys_arguments(self):
+        self.assertEqual(instructions_of(["--append-system-prompt", "be brief", "--model", "m"]), ("be brief", ["--model", "m"]))
+        self.assertEqual(instructions_of(["--model", "m"]), (None, ["--model", "m"]))
+        self.assertEqual(instructions_of(["--", "--append-system-prompt", "x"]), (None, ["--", "--append-system-prompt", "x"]))
+
+    def test_kept_by_the_run_and_read_by_the_hook(self):
+        import tempfile
+        from ag.integrations.harnesses.antigravity.ag_orchestrator import told as read
+        from ag.integrations.harnesses.antigravity.setup import told
+        home = tempfile.mkdtemp()
+        self.assertEqual(told.path(home, "1"), read.path(home, "1"))          # each side's copy of where it is
+        told.keep(home, "12345", "be brief")
+        reader = read.Told(home)
+        self.assertEqual((reader.of("12345"), reader.of("999"), reader.of(None)), ("be brief", None, None))
+        told.keep(home, str(os.getpid()), "mine")
+        told.tidy(home)                                   # 12345 is no process of this test: gone; ours stays
+        self.assertEqual((reader.of("12345"), reader.of(str(os.getpid()))), (None, "mine"))
+
+
+class FakeClient:
+    """A gatherer's server client: each request kept; a rewrite answered with its events, an `ag` note first."""
+
+    def __init__(self, gatherer):
+        self.gatherer, self.requests, self.records = gatherer, [], []
+
+    async def request(self, op, body=None):
+        if op == "insert":
+            self.records += [dict(e, channel=body["properties"]["channel"]) for e in body["events"]]
+            return {"rows": []}
+        self.requests.append((op, body))
+        return {"context": [{"type": "ag", "name": "earlier", "text": "MANAGED"}]
+                + [{"type": e["type"], "id": e["id"], "payload": e["payload"]} for e in body["events"]],
+                "note": f"{len(body['events'])} items in"}
+
+    async def stop(self):
+        pass
+
+
+class HookTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from ag.integrations.harnesses.antigravity.ag_orchestrator import context_manager as agy_ag
+        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        self.home = tempfile.mkdtemp()
+        self.clients = {}
+
+        def made(gatherer):
+            self.clients[gatherer] = FakeClient(gatherer)
+            return self.clients[gatherer]
+        self.hook = agy_ag.AntigravityContextManager(ag_clients=AgClients(made), log=lambda g, l: None, files="off",
+                                                     home=self.home)
+        self.hook.sessions = None                         # no record to follow here
+
+    def call(self, contents, system=SYSTEM, run=None):
+        import asyncio
+        from types import SimpleNamespace
+        request = SimpleNamespace(method="POST", path=TURN_PATH, label="g", headers={}, run=run, state={},
+                                  body=body(contents, system))
+
+        async def go():
+            got = await self.hook(request)
+            await asyncio.gather(*list(self.hook.under_way), return_exceptions=True)
+            return got
+        return asyncio.run(go()), request
+
+    def test_a_subagent_goes_through_as_it_is_on_its_callers_session(self):
+        got, request = self.call([REPORT], SUB_SYSTEM)
+        self.assertIsNone(got)
+        self.assertEqual(self.clients["g"].requests, [])                     # no rewrite: its own conversation
+        self.assertEqual([(r["type"], r["channel"]) for r in self.clients["g"].records], [("model_call", PARENT)])
+
+    def test_a_compaction_builds_and_asks_last(self):
+        got, _ = self.call([USER, COMPACT, SUMMARY_PROMPT])
+        op, sent = self.clients["g"].requests[0]
+        self.assertEqual(op, "compaction")
+        self.assertEqual(got["contents"][-1], SUMMARY_PROMPT)
+        self.assertEqual(got["contents"][0]["parts"][0]["text"].count("MANAGED"), 1)
+
+    def test_a_runs_instructions_after_the_system_instruction(self):
+        from ag.integrations.harnesses.antigravity.setup import told
+        told.keep(self.home, "77", "You coordinate the actors.")
+        got, _ = self.call([USER], run="77")
+        self.assertEqual(got["systemInstruction"]["parts"][-1], {"text": "\n\nYou coordinate the actors."})
+        got, _ = self.call([USER], run="78")
+        self.assertNotIn("You coordinate", json.dumps(got["systemInstruction"]))
+
+    def test_what_a_calls_new_pieces_say_is_recorded(self):
+        self.call([USER, RUN, BACKGROUNDED, FINISHED])
+        self.assertEqual([r["type"] for r in self.clients["g"].records if r["type"].startswith("task")],
+                         ["task_started", "task_ended"])
+
+
+
+class DashboardTest(unittest.TestCase):
+    """What the dashboard makes of agy's events: Chat's parts, its notes and command labels, what it answers with."""
+
+    def test_its_calls_and_results_drawn(self):
+        from ag_dashboard import data
+        self.assertEqual(data.parts("tool_call", json.dumps(RUN), None, harness="antigravity"),
+                         [{"kind": "call", "id": "call_9", "name": "run_command", "input": RUN["parts"][0]["functionCall"]["args"]}])
+        got = data.parts("tool_output", json.dumps(BACKGROUNDED), None, harness="antigravity")
+        self.assertEqual((got[0]["kind"], got[0]["id"], got[0]["error"]), ("result", "call_9", False))
+        thought = {"role": "model", "parts": [{"text": "hmm", "thought": True}]}
+        self.assertEqual(data.parts("agent_reasoning", json.dumps(thought), None, harness="antigravity"),
+                         [{"kind": "thinking", "text": "hmm"}])
+
+    def test_a_subagents_message_a_report_and_its_calls_labelled(self):
+        from ag_dashboard import files
+        self.assertEqual(files._note(REPORT["parts"][0]["text"]),
+                         {"kind": "report", "from": CHILD, "text": "The numerical answer is 391."})
+        self.assertIsNone(files._note(FINISHED["parts"][0]["text"]))                 # a task's notice: no report
+        self.assertEqual(files._label("invoke_subagent", INVOKE["parts"][0]["functionCall"]["args"], None, ""),
+                         "Agent Math Calculator")
+        self.assertEqual(files._label("ask_question", ASK["parts"][0]["functionCall"]["args"], None, ""),
+                         "Ask: Which color do you like?")
+
+    def test_what_it_asks_is_answered_by_its_own_dialog(self):
+        from ag_dashboard import answers, data
+        ask = data.ask_view({"kind": "question", "call": "c", **AGY.read(AGY.items([ASK]))[0].tool.ask}, "antigravity")
+        self.assertEqual(ask["harness"], "antigravity")
+        self.assertEqual(answers.expected(ask, {"answers": [{"options": [1]}, {"options": [0]}]}),
+                         ["A1: Blue", "A2: (Recommended) Cat"])
+        self.assertIn("antigravity", data.RECORDED)                 # its record's stops are read, as Claude Code's
 
 
 if __name__ == "__main__":

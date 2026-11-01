@@ -340,10 +340,37 @@ directory, and its title call (TITLE_PROMPT, before the first turn's call) is ma
 (`/r/<pid>`) once its answer is back. Each part of its contents is one item and one event, as agy itself sends them
 back. Built: the hook (events in, context back, `model_call`, `reply_part`, `reply_end`, `call_failed`, the title as
 `name`, `file_touched`), the launcher, `command`, and the dashboard starting it in a terminal (sessions.py: renamed
-to its conversation as a codex terminal is; its first message as `--prompt-interactive=`, `first_prompt`). Not yet,
-for want of a capture: compaction, subagents (each its own conversation, read as one), `ask_question`'s asks, its
-record of a conversation (`conversations/<id>.db`, SQLite) followed, `derived`, its headless mode, and a fixtures
-folder (`tests/probe` drives Claude Code's and Codex's terminals).
+to its conversation as a codex terminal is; its first message as `--prompt-interactive=`, `first_prompt`).
+
+Read from a capture of agy 1.4.12 (onboarding, questions, a background command, a subagent, `/compact`, Esc, an
+error, `/rename`) and built on it:
+
+- Subagents: a call whose system instruction holds a `<subagent_reminder>` naming its caller is `SUBAGENT`, its
+  session the caller's: let through as it is and recorded on the caller's channel, as Claude Code's. The subagent is a
+  background task of its caller: started by `invoke_subagent`'s result (its conversation id, its transcript the
+  output followed), active by its messages to the caller (`AGENT_REPORT`, Chat's report note), ended once its own
+  answer calls no tool, resumed when it is called again.
+- Compaction: its last content the continuation-summary prompt (`COMPACTION_PROMPT`) is `COMPACTION`; the hook
+  builds in its place as codex's (the server's `compaction`, ag's context read only, agy's prompt last). The
+  `<CONTEXT_SUMMARY>` its next calls open with is `COMPACTION_SUMMARY`, not stored.
+- `ask_question`: `asked` from the answer, `ask_settled` from its result ("A<n>: ..."; "User Skipped" on Esc -- agy goes
+  on either way). Its dialog is answered from the page (`answer_keys`: arrows, Space for several, "→" to the next
+  question, Enter; "Write-in..." after the options). `box`: a ">" row between two rules, the cursor hidden while a
+  dialog (a question, a permission, its folder trust) has the keys.
+- Background commands: `run_command`'s "Tool is running as a background task with task id" starts one; the
+  SYSTEM_MESSAGE `Task id "..." finished with result` (`TASK_NOTICE`) ends it.
+- Its record, `conversations/<id>.db` (SQLite, a row per step whose status changes in place, protobuf payloads): a
+  `Follower` that reads a database (`database`, `read_on`, `stamp`, `anew`); an ERROR_MESSAGE step is `turn_stopped`
+  "error" with its text and HTTP status; the name in `annotations/<id>.pbtxt` is `name`. Esc and the queue of messages
+  typed during a turn are not in it: the hook server sees Esc (a hang-up), and agy sends a stopped turn's message
+  again with the next, so nothing is taken back.
+- Renaming (`/rename <name>`, and the annotations file), its models (`agy models`, with the key its config entry
+  sets), and a run's instructions: agy takes none, so the launcher takes `--append-system-prompt` and its hook adds
+  the text after the system instruction of each of the run's calls (`told.py`, by `/r/<run>`).
+
+Not yet: its headless mode (`agy -p --output-format stream-json`), its permission prompt shown as waiting (the
+dashboard shows the actor running while agy asks to run a command), and a fixtures folder (`tests/probe` drives
+Claude Code's and Codex's terminals).
 
 ## Open questions
 

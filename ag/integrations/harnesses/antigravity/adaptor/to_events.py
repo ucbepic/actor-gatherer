@@ -48,10 +48,13 @@ def item_id(item) -> str:
 
 def to_events(contents: list, event_types: Dict[str, str] = EVENT_TYPES) -> List[dict]:
     """The events agy's contents are, one per part, in order. `event_types`: which event type each Kind becomes
-    (HarnessAdaptor's)."""
+    (HarnessAdaptor's). The summary a compacted history opens with is left out, as codex's: it summarises the
+    context the gatherer gave agy for its compaction, and the gatherer holds that history itself."""
     items = HARNESS.items(contents)
     out = []
     for item, part in zip(items, HARNESS.read(items)):
+        if part.kind == Kind.COMPACTION_SUMMARY:
+            continue
         event = {"type": event_types.get(part.kind, CONTEXT), "id": item_id(item), "payload": item}
         text = text_of(item)
         if text is not None:
