@@ -73,6 +73,8 @@ import time
 import uuid
 from typing import Callable, Dict, List, Optional, Tuple
 
+import harness_kit
+
 from . import actions, branches, data, docwriter as dw, editor, files, naming, sessions
 
 COORDINATOR = sessions.COORDINATOR
@@ -226,13 +228,13 @@ class Coordination:
     def ensure(self, gatherer: str, cwd: Optional[str] = None, harness: Optional[str] = None,
                model: Optional[str] = None) -> dict:
         """The gatherer agent of `gatherer`, started if it has none: in `cwd` (else the user's home), on `harness` (else
-        Claude Code where it can run here, else codex) and `model`. As the dashboard's table has it."""
+        the first harness that can run here, in harness_kit's order) and `model`. As the dashboard's table has it."""
         with self.lock:
             row = self.coordinator(gatherer)
             if row is not None:
                 return row
             can = sessions.available() or list(sessions.HARNESSES)
-            harness = harness if harness in sessions.HARNESSES else next((h for h in sessions.HARNESSES if h in can), "claude")
+            harness = harness if harness in sessions.HARNESSES else next((h for h in sessions.HARNESSES if h in can), harness_kit.DEFAULT)
             cwd = cwd if cwd and os.path.isdir(cwd) else os.path.expanduser("~")
             row = self.started.create(gatherer, cwd, "auto", harness, model, role=COORDINATOR)
         if self.ring is not None:
@@ -343,7 +345,7 @@ class Coordination:
         base = self._find(g, like, agents) if like else None
         base = base or me
         bs = base.get("session") or {}
-        harness = harness or base.get("harness") or bs.get("harness") or "claude"
+        harness = harness or base.get("harness") or bs.get("harness") or harness_kit.DEFAULT
         if harness not in sessions.HARNESSES:
             raise CoordinationError(f"harness {harness!r}: one of {', '.join(sessions.HARNESSES)}")
         cwd = os.path.abspath(os.path.expanduser(cwd)) if cwd else base.get("cwd") or bs.get("cwd") or me.get("cwd")
@@ -359,7 +361,7 @@ class Coordination:
                 row, on = self._new_on_branch(g, cwd or "", harness, model, mode, approve)
             else:
                 row = self.started.create(g, cwd or "", mode, harness, model)
-            if name and harness == "claude":     # codex's id is its thread's, once it has one: not named here
+            if name and not sessions.picks_id(harness):   # one whose harness picks its id: named once it has it
                 threading.Thread(target=_name_it, args=(g, row["session_id"], name), daemon=True).start()
         to = {"channel": row["session_id"], "session": row, "harness": harness, "cwd": row["cwd"], "status": data.IDLE,
               "name": {"text": name} if name else None}
@@ -469,7 +471,8 @@ class Coordination:
         sid = s["session_id"] if s else self.started.adopt(gatherer, to["channel"])["session_id"]
         harness = (s or {}).get("harness") or to.get("harness")
         try:
-            return self.started.send(sid, body, fullscreen=harness != "codex")      # as the page opens a terminal
+            rules = harness_kit.get(harness)          # its screen, as the page opens a terminal
+            return self.started.send(sid, body, fullscreen=bool(rules is None or rules.fullscreen))
         except sessions.NotAtBox as exc:
             who = NAME if self._is_coordinator(to) else f"actor {to['channel'][:8]}"
             raise sessions.NotAtBox(f"not delivered: {who}'s terminal shows a dialog or a question, or holds something "
@@ -577,7 +580,7 @@ class Coordination:
             key = (r["gatherer"], r["session_id"])
             if r.get("role") != COORDINATOR or key in self.marked or not os.path.exists(sessions.home.db_path(r["gatherer"])):
                 continue
-            if r["harness"] in sessions.OWN_IDS and r.get("started_as") == r["session_id"]:
+            if sessions.picks_id(r["harness"]) and r.get("started_as") == r["session_id"]:
                 continue                             # not yet under its thread's id: no channel of the gatherer's
             self.marked.add(key)
             actions.record(r["gatherer"], r["session_id"], [{"type": ROLE, "id": f"{ROLE}:{r['session_id']}:{COORDINATOR}",

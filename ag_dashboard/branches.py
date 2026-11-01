@@ -50,6 +50,8 @@ import uuid
 from contextlib import nullcontext
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
+import harness_kit
+
 from . import actions, editor, home, sessions
 
 POLL = 1.0              # seconds between looks at a branch whose actor the dashboard runs a process of
@@ -460,7 +462,7 @@ class Branches:
             self.ontos[project] = (time.time(), got)
         return got
 
-    def create(self, gatherer: str, project: str, harness: str = "claude", approve: bool = False,
+    def create(self, gatherer: str, project: str, harness: str = harness_kit.DEFAULT, approve: bool = False,
                model: Optional[str] = None, permission_mode: str = "auto") -> dict:
         """A new actor of `harness` in `gatherer`, on a new branch of `project` (one of the gatherer's): its worktree
         made beside the project, the session made there (sessions.py's `create`, in `permission_mode`). The session,

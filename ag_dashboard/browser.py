@@ -59,6 +59,8 @@ import time
 import urllib.parse
 from typing import Callable, Dict, List, Optional, Tuple
 
+import harness_kit
+
 from . import browser_video, home, mcp, naming, sessions
 
 NAME = "ag-browser"         # the MCP server's name: the tools' names, as the harness shows them, carry it
@@ -1913,7 +1915,7 @@ class Browsers:
 
     # -- which Browser
 
-    def create(self, gatherer: str, cwd: str, harness: str = "claude", model: Optional[str] = None) -> dict:
+    def create(self, gatherer: str, cwd: str, harness: str = harness_kit.DEFAULT, model: Optional[str] = None) -> dict:
         """A new Browser, its actor a new session of `harness` in `gatherer`, in `cwd` (a new gatherer if none has the
         name; its agent starts with its first message): its settings (`config`)."""
         if not available():
@@ -1923,7 +1925,7 @@ class Browsers:
         if not os.path.isdir(root):
             raise BrowserError(f"no directory {cwd}")
         key = secrets.token_hex(8)
-        s = self.started.create(gatherer, root, "auto", harness if harness in sessions.HARNESSES else "claude",
+        s = self.started.create(gatherer, root, "auto", harness if harness in sessions.HARNESSES else harness_kit.DEFAULT,
                                 model, role=json.dumps({"browser": key}))
         conn = _db()
         try:
@@ -1962,7 +1964,7 @@ class Browsers:
         r = self.row(key)
         s = self._session(r["session_id"])
         return {"key": key, "root": r["root"], "gatherer": r["gatherer"],
-                "channel": s["session_id"] if s else r["session_id"], "harness": (s or {}).get("harness") or "claude"}
+                "channel": s["session_id"] if s else r["session_id"], "harness": (s or {}).get("harness") or harness_kit.DEFAULT}
 
     def watched(self) -> bool:
         with self.lock:

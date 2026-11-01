@@ -52,6 +52,8 @@ import threading
 import time
 from typing import Dict, List, Optional, Tuple
 
+import harness_kit
+
 from . import home, mcp, naming, sessions
 
 try:
@@ -667,7 +669,7 @@ class DocWriters:
 
     # -- which DocWriter
 
-    def create(self, gatherer: str, cwd: str, harness: str = "claude", model: Optional[str] = None) -> dict:
+    def create(self, gatherer: str, cwd: str, harness: str = harness_kit.DEFAULT, model: Optional[str] = None) -> dict:
         """A new DocWriter on `cwd`, its actor a new session of `harness` in `gatherer` (a new gatherer if none has the
         name; its agent starts with its first message): its settings (`config`)."""
         if not AVAILABLE:
@@ -677,7 +679,7 @@ class DocWriters:
             raise DocWriterError(f"no directory {cwd}")
         with self.lock:
             key = secrets.token_hex(8)
-            s = self.started.create(gatherer, root, "auto", harness if harness in sessions.HARNESSES else "claude",
+            s = self.started.create(gatherer, root, "auto", harness if harness in sessions.HARNESSES else harness_kit.DEFAULT,
                                     model, role=json.dumps({"docwriter": key}))
             conn = _db()
             try:
@@ -710,7 +712,7 @@ class DocWriters:
         r = self.row(key)
         s = self._session(r["session_id"])
         out = {"key": key, "root": r["root"], "gatherer": r["gatherer"], "channel": s["session_id"] if s else r["session_id"],
-               "harness": (s or {}).get("harness") or "claude", "name": "DocWriter", "wake": wake()}
+               "harness": (s or {}).get("harness") or harness_kit.DEFAULT, "name": "DocWriter", "wake": wake()}
         if s is None:
             out["error"] = "This DocWriter's actor is gone: close DocWriter and open it again for a new one."
         return out

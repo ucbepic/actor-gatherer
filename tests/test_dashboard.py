@@ -426,6 +426,22 @@ class PageTest(HomeBase):
         text = server.page({"home": {"x": "</script><script>alert(1)</script>"}})
         self.assertEqual(text.count("</script>"), server.page({}).count("</script>"))
 
+    def test_each_harness_as_harness_kit_describes_it_and_the_page_names_none(self):
+        import harness_kit
+        info = data.home()["harness_info"]
+        self.assertEqual(set(info), set(harness_kit.HARNESSES))
+        self.assertEqual(info["codex"]["label"], "Codex")
+        self.assertTrue(info["claude"]["mark"].startswith("<svg"))
+        self.assertEqual([n for n, i in info.items() if i["runs"]], harness_kit.runnable())
+        self.assertFalse(info["codex"]["fullscreen"])
+        self.assertEqual(info["claude"]["stopped"]["lead"], "⎿")
+        snap = server.page(data.snapshot()).split("const SNAPSHOT = ", 1)[1].split(";\n", 1)[0]
+        self.assertIn("harness_info", json.loads(snap.replace("<\\/", "</"))["home"])       # a snapshot's, too
+        with open(server.PAGE, encoding="utf-8") as fh:
+            page = fh.read()
+        for gone in ("const HARNESS =", "BADGES", "ANTIGRAVITY_ARCH", "CHAT_HARNESSES", "STOPPED_SAYS", '!== "codex"'):
+            self.assertNotIn(gone, page)                  # each harness's look and screen: harness_kit's
+
     def test_the_server_answers_the_page_and_its_data(self):
         httpd = server.serve("127.0.0.1", 0)
         threading.Thread(target=httpd.serve_forever, daemon=True).start()

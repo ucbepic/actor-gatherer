@@ -271,7 +271,26 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
     return {"home": paths.HOME, "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
             "hook_servers": _hook_servers(), "hiding": hiding.stored(), "saved": saved.stored(),
-            "seen": looked.stored()}
+            "seen": looked.stored(), "harness_info": harness_info(), "harness_default": harness_kit.DEFAULT}
+
+
+_HARNESS_INFO: Optional[Dict[str, dict]] = None
+
+
+def harness_info() -> Dict[str, dict]:
+    """What the page shows of each harness harness_kit knows, by its name -- the page names none itself:
+        label       its name, for a person
+        mark        its mark, an SVG (harness_kit/marks/<name>.svg); None: it has none
+        runs        whether a session can be started on it from here (its `command`): Chat may message one
+        fullscreen  the screen its terminal runs in: its full screen, else its classic one, scrolled by the page
+        stopped     how its terminal says a turn stopped short (`stopped_says`)
+    Read once: what harness_kit says does not change while the dashboard runs."""
+    global _HARNESS_INFO
+    if _HARNESS_INFO is None:
+        _HARNESS_INFO = {n: {"label": h.label or n, "mark": h.mark(), "runs": h.runs_in_terminal,
+                             "fullscreen": h.fullscreen, "stopped": dict(h.stopped_says)}
+                         for n, h in harness_kit.HARNESSES.items()}
+    return _HARNESS_INFO
 
 
 def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
@@ -490,8 +509,8 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
 
 
 def chattable(a: dict) -> bool:
-    """Whether the page may message the agent: a Claude Code or codex session (the harnesses the dashboard
-    runs), with a directory to resume it in, that no other process has open (its `holder`, else the
+    """Whether the page may message the agent: a session of a harness the dashboard runs (sessions.py's
+    HARNESSES), with a directory to resume it in, that no other process has open (its `holder`, else the
     process its last call named) -- the dashboard's own agent or terminal aside, and any process under it
     (codex's real codex, under its wrapper)."""
     if a.get("harness") not in (*sessions.HARNESSES, None) or not (a.get("cwd") or a.get("session")):

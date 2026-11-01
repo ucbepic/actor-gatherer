@@ -427,6 +427,7 @@ class Antigravity(Harness):
     name = "antigravity"
     label = "Antigravity"
     checked_with = "1.4.12"
+    picks_session_id = True          # its conversation's id, which it picks
 
     def call(self, method: str, path: str, headers, body) -> Optional[Call]:
         """The request as a model call (module doc), None if it is not one; `detail["model"]`, the model its path
@@ -540,7 +541,8 @@ class Antigravity(Harness):
         name = " ".join(str(name or "").split())
         return f"/rename {name}" if name else None
 
-    def rename(self, session: str, name: str, record: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> str:
+    def rename(self, session: str, name: str, record: Optional[str] = None, env: Optional[Dict[str, str]] = None,
+               cwd: Optional[str] = None) -> str:
         """The name written where agy keeps it (`annotations/<id>.pbtxt`, `title:"..."`), its other lines kept."""
         base = data_dir(env)
         if not os.path.exists(os.path.join(base, "conversations", f"{session}.db")):

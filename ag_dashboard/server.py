@@ -876,7 +876,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/api/sessions":
                     return self.answer(started.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
                                                       str(body.get("permission_mode") or "auto"),
-                                                      str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
+                                                      str(body.get("harness") or harness_kit.DEFAULT), str(body.get("model") or "") or None))
                 if url.path == "/api/projects":
                     g = str(body.get("gatherer") or "")
                     got = branches.remove_project(g, str(body["remove"])) if body.get("remove") \
@@ -884,7 +884,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer({"projects": got, "suggestions": branches.suggestions(g, _strings(body.get("dirs")))})
                 if url.path == "/api/branches" and branched is not None:
                     s = branched.create(str(body.get("gatherer") or ""), str(body.get("project") or ""),
-                                        str(body.get("harness") or "claude"), bool(body.get("approve")),
+                                        str(body.get("harness") or harness_kit.DEFAULT), bool(body.get("approve")),
                                         str(body.get("model") or "") or None)
                     hub.ring(s["gatherer"], what="list")
                     return self.answer(s)
@@ -899,7 +899,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     if docwriters is None:
                         return self.send(404, b"not found", "text/plain")
                     return self.answer(docwriters.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
-                                                       str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
+                                                       str(body.get("harness") or harness_kit.DEFAULT), str(body.get("model") or "") or None))
                 if url.path == "/api/browser/logins":       # the user's Chrome's logins, for every Browser here
                     if browsers is None:
                         return self.send(404, b"not found", "text/plain")
@@ -910,7 +910,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     if browsers is None:
                         return self.send(404, b"not found", "text/plain")
                     return self.answer(browsers.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
-                                                       str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
+                                                       str(body.get("harness") or harness_kit.DEFAULT), str(body.get("model") or "") or None))
                 if url.path == "/api/send":
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here

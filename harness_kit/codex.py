@@ -425,6 +425,10 @@ class Codex(Harness):
     name = "codex"
     label = "Codex"
     checked_with = "0.164.0"
+    fullscreen = False               # its classic inline screen (`--no-alt-screen`): scrolled in the terminal's own scrollback
+    picks_session_id = True          # its thread's id, which it picks
+    stopped_says = {"lead": "■", "interrupted": "Conversation interrupted", "error": "Error",    # 0.164's tui, less its
+                    "reasons": {"budget_limited": "Goal budget reached - the turn was stopped."}}  # pointer to /feedback
     NAME_CHARS = 120                 # the longest title kept (codex asks for 36 characters at most)
 
     def call(self, method: str, path: str, headers, body) -> Optional[Call]:
@@ -463,7 +467,7 @@ class Codex(Harness):
         name = " ".join((name or "").split())
         return f"/rename {name}" if name else None
 
-    def rename(self, session: str, name: str, record: Optional[str] = None, env=None) -> str:
+    def rename(self, session: str, name: str, record: Optional[str] = None, env=None, cwd: Optional[str] = None) -> str:
         """The thread named through codex's app server (`codex app-server`, JSON-RPC over its stdin), as its own
         /rename names it: `thread/name/set`, kept in its state database and its session index, where `codex resume`
         lists and finds it. A codex running the thread shows the name it holds until it is resumed, or told by

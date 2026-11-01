@@ -20,6 +20,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag_dashboard import avatars, data, hiding, saved, seen, server, sessions  # noqa: E402
+import harness_kit  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
@@ -293,7 +294,8 @@ class TerminalTest(SessionsBase):
     def test_a_terminal_asked_for_full_screen_runs_the_screen_its_settings_choose(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.assertFalse(self.session(sid)["fullscreen"])
-        with unittest.mock.patch.dict(os.environ, sessions.CLASSIC):             # the dashboard's own environment classic
+        classic = harness_kit.get("claude").screen_env(False)                  # the dashboard's own environment classic
+        with unittest.mock.patch.dict(os.environ, classic):
             self.s.terminal(sid, 100, 30, fullscreen=True)
         self.until(lambda: "fake terminal" in self.screen(sid))
         self.assertIn("fake terminal 100x30 tty=True term=xterm-256color alt=None", self.screen(sid))
