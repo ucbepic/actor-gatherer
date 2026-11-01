@@ -27,7 +27,8 @@ piece is:
                           screencast (also until the video comes, and if it fails: `_recast`) -- and its state -- tabs,
                           what the user picked, what the agent does now, a dialog open; at the view's size (`resize`),
                           which the agent's screenshots then have too
-    what the user does    `input`: the page's mouse, wheel and keys, given to the tab as Chrome's own input; `navigate`;
+    what the user does    `input`: the page's mouse, wheel and keys, given to the tab as Chrome's own input (a page
+                          asking for a passkey keeps taking it: PASSKEYS); `navigate`;
                           noted (`log`) as the agent is to hear it: "clicked button "Pay"", "typed into textbox "Email""
                           -- never what was typed
     what the user points  `pick`: an element (the one under a click, its tag, text, CSS path, HTML, styles, role and name,
@@ -842,7 +843,8 @@ class Browser:
                 self.active = len(self.tabs) - 1
         for method, params in (("Page.enable", {}), ("Runtime.enable", {}), ("Log.enable", {}), ("DOM.enable", {}),
                                ("Overlay.enable", {}), ("Emulation.setFocusEmulationEnabled", {"enabled": True}),
-                               ("Page.setInterceptFileChooserDialog", {"enabled": False})):
+                               ("Page.setInterceptFileChooserDialog", {"enabled": False}),
+                               ("WebAuthn.enable", {"enableUI": False})):   # passkeys: PASSKEYS
             try:
                 cdp.call(method, params, session)
             except CdpError:
@@ -851,6 +853,14 @@ class Browser:
         if url and url != "about:blank" and adopted is None:
             cdp.call("Page.navigate", {"url": url}, session)
         return tab
+
+    # PASSKEYS. A page asking for a passkey (Touch ID, a security key, a phone: WebAuthn) makes Chrome show its own
+    # prompt over the tab, which no one sees in the dashboard's own Chrome (headless; nor, likely, on a tab hidden in
+    # the user's) -- and while it is up, Chrome drops the tab's input: the user's clicks and keys, and the agent's, so
+    # the page's other ways ("Other options", "Try another way") can't be clicked. With WebAuthn's test mode on
+    # (`WebAuthn.enable`), Chrome shows no prompt and has no authenticator for the request: it waits on the page, which
+    # takes input. Passkeys can't be used in a Browser, then (in the dashboard's own Chrome the user's aren't there
+    # anyway), and none is made: a request to make one waits the same.
 
     def _size(self, cdp: Cdp, tab: Tab) -> None:
         w, h, dpr = self.viewport
@@ -1817,6 +1827,9 @@ def instructions(root: str) -> str:
         "refs the tools take, as e-refs, each with a picture of it you can read).\n"
         "- For a login, a two-factor code, a captcha or a payment, ask the user to do it in the browser. Never ask them "
         "for a password.\n"
+        "- Passkeys, Touch ID and security keys can't be used in this browser: a page asking for one just waits. Choose "
+        "its other way (\"Other options\", \"Try another way\": a push to the user's phone, a code), or tell the user "
+        "to.\n"
         f"- Downloads go to {downloads_dir()} (or, if the Browser runs in the user's own Chrome, where it saves them). "
         f"Your working directory is {root}.").strip()
 
