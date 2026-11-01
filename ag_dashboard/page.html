@@ -95,6 +95,10 @@ header .about-btn .gear .state-dot { position: absolute; right: -2px; bottom: -1
 .cfg-note.bad { color: var(--warning); } .cfg-note.err { color: var(--critical); }
 .cfg-harnesses { display: grid; gap: 2px; font-size: 11px; color: var(--ink-2); }
 .cfg-harnesses code, .about code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.cfg-logins, .cfg-logins-pick { display: grid; gap: 6px; }
+.cfg-logins-list { max-height: 180px; overflow: auto; display: grid; gap: 1px; padding: 4px 6px; border: 1px solid var(--ring); border-radius: 6px; background: var(--page); }
+.cfg-logins-list label { display: flex !important; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; cursor: pointer; }
+.cfg-logins-list label .n { margin-left: auto; color: var(--muted); font-size: 11px; }
 .cfg-path { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cfg-flag { color: var(--warning); }
 #cfg-edit { white-space: nowrap; flex: none; }
@@ -2094,6 +2098,14 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
                 <label title="[cli] gatherer: where `ag claude` files a run that names no --gatherer (&quot;.&quot;: one per session)"><span>Gatherer for <code>ag &lt;harness&gt;</code> runs</span><input id="cfg-gatherer" spellcheck="false" placeholder="default"></label>
                 <div class="row"><span class="cfg-note" id="cfg-defaults-note"></span><button type="submit">Save</button></div></form>
               <div><h4>Harnesses</h4><div class="cfg-harnesses" id="cfg-harnesses"></div></div>
+              <div class="cfg-logins" id="cfg-logins" hidden><h4>Browser logins</h4>
+                <div class="cfg-note" id="cfg-logins-note"></div>
+                <div class="row"><span></span><button type="button" id="cfg-logins-read">Import from your Chrome…</button></div>
+                <div class="cfg-logins-pick" id="cfg-logins-pick" hidden>
+                  <input id="cfg-logins-filter" placeholder="Filter sites" spellcheck="false" autocomplete="off" aria-label="Filter sites">
+                  <div class="cfg-logins-list" id="cfg-logins-list" role="group" aria-label="Sites"></div>
+                  <div class="row"><span class="cfg-note" id="cfg-logins-count"></span>
+                    <button class="primary" type="button" id="cfg-logins-import" disabled>Import</button></div></div></div>
               <div class="row"><span class="cfg-path" id="cfg-path"></span><button type="button" id="cfg-edit">Edit config.toml…</button></div>
               <h3>This page</h3>
             </section>
@@ -3030,7 +3042,58 @@ function showSettings(s, said) {
     h.port ? ` · hook port ${h.port}` : "", h.upstream ? ` · upstream ${h.upstream}` : ""))
     : [el("span", { class: "cfg-note", text: "ag writes them here the first time it runs a harness." })]));
   $("cfg-path").textContent = s.path; $("cfg-path").title = s.path;
+  showLogins();
 }
+// Browser logins: the user's Chrome's, copied into ag's own -- the profile every Browser of this dashboard uses
+// (browser.py's `login_sites`, `import_logins`): the sites listed (names and counts only), those picked imported.
+let loginSites = [];
+const loginPicked = new Set();
+const LOGINS_NOTE = "Every Browser here uses ag's own Chrome, and its logins. Copy sites' logins from your Chrome: it asks you to allow it, once.";
+function showLogins() {
+  const on = !!(state.home && state.home.browser), mine = on && state.home.browser_profile === "mine";
+  $("cfg-logins").hidden = !on;
+  $("cfg-logins-read").closest(".row").hidden = mine;
+  if (mine) { $("cfg-logins-pick").hidden = true; cfgNote("cfg-logins-note", "Browsers here run in your own Chrome (browser_profile = \"mine\"): they have its logins already."); }
+  else if (!$("cfg-logins-note").textContent || $("cfg-logins-note").textContent.includes("own Chrome (browser_profile")) cfgNote("cfg-logins-note", LOGINS_NOTE);
+}
+function drawLoginSites() {
+  const q = $("cfg-logins-filter").value.trim().toLowerCase();
+  const shown = loginSites.filter((s) => !q || s.site.includes(q));
+  $("cfg-logins-list").replaceChildren(...(shown.length ? shown.map((s) => el("label", {},
+    el("input", { type: "checkbox", value: s.site, ...(loginPicked.has(s.site) ? { checked: "" } : {}),
+      onchange: (ev) => { ev.target.checked ? loginPicked.add(s.site) : loginPicked.delete(s.site); countLogins(); } }),
+    el("span", { text: s.site }), el("span", { class: "n", text: `${s.cookies}` })))
+    : [el("span", { class: "cfg-note", text: q ? "No site matches." : "Your Chrome has no cookies." })]));
+}
+function countLogins() {
+  $("cfg-logins-import").disabled = !loginPicked.size;
+  cfgNote("cfg-logins-count", loginPicked.size ? `${loginPicked.size} picked: ${[...loginPicked].slice(0, 3).join(", ")}${loginPicked.size > 3 ? ", …" : ""}` : "");
+}
+$("cfg-logins-read").addEventListener("click", async () => {
+  const b = $("cfg-logins-read");
+  b.disabled = true;
+  cfgNote("cfg-logins-note", "Waiting for your Chrome: click Allow in its “Allow remote debugging?” dialog…");
+  try {
+    loginSites = (await post("/api/browser/logins", { action: "sites" })).sites;
+    loginPicked.clear(); $("cfg-logins-filter").value = "";
+    drawLoginSites(); countLogins();
+    $("cfg-logins-pick").hidden = false;
+    cfgNote("cfg-logins-note", `Your Chrome has cookies for ${loginSites.length} sites. Pick those whose logins every Browser here, and its agent, may use.`);
+    $("cfg-logins-filter").focus();
+  } catch (e) { cfgNote("cfg-logins-note", e.message, "err"); }
+  finally { b.disabled = false; }
+});
+$("cfg-logins-filter").addEventListener("input", drawLoginSites);
+$("cfg-logins-import").addEventListener("click", async () => {
+  const b = $("cfg-logins-import");
+  b.disabled = true;
+  try {
+    const got = await post("/api/browser/logins", { action: "import", sites: [...loginPicked] });
+    const done = got.imported.map((i) => `${i.site} (${i.cookies} cookie${i.cookies === 1 ? "" : "s"})`).join(", ");
+    $("cfg-logins-pick").hidden = true; loginSites = []; loginPicked.clear();
+    cfgNote("cfg-logins-note", `Imported: ${done}.${got.reloaded ? ` ${got.reloaded} tab${got.reloaded === 1 ? "" : "s"} on them loaded again.` : ""}`);
+  } catch (e) { cfgNote("cfg-logins-count", e.message, "err"); b.disabled = false; }
+});
 async function loadSettings() {
   if (SNAPSHOT) return;
   showSettings(await get("/api/settings"));

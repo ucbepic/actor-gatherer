@@ -56,6 +56,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import browser_video, home, mcp, naming, sessions
@@ -330,6 +331,17 @@ class PipeCdp(Cdp):
                 pass
 
     def stop(self) -> None:
+        """Chrome closed as it closes itself -- what it holds written to disk: a cookie set lately (a login, one
+        imported) is lost to a Chrome only killed -- else ended. What it tells while it closes (each tab closed) is not
+        heard: its tabs are to open again, as they were, on the next use."""
+        self.on_event = lambda *a: None
+        if self.alive:
+            try:
+                self.call("Browser.close", {}, timeout=5)
+                self.proc.wait(5)
+                return
+            except (BrowserError, subprocess.TimeoutExpired, OSError):
+                pass
         try:
             self.proc.terminate()
             self.proc.wait(5)
@@ -441,6 +453,32 @@ class CdpError(BrowserError):
     def __init__(self, method: str, text: str):
         super().__init__(f"{method}: {text}")
         self.method, self.text = method, text
+
+
+LOGINS_KEEP = 300.0         # seconds the user's Chrome's cookies, read to pick sites from, are kept (in memory) for the
+                            # import; dropped then, and once imported
+COOKIE_KEYS = ("name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "expires", "priority",
+               "sourceScheme", "sourcePort", "partitionKey")   # what Storage.setCookies takes of what getCookies gives
+SECOND_LEVEL = {"co", "com", "net", "org", "ac", "gov", "edu", "ne", "or", "go"}   # co.uk, com.au, ...: a site is one more
+
+
+def site_of(domain: str) -> str:
+    """The site a cookie's domain is of, as a person names it: figma.com for .www.figma.com; bbc.co.uk."""
+    d = (domain or "").strip(".").lower()
+    parts = d.split(".")
+    if len(parts) < 2 or all(p.isdigit() for p in parts):
+        return d
+    if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in SECOND_LEVEL:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+def cookie_param(c: dict) -> dict:
+    """A cookie as read from a Chrome, as one to set in another: its session cookies with no expiry."""
+    p = {k: v for k, v in c.items() if k in COOKIE_KEYS}
+    if c.get("session") or not isinstance(p.get("expires"), (int, float)) or p["expires"] < 0:
+        p.pop("expires", None)
+    return p
 
 
 MINE_OFF = ("Your Chrome is not open to the dashboard: open chrome://inspect/#remote-debugging in it and turn remote "
@@ -1867,6 +1905,8 @@ class Browsers:
         self.open: Dict[str, Browser] = {}
         self.owner: Dict[str, str] = {}                  # a tab's target id, and its session id -> its Browser's key
         self.chrome = Chrome(self)
+        self.logins_lock = threading.Lock()
+        self.logins: Optional[Tuple[float, list]] = None   # the user's Chrome's cookies, read to pick from (`login_sites`)
 
     def close(self) -> None:
         self.chrome.close()
@@ -1932,6 +1972,65 @@ class Browsers:
         """Every open Browser's state to its pages: the Chrome waits on the user, or no longer does."""
         for b in list(self.open.values()):
             b._publish()
+
+    # -- logins: the user's Chrome's, copied into the dashboard's own, for every Browser of the dashboard
+
+    def _their_cookies(self) -> list:
+        """The user's Chrome's cookies -- over its remote debugging, a connection of its own (Chrome asks the user to
+        allow it), closed after."""
+        found = devtools_port()
+        if found is None:
+            raise BrowserError(MINE_OFF, 409)
+        conn = WsCdp(found[0], found[1], lambda *a: None, lambda c: None, wait=ALLOW_WAIT)
+        try:
+            return conn.call("Storage.getCookies", {}, timeout=30).get("cookies") or []
+        finally:
+            conn.stop()
+
+    def login_sites(self) -> dict:
+        """The sites the user's Chrome has cookies for: their names and how many -- never a cookie. The cookies are
+        kept (in memory, LOGINS_KEEP) for `import_logins`, so the user allows Chrome once."""
+        if mode() == "mine":
+            raise BrowserError("Browsers here run in your own Chrome: they have its logins already", 409)
+        cookies = self._their_cookies()
+        at = time.time()
+        with self.logins_lock:
+            self.logins = (at, cookies)
+
+        def drop():
+            with self.logins_lock:
+                if self.logins is not None and self.logins[0] == at:
+                    self.logins = None
+        timer = threading.Timer(LOGINS_KEEP, drop)
+        timer.daemon = True
+        timer.start()
+        sites = collections.Counter(site_of(c.get("domain", "")) for c in cookies)
+        return {"sites": [{"site": s, "cookies": n} for s, n in sorted(sites.items()) if s]}
+
+    def import_logins(self, sites: list) -> dict:
+        """The cookies of `sites` (figma.com: www.figma.com's too), from the user's Chrome into the dashboard's own --
+        its profile every Browser of the dashboard uses; then dropped from memory. Tabs on them loaded again."""
+        want = {str(s).strip().strip(".").lower() for s in sites or [] if str(s).strip()}
+        if not want:
+            raise BrowserError("no site picked")
+        if mode() == "mine":
+            raise BrowserError("Browsers here run in your own Chrome: they have its logins already", 409)
+        with self.logins_lock:
+            kept, self.logins = self.logins, None
+        cookies = kept[1] if kept is not None and time.time() - kept[0] < LOGINS_KEEP else self._their_cookies()
+        picked = [c for c in cookies if site_of(c.get("domain", "")) in want]
+        cdp = self.chrome.cdp()
+        if picked:
+            cdp.call("Storage.setCookies", {"cookies": [cookie_param(c) for c in picked]})
+        counts = collections.Counter(site_of(c.get("domain", "")) for c in picked)
+        reloaded = 0
+        for b in list(self.open.values()):
+            for t in list(b.tabs):
+                host = (urllib.parse.urlsplit(t.url).hostname or "").lower()
+                if any(host == s or host.endswith("." + s) for s in counts):
+                    cdp.post("Page.reload", {}, t.session)
+                    reloaded += 1
+        return {"imported": [{"site": s, "cookies": counts.get(s, 0)} for s in sorted(want)], "reloaded": reloaded}
 
     # -- Chrome's events, to the Browser whose tab each is of
 

@@ -547,5 +547,82 @@ class UsersChromeTest(Home):
         self.assertEqual(self.b.active, 0)
 
 
+class LoginsTest(unittest.TestCase):
+    """The user's Chrome's logins, copied: which site a cookie is of, and what of a cookie another Chrome takes."""
+
+    def test_a_cookie_s_site(self):
+        self.assertEqual(browser.site_of(".www.figma.com"), "figma.com")
+        self.assertEqual(browser.site_of("figma.com"), "figma.com")
+        self.assertEqual(browser.site_of(".news.bbc.co.uk"), "bbc.co.uk")
+        self.assertEqual(browser.site_of("127.0.0.1"), "127.0.0.1")
+        self.assertEqual(browser.site_of("localhost"), "localhost")
+
+    def test_a_cookie_as_another_chrome_takes_it(self):
+        got = browser.cookie_param({"name": "a", "value": "b", "domain": ".x.com", "path": "/", "expires": -1,
+                                    "size": 2, "session": True, "httpOnly": True, "sameSite": "Lax"})
+        self.assertEqual(got, {"name": "a", "value": "b", "domain": ".x.com", "path": "/", "httpOnly": True, "sameSite": "Lax"})
+        self.assertEqual(browser.cookie_param({"name": "a", "value": "b", "domain": "x.com", "expires": 2e9,
+                                               "session": False})["expires"], 2e9)
+
+
+@unittest.skipUnless(browser.available(), "no Chrome here")
+class ImportLoginsTest(Home):
+    """Logins from a stand-in for the user's Chrome (debugging on, headless, a profile of its own) into the dashboard's
+    own: the sites listed by name and count, the picked ones' cookies copied -- and still there once the dashboard's
+    Chrome stopped and started again (closed as it closes itself, so it wrote them)."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = os.path.join(self.tmp.name, "userchrome")
+        self.chrome = subprocess.Popen([browser.executable(), "--headless=new", "--remote-debugging-port=0",
+                                        f"--user-data-dir={self.user}", "--no-first-run", "about:blank"],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(self.chrome.wait, 10)
+        self.addCleanup(self.chrome.terminate)
+        end = time.time() + 15
+        while time.time() < end and not os.path.exists(os.path.join(self.user, "DevToolsActivePort")):
+            time.sleep(0.1)
+        dirs = mock.patch.dict(browser.USER_DIRS, {sys.platform: [self.user]})
+        dirs.start()
+        self.addCleanup(dirs.stop)
+        found = browser.devtools_port()
+        theirs = browser.WsCdp(found[0], found[1], lambda *a: None, lambda c: None)
+        try:
+            theirs.call("Storage.setCookies", {"cookies": [
+                {"name": "sid", "value": "secret-1", "domain": ".figma.test", "path": "/", "httpOnly": True, "secure": True,
+                 "expires": time.time() + 86400},
+                {"name": "pref", "value": "dark", "domain": "www.figma.test", "path": "/", "expires": time.time() + 86400},
+                {"name": "other", "value": "x", "domain": ".else.test", "path": "/", "expires": time.time() + 86400}]})
+        finally:
+            theirs.stop()
+
+    def ours(self, bs: browser.Browsers) -> dict:
+        return {c["name"]: c for c in bs.chrome.cdp().call("Storage.getCookies", {})["cookies"]}
+
+    def test_the_picked_sites_logins_are_copied_for_every_browser_and_kept(self):
+        bs = browser.Browsers(sessions.Sessions())
+        listed = {s["site"]: s["cookies"] for s in bs.login_sites()["sites"]}
+        self.assertEqual((listed.get("figma.test"), listed.get("else.test")), (2, 1))
+        self.assertNotIn("secret-1", json.dumps(listed))
+        got = bs.import_logins(["figma.test"])
+        self.assertEqual(got["imported"], [{"site": "figma.test", "cookies": 2}])
+        self.assertIsNone(bs.logins)                                # the user's cookies not kept after
+        ours = self.ours(bs)
+        self.assertEqual((ours["sid"]["value"], ours["sid"]["httpOnly"]), ("secret-1", True))
+        self.assertIn("pref", ours)
+        self.assertNotIn("other", ours)                             # a site not picked: not copied
+        bs.close()                                                  # its Chrome stopped: the cookies written to disk
+        again = browser.Browsers(sessions.Sessions())
+        self.addCleanup(again.close)
+        self.assertEqual(self.ours(again)["sid"]["value"], "secret-1")
+
+    def test_with_the_user_s_chrome_used_already_there_is_nothing_to_import(self):
+        self.config('[dashboard]\nbrowser_profile = "mine"\n')
+        bs = browser.Browsers(sessions.Sessions())
+        self.addCleanup(bs.close)
+        with self.assertRaisesRegex(browser.BrowserError, "own Chrome"):
+            bs.login_sites()
+
+
 if __name__ == "__main__":
     unittest.main()

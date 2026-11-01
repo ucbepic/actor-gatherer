@@ -137,6 +137,9 @@ context manager's home (data.py), read-only. Standard library only.
                                           server its actor calls (mcp)
     POST /api/browser {gatherer, cwd, harness?, model?}   a new Browser, its actor a new session of `harness` in the
                                           gatherer, in `cwd` (browser.py's `create`) -> {key, channel, ...}
+    POST /api/browser/logins {action?: sites | import, sites?}   the user's Chrome's logins, for every Browser of the
+                                          dashboard (browser.py's `login_sites`: the sites it has cookies for, Chrome
+                                          asking the user to allow it; `import_logins`: those sites' cookies copied)
     A message to a Browser's actor (/api/send) ends with what the user did and picked in it (browser.py's `compose`).
     Its Chrome is the dashboard's own, or the user's (config.toml's `[dashboard] browser_profile = "mine"`).
     GET /api/settings                     ag's settings, its config.toml (settings.py)
@@ -268,7 +271,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 "home_dir": os.path.expanduser("~"), "editor": editor.AVAILABLE,
                 "branches": branched.listed() if branched is not None else [],
                 "docwriter": docwriter.AVAILABLE and os.path.isfile(os.path.join(docwriter.VENDOR, "index.html")),
-                "browser": browsers is not None and browser.available()}
+                "browser": browsers is not None and browser.available(),
+                "browser_profile": browser.mode() if browsers is not None else None}
 
     def codex_dialog(sid: str) -> Optional[dict]:
         """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
@@ -847,6 +851,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                         return self.send(404, b"not found", "text/plain")
                     return self.answer(docwriters.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
                                                        str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
+                if url.path == "/api/browser/logins":       # the user's Chrome's logins, for every Browser here
+                    if browsers is None:
+                        return self.send(404, b"not found", "text/plain")
+                    if body.get("action") == "import":
+                        return self.answer(browsers.import_logins(body.get("sites") or []))
+                    return self.answer(browsers.login_sites())
                 if url.path == "/api/browser":
                     if browsers is None:
                         return self.send(404, b"not found", "text/plain")
