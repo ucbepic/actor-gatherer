@@ -1835,18 +1835,17 @@ def instructions(root: str) -> str:
 
 
 def launch_args(s: dict) -> List[str]:
-    """What a Browser's actor's harness is started with besides its own options (sessions.py): the tools (the MCP
-    server here) and its instructions. [] for any other session."""
+    """What a Browser's actor's harness is started with besides its own options (sessions.py), as its harness takes them
+    (harness_kit's `mcp_args`, `instruction_args`): the tools (the MCP server here) and its instructions. [] for any
+    other session."""
     key = key_of(s)
     if key is None:
         return []
-    url = f"{ORIGIN}/browser/w/{key}/mcp"
-    told = instructions(s.get("cwd") or "")
-    if s.get("harness") == "codex":
-        return ["-c", f'mcp_servers.{NAME}.url="{url}"',
-                "-c", f"developer_instructions={json.dumps(told, ensure_ascii=False)}"]
-    return ["--mcp-config", json.dumps({"mcpServers": {NAME: {"type": "http", "url": url}}}),
-            "--append-system-prompt", told]
+    h = harness_kit.get(s.get("harness") or harness_kit.DEFAULT)
+    tools = h.mcp_args(NAME, f"{ORIGIN}/browser/w/{key}/mcp") if h is not None else None
+    if tools is None:
+        return []                                    # a harness given no MCP server's tools here: none to browse with
+    return [*tools, *h.instruction_args(instructions(s.get("cwd") or ""))]
 
 
 def key_of(s: dict) -> Optional[str]:

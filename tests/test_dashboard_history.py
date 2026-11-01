@@ -14,6 +14,7 @@ import unittest.mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag_dashboard import history  # noqa: E402
+from harness_kit import claude as claude_rules  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 
@@ -279,9 +280,9 @@ class SaveTest(HistoryBase):
     def test_memories_go_to_the_directory_s_memory_folder_and_its_index(self):
         mems = [{"name": "deploy", "title": "Deploy", "description": "how to deploy", "type": "project", "body": "make deploy"}]
         rid = self.record("memory", json.dumps(mems), memories=mems)
-        folder = os.path.join(self.claude, "projects", history.project_key(self.work), "memory")
-        self.assertTrue(history.project_key(self.work).startswith("-"))
-        self.assertNotIn("/", history.project_key(self.work))
+        folder = os.path.join(self.claude, "projects", claude_rules.project_key(self.work), "memory")
+        self.assertTrue(claude_rules.project_key(self.work).startswith("-"))
+        self.assertNotIn("/", claude_rules.project_key(self.work))
         os.makedirs(folder)
         with open(os.path.join(folder, "deploy.md"), "w") as fh:
             fh.write("an older memory")

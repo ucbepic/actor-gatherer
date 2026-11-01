@@ -282,12 +282,16 @@ def harness_info() -> Dict[str, dict]:
         stopped     how its terminal says a turn stopped short (`stopped_says`)
         ask_says    how a reader answers what it asks: its words, the ways to take a plan (`ask_says`)
         reply_block a block its model writes in a reply that its terminal draws apart, as a card (`reply_block`)
+        mcp         whether a run of it can be given an MCP server's tools (`mcp_args`): a DocWriter's, a Browser's
+        memory_folder  where it keeps its memory of a directory, a pattern of the folder's path (`memory_folder`)
+        saves       what History can save where it reads it, by kind (`saves`)
     Read once: what harness_kit says does not change while the dashboard runs."""
     global _HARNESS_INFO
     if _HARNESS_INFO is None:
         _HARNESS_INFO = {n: {"label": h.label or n, "mark": h.mark(), "runs": h.runs_in_terminal,
                              "fullscreen": h.fullscreen, "stopped": dict(h.stopped_says), "ask_says": dict(h.ask_says),
-                             "reply_block": h.reply_block}
+                             "reply_block": h.reply_block, "mcp": h.mcp_args("x", "http://x") is not None,
+                             "memory_folder": h.memory_folder, "saves": dict(h.saves)}
                          for n, h in harness_kit.HARNESSES.items()}
     return _HARNESS_INFO
 

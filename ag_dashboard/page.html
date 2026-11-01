@@ -5643,7 +5643,8 @@ function answeredNote(info) {
       el("span", { class: "end" }, el("button", { type: "button", onclick: () => { answersSeen.add(a.call); keepingPlace(renderMain); } }, "Dismiss"))),
     el("div", { class: "body" }, el("div", { class: "pair" },
       el("span", { class: "k", text: "You picked" }), el("span", { class: "v", text: a.summary }),
-      el("span", { class: "k", text: "Claude Code recorded" }), el("span", { class: "v", text: a.result || "nothing" }))));
+      el("span", { class: "k", text: `${info.harness ? harnessName(info.harness) : "The agent"} recorded` }),
+      el("span", { class: "v", text: a.result || "nothing" }))));
 }
 // The model call the agent's turn stopped on, or keeps failing on (data.py's `failing`, `stopped`): why, as ag's hook
 // server saw it and as Claude Code put it, and how many tries failed. While the harness tries again, that it does;
@@ -6513,6 +6514,9 @@ if (markdownReady) {
   marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), code: ({ text, lang }) => codeFence(text, lang) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
+// Where each harness keeps its memory of a directory (harness_kit's `memory_folder`): [the folder's pattern, harness].
+const memoryFolders = () => Object.entries((state.home && state.home.harness_info) || {})
+  .filter(([, h]) => h.memory_folder).map(([n, h]) => [new RegExp(`${h.memory_folder}$`), n]);
 // A block a harness's model writes in a reply that its own terminal draws apart (harness_kit's `reply_block`: codex's
 // proposed plan, between <proposed_plan> and </proposed_plan>), each tag on a line of its own (the closing one perhaps
 // not streamed yet). markdown() draws it as a card headed as the harness heads it. A tag in a sentence is only words.
@@ -6883,7 +6887,7 @@ addChatView({
 const txBlocks = blockCache(), msgRows = blockCache();
 addChatView({
   id: "transcript", name: "Transcript", feed: "transcript", frame: "term", icon: ICONS.page, more: true, readOnly: true,
-  description: "The conversation as Claude Code's terminal shows it.",
+  description: "The conversation as its harness's terminal shows it.",
   tools: () => notesSwitch(),
   render: ({ info, data, running, loadEarlier }) => {
     state.txCwd = info.cwd || "";
@@ -7026,7 +7030,7 @@ async function termOpen(info) {
 }
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
   id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame", icon: ICONS.terminal,
-  description: "The harness's own interface (Claude Code's, codex's), in a terminal: what it would show and ask in one outside, its keys included.",
+  description: "The harness's own interface, in a terminal: what it would show and ask in one outside, its keys included.",
   render: (ctx) => {
     const { info, held } = ctx;
     if (state.home && state.home.terminals === false)
@@ -7490,7 +7494,7 @@ function filesRender({ info, session, running, writable, held }) {
   const folded = state.files.folded || (state.files.folded = new Set());
   // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
   // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
-  const MEMORY = /\/\.claude\/projects\/[^/]+\/memory$/;
+  const MEMORY = memoryFolders();
   const label = (above, path) => path === UNKNOWN ? "relative to an unknown folder"
     : (under(path, home) && !under(above, home) ? "~" + path.slice(home.length)
       : above === null ? path : path.slice(above.length + 1)).replace(/(\.claude\/projects\/)[^/]+(\/memory)$/, "$1…$2") + "/";
@@ -7507,7 +7511,8 @@ function filesRender({ info, session, running, writable, held }) {
         onclick: () => { open ? folded.add(dir.path) : folded.delete(dir.path); keepingPlace(renderMain); } },
         el("span", { class: "tw", text: open ? "▾" : "▸" }), el("span", { class: "name", text: label(above, dir.path) }),
         cwd && dir.path === cwd ? el("span", { class: "wd", title: "The session's working directory", text: "cwd" }) : null,
-        MEMORY.test(dir.path) ? el("span", { class: "wd", title: "Claude Code's memory of a directory: what it keeps for later sessions there", text: "memory" }) : null,
+        MEMORY.find(([re]) => re.test(dir.path)) ? el("span", { class: "wd", text: "memory",
+          title: `${harnessName(MEMORY.find(([re]) => re.test(dir.path))[1])}'s memory of a directory: what it keeps for later sessions there` }) : null,
         open ? null : el("span", { class: "n", text: `${count(dir)}` })));
       if (!open) continue;
       const kids = el("div", { class: "fl-kids", style: `--guide: ${17 + depth * 14}px` });   // under its caret's middle
@@ -8553,26 +8558,33 @@ const recText = (r) => r.kind !== "memory" ? r.output : (r.memories || []).lengt
   ? ["# MEMORY.md", ...r.memories.map((m) => `- [${m.title}](${m.name}.md) — ${m.description}`),
     ...r.memories.flatMap((m) => ["", `# ${m.name}.md`, "---", `name: ${JSON.stringify(m.name)}`, `description: ${JSON.stringify(m.description)}`,
       "metadata:", `  type: ${m.type}`, "---", "", m.body])].join("\n") + "\n" : "";
-// Saving a record where Claude Code reads it: where to (this directory's sessions, or every session), then
-// what each file would get -- written only once the reader has seen it (history.py's plan and save).
-const SAVE_WHERE = { agents: "every Codex and Claude Code session there reads it, in full, at its start",
-  claude: "every Codex and Claude Code session there reads it, in full, at its start",
-  skill: "Claude Code sessions there can use it: by its description, or as /name",
-  memory: "your Claude Code sessions there see each memory's line, and read it when it matters" };
+// Saving a record where a harness reads it (harness_kit's `saves`: those that have a place for its kind): which harness,
+// where to (this directory's sessions, or every session), then what each file would get -- written only once the reader
+// has seen it (history.py's plan and save).
+const saveKind = (r) => r.kind === "claude" ? "agents" : r.kind;     // "claude": one made as a CLAUDE.md, before
+const savers = (r) => Object.entries((state.home && state.home.harness_info) || {})
+  .filter(([, h]) => h.saves && h.saves[saveKind(r)]).map(([n]) => n);
 function recSave(r) {
   const sv = hist.saving;
   if (!sv || sv.id !== r.id) return null;
+  const hs = savers(r);
+  if (!hs.includes(sv.harness)) sv.harness = hs[0];
+  const says = (harnessInfo(sv.harness) || {}).saves?.[saveKind(r)] || {};
   const info = selectedInfo() || {};
   const dirs = [...new Set([...(r.dirs || []), info.cwd].filter(Boolean))];
   const box = el("input", { type: "text", value: sv.dir, list: `dirs-${r.id}`, spellcheck: "false", "aria-label": "Directory",
     ...(sv.target === "user" ? { disabled: "" } : {}) });
   box.addEventListener("input", () => { sv.dir = box.value; sv.plan = null; sv.err = ""; });
   box.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); recPlan(r); } });
-  const targets = [["dir", "A directory"], ...(r.kind === "skill" ? [["user", "All my projects"]] : [])];   // memories, AGENTS.md: a directory's
+  const targets = [["dir", "A directory"], ...(says.user === true ? [["user", "All my projects"]] : [])];   // else a directory's
+  const where = says.where || "";
   const p = sv.plan;
   return el("div", { class: "h-save" },
+    hs.length > 1 ? el("div", { class: "row" }, histSwitch("For", hs.map((h) => [h, harnessName(h)]), sv.harness,
+      (h) => { sv.harness = h; sv.plan = null; sv.err = ""; recPlan(r); })) : null,
     el("div", { class: "row" }, histSwitch("Save to", targets, sv.target, (t) => { sv.target = t; sv.plan = null; sv.err = ""; recPlan(r); }),
-      el("span", { class: "where", text: sv.target === "user" ? `${hist.claudeDir || "~/.claude"}: ${SAVE_WHERE[r.kind].replace(" there", "")}` : SAVE_WHERE[r.kind] })),
+      el("span", { class: "where", text: sv.target !== "user" ? where   // for every directory: its folder, once a preview said it
+        : `${(hist.homes || {})[sv.harness] ? `${hist.homes[sv.harness]}: ` : ""}${where.replace(" there", "")}` })),
     sv.target === "dir" ? el("div", { class: "row" }, box, el("datalist", { id: `dirs-${r.id}` }, ...dirs.map((d) => el("option", { value: d }))),
       el("button", { type: "button", onclick: () => recPlan(r) }, "Preview")) : null,
     ...(p ? [el("div", { class: "where", text: `For ${p.where}. ${plural(p.files.length, "file")}, as shown — nothing is written until you press Write:` }),
@@ -8591,16 +8603,16 @@ async function recPlan(r) {
   const sv = hist.saving;
   if (!sv || sv.id !== r.id) return;
   sv.err = ""; sv.done = null;
-  try { sv.plan = await post("/api/history/save", { id: r.id, target: sv.target, dir: sv.dir }); }
+  try { sv.plan = await post("/api/history/save", { id: r.id, target: sv.target, dir: sv.dir, harness: sv.harness }); }
   catch (err) { sv.plan = null; sv.err = err.message; }
-  if (sv.plan && sv.target === "user") { const m = /^(.*)\/(skills\/|CLAUDE\.md)/.exec(sv.plan.files[0].path); if (m) hist.claudeDir = m[1]; }
+  if (sv.plan && sv.plan.home) hist.homes = { ...(hist.homes || {}), [sv.plan.harness]: sv.plan.home };
   hist.version++; histRedraw();
 }
 async function recWrite(r) {
   const sv = hist.saving;
   if (!sv || !sv.plan) return;
   try {
-    const got = await post("/api/history/save", { id: r.id, target: sv.target, dir: sv.dir, version: sv.plan.version });
+    const got = await post("/api/history/save", { id: r.id, target: sv.target, dir: sv.dir, harness: sv.harness, version: sv.plan.version });
     sv.done = got.saved; sv.err = "";
     await loadExtracts(r.gatherer);
   } catch (err) { sv.err = err.message; if (/changed since/.test(err.message)) sv.plan = null; }
@@ -8618,7 +8630,7 @@ function recCard(r) {
   const running = r.status === "running", now = Date.now() / 1000;
   const sv = hist.saving && hist.saving.id === r.id ? hist.saving : null;
   const sig = [r.status, r.output.length, r.error, r.model, (r.saved || []).length,
-    sv ? signature([sv.target, sv.plan && sv.plan.version, sv.err, sv.done, sv.target === "dir" ? "" : hist.claudeDir]) : ""].join("|");
+    sv ? signature([sv.harness, sv.target, sv.plan && sv.plan.version, sv.err, sv.done, sv.target === "dir" ? "" : (hist.homes || {})[sv.harness]]) : ""].join("|");
   return histRecs.get(r.id, sig, () => {
     const [, name, file] = HIST_KINDS[r.kind] || ["", r.kind, "extract.md"];
     const body = el("div", { class: "body" });
@@ -8627,13 +8639,14 @@ function recCard(r) {
     else if (r.status === "failed") body.append(el("div", { class: "fail", text: r.error || "The call failed." }));
     else body.append(...recContent(r));
     const done = r.status === "done";
-    const savable = done && r.kind !== "summary" && !(r.kind === "memory" && !(r.memories || []).length);
+    const savable = done && savers(r).length && !(r.kind === "memory" && !(r.memories || []).length);
     const acts = el("div", { class: "acts" },
-      savable ? el("button", { type: "button", class: sv ? "" : "primary", title: "Write it where Claude Code reads it — you see each file first",
+      savable ? el("button", { type: "button", class: sv ? "" : "primary", title: `Write it where ${savers(r).map(harnessName).join(" or ")} reads it — you see each file first`,
         onclick: () => {
           if (sv) { hist.saving = null; } else {
             const info = selectedInfo() || {};
-            hist.saving = { id: r.id, target: "dir", dir: (r.dirs || [])[0] || info.cwd || "", plan: null, err: "", done: null };
+            hist.saving = { id: r.id, harness: savers(r).includes(info.harness) ? info.harness : savers(r)[0], target: "dir",
+              dir: (r.dirs || [])[0] || info.cwd || "", plan: null, err: "", done: null };
             setTimeout(() => recPlan(r));
           }
           hist.version++; histRedraw();

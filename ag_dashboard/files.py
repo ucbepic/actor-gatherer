@@ -101,14 +101,12 @@ TEMPORARY = _temporary_roots()   # the temporary folders: /tmp, macOS's per-user
 
 
 def _harness_folders() -> tuple:
-    folders = set()
-    for var, default in (("CLAUDE_CONFIG_DIR", "~/.claude"), ("CODEX_HOME", "~/.codex"), (None, "~/.claude.json")):
-        for f in {(var and os.environ.get(var)) or default, default}:
-            folders |= {os.path.abspath(os.path.expanduser(f)), os.path.realpath(os.path.expanduser(f))}
-    return tuple(sorted(folders))
+    """Every harness's own folders and files (harness_kit's `own_folders`), as given and resolved."""
+    return tuple(sorted({p for h in harness_kit.HARNESSES.values() for f in h.own_folders()
+                         for p in (os.path.abspath(f), os.path.realpath(f))}))
 
 
-# Claude Code's and Codex's own folders -- the sessions' transcripts, plans, memory -- and Claude Code's settings file
+# the harnesses' own folders -- the sessions' transcripts, plans, memory -- and their settings files
 HARNESS_FOLDERS = _harness_folders()
 
 
@@ -464,7 +462,9 @@ def _label(part: dict, cwd: str) -> str:
 
 
 MCP_TOOL = re.compile(r"^mcp__([^_]+(?:_[^_]+)*)__(.+)$")                # an MCP server's tool: mcp__<server>__<tool>
-MEMORY = re.compile(r"/\.claude/projects/[^/]+/memory(/.*)?$")           # Claude Code's memory of a project's directory
+# where a harness keeps its memory of a directory (harness_kit's `memory_folder`), and a file in it
+MEMORY = re.compile("|".join(f"(?:{h.memory_folder})(?P<in{i}>/.*)?$" for i, h in enumerate(harness_kit.HARNESSES.values())
+                             if h.memory_folder) or r"(?!)")
 
 
 def tool_name(name: str) -> str:
@@ -474,13 +474,13 @@ def tool_name(name: str) -> str:
 
 
 def short_path(path: str, cwd: str) -> str:
-    """A file's path in a call's line: from the session's directory; a file of Claude Code's memory as
+    """A file's path in a call's line: from the session's directory; a file of a harness's memory of a directory as
     memory/<file>; else from the home folder (~), or whole."""
     if cwd and path.startswith(cwd.rstrip("/") + "/"):
         return path[len(cwd.rstrip("/")) + 1:]
     m = MEMORY.search(path)
     if m:
-        return "memory" + (m.group(1) or "")
+        return "memory" + next((v for v in m.groupdict().values() if v), "")
     home = os.path.expanduser("~")
     return "~" + path[len(home):] if path.startswith(home + "/") else path
 

@@ -84,7 +84,6 @@ SKIPPED = frozenset({".git", "node_modules", ".svelte-kit", "build", ".DS_Store"
 SOURCES = frozenset({"md", "markdown", "txt", "json", "yaml", "yml", "tex", "ltx", "sty", "cls", "bib"})
 BINARY = frozenset({"pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "tif", "tiff", "zip", "gz", "tar",
                     "docx", "xlsx", "pptx", "mp3", "mp4", "mov", "wav"})
-EDIT_TOOLS = "Edit|Write|MultiEdit|NotebookEdit"   # what Claude Code edits a file with: refused on an open document
 SCHEMA = """CREATE TABLE IF NOT EXISTS docwriter (
     key         TEXT PRIMARY KEY,
     gatherer    TEXT NOT NULL,
@@ -614,9 +613,10 @@ def instructions(root: str) -> str:
 
 
 def launch_args(s: dict) -> List[str]:
-    """What a DocWriter actor's harness is started with besides its own options (sessions.py): DocWriter's document
-    tools (the MCP server here), its instructions, and -- for Claude Code -- a hook refusing its own edit tools on an
-    open document. [] for any other session."""
+    """What a DocWriter actor's harness is started with besides its own options (sessions.py), as its harness takes them
+    (harness_kit's): DocWriter's document tools (the MCP server here: `mcp_args`), its instructions
+    (`instruction_args`), and a guard refusing the harness's own edit tools on an open document (`edit_guard_args`,
+    where it runs one: Claude Code's hook). [] for any other session."""
     try:
         role = json.loads(s.get("role") or "null")
     except ValueError:
@@ -625,15 +625,12 @@ def launch_args(s: dict) -> List[str]:
     if not key or not KEY.fullmatch(str(key)):
         return []
     base = f"{ORIGIN}/docwriter/w/{key}"
-    told = instructions(s.get("cwd") or "")
-    if s.get("harness") == "codex":
-        return ["-c", f'mcp_servers.{mcp.NAME}.url="{base}/mcp"',
-                "-c", f"developer_instructions={json.dumps(told, ensure_ascii=False)}"]
-    guard = f"{shlex.quote(sys.executable)} {shlex.quote(GUARD)} {shlex.quote(base + '/guard')}"
-    return ["--mcp-config", json.dumps({"mcpServers": {mcp.NAME: {"type": "http", "url": f"{base}/mcp"}}}),
-            "--append-system-prompt", told,
-            "--settings", json.dumps({"hooks": {"PreToolUse": [{"matcher": EDIT_TOOLS,
-                                                                "hooks": [{"type": "command", "command": guard}]}]}})]
+    h = harness_kit.get(s.get("harness") or harness_kit.DEFAULT)
+    tools = h.mcp_args(mcp.NAME, f"{base}/mcp") if h is not None else None
+    if tools is None:
+        return []                                    # a harness given no MCP server's tools here: none to write with
+    guard = f"{shlex.quote(sys.executable)} {shlex.quote(GUARD)} {shlex.quote(base + '/guard')} {shlex.quote(h.name)}"
+    return [*tools, *h.instruction_args(instructions(s.get("cwd") or "")), *h.edit_guard_args(guard)]
 
 
 def record(gatherer: str, channel: str, kind: str, payload: dict) -> None:

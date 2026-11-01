@@ -29,8 +29,8 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   Shape, ToolCall, ToolResult, ask_arg, one_line, other_view, output_of, picked, seconds, tool_title,
-                   typed_in)
+                   SaveError, Shape, ToolCall, ToolResult, ask_arg, one_line, other_view, output_of, picked, seconds,
+                   tool_title, typed_in)
 
 # ---------------------------------------------------------------- Claude Code's own text, in the user's name
 
@@ -638,6 +638,43 @@ def view_of(name: str, inp, ask: Optional[dict] = None) -> dict:
     return {**other_view(name), **({"description": s("description")} if s("description") else {})}
 
 
+#: Its own tools that edit a file: what a guard run before its edits (`edit_guard_args`) is run for.
+EDIT_TOOLS = "Edit|Write|MultiEdit|NotebookEdit"
+
+
+def config_dir(env: Optional[Dict[str, str]] = None) -> str:
+    """Its own folder: CLAUDE_CONFIG_DIR, else ~/.claude (of `env`, else this process's environment)."""
+    env = os.environ if env is None else env
+    return os.path.abspath(os.path.expanduser(env.get("CLAUDE_CONFIG_DIR") or "~/.claude"))
+
+
+def project_key(directory: str) -> str:
+    """The name it gives a directory's folder under <config>/projects/: its path, resolved, every character that is not a
+    letter or digit a "-"."""
+    return re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(directory))
+
+
+def memory_file(m: dict) -> str:
+    """A memory as it keeps one: its front matter (strings JSON-quoted: YAML reads them), its body."""
+    return (f"---\nname: {json.dumps(m['name'])}\ndescription: {json.dumps(m['description'], ensure_ascii=False)}\n"
+            f"metadata:\n  type: {m['type']}\n---\n\n{m['body']}\n")
+
+
+def memory_line(m: dict, file: str) -> str:
+    """A memory's line in its MEMORY.md: its title, its file, what it is."""
+    return f"- [{m['title']}]({file}) — {m['description']}"
+
+
+def _text_of(path: str) -> Optional[str]:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise SaveError(f"cannot read {path}: {exc}") from None
+
+
 #: Its lines about a command's run, around what it printed: "Exit code N" before a failure's output, and its note that
 #: the shell's directory was put back, after it.
 EXIT_LINE = re.compile(r"^(?:Error: )?Exit code (-?\d+)\n?")
@@ -848,6 +885,29 @@ class ClaudeCode(Harness):
         """`--append-system-prompt`: after its own system prompt, on every call of the run (headless or not)."""
         return ["--append-system-prompt", text]
 
+    headless = "session"             # `-p` with stream-json: one process, a message a line, a turn's end its `result`
+
+    def headless_args(self, session: str, resume: bool = False, model: Optional[str] = None,
+                      permission_mode: Optional[str] = None, instructions: Optional[str] = None,
+                      extra: Tuple[str, ...] = ()) -> List[str]:
+        """`-p` with stream-json in and out, no permission prompts (none can be answered), the model, the starter's
+        options, the instructions, and the session -- resumed, or started with its id."""
+        return ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+                *(["--permission-mode", permission_mode] if permission_mode else []), "--permission-prompts", "none",
+                *(["--model", model] if model else []), *extra,
+                *(self.instruction_args(instructions) if instructions else []),
+                *(["--resume", session] if resume else ["--session-id", session])]
+
+    def headless_message(self, text: str) -> str:
+        return json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n"
+
+    def headless_event(self, event: dict) -> Optional[dict]:
+        """Its `result` line: the turn's end, an error unless it says success."""
+        if not isinstance(event, dict) or event.get("type") != "result":
+            return None
+        ok = event.get("subtype") == "success" and not event.get("is_error")
+        return {"ended": True, "error": None if ok else str(event.get("result") or event.get("subtype") or "the turn failed")[:2000]}
+
     def box(self, screen) -> Optional[str]:
         """Its message box: a prompt row ("❯", or "!" in its shell mode) and the rows of what is typed, between two
         full-width rules (the upper one may carry a label: "─── History 9/9 ───"), the cursor shown in it while it has
@@ -975,6 +1035,83 @@ class ClaudeCode(Harness):
                     out[i].detail["repeated"] = out[i].kind
                     out[i].kind = Kind.COMPACTION_REPEAT
         return out
+
+    def own_folders(self, env: Optional[Dict[str, str]] = None) -> List[str]:
+        """Its folder (CLAUDE_CONFIG_DIR, and ~/.claude) and its settings file, ~/.claude.json."""
+        return sorted({config_dir(env), os.path.abspath(os.path.expanduser("~/.claude")),
+                       os.path.abspath(os.path.expanduser("~/.claude.json"))})
+
+    memory_folder = r"/\.claude/projects/[^/]+/memory"     # <config>/projects/<the directory's key>/memory
+
+    saves = {"agents": {"where": "every Codex and Claude Code session there reads it, in full, at its start",
+                        "user": "an AGENTS.md is a directory's: save it to one"},
+             "skill": {"where": "Claude Code sessions there can use it: by its description, or as /name", "user": True},
+             "memory": {"where": "your Claude Code sessions there see each memory's line, and read it when it matters",
+                        "user": "Claude Code keeps memories per directory: save them to a directory"}}
+
+    def save_files(self, kind: str, directory: Optional[str], made: dict) -> dict:
+        """Where it reads each: an AGENTS.md added to the directory's (its default, where no CLAUDE.md is there: else a
+        note says so); a skill's SKILL.md in <dir>/.claude/skills/<name>/, or <config>/skills/<name>/ for every
+        directory; each memory a file in <config>/projects/<the directory's key>/memory/ -- never over one there -- and
+        its line in that folder's MEMORY.md."""
+        base, files, note = config_dir(), [], ""
+        if kind in self.saves and directory is None and self.saves[kind].get("user") is not True:
+            raise SaveError(self.saves[kind]["user"])
+        if kind == "agents":
+            path = os.path.join(directory, "AGENTS.md")
+            had, text = _text_of(path), str(made.get("output") or "").strip() + "\n"
+            gap = "" if not had or had.endswith("\n\n") else "\n" if had.endswith("\n") else "\n\n"   # a blank line first
+            files.append({"path": path, "action": "append" if had else "create", "text": gap + text})
+            where = f"every Codex and Claude Code session in {directory}"
+            if any(os.path.exists(os.path.join(directory, n)) for n in ("CLAUDE.md", os.path.join(".claude", "CLAUDE.md"))):
+                note = ("This directory has a CLAUDE.md: Claude Code reads that instead of AGENTS.md (its default), so only "
+                        "Codex would read this -- unless CLAUDE.md imports it (a line @AGENTS.md).")
+        elif kind == "skill":
+            name = made["name"]
+            path = os.path.join(directory, ".claude", "skills", name, "SKILL.md") if directory is not None \
+                else os.path.join(base, "skills", name, "SKILL.md")
+            files.append({"path": path, "action": "replace" if os.path.exists(path) else "create",
+                          "text": str(made.get("output") or "").strip() + "\n"})
+            where = f"/{name} in Claude Code sessions in " + (directory if directory is not None else "any directory")
+        elif kind == "memory":
+            folder = os.path.join(base, "projects", project_key(directory), "memory")
+            index = os.path.join(folder, "MEMORY.md")
+            lines = []
+            for m in made.get("memories") or []:
+                name, n = m["name"], 2
+                while os.path.exists(os.path.join(folder, name + ".md")):      # never one already there
+                    name, n = f"{m['name']}-{n}", n + 1
+                files.append({"path": os.path.join(folder, name + ".md"), "action": "create", "text": memory_file({**m, "name": name})})
+                lines.append(memory_line(m, name + ".md"))
+            if not lines:
+                raise SaveError("the model found nothing worth remembering: there is nothing to save")
+            had = _text_of(index)
+            files.append({"path": index, "action": "append" if had else "create",
+                          "text": ("\n" if had and not had.endswith("\n") else "") + "\n".join(lines) + "\n"})
+            where = f"your Claude Code sessions in {directory} (memory folder {folder})"
+        else:
+            return super().save_files(kind, directory, made)
+        return {"files": files, "where": where, "note": note, "home": base}
+
+    def mcp_args(self, name: str, url: str) -> Optional[List[str]]:
+        """`--mcp-config`, the server over HTTP."""
+        return ["--mcp-config", json.dumps({"mcpServers": {name: {"type": "http", "url": url}}})]
+
+    def edit_guard_args(self, command: str) -> List[str]:
+        """`--settings` with a PreToolUse hook on its edit tools (EDIT_TOOLS) running `command`."""
+        return ["--settings", json.dumps({"hooks": {"PreToolUse": [{"matcher": EDIT_TOOLS,
+                                                                    "hooks": [{"type": "command", "command": command}]}]}})]
+
+    def guard_path(self, given) -> Optional[str]:
+        """Its hook's input: the call's `tool_input`, its `file_path` (a notebook's `notebook_path`)."""
+        inp = (given or {}).get("tool_input") if isinstance(given, dict) else None
+        inp = inp if isinstance(inp, dict) else {}
+        return inp.get("file_path") or inp.get("notebook_path") or None
+
+    def guard_refusal(self, why: str) -> str:
+        """Its hook's answer that denies the call, with why."""
+        return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                  "permissionDecisionReason": why}})
 
     def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
         """A failed command's "Exit code N" before its output, and the note after it that the shell's directory was put

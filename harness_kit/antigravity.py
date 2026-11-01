@@ -617,6 +617,10 @@ class Antigravity(Harness):
                 *(self.instruction_args(instructions) if instructions else []),
                 *(["--conversation", session] if resume else [])]
 
+    def own_folders(self, env: Optional[Dict[str, str]] = None) -> List[str]:
+        """Its data folder (`data_dir`): its conversations, their names."""
+        return [os.path.abspath(data_dir(env))]
+
     def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
         """Its header on each tool's output (OUTPUT_HEAD), and a command's exit line in it (EXIT_LINE), taken off."""
         m = OUTPUT_HEAD.match(text or "")

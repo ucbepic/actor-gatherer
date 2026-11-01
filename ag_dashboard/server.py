@@ -113,7 +113,7 @@ context manager's home (data.py), read-only. Standard library only.
                                           or skill of them, in the background -> its record
     POST /api/history/delete {id}         a record removed, its job stopped -> {id}
     POST /api/history/build {gatherer, channel}   ag asked to build the actor's history (history.build)
-    POST /api/history/save {id, target, dir?, version?}  where Claude Code reads it: the plan, without
+    POST /api/history/save {id, target, dir?, version?, harness?}  where the harness reads it: the plan, without
                                           `version`; with the plan's, the files written -> {saved, where}
     POST /api/edit/update {path, root, conn, update}   the page's edit of an open file (a Yjs update, base64) ->
                                           its state
@@ -1023,7 +1023,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer(history.delete(str(body.get("id") or "")))
                 if url.path == "/api/history/save":
                     return self.answer(history.save(str(body.get("id") or ""), str(body.get("target") or ""),
-                                                    str(body.get("dir") or ""), str(body.get("version") or "")))
+                                                    str(body.get("dir") or ""), str(body.get("version") or ""),
+                                                    str(body.get("harness") or "") or None))
                 if url.path == "/api/settings/model":
                     opt = lambda k: None if body.get(k) is None else str(body[k])    # noqa: E731
                     return self.answer(settings.set_model(str(body.get("model") or ""), opt("api_base"), opt("key_env")))

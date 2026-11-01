@@ -27,14 +27,9 @@ dashboard runs ag for everything else, never imported: the call is logged with t
 others, and put to the gatherer -- and to the actor, when every row picked is one actor's. A record
 is a file in <home>/dashboard/extracts/; nothing here writes to a gatherer's database.
 
-Where Claude Code reads each kind (its config folder: CLAUDE_CONFIG_DIR, else ~/.claude):
-
-    agents   <dir>/AGENTS.md, added to the end of the file there is: read at the start of every session
-             there by Codex, and by Claude Code where the directory has no CLAUDE.md of its own (its
-             default); a directory's only -- no agent reads one file for all of a user's projects
-    skill    <dir>/.claude/skills/<name>/SKILL.md; <config>/skills/<name>/SKILL.md
-    memory   <config>/projects/<dir, each character not a letter or digit a "-">/memory/: a file for each
-             memory, and its line in that folder's MEMORY.md -- the index every session there starts with"""
+A record is saved where a harness reads it -- an AGENTS.md, a skill, memories -- as the harness says, its paths and
+formats its own (harness_kit's `saves` and `save_files`: Claude Code's, so far); this module checks the record, the
+directory and the reader's go-ahead (`plan`, `save`)."""
 
 import hashlib
 import json
@@ -637,7 +632,7 @@ def delete(rid: str) -> dict:
     return {"id": rid}
 
 
-# ---------------------------------------------------------------- saved where Claude Code reads it
+# ---------------------------------------------------------------- saved where a harness reads it
 
 #: Where a record can be saved: one directory's sessions, or every session of this user.
 TARGETS = ("dir", "user")
@@ -676,28 +671,6 @@ def memories(output: str) -> List[dict]:
     return out
 
 
-def memory_file(m: dict) -> str:
-    """A memory as Claude Code keeps one: its front matter (strings JSON-quoted: YAML reads them), its body."""
-    return (f"---\nname: {json.dumps(m['name'])}\ndescription: {json.dumps(m['description'], ensure_ascii=False)}\n"
-            f"metadata:\n  type: {m['type']}\n---\n\n{m['body']}\n")
-
-
-def memory_line(m: dict, file: str) -> str:
-    """A memory's line in MEMORY.md: its title, its file, what it is."""
-    return f"- [{m['title']}]({file}) — {m['description']}"
-
-
-def claude_dir() -> str:
-    """Claude Code's own folder: CLAUDE_CONFIG_DIR, else ~/.claude."""
-    return os.path.abspath(os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude"))
-
-
-def project_key(directory: str) -> str:
-    """The name Claude Code gives a directory's folder under <config>/projects/: its path, resolved,
-    every character that is not a letter or digit a "-"."""
-    return re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(directory))
-
-
 def _record(rid: str) -> dict:
     try:
         with open(_path(rid), encoding="utf-8") as fh:
@@ -725,21 +698,25 @@ def _skill_name(output: str) -> str:
     return name
 
 
-def plan(rid: str, target: str, directory: str = "") -> dict:
-    """What saving record `rid` at `target` (TARGETS) writes, as it would be written now: {files: [{path,
-    action (create / append / replace), text (what the file gets: all of it, or what is added at its end)}],
-    where, note (what may keep it from being read, or ""), version}. `directory` is the directory a "dir" target is; it must exist."""
+def plan(rid: str, target: str, directory: str = "", harness: Optional[str] = None) -> dict:
+    """What saving record `rid` at `target` (TARGETS) where `harness` (else harness_kit's DEFAULT) reads it writes, as it
+    would be written now -- its harness's to say (harness_kit's `saves`, `save_files`): {files: [{path, action (create /
+    append / replace), text (what the file gets: all of it, or what is added at its end)}], where, note (what may keep
+    it from being read, or ""), home (the harness's folder, for every directory), harness, version}. `directory` is the
+    directory a "dir" target is; it must exist."""
     rec = _record(rid)
     if rec.get("status") != "done":
         raise HistoryError("only a finished extract can be saved")
+    h = harness_kit.get(harness or harness_kit.DEFAULT)
+    if h is None:
+        raise HistoryError(f"no harness {harness!r}")
     kind = "agents" if rec.get("kind") == "claude" else rec.get("kind")       # "claude": one made as a CLAUDE.md, before
-    if kind not in ("agents", "skill", "memory"):
-        raise HistoryError("a summary is not saved where Claude Code reads it: download it instead")
+    if kind not in h.saves:
+        raise HistoryError(f"a {kind} is not saved where {h.label} reads it: download it instead")
     if target not in TARGETS:
         raise HistoryError(f"a target of {' or '.join(TARGETS)}")
-    if target == "user" and kind in ("memory", "agents"):
-        raise HistoryError("Claude Code keeps memories per directory: save them to a directory" if kind == "memory"
-                           else "an AGENTS.md is a directory's: save it to one")
+    if target == "user" and h.saves[kind].get("user") is not True:
+        raise HistoryError(str(h.saves[kind].get("user") or f"a {kind} is a directory's: save it to one"))
     if target == "dir":
         directory = os.path.expanduser((directory or "").strip())
         if not os.path.isabs(directory):
@@ -747,54 +724,28 @@ def plan(rid: str, target: str, directory: str = "") -> dict:
         if not os.path.isdir(directory):
             raise HistoryError(f"no directory {directory}")
         directory = os.path.realpath(directory)
-    base = claude_dir()
-    files = []
-    note = ""
-    if kind == "agents":
-        path = os.path.join(directory, "AGENTS.md")
-        had, text = _read(path), rec["output"].strip() + "\n"
-        gap = "" if not had or had.endswith("\n\n") else "\n" if had.endswith("\n") else "\n\n"   # a blank line before it
-        files.append({"path": path, "action": "append" if had else "create", "text": gap + text})
-        where = f"every Codex and Claude Code session in {directory}"
-        if any(os.path.exists(os.path.join(directory, n)) for n in ("CLAUDE.md", os.path.join(".claude", "CLAUDE.md"))):
-            note = ("This directory has a CLAUDE.md: Claude Code reads that instead of AGENTS.md (its default), so only "
-                    "Codex would read this -- unless CLAUDE.md imports it (a line @AGENTS.md).")
-    elif kind == "skill":
-        name = _skill_name(rec["output"])
-        path = os.path.join(directory, ".claude", "skills", name, "SKILL.md") if target == "dir" \
-            else os.path.join(base, "skills", name, "SKILL.md")
-        files.append({"path": path, "action": "replace" if os.path.exists(path) else "create",
-                      "text": rec["output"].strip() + "\n"})
-        where = f"/{name} in Claude Code sessions in " + (directory if target == "dir" else "any directory")
-    else:
-        folder = os.path.join(base, "projects", project_key(directory), "memory")
-        index = os.path.join(folder, "MEMORY.md")
-        lines = []
-        for m in rec.get("memories") or []:
-            name, n = m["name"], 2
-            while os.path.exists(os.path.join(folder, name + ".md")):      # never one already there
-                name, n = f"{m['name']}-{n}", n + 1
-            files.append({"path": os.path.join(folder, name + ".md"), "action": "create", "text": memory_file({**m, "name": name})})
-            lines.append(memory_line(m, name + ".md"))
-        if not lines:
-            raise HistoryError("the model found nothing worth remembering: there is nothing to save")
-        had = _read(index)
-        files.append({"path": index, "action": "append" if had else "create",
-                      "text": ("\n" if had and not had.endswith("\n") else "") + "\n".join(lines) + "\n"})
-        where = f"your Claude Code sessions in {directory} (memory folder {folder})"
-    version = _hash(json.dumps([files, [_read(f["path"]) for f in files]]))
-    return {"files": files, "where": where, "note": note, "version": version}
+    made = {"output": rec.get("output") or "", "memories": rec.get("memories") or []}
+    if kind == "skill":
+        made["name"] = _skill_name(rec.get("output") or "")
+    try:
+        got = h.save_files(kind, directory if target == "dir" else None, made)
+    except harness_kit.SaveError as exc:
+        raise HistoryError(str(exc)) from None
+    files = got["files"]
+    version = _hash(json.dumps([h.name, files, [_read(f["path"]) for f in files]]))
+    return {"files": files, "where": got["where"], "note": got.get("note") or "", "home": got.get("home"),
+            "harness": h.name, "version": version}
 
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def save(rid: str, target: str, directory: str = "", version: str = "") -> dict:
-    """Record `rid` saved at `target` -- what `plan` says, when it still says what the reader saw
+def save(rid: str, target: str, directory: str = "", version: str = "", harness: Optional[str] = None) -> dict:
+    """Record `rid` saved at `target` where `harness` reads it -- what `plan` says, when it still says what the reader saw
     (`version`): {saved: [paths], where}. Without `version`, the plan alone. Each file is written whole
     to a file beside it, then put in place; the record keeps where it was saved."""
-    got = plan(rid, target, directory)
+    got = plan(rid, target, directory, harness)
     if not version:
         return got
     if version != got["version"]:

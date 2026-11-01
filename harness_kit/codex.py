@@ -568,6 +568,29 @@ class Codex(Harness):
         developer message it sends after its own, on every call -- `codex` and `codex exec` alike, before `resume`."""
         return ["-c", "developer_instructions=" + json.dumps(text)]
 
+    headless = "turn"                # `codex exec`: a process per turn, the message its stdin
+
+    def headless_args(self, session: str, resume: bool = False, model: Optional[str] = None,
+                      permission_mode: Optional[str] = None, instructions: Optional[str] = None,
+                      extra: Tuple[str, ...] = ()) -> List[str]:
+        """`exec --json`, the starter's options, the model, its permissions (PERMISSIONS), the instructions, `resume
+        <thread>`, and `-`: the message from its stdin."""
+        return ["exec", "--json", "--skip-git-repo-check", *extra, *(["-m", model] if model else []),
+                *PERMISSIONS.get(permission_mode or "", []), *(self.instruction_args(instructions) if instructions else []),
+                *(["resume", session] if resume else []), "-"]
+
+    def headless_event(self, event: dict) -> Optional[dict]:
+        """`thread.started` (its thread: the session's own id), `turn.completed`, `turn.failed` and `error`."""
+        kind = event.get("type") if isinstance(event, dict) else None
+        if kind == "thread.started" and event.get("thread_id"):
+            return {"session": str(event["thread_id"])}
+        if kind == "turn.completed":
+            return {"ended": True, "error": None}
+        if kind in ("turn.failed", "error"):
+            said = (event.get("error") or {}).get("message") if kind == "turn.failed" else event.get("message")
+            return {"error": str(said)[:2000]}
+        return None
+
     def models(self, env: Optional[Dict[str, str]] = None) -> dict:
         """Its catalog (`codex debug models`, the ones it lists), and the model its config.toml names."""
         found = []
@@ -615,6 +638,16 @@ class Codex(Harness):
                     for p in picked(ask, choice)]
         return [_json_str(NOTE + p["text"].strip()) if p["text"] is not None else _json_str(p["labels"][0])
                 for p in picked(ask, choice)]
+
+    def own_folders(self, env: Optional[Dict[str, str]] = None) -> List[str]:
+        """Its folder: CODEX_HOME, and ~/.codex."""
+        env = os.environ if env is None else env
+        return sorted({os.path.abspath(os.path.expanduser(env.get("CODEX_HOME") or "~/.codex")),
+                       os.path.abspath(os.path.expanduser("~/.codex"))})
+
+    def mcp_args(self, name: str, url: str) -> Optional[List[str]]:
+        """Its config's `mcp_servers.<name>.url`, set for the run (`-c`)."""
+        return ["-c", f'mcp_servers.{name}.url="{url}"']
 
     def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
         """Its header on a command's output (OUTPUT_HEAD), taken off: the exit code and the time it gives."""

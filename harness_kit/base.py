@@ -217,6 +217,10 @@ class Part:
     attachment: Optional[str] = None
 
 
+class SaveError(ValueError):
+    """What a harness cannot save where it reads it (`Harness.save_files`): why, in a few words."""
+
+
 class RenameError(ValueError):
     """A name the harness's own store could not be given (`Harness.rename`): why, in a few words."""
 
@@ -450,6 +454,77 @@ class Harness(ABC):
         full-screen interface where it has another; `instructions`, added to its own system prompt for this run
         (`instruction_args`). The message it starts with goes after them, after `--`."""
         raise NotImplementedError(f"{self.label or self.name or 'this harness'} is not run in a terminal here")
+
+    # ---- its own files: what it keeps for itself, and where a reader saves what it reads
+
+    def own_folders(self, env: Optional[Dict[str, str]] = None) -> List[str]:
+        """The folders and files it keeps for itself (its sessions' records, settings, memory), absolute, as `env` (else
+        this process's environment) has them: what changes there is not a session's work. None by default."""
+        return []
+
+    #: Where it keeps its memory of a directory, as a pattern the folder's path matches (a regular expression Python and
+    #: JavaScript both read, not anchored at its end); None: it keeps none.
+    memory_folder: Optional[str] = None
+
+    #: What a reader can save where it reads it (History's records), by kind -- "agents" (instructions every session in a
+    #: directory reads at its start), "skill", "memory" --: each {where: who reads it, in a line ("there": the directory
+    #: it is saved in), user: True where it can be saved for every directory of the user's at once, else why not}. A
+    #: kind not listed it has no place for.
+    saves: Dict[str, dict] = {}
+
+    def save_files(self, kind: str, directory: Optional[str], made: dict) -> dict:
+        """What saving `made` -- a record of `kind`: {output: the model's answer, memories: [{name, title, description,
+        type, body}], name: a skill's} -- where it reads it writes, as it would be written now: {files: [{path, action
+        ("create", "append", "replace"), text: all the file gets, or what is added at its end}], where (who reads it),
+        note (what may keep it from being read, or ""), home (its own folder, for one saved for every directory)}.
+        `directory`: the directory whose sessions read it (real, existing); None, every directory of the user's.
+        Raises SaveError where it cannot."""
+        raise SaveError(f"{self.label or self.name or 'this harness'} has no place for a {kind} here")
+
+    # ---- what a run is given: tools, and its edits guarded
+
+    def mcp_args(self, name: str, url: str) -> Optional[List[str]]:
+        """Its own options that give it, for one run, the tools of an MCP server (`name`, over HTTP at `url`); None: it
+        takes none here."""
+        return None
+
+    def edit_guard_args(self, command: str) -> List[str]:
+        """Its own options that run `command` before each call of its own file-editing tools, which may refuse the edit
+        (its hook: `guard_path`, `guard_refusal`); [] where it runs none."""
+        return []
+
+    def guard_path(self, given) -> Optional[str]:
+        """The file an edit is of, from what its hook gives the guard it runs before the edit (`given`, read from its
+        stdin); None: none said."""
+        return None
+
+    def guard_refusal(self, why: str) -> str:
+        """What its guard prints to refuse the edit, `why` its reason for the model."""
+        return ""
+
+    # ---- run headless: no terminal, its messages on its stdin, its events on its stdout
+
+    #: How it runs headless, where it can: "session" (one process for the session, each message a line on its stdin,
+    #: each turn's end an event on its stdout: Claude Code's stream-json), "turn" (a process per turn, the message its
+    #: stdin, then closed: `codex exec`); None, no headless mode -- a session of it is run in a terminal.
+    headless: Optional[str] = None
+
+    def headless_args(self, session: str, resume: bool = False, model: Optional[str] = None,
+                      permission_mode: Optional[str] = None, instructions: Optional[str] = None,
+                      extra: Tuple[str, ...] = ()) -> List[str]:
+        """Its own arguments, after its name on ag's command line, that run `session` headless (`headless`), as `command`
+        takes them; `extra`, the starter's own options for this run, where the harness takes options."""
+        raise NotImplementedError(f"{self.label or self.name or 'this harness'} has no headless mode here")
+
+    def headless_message(self, text: str) -> str:
+        """What goes on its stdin for a message, headless: by default the text as it is."""
+        return text
+
+    def headless_event(self, event: dict) -> Optional[dict]:
+        """What one event it writes on its stdout, headless (a JSON line), says: {"ended": True, "error": its words, or
+        None} for a turn's end; {"error": ...} for a turn that failed; {"session": its own id for the session}; None
+        for anything else."""
+        return None
 
     def first_prompt(self, text: str) -> List[str]:
         """Its own arguments that start a session in its terminal with `text` as the first message, after `command`'s:

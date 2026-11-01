@@ -416,9 +416,14 @@ change is a fact of the harness to move here, read by the dashboard through a fi
    over, a plan it offers). `asks_shown_again` (a terminal opened after it asked still asks it), `messages_answer_asks`
    (a message typed into its dialog would answer it: the server's `dialog`), `ask_says` (the plan card's buttons and
    words) and `reply_block` (codex's proposed plan, drawn as a card) are the harness's.
-5. Running headless (`Harness.headless`: the run's argv and how its output says a turn ended), DocWriter's MCP
-   arguments, `own_folders` (the harness's folders, not the actor's file changes), `file_role` (its memory's files),
-   and `saves` (where History saves a skill, a memory or an AGENTS.md for it; Claude Code's alone at first).
+5. **Built.** Running headless: `headless` ("session": one process, a message a line, Claude Code's stream-json;
+   "turn": a process per turn, `codex exec`; None: a terminal), `headless_args`, `headless_message` and
+   `headless_event` (a turn's end, an error, the session's own id); sessions.py's two runners name no harness.
+   DocWriter's and the Browser's tools (`mcp_args`), and DocWriter's guard on the harness's own edits
+   (`edit_guard_args`, `guard_path`, `guard_refusal`: Claude Code's hook). `own_folders` (the harness's own folders,
+   not an actor's file changes: agy's now too) and `memory_folder` (its memory of a directory: Chat's "memory/" and
+   the Editor's badge). `saves` and `save_files` (where History saves an AGENTS.md, a skill or memories for it, its
+   paths and formats: Claude Code's alone so far); the Save panel offers each harness that has a place for the kind.
 6. A test that the dashboard names no harness, and a toy harness, registered in a test, listed, started and drawn.
 
 ## Open questions
