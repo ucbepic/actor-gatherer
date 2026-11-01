@@ -857,8 +857,6 @@ class Browser:
         elif method == "Page.frameStoppedLoading" and params.get("frameId") == tab.target:
             tab.loading, tab.loads = False, tab.loads + 1
             self._publish()
-            if self.video.waiting is tab:                # its capture waited for it to load: started now
-                self.chrome.later(self._recast)
             self.chrome.later(lambda: self._retitle(tab))
         elif method == "Page.domContentEventFired":
             self.chrome.later(lambda: self._retitle(tab))
@@ -867,6 +865,9 @@ class Browser:
             if url != tab.url:
                 tab.url = url
                 self._forget_refs(tab.target)
+                if self.video.failed_on is tab:          # its video failed on the page it had: worth trying again
+                    self.video.retry()
+                    self.chrome.later(self._recast)
                 with self.lock:
                     shown = bool(self.tabs) and self.tabs[self.active] is tab
                 if shown and not self._acting_now():
@@ -903,8 +904,6 @@ class Browser:
         info = params.get("targetInfo") or {}
         if method == "Target.targetInfoChanged":
             tab = self._tab_of(target=info.get("targetId"))
-            if info.get("title") == browser_video.TOKEN:  # titled so only while its capture starts
-                return
             if tab is not None and (tab.title != info.get("title") or tab.url != info.get("url")):
                 tab.title, tab.url = info.get("title") or "", info.get("url") or tab.url
                 self._publish()
@@ -951,8 +950,6 @@ class Browser:
         except (BrowserError, KeyError):
             return
         url = info.get("url") or tab.url
-        if info.get("title") == browser_video.TOKEN:     # titled so only while its capture starts
-            return
         if info.get("title") != tab.title or url != tab.url:
             tab.title, tab.url = info.get("title") or "", url
             self._publish()
@@ -1027,7 +1024,7 @@ class Browser:
             some_video = any(v.video for v in self.viewers)
             all_video = bool(self.viewers) and all(v.video for v in self.viewers)
             w, h, dpr = self.viewport
-        if shown is not None and some_video and cdp.mode == "own" and video_on() and self.video.usable():
+        if shown is not None and some_video and cdp.mode == "own" and video_on() and self.video.usable(shown):
             self.video.follow(cdp, shown, (w, h, dpr))
         else:
             self.video.stop()

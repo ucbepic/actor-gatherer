@@ -76,12 +76,12 @@ class BrowserVideoTest(Home):
             self.b._chunk(chunk("delta", n + 1))
         self.assertEqual(asked, [1])
 
-    def test_the_title_a_tab_has_while_its_capture_starts_is_not_its_own(self):
-        tab = browser.Tab("t1", "s1", "file:///x", "Shop checkout")
-        self.b.tabs = [tab]
-        self.b._target_event("Target.targetInfoChanged",
-                             {"targetInfo": {"targetId": "t1", "title": browser_video.TOKEN, "url": "file:///x"}})
-        self.assertEqual(tab.title, "Shop checkout")
+    def test_the_capture_extension_is_written_to_the_home(self):
+        path = browser_video.extension_dir(self.tmp.name)
+        with open(os.path.join(path, "manifest.json")) as fh:
+            manifest = json.load(fh)
+        self.assertEqual(sorted(manifest["permissions"]), ["activeTab", "tabCapture"])   # nothing more
+        self.assertTrue(all(os.path.exists(os.path.join(path, f)) for f in ("worker.js", "capture.html", "capture.js")))
 
 
 class CaptureTest(unittest.TestCase):
@@ -102,17 +102,19 @@ class CaptureTest(unittest.TestCase):
         self.c.got(json.dumps({"t": "key", "ts": 2, "d": "AA", "codec": "avc1.640033", "w": 200, "h": 100}))
         self.assertEqual((self.c.extra, len(self.jobs)), (6, 1))
 
-    def test_a_capture_failing_falls_back_and_is_given_up_after_some(self):
+    def test_a_capture_failing_falls_back_and_is_given_up_on_that_tab_after_some(self):
         self.c.cdp = None
+        tab, other = object(), object()
         for n in range(browser_video.GIVE_UP):
-            self.assertTrue(self.c.usable())
-            self.c.tab = object()
+            self.assertTrue(self.c.usable(tab))
+            self.c.tab = tab
             self.assertIsNone(self.c.got(json.dumps({"error": "encoder: broken"})))
-        self.assertFalse(self.c.usable())
+        self.assertFalse(self.c.usable(tab))
+        self.assertTrue(self.c.usable(other))                  # another tab: tried
         self.assertEqual(len(self.changed), browser_video.GIVE_UP)
         self.assertEqual(self.c.why, "encoder: broken")
-        self.c.gone()                                          # a new Chrome: tried again
-        self.assertTrue(self.c.usable())
+        self.c.retry()                                         # the tab went to another page: tried again
+        self.assertTrue(self.c.usable(tab))
 
 
 @unittest.skipUnless(browser.available(), "no Chrome here")
@@ -173,13 +175,13 @@ class VideoChromeTest(Home):
         self.b.resize(700, 500, 1.0)
         v = self.b.join(video=True)
         self.addCleanup(self.b.leave, v)
-        self.assertTrue(self.keys(self.watch(v, lambda g: bool(self.keys(g)))))
+        self.assertTrue(self.keys(self.watch(v, lambda g: bool(self.keys(g)))), self.b.video.why)
         first = self.b.video.tab
         t0 = time.time()
         opened = self.bs.call(self.cfg["key"], "tabs", {"action": "new", "url": os.path.join(self.root, "two.html")})
         self.assertFalse(opened.get("isError"), f"{opened} after {time.time() - t0:.1f}s")
         got = self.watch(v, lambda g: bool(self.keys(g)) and self.b.video.tab is self.b.tab() is not first)
-        why = (f"video on {self.b.video.tab and self.b.video.tab.url}, waiting {bool(self.b.video.waiting)}, "
+        why = (f"video on {self.b.video.tab and self.b.video.tab.url}, "
                f"failed {self.b.video.failed} ({self.b.video.why}), tabs {[t.url for t in self.b.tabs]} shown {self.b.active}")
         self.assertIsNot(self.b.video.tab, first, why)
         self.assertIs(self.b.video.tab, self.b.tab(), why)
@@ -187,6 +189,30 @@ class VideoChromeTest(Home):
         self.bs.call(self.cfg["key"], "navigate", {"url": os.path.join(self.root, "index.html")})
         got = self.watch(v, lambda g: any(n == "video" for n, _ in g), 5)
         self.assertTrue([n for n, _ in got if n == "video"])  # still captured after the tab went to another page
+
+    def test_the_view_grown_or_shrunk_the_video_comes_at_its_new_size(self):
+        self.b.live()
+        self.b.resize(700, 500, 2.0)
+        v = self.b.join(video=True)
+        self.addCleanup(self.b.leave, v)
+        self.assertIn((1400, 1000), self.keys(self.watch(v, lambda g: (1400, 1000) in self.keys(g))))
+        for w, h in ((900, 650), (600, 450)):            # wider (a capture grows no bigger than it began), narrower
+            self.b.resize(w, h, 2.0)
+            got = self.watch(v, lambda g: (w * 2, h * 2) in self.keys(g), 10)
+            self.assertIn((w * 2, h * 2), self.keys(got), self.b.video.why)
+
+    def test_a_page_that_keeps_its_own_title_is_captured_all_the_same(self):
+        self.write("mine.html", """<!doctype html><title>My doc - Docs</title><h1>a page keeping its title</h1>
+<script>const mine = document.title; new MutationObserver(() => { if (document.title !== mine) document.title = mine; })
+  .observe(document.querySelector('title'), { childList: true, characterData: true, subtree: true });</script>""")
+        self.b.live()
+        self.b.resize(700, 500, 1.0)
+        self.bs.call(self.cfg["key"], "navigate", {"url": os.path.join(self.root, "mine.html")})
+        v = self.b.join(video=True)
+        self.addCleanup(self.b.leave, v)
+        got = self.watch(v, lambda g: bool(self.keys(g)))
+        self.assertTrue(self.keys(got), self.b.video.why)
+        self.assertEqual(self.b.tab().title, "My doc - Docs")
 
     def test_the_config_turns_it_off(self):
         self.config('[dashboard]\nbrowser_video = false\n')
