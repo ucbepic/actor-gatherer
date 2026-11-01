@@ -409,9 +409,13 @@ change is a fact of the harness to move here, read by the dashboard through a fi
       and results by the harness's rules -- else whichever harness's rules find calls among the items --, a result's
       output as `shown`, a script's calls by `script_results`, the last results by the parts' kinds). `shell.py`'s
       SHELLS, EDITS and `_shell_text` are gone; `ToolCall.server` marks a tool the provider ran.
-4. Asks and status: one status rule over events (`_claude_status` and `_codex_status` joined, `RECORDED` gone),
-   questions in one shape from each harness, codex's plan offer an `asked`; `Harness.plan_choices` for the plan
-   card's buttons; whether an ask shows again in a terminal opened after it (`codex_dialog`, `answer`).
+4. **Built.** One status rule for every harness (`data._status`: `_claude_status` and `_codex_status` joined,
+   `RECORDED` gone), its differences the harness's: `record_ends_turns` (its record ends a turn no call of ag's did:
+   codex's), `esc_takes_back`. What it asks, one view (`ask_view`: a question's title, an option given as its label
+   alone, read as such) and one rule (`_asking`: what the turn waits on, else a question asked as it goes on; its turn
+   over, a plan it offers). `asks_shown_again` (a terminal opened after it asked still asks it), `messages_answer_asks`
+   (a message typed into its dialog would answer it: the server's `dialog`), `ask_says` (the plan card's buttons and
+   words) and `reply_block` (codex's proposed plan, drawn as a card) are the harness's.
 5. Running headless (`Harness.headless`: the run's argv and how its output says a turn ended), DocWriter's MCP
    arguments, `own_folders` (the harness's folders, not the actor's file changes), `file_role` (its memory's files),
    and `saves` (where History saves a skill, a memory or an AGENTS.md for it; Claude Code's alone at first).

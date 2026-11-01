@@ -496,7 +496,7 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(ask["harness"], "antigravity")
         self.assertEqual(answers.expected(ask, {"answers": [{"options": [1]}, {"options": [0]}]}),
                          ["A1: Blue", "A2: (Recommended) Cat"])
-        self.assertIn("antigravity", data.RECORDED)                 # its record's stops are read, as Claude Code's
+        self.assertFalse(harness_kit.get("antigravity").record_ends_turns)   # its record's stops read as Claude Code's
 
 
 if __name__ == "__main__":

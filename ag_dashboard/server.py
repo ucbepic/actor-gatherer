@@ -73,7 +73,7 @@ context manager's home (data.py), read-only. Standard library only.
                                           its agent (sessions.py's `send`); while the codex in the dashboard's
                                           terminal asks whether to implement its plan, what to change instead
                                           ("No, stay in Plan mode", then the message); refused while it waits on
-                                          a question there (`codex_dialog`), and while its terminal's message box
+                                          a question there (`dialog`), and while its terminal's message box
                                           is not there, empty, to take it -- a dialog, a menu, a question, a
                                           permission asked, or something typed there and not sent: the error then
                                           has `box` (sessions.py's NotAtBox)
@@ -289,12 +289,14 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 "browser": browsers is not None and browser.available(),
                 "browser_profile": browser.mode() if browsers is not None else None}
 
-    def codex_dialog(sid: str) -> Optional[dict]:
-        """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
-        into it would answer the dialog: a question its turn waits on (a message's keys would pick its options),
-        or the plan it asks whether to implement (Enter would implement it). None: nothing, or not codex's."""
+    def dialog(sid: str) -> Optional[dict]:
+        """What a session's terminal -- the dashboard's -- shows asking the user now, where a message typed into it
+        would answer the dialog (its harness's `messages_answer_asks`: codex's): a question its turn waits on (a
+        message's keys would pick its options), or the plan it asks whether to take (Enter would take it). None:
+        nothing, or a harness whose dialogs a message waits for."""
         row = next((x for x in started.list() if x["session_id"] == sid), None)
-        if row is None or row.get("harness") != "codex" or not row.get("terminal"):
+        rules = harness_kit.get(row.get("harness")) if row is not None else None
+        if row is None or rules is None or not rules.messages_answer_asks or not row.get("terminal"):
             return None
         ask = data.asking_of(row["gatherer"], sid, row.get("cwd"))
         if ask is None or ask.get("async") or (row.get("since") or 0) > (ask.get("at") or 0) \
@@ -916,13 +918,14 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
                         sid = started.adopt(str(body["gatherer"]), str(body["channel"]))["session_id"]
                     text = str(body.get("text") or "")
-                    held = codex_dialog(sid)
-                    if held is not None and held.get("kind") == "plan":     # what to change: "No, stay in Plan mode" first
-                        started.answer(sid, held, {"plan": "change", "text": " ".join(text.split())})
+                    held = dialog(sid)
+                    if held is not None and held.get("kind") == "plan":     # what to change: its plan dialog's own
+                        started.answer(sid, held, {"plan": "change", "text": " ".join(text.split())})   # way to say it
                         return self.answer(next(x for x in started.list() if x["session_id"] == sid))
                     if held is not None:
-                        raise sessions.SessionError("Codex waits on its question in the terminal: answer it, "
-                                                    "or press Esc there to stop the turn, first")
+                        rules = harness_kit.get(held.get("harness"))
+                        raise sessions.SessionError(f"{rules.label if rules else 'It'} waits on its question in the "
+                                                    "terminal: answer it, or press Esc there to stop the turn, first")
                     row = next((x for x in started.list() if x["session_id"] == sid), None)
                     told = None                          # a Browser's actor: what the user did and picked in it, after
                     if browsers is not None and row is not None and text.strip() and text.lstrip()[0] not in "/!":

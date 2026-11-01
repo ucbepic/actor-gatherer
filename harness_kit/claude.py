@@ -746,6 +746,12 @@ class ClaudeCode(Harness):
     label = "Claude Code"
     checked_with = "2.1.310"
     esc_takes_back = True            # stopped before its answer came, the message is back in its box
+    ask_says = {"plan_verb": "approve", "own_answer": "Or type your own answer",       # its plan dialog's choices (PLAN_KEYS)
+                "plan_choices": [{"id": "manual", "label": "Approve, I'll approve edits",
+                                  "title": "Claude Code's “Yes, manually approve edits”", "primary": False},
+                                 {"id": "auto", "label": "Approve, auto mode", "title": "Claude Code's “Yes, and use auto mode”",
+                                  "primary": True}],
+                "plan_change": {"label": "Or tell Claude what to change", "title": None}}
     stopped_says = {"lead": "⎿", "interrupted": "Interrupted · What should Claude do instead?",
                     "error": "API Error", "error_status": "API Error: {status}"}
 

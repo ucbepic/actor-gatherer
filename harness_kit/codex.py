@@ -464,6 +464,15 @@ class Codex(Harness):
     checked_with = "0.164.0"
     fullscreen = False               # its classic inline screen (`--no-alt-screen`): scrolled in the terminal's own scrollback
     picks_session_id = True          # its thread's id, which it picks
+    record_ends_turns = True         # its rollout's task_complete ends a turn, a call ag saw or not
+    asks_shown_again = False         # a terminal opened after it asked does not ask it again
+    messages_answer_asks = True      # typed into its dialog, a message's keys would pick; its Enter, take the plan
+    reply_block = {"open": "<proposed_plan>", "close": "</proposed_plan>", "title": "Proposed plan"}   # Plan mode's
+    ask_says = {"plan_verb": "implement", "own_answer": "None of these? Say what, instead",   # PLAN_KEYS
+                "plan_choices": [{"id": "implement", "label": "Implement the plan", "primary": True,
+                                  "title": "Codex's “Yes, implement this plan”: Default mode, and it starts coding"}],
+                "plan_change": {"label": "Or tell Codex what to change",
+                                "title": "Codex's “No, stay in Plan mode”, then your words"}}
     stopped_says = {"lead": "■", "interrupted": "Conversation interrupted", "error": "Error",    # 0.164's tui, less its
                     "reasons": {"budget_limited": "Goal budget reached - the turn was stopped."}}  # pointer to /feedback
     NAME_CHARS = 120                 # the longest title kept (codex asks for 36 characters at most)

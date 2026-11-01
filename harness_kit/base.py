@@ -337,6 +337,33 @@ class Harness(ABC):
     #: gives for stopping a turn.
     stopped_says: Dict[str, Any] = {"lead": "⎿", "interrupted": "Interrupted", "error": "Error"}
 
+    # ---- what it asks the user in its terminal, and when its turn is over: what a reader of its sessions goes by
+
+    #: Whether its record says when a turn is over where no model call ag saw ends it (codex's rollout: a turn's
+    #: `task_complete`): a turn its record ends is over. Else its record's "over" says nothing ag's calls don't.
+    record_ends_turns = False
+
+    #: Whether a terminal opened after it asked something still asks it (its dialog drawn again when the session is
+    #: resumed): else it is answered in a message, not with its dialog's keys.
+    asks_shown_again = True
+
+    #: Whether a message typed into its terminal while it asks would answer what it asks -- its keys picking an option,
+    #: its Enter taking the plan it offers -- rather than wait in its message box: a message to it then answers its plan
+    #: (the reader's own words for it), or waits for its question to be answered first.
+    messages_answer_asks = False
+
+    #: How a reader answers what it asks (`answer_keys` types it into its dialog): `plan_verb`, what they do with a plan
+    #: it proposes; `plan_choices`, the ways to take one, each a button ({id: the `plan` answer_keys takes, label, title:
+    #: its own words for it, primary}); `plan_change` ({label, title}): their own words instead; `own_answer`, the words
+    #: for answering a question its turn waits on in their own words.
+    ask_says: Dict[str, Any] = {"plan_verb": "approve", "plan_choices": [],
+                                "plan_change": {"label": "Or say what to change", "title": None},
+                                "own_answer": "Or type your own answer"}
+
+    #: A block its model writes in a reply that its own terminal draws apart: {open, close (each on a line of its own;
+    #: the closing one perhaps not streamed yet), title (the card's head)} -- codex's proposed plan. None: none.
+    reply_block: Optional[Dict[str, str]] = None
+
     @property
     def runs_in_terminal(self) -> bool:
         """Whether it can be started in a terminal from here: it says how (`command`)."""

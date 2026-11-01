@@ -103,9 +103,6 @@ FAILED_READS = 50              # how many of its newest reads `failing` looks at
 #: A call the harness hung up on before its answer was through, as ag's hook server reports it (its HUNG_UP: nginx's
 #: "client closed request"): the user stopped it (Esc) -- not a failure.
 HUNG_UP = 499
-#: The harnesses (besides codex, read apart) whose own record of a session says how a turn stopped (`turn_stopped`, the
-#: hook following it): Claude Code's, agy's; None, a channel from before the harness was recorded -- Claude Code's.
-RECORDED = ("claude", "antigravity", None)
 ERROR_CHARS = 2000             # the most of an error's words it returns
 #: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
 #: turn, or ag's "streaming": the parts of an answer complete while the rest still streams), or is
@@ -283,11 +280,14 @@ def harness_info() -> Dict[str, dict]:
         runs        whether a session can be started on it from here (its `command`): Chat may message one
         fullscreen  the screen its terminal runs in: its full screen, else its classic one, scrolled by the page
         stopped     how its terminal says a turn stopped short (`stopped_says`)
+        ask_says    how a reader answers what it asks: its words, the ways to take a plan (`ask_says`)
+        reply_block a block its model writes in a reply that its terminal draws apart, as a card (`reply_block`)
     Read once: what harness_kit says does not change while the dashboard runs."""
     global _HARNESS_INFO
     if _HARNESS_INFO is None:
         _HARNESS_INFO = {n: {"label": h.label or n, "mark": h.mark(), "runs": h.runs_in_terminal,
-                             "fullscreen": h.fullscreen, "stopped": dict(h.stopped_says)}
+                             "fullscreen": h.fullscreen, "stopped": dict(h.stopped_says), "ask_says": dict(h.ask_says),
+                             "reply_block": h.reply_block}
                          for n, h in harness_kit.HARNESSES.items()}
     return _HARNESS_INFO
 
@@ -479,7 +479,7 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
             a["role"] = s["role"]
             if s["role"] == sessions.COORDINATOR and (a.get("name") or {}).get("by") != "user":
                 a["name"] = {"text": COORDINATOR_NAME, "by": "dashboard"}
-        offer = a.pop("offer", None)             # a codex plan: asked about where its terminal is the dashboard's, not
+        offer = a.pop("offer", None)             # a plan offered: asked about where its terminal is the dashboard's, not
         if offer and s.get("terminal") and a["status"] == IDLE and (s.get("since") or 0) <= offer["at"] \
                 and not (s.get("typed") and s["typed"] >= offer["at"]):     # restarted since, nor anything typed there
             a["asking"], a["status"] = offer, ASKING
@@ -601,76 +601,55 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
         a["said_at"] = user_at.get(ch)
         a["taken_back"] = None
-        if a["harness"] == "codex":
-            _codex_status(conn, ch, a, tables, now)
-        else:
-            _claude_status(conn, ch, a, tables, now)
+        _status(conn, ch, a, tables, now)
         del a["said_at"]
         a["running"] = a["building"] or a["status"] == RUNNING
         a["background"] = a.pop("record_background", [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
 
 
-def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
-    """The agent's status as its hook recorded what Claude Code's answers, calls and own record of the session say
-    (module doc; `Record`): what it asks the user and has not had answered or dismissed, whether its turn stopped on an
-    error or was interrupted, and the background tasks it left running (`record_background`)."""
+def _status(conn, ch: str, a: dict, tables: set, now: float) -> None:
+    """The agent's status as its hook recorded what its harness's answers, calls and own record of the session say
+    (module doc; `Record`): a call hung up on (Esc), or a turn its record says stopped -- interrupted, on an error, or
+    over where its record ends turns (harness_kit's `record_ends_turns`: codex's) --, or a call failing until given
+    up; the message the harness put back in its box, stopped before its answer came (`esc_takes_back`: Claude Code's);
+    what it asks the user and has not had answered or dismissed (`_asking`) -- a plan it proposed, its turn over, kept
+    as `offer`, for `_with_started` to show only where the dashboard's terminal shows it asking; and the background
+    tasks it left running (`record_background`)."""
+    h = harness_kit.get(a["harness"] or harness_kit.DEFAULT)
     rec = record_of(conn, ch) if a["status"] in (RUNNING, IDLE) else Record()
     a["record_background"] = rec.tasks()
-    a["asking"] = ask_view(rec.asking(), a["harness"]) if a["status"] == RUNNING else None
-    if a["asking"]:
-        a["status"] = ASKING
+    a["stopped"] = a["asking"] = None
     cut = since_said(a, hung_up(conn, ch)) if a["status"] == RUNNING else None
-    if cut is not None:                              # stopped before its answer came: Claude Code records nothing of it
-        a["status"], a["turn_over"] = IDLE, True
+    if cut is not None:                              # stopped before its answer came, as ag's hook server saw: its
+        a["status"], a["turn_over"] = IDLE, True     # record says nothing of it, or says so once it does
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
-    a["stopped"] = rec.stopped(newest(a)) if (a["status"] == RUNNING or cut is not None) \
-        and a["harness"] in RECORDED else None
-    if a["stopped"] and a["stopped"]["kind"] == "interrupted":
-        a["status"], a["turn_over"], a["failing"] = IDLE, True, None
-    elif (a["stopped"] and a["stopped"]["kind"] == "error") or (a["failing"] and given_up(a["failing"], rec.followed, now)):
-        a["status"], a["turn_over"] = ERROR, True
-    elif a["failing"] and not a["failing"]["retrying"]:
-        a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], rec.followed) + 1   # when it would be given up
-    if a["stopped"] and a["stopped"]["kind"] == "over":
-        a["stopped"] = None
-    if cut is not None:                              # as the hang-up says -- or Claude Code's record, once it does: its
-        if not (a["stopped"] and a["stopped"]["kind"] == "interrupted"):   # coming changes the actor, and the page's
-            a["stopped"] = {"kind": "interrupted", "at": cut}               # Chat loads the turn it marks again
-        a["taken_back"], wake = taken_back(conn, ch, tables, rec, now)
-        if wake:
-            a["wake"] = min(wake, a.get("wake") or wake)
-
-
-def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
-    """The agent's status as codex's own record of the thread tells it (its rollout; `Record`; module doc): its turn
-    over, interrupted (Esc) or stopped on an error where ag heard nothing of it; what it asks the user (`codex_asking`)
-    -- a plan it proposed kept as `offer`, for `_with_started` to show only where the dashboard's terminal shows codex
-    asking whether to implement it; and the subagents and commands it left running, as `record_background`."""
-    rec = record_of(conn, ch) if a["status"] in (RUNNING, IDLE) else Record()
-    a["stopped"] = None
-    cut = since_said(a, hung_up(conn, ch)) if a["status"] == RUNNING else None
-    if cut is not None:                              # stopped before its answer came (Esc), as ag's hook server saw
-        a["stopped"], a["status"], a["turn_over"] = {"kind": "interrupted", "at": cut}, IDLE, True
-    a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
-    got = rec.stopped(newest(a)) if a["status"] == RUNNING else None
+    got = rec.stopped(newest(a)) if a["status"] == RUNNING or cut is not None else None
+    if got and got["kind"] == "over" and not (h and h.record_ends_turns):
+        got = None                                   # its calls say when a turn is over
     if got and got["kind"] == "error":
         a["stopped"], a["status"], a["turn_over"] = got, ERROR, True
-    elif got:                                        # over, or interrupted: its turn ended with no call ag saw
+    elif got:                                        # interrupted (Esc), or over: its turn ended, with no call ag saw
         a["stopped"] = got if got["kind"] == "interrupted" else None
         a["status"], a["turn_over"], a["failing"] = IDLE, True, None
     elif a["failing"] and given_up(a["failing"], rec.followed, now):
         a["status"], a["turn_over"] = ERROR, True
     elif a["failing"] and not a["failing"]["retrying"]:
-        a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], rec.followed) + 1
-    ask = codex_asking(conn, ch, tables, a["status"], rec) if a["status"] in (RUNNING, IDLE) else None
-    offer = bool(ask) and ask["kind"] == "plan" and ask["call"].startswith("plan:")   # its proposed plan, not a call
-    a["asking"] = None if offer else ask
-    if offer:
+        a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], rec.followed) + 1   # when it would be given up
+    if cut is not None:
+        if not (a["stopped"] and a["stopped"]["kind"] == "interrupted"):   # its coming changes the actor, and the
+            a["stopped"] = {"kind": "interrupted", "at": cut}               # page's Chat loads the turn it marks again
+        if h and h.esc_takes_back:
+            a["taken_back"], wake = taken_back(conn, ch, tables, rec, now)
+            if wake:
+                a["wake"] = min(wake, a.get("wake") or wake)
+    ask = _asking(rec, a["status"], a["harness"]) if a["status"] in (RUNNING, IDLE) else None
+    if ask and str(ask.get("call") or "").startswith("plan:"):       # its proposed plan, not a call
         a["offer"] = ask
-    elif ask and not ask.get("async"):               # its turn waits on the answer; an async one's goes on
-        a["status"] = ASKING
-    a["record_background"] = rec.tasks()
+    elif ask:
+        a["asking"] = ask
+        if not ask.get("async"):                     # its turn waits on the answer; an async one's goes on
+            a["status"] = ASKING
 
 
 def newest(a: dict) -> Optional[float]:
@@ -761,57 +740,48 @@ def replies(conn, channel: str, tables: Optional[set] = None) -> List[dict]:
 
 
 def ask_view(f: Optional[dict], harness: Optional[str] = None) -> Optional[dict]:
-    """What an `asked` fact asks, for the page: {kind, harness (whose dialog answers it: answers.py; None, Claude
-    Code's), at, call, questions (clipped) or plan}; None for None."""
+    """What an `asked` fact asks, for the page: {kind, harness (whose dialog answers it: answers.py), async (the turn
+    goes on while it asks), at, call, questions (clipped, each {id, header, question, multiSelect, options: [{label,
+    description}]}: a question's title for its words, an option given as its label alone, as some harnesses record
+    them) or plan}; None for None."""
     if not f:
         return None
-    out = {"kind": f.get("kind") or "question", "harness": harness, "at": f.get("at"), "call": f.get("call")}
+    out = {"kind": f.get("kind") or "question", "harness": harness, "async": bool(f.get("async")), "at": f.get("at"),
+           "call": f.get("call")}
     if out["kind"] == "plan":
         out["plan"] = _clip(f.get("plan"), PLAN_CHARS)
-    else:
-        out["questions"] = [{"header": q.get("header"), "question": _clip(q.get("question"), ASK_CHARS),
-                             "multiSelect": bool(q.get("multiSelect")),
-                             "options": [{"label": o.get("label"), "description": _clip(o.get("description"), ASK_CHARS)}
-                                         for o in q.get("options") or [] if isinstance(o, dict)]}
-                            for q in f.get("questions") or [] if isinstance(q, dict)]
-    return out
-
-
-def codex_questions(given) -> List[dict]:
-    """Codex's questions (request_user_input's: {id, header, question, options: [{label, description}]}; the
-    async one's: {title, options: [label]}) as `ask_view` returns them, each with its `id` (None: the async one's)."""
-    out = []
-    for q in given if isinstance(given, list) else []:
+        return out
+    out["questions"] = []
+    for q in f.get("questions") or []:
         if not isinstance(q, dict):
             continue
         options = [o if isinstance(o, dict) else {"label": str(o)} for o in q.get("options") or [] if isinstance(o, (dict, str))]
-        out.append({"id": q.get("id"), "header": q.get("header"), "question": _clip(q.get("question") or q.get("title"), ASK_CHARS),
-                    "multiSelect": False, "options": [{"label": o.get("label"), "description": _clip(o.get("description"), ASK_CHARS)}
-                                                      for o in options]})
+        out["questions"].append({"id": q.get("id"), "header": q.get("header"),
+                                 "question": _clip(q.get("question") or q.get("title"), ASK_CHARS),
+                                 "multiSelect": bool(q.get("multiSelect")),
+                                 "options": [{"label": o.get("label"), "description": _clip(o.get("description"), ASK_CHARS)}
+                                             for o in options]})
     return out
 
 
-def codex_asking(conn, channel: str, tables: set, status: str, rec: "Record") -> Optional[dict]:
-    """What a codex agent waits on the user for (module doc), None if nothing: RUNNING, a question it asked in its
-    terminal, its turn waiting (Plan mode's), that its record (`rec`) does not say was answered or dismissed, else one it
-    asked as its turn goes on (async: True); its turn over (IDLE), the plan it proposed, which its terminal asks whether
-    to implement -- {kind: "plan", call: "plan:<its turn>", at: when the turn ended, plan}."""
+def _asking(rec: "Record", status: str, harness: Optional[str]) -> Optional[dict]:
+    """What the agent waits on the user for, as its record says (`ask_view`'s), None if nothing: RUNNING, what its turn
+    waits on, not yet answered or dismissed -- else a question it asked as its turn goes on (async); its turn over
+    (IDLE), the plan it proposed, which its terminal asks whether to take: {kind: "plan", call: "plan:<its turn>", at:
+    when the turn ended, plan} (codex's)."""
     if status == RUNNING:
         got = rec.asking()
         if got is not None:
-            return {"kind": "question", "harness": "codex", "async": False, "at": got.get("at"), "call": got["call"],
-                    "questions": codex_questions(got.get("questions"))}
+            return ask_view({**got, "async": False}, harness)
         got = rec.open_question()
-        return {"kind": "question", "harness": "codex", "async": True, "at": got["at"], "call": got["call"],
-                "questions": codex_questions(got["questions"])} if got else None
+        return ask_view({"kind": "question", **got, "async": True}, harness) if got else None
     got = rec.offer() if status == IDLE else None
-    return {"kind": "plan", "harness": "codex", "at": got["at"], "call": got["call"],
-            "plan": _clip(got["text"], PLAN_CHARS)} if got else None
+    return ask_view({"kind": "plan", "call": got["call"], "at": got["at"], "plan": got["text"]}, harness) if got else None
 
 
 def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optional[dict]:
-    """What the agent waits on the user for now, as its hook recorded it (`Record.asking`; a codex agent's,
-    `codex_asking`), None if nothing; `cwd`, where the session runs (no longer needed: the record is read from events)."""
+    """What the agent waits on the user for now, as its hook recorded it (`_asking`), None if nothing; `cwd`, where the
+    session runs (no longer needed: the record is read from events)."""
     conn = _connect(gatherer)
     if conn is None:
         return None
@@ -819,11 +789,8 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
         if not _channels_kept(conn):
             return None
         tables = _tables(conn)
-        rec = record_of(conn, channel)
-        if _harness(conn, channel) == "codex":
-            over = turn_over(conn, channel, tables)[0]
-            return codex_asking(conn, channel, tables, IDLE if over else RUNNING, rec)
-        return ask_view(rec.asking(), _harness(conn, channel))
+        over = turn_over(conn, channel, tables)[0]
+        return _asking(record_of(conn, channel), IDLE if over else RUNNING, _harness(conn, channel))
     finally:
         conn.close()
 

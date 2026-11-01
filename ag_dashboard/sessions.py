@@ -1480,7 +1480,8 @@ class Sessions:
             typed = max(t.typed or 0, data.typed_at((self._row(session_id) or {}).get("gatherer") or "", session_id) or 0)
             if typed and ask.get("at") and typed >= ask["at"]:      # here, or as the gatherer kept it (terminal_input)
                 raise SessionError("something was typed into its terminal since it asked: finish answering there")
-            if ask.get("harness") == "codex" and ask.get("at") and t.since > ask["at"]:
+            rules = harness_kit.get(ask.get("harness") or harness_kit.DEFAULT)
+            if rules is not None and not rules.asks_shown_again and ask.get("at") and t.since > ask["at"]:
                 raise SessionError("its terminal opened after it asked, and does not ask it: answer in a message")
             keys = answers.keys(ask, choice)             # AnswerError, a ValueError: a choice that does not fit
             sent = {"call": ask.get("call"), "summary": answers.summary(ask, choice),

@@ -233,8 +233,8 @@ class RecordTest(RolloutBase):
 
 
 def codex_ask(*questions, asynchronous=False):
-    return {"kind": "question", "harness": "codex", "call": "call_1", "at": time.time() - 5,
-            "questions": data.codex_questions(list(questions)), **({"async": True} if asynchronous else {})}
+    return data.ask_view({"kind": "question", "call": "call_1", "at": time.time() - 5, "questions": list(questions),
+                          "async": asynchronous}, "codex")
 
 
 CODEX_PLAN = {"kind": "plan", "harness": "codex", "call": "plan:t1", "at": time.time() - 5, "plan": "1. Do it"}

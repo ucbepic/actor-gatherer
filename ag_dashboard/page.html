@@ -5514,7 +5514,9 @@ function backgroundNote(info, term = false) {
 function askingNote(info, answerable = true) {
   const ask = info && (info.status === "asking" || (info.status === "running" && info.asking && info.asking.async)) ? info.asking : null;
   if (!ask) return null;
-  const codex = ask.harness === "codex";
+  // how its harness has a reader answer it (harness_kit's `ask_says`): its words, and the ways to take a plan
+  const says = { plan_verb: "approve", plan_choices: [], plan_change: { label: "Or say what to change" }, own_answer: "Or type your own answer",
+    ...((harnessInfo(ask.harness || (state.home || {}).harness_default) || {}).ask_says || {}) };
   const qs = ask.questions || [];
   const s = info.session || {};
   // the dashboard's terminal, and nothing typed into it since it asked: answered from here
@@ -5522,7 +5524,7 @@ function askingNote(info, answerable = true) {
   const here = answerable && !SNAPSHOT && !!s.terminal && !touched;
   const sent = info.answer && info.answer.call === ask.call ? info.answer : null;
   const who = info.harness ? harnessName(info.harness) : "The agent";
-  const what = ask.kind === "plan" ? `${who} has a plan for you to ${codex ? "implement" : "approve"}`
+  const what = ask.kind === "plan" ? `${who} has a plan for you to ${says.plan_verb}`
     : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}${ask.async ? " as it works" : ""}`;
   const d = draftOf(ask);
   const late = sent && Date.now() / 1000 - sent.at > ANSWER_LATE;
@@ -5571,7 +5573,7 @@ function askingNote(info, answerable = true) {
       q.multiSelect ? el("span", { class: "hint", text: "Pick any" }) : null),
     el(here ? "div" : "ol", { class: "opts" + (q.multiSelect ? " multi" : ""), role: here ? (q.multiSelect ? "group" : "radiogroup") : null,
       "aria-label": q.question || null }, ...(q.options || []).map(option(q, i))),
-    here && !q.multiSelect ? own(i, codex && !ask.async ? "None of these? Say what, instead" : "Or type your own answer", () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
+    here && !q.multiSelect ? own(i, ask.async ? "Or type your own answer" : says.own_answer, () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
   // answered here, several questions: one at a time, as the terminal asks them, a tab each
   const tabs = here && qs.length > 1 ? el("div", { class: "qtabs", role: "tablist", "aria-label": "Questions" }, ...qs.map((q, i) =>
     el("button", { type: "button", class: "qtab", role: "tab", "aria-selected": i === tab ? "true" : "false", onclick: () => go(i) },
@@ -5595,17 +5597,11 @@ function askingNote(info, answerable = true) {
     const change = () => d.change.trim() && send({ plan: "change", text: d.change.trim() });
     foot = el("div", { class: "foot", "data-morph": "" },
       said(true),
-      el("div", { class: "change", "data-morph": "" }, own("plan", `Or tell ${codex ? "Codex" : "Claude"} what to change`, change),
+      el("div", { class: "change", "data-morph": "" }, own("plan", says.plan_change.label, change),
         el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: change,
-          title: codex ? "Codex's “No, stay in Plan mode”, then your words" : null }, "Ask for changes")),
-      codex ? el("div", { class: "acts" },              // its "clear context and implement" starts another thread: the terminal's
-        el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ plan: "implement" }),
-          title: "Codex's “Yes, implement this plan”: Default mode, and it starts coding" }, "Implement the plan")) :
-      el("div", { class: "acts" },
-        el("button", { type: "button", disabled: busy ? "" : null, onclick: () => send({ plan: "manual" }),
-          title: "Claude Code's “Yes, manually approve edits”" }, "Approve, I'll approve edits"),
-        el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ plan: "auto" }),
-          title: "Claude Code's “Yes, and use auto mode”" }, "Approve, auto mode")));
+          title: says.plan_change.title || null }, "Ask for changes")),
+      el("div", { class: "acts" }, ...says.plan_choices.map((c) => el("button", { type: "button", class: c.primary ? "primary" : "",
+        disabled: busy ? "" : null, onclick: () => send({ plan: c.id }), title: c.title || null }, c.label))));
   } else if (here && qs.length) {
     const n = nextOpen();
     foot = el("div", { class: "foot", "data-morph": "" },
@@ -6517,18 +6513,30 @@ if (markdownReady) {
   marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), code: ({ text, lang }) => codeFence(text, lang) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
-// Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan>, each tag on a
-// line of its own (codex's rule; the closing tag perhaps not streamed yet). markdown() draws it as a card headed
-// "Proposed plan", as codex's own terminal heads it. A tag in a sentence (`<proposed_plan>`) is only words about one.
-const PLAN_TAGS = /^<proposed_plan>[ \t]*(?:\r?\n|$)([\s\S]*?)\s*(?:^<\/proposed_plan>[ \t]*$|(?![\s\S]))/m;
-const unplanned = (t) => String(t ?? "").replace(/^<\/?proposed_plan>[ \t]*(?:\r?\n|$)/gm, "");
+// A block a harness's model writes in a reply that its own terminal draws apart (harness_kit's `reply_block`: codex's
+// proposed plan, between <proposed_plan> and </proposed_plan>), each tag on a line of its own (the closing one perhaps
+// not streamed yet). markdown() draws it as a card headed as the harness heads it. A tag in a sentence is only words.
+const reEscape = (s) => String(s).replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+let blocksOf = null, blocksFrom = null;
+function replyBlocks() {
+  const info = (state.home && state.home.harness_info) || {};
+  if (blocksFrom !== info) {
+    blocksFrom = info;
+    blocksOf = Object.values(info).map((h) => h.reply_block).filter((b) => b && b.open && b.close).map((b) => ({ ...b,
+      re: new RegExp(`^${reEscape(b.open)}[ \\t]*(?:\\r?\\n|$)([\\s\\S]*?)\\s*(?:^${reEscape(b.close)}[ \\t]*$|(?![\\s\\S]))`, "m"),
+      tags: new RegExp(`^(?:${reEscape(b.open)}|${reEscape(b.close)})[ \\t]*(?:\\r?\\n|$)`, "gm") }));
+  }
+  return blocksOf;
+}
+const unplanned = (t) => replyBlocks().reduce((s, b) => s.replace(b.tags, ""), String(t ?? ""));
 // `breaks`: each line break kept, for text written as lines rather than as markdown (a subagent's report)
 function markdown(text, breaks = false) {
-  const plan = typeof text === "string" && text.includes("<proposed_plan>") ? PLAN_TAGS.exec(text) : null;
-  if (plan) {                                      // codex's plan: what is around it as it is, the plan as a card
+  const block = typeof text === "string" ? replyBlocks().find((b) => text.includes(b.open)) : null;
+  const plan = block ? block.re.exec(text) : null;
+  if (plan) {                                      // a harness's block: what is around it as it is, the block as a card
     const before = text.slice(0, plan.index).trim(), after = text.slice(plan.index + plan[0].length).trim();
     return el("div", { class: "md" }, ...[before && markdown(before, breaks),
-      el("div", { class: "proposed-plan" }, el("div", { class: "pp-head", text: "Proposed plan" }), markdown(plan[1], breaks)),
+      el("div", { class: "proposed-plan" }, el("div", { class: "pp-head", text: block.title }), markdown(plan[1], breaks)),
       after && markdown(after, breaks)].filter(Boolean));
   }
   const box = el("div", { class: "md" });

@@ -1,22 +1,29 @@
-"""Codex's plan in the Chat view (ag_dashboard/page.html's PLAN_TAGS and unplanned): a plan is the text between
-<proposed_plan> and </proposed_plan>, each tag on a line of its own as codex's Plan mode writes them; a tag named in a
-sentence is only words -- run in Node, without the rest of the page."""
+"""Codex's plan in the Chat view (ag_dashboard/page.html's replyBlocks and unplanned, from harness_kit's `reply_block`):
+a plan is the text between <proposed_plan> and </proposed_plan>, each tag on a line of its own as codex's Plan mode
+writes them; a tag named in a sentence is only words -- run in Node, without the rest of the page."""
 import json
 import os
-import re
 import shutil
 import subprocess
+import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from ag_dashboard import data  # noqa: E402
+
 PAGE = os.path.join(ROOT, "ag_dashboard", "page.html")
-# the page's two lines, then each text as markdown() splits it: [before, the plan, after] or null; and its summary line
+START, END = "const reEscape = ", "// `breaks`: each line break kept"
+# the harnesses as the home has them, the page's lines, then each text as markdown() splits it: [before, the plan,
+# after] or null; and its summary line
 RUN = r"""
+const state = { home: { harness_info: %s } };
 %s
 let input = "";
 process.stdin.on("data", (d) => { input += d; }).on("end", () => process.stdout.write(JSON.stringify(
   JSON.parse(input).map((t) => {
-    const p = PLAN_TAGS.exec(t);
+    const b = replyBlocks().find((x) => t.includes(x.open)), p = b ? b.re.exec(t) : null;
     return [p && [t.slice(0, p.index).trim(), p[1], t.slice(p.index + p[0].length).trim()], unplanned(t)];
   }))));
 """
@@ -25,8 +32,9 @@ process.stdin.on("data", (d) => { input += d; }).on("end", () => process.stdout.
 def run(*texts):
     with open(PAGE, encoding="utf-8") as fh:
         page = fh.read()
-    code = "\n".join(re.search(r"^const %s = .*$" % name, page, re.M).group(0) for name in ("PLAN_TAGS", "unplanned"))
-    got = subprocess.run(["node", "-e", RUN % code], input=json.dumps(texts), capture_output=True, text=True, timeout=30)
+    code = page[page.index(START):page.index(END)]
+    got = subprocess.run(["node", "-e", RUN % (json.dumps(data.harness_info()), code)], input=json.dumps(texts),
+                         capture_output=True, text=True, timeout=30)
     if got.returncode:
         raise AssertionError(got.stderr)
     return json.loads(got.stdout)
