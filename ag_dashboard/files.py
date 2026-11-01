@@ -204,7 +204,7 @@ def _events(conn, channel: str, stops: List[dict] = ()):
         f"AND {data.NOT_RECORD}{kept} ORDER BY e.row_id", (channel,)).fetchall()
     harness = data._harness(conn, channel)
     for r in rows:
-        parts = data.parts(r["type"] or "?", r["payload_json"], r["text"], None, harness)
+        parts = data.parts(r["type"] or "?", r["payload_json"], r["text"], None, harness, r["p_kind"])
         if r["p_kind"] == Kind.SKILL and r["p_call_id"]:
             for p in parts:
                 if p["kind"] == "note":
@@ -269,6 +269,7 @@ def _git(conn) -> dict:
         if top == last:
             return got
         call, touch = types.get("tool_call", -1), types["file_touched"]
+        harnesses: Dict[str, Optional[str]] = {}         # each channel's harness, as its calls recorded it
         of = lambda key: f"CASE WHEN event_type_id = {touch} THEN json_extract(payload_json, '$.{key}') END"   # noqa: E731
         for typ, session, inserted, raw, cid, at_path, how, gitdir in conn.execute(
                 f"SELECT event_type_id, p_channel, inserted_at, CASE WHEN event_type_id = ? THEN payload_json END, {of('call')}, "
@@ -277,10 +278,10 @@ def _git(conn) -> dict:
                 "AND (event_type_id = ? OR text IS NULL OR text LIKE '%git%') ORDER BY row_id",
                 (call, touch, call, touch, last, top, touch)):
             at, session = data._seconds(inserted), session or ""
-            if typ == call:                          # a call: whether it ran git, whatever harness wrote it
-                p = data._json(raw)
-                harness = "codex" if isinstance(p, dict) and p.get("type") else "claude"
-                for part in data.parts("tool_call", raw, None, None, harness):
+            if typ == call:                          # a call: whether it ran git, read by its channel's harness's rules
+                if session not in harnesses:
+                    harnesses[session] = data._harness(conn, session)
+                for part in data.parts("tool_call", raw, None, None, harnesses[session]):
                     ran = [(part.get("name"), part.get("input"))] + [(c.get("name"), c.get("input")) for c in part.get("calls") or []]
                     if part.get("kind") == "call" and part.get("id") and any(
                             name in SHELLS and runs_git(_shell_text(name, inp)[0]) for name, inp in ran):
@@ -315,12 +316,10 @@ def _stops(conn, channel: str) -> List[dict]:
     return out
 
 
-def _interrupted(text: str) -> bool:
+def _interrupted(part: dict) -> bool:
     """Whether a note of the harness's in the conversation is its note that the user stopped the turn (Esc), sent with
-    the next: Claude Code's "[Request interrupted by user]" (" for tool use]"), codex's <turn_aborted>."""
-    text = text.strip()
-    return claude_rules.opening(text) == Kind.INTERRUPT or text.startswith(
-        tuple(m for m, k in codex_rules.PREAMBLE if k == Kind.INTERRUPT))
+    the next, as its rules read it (INTERRUPT: Claude Code's "[Request interrupted by user]", codex's <turn_aborted>)."""
+    return (part.get("said") or {}).get("kind") == Kind.INTERRUPT
 
 
 def _turn_starts(evs: list, held: List[dict]) -> tuple:
@@ -514,12 +513,15 @@ def _json(text) -> Optional[dict]:
 
 NOTES = {Kind.SKILL: "skill", Kind.AGENT_REPORT: "report", Kind.PEER_MESSAGE: "peer", Kind.LOCAL_COMMAND: "command",
          Kind.COMMAND_OUTPUT: "printed"}
+#: What a note's kind says that Chat shows (Part.detail), read by its harness's rules: one they read no more of (Claude
+#: Code's <local-command-stdout>, its COMMAND_OUTPUT with no `text`) is not shown as one.
+NEEDS = {"skill": ("instructions",), "report": ("text",), "peer": ("text",), "command": ("name",), "printed": ("text",)}
 
 
-def _note(text: str, loaded_by: Optional[dict] = None) -> Optional[dict]:
-    """What a note of the harness's in the conversation is, as the Chat view shows it (its harness's rules read it:
-    harness_kit.claude's `note_detail`, harness_kit.codex's and harness_kit.antigravity's `report_of`); None for one it
-    doesn't:
+def _note(part: dict, loaded_by: Optional[dict] = None) -> Optional[dict]:
+    """What a note of the harness's in the conversation is (`part`, as data.parts gives it), as the Chat view shows it --
+    by its Kind and what that kind says, as its harness's rules read it (`said`: harness_kit's Part); None for a note
+    of another kind:
         {kind: "skill", name, args, text}   a skill's instructions, loaded by the Skill tool or the user's /name -- or,
                                             stored as a skill's (`_events`), loaded by `loaded_by`, the Skill call
                                             ({} where it is not known), named by it where its instructions don't
@@ -529,21 +531,30 @@ def _note(text: str, loaded_by: Optional[dict] = None) -> Optional[dict]:
         {kind: "command", name}             a command the user ran that Claude Code runs itself (/context, /mcp): not
                                             shown, only matched with what was sent from the page
         {kind: "printed", text}             what a command the user ran with ! printed"""
-    said = claude_rules.note_detail(text, Kind.SKILL if loaded_by is not None else None) or codex_rules.report_of(text) \
-        or agy_rules.report_of(text)
-    if said is None:
+    read = part.get("said") or {}
+    kind, said = NOTES.get(read.get("kind")), read.get("detail") or {}
+    if kind is None or not set(NEEDS[kind]) <= set(said):        # its rules read no more of it than its kind
         return None
-    kind = NOTES[said.pop("kind")]
+    text = lambda k: str(said.get(k) or "")                     # noqa: E731
     if kind == "skill":
         inp = (loaded_by or {}).get("input") if isinstance((loaded_by or {}).get("input"), dict) else {}
-        return {"kind": kind, "name": said["name"] or str(inp.get("skill") or ""),
-                "args": said["args"] or str(inp.get("args") or ""), "text": said["instructions"]}
+        return {"kind": kind, "name": text("name") or str(inp.get("skill") or ""),
+                "args": text("args") or str(inp.get("args") or ""), "text": text("instructions")}
+    if kind == "report":
+        return {"kind": kind, "from": text("from"), "text": text("text")}
+    if kind == "peer":
+        return {"kind": kind, "name": text("name"), "text": text("text")}
+    if kind == "command":
+        return {"kind": kind, "name": text("name")}
     if kind == "printed":
-        return {"kind": kind, "text": said["text"][:COMMAND_OUTPUT]}
-    return {"kind": kind, **said}
+        return {"kind": kind, "text": text("text")[:COMMAND_OUTPUT]}
+    return None
 
 
-_loaded = claude_rules.loaded       # the files a note gives the agent the lines of: (path, [(n, line)], how)
+def _loaded(part: dict) -> List[tuple]:
+    """The files a note of the harness's gives the agent the lines of, as its rules read it (Part.detail's `loaded`):
+    [(path, [(n, line)], how)]."""
+    return [tuple(x) for x in ((part.get("said") or {}).get("detail") or {}).get("loaded") or []]
 
 
 def _changed(blocks: List[dict]) -> Optional[List[int]]:
@@ -1000,9 +1011,9 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     head["last"] = None                      # shown after the call: the call is no longer the last
                 head["now"] = {"kind": "thinking"}
             elif p["kind"] == "note":                        # Claude Code's own: a report, a message, a skill loaded, a ! command's output
-                n = _note(p.get("text") or "", calls.get(p["loaded_by"]) or {} if p.get("loaded_by") else None)
+                n = _note(p, calls.get(p["loaded_by"]) or {} if p.get("loaded_by") else None)
                 if n is None:
-                    if _interrupted(p.get("text") or ""):   # stopped (Esc), as its next turn told the model
+                    if _interrupted(p):                     # stopped (Esc), as its next turn told the model
                         head["stopped"] = {"kind": "interrupted", "at": None, "text": None, "status": None, "reason": None}
                 elif n["kind"] == "report":
                     by = n.pop("from")
@@ -1023,7 +1034,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     head.setdefault("ran", []).append(n["name"])
                 else:
                     head["output"] = n["text"]               # what a ! command printed: under it
-                for path, rows, how in _loaded(p.get("text") or ""):
+                for path, rows, how in _loaded(p):
                     order.append((ahead[i] or cur, {"kind": "loaded", "path": path, "rows": rows, "via": how}))
     if any(not x["given"] for x in spawned.values()):    # ended, its report not handed back yet: from its own record
         for path, x in spawned.items():

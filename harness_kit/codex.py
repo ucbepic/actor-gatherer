@@ -29,6 +29,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
                    ToolCall, ToolResult, one_line, output_of, picked, seconds, typed_in)
+from .shell import CODE_MODE, script_calls
 
 # Codex item type -> Kind. None = a message: its role decides (ROLES). An item type not listed here is OTHER.
 ITEM_KINDS = {
@@ -139,9 +140,9 @@ def texts_of(item) -> list:
 
 def own_context(item) -> Optional[str]:
     """The Kind of codex's own context a user-role message is -- made only of it (PREAMBLE_MARKERS), or of nothing
-    (OTHER) -- by its first text that says anything; None: the user's."""
-    texts = [p.get("text", "") for p in item.get("content") or []
-             if isinstance(p, dict) and p.get("type") == "input_text"]
+    (OTHER) -- by its first text that says anything; None: the user's. Its text parts are `input_text` as codex sends
+    them; any other part with words (a message stored in another shape) is read as one too."""
+    texts = texts_of(item)
     if not any(t.strip() for t in texts):
         return Kind.OTHER
     if not all(t.strip().startswith(PREAMBLE_MARKERS) or not t.strip() for t in texts):
@@ -633,6 +634,8 @@ class Codex(Harness):
             args = arguments(item.get("arguments", item.get("input")))
             action = TOOLS.get(name, (Action.OTHER, None))[0]
             p.tool = ToolCall(item.get("call_id") or item.get("id"), name, args, action, ask=ask_of(name, args))
+            if name == CODE_MODE and isinstance(args, str):      # a code-mode script: the tools it calls
+                p.tool.calls = [ToolCall(None, n, a, TOOLS.get(n, (Action.OTHER, None))[0]) for n, a in script_calls(args)]
         elif t == "local_shell_call":
             p.tool = ToolCall(item.get("call_id") or item.get("id"), "local_shell", item.get("action") or {}, Action.SHELL)
         elif t == "web_search_call":

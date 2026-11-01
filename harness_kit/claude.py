@@ -915,6 +915,18 @@ class ClaudeCode(Harness):
                     out[i].kind = Kind.COMPACTION_REPEAT
         return out
 
+    def read_one(self, payload, kind: Optional[str] = None) -> List[Part]:
+        """A stored piece read on its own: one stored as a skill's instructions (`kind` SKILL, read so after the Skill
+        call that loaded it: `launched`) read as those again where its words alone do not say so -- a skill's bare
+        instructions, its name then "" (the call names it)."""
+        out = super().read_one(payload)
+        if kind == Kind.SKILL and len(out) == 1 and out[0].kind != Kind.SKILL and out[0].detail.get("block") == "text":
+            said = note_detail(out[0].text or "", Kind.SKILL) or {}
+            said.pop("kind", None)
+            out[0].kind, out[0].words = Kind.SKILL, None
+            out[0].detail.update(said)
+        return out
+
     def part(self, item) -> Part:
         """One piece read on its own."""
         typed = typed_command(item)
@@ -945,6 +957,8 @@ class ClaudeCode(Harness):
                 p.detail["loaded"] = got
         if kind in (Kind.PEER_MESSAGE, Kind.AGENT_REPORT) and "text" in p.detail:   # which, as its tag says
             p.kind = Kind.AGENT_REPORT if "from" in p.detail else Kind.PEER_MESSAGE
+        if b.get("type") in ("image", "document"):
+            p.attachment = b["type"]
         if b.get("type") in ("tool_use", "server_tool_use"):
             p.tool = tool_call(b)
         elif b.get("type") in ("tool_result", "web_search_tool_result"):

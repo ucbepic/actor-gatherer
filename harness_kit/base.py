@@ -115,13 +115,16 @@ class ToolCall:
     """A tool call: its id, its tool, its input (an object; or a string, as the harness gave it), what it
     does (`action`, an Action), the files it names, and -- when it asks the user and the turn waits --
     what it asks (`ask`: {kind: "question", questions: [{id, header, question, multiSelect, options:
-    [{label, description}]}]} or {kind: "plan", plan: its text, None when the call carries none})."""
+    [{label, description}]}]} or {kind: "plan", plan: its text, None when the call carries none}). A call
+    that runs a script calling other tools (codex's code mode) has those calls, in the order written
+    (`calls`: each a ToolCall with no id, its input None where the script does not write it out)."""
     id: Optional[str]
     name: str
     input: Any = None
     action: str = Action.OTHER
     paths: List[str] = field(default_factory=list)
     ask: Optional[dict] = None
+    calls: List["ToolCall"] = field(default_factory=list)
 
 
 @dataclass
@@ -142,8 +145,10 @@ class Part:
     model reads of it (None: nothing to read, such as encrypted reasoning) -- and `words`, the user's own
     words in it, unwrapped (USERS: "! ls", "/greet Bob", a message sent mid-turn), else None. A tool call or
     result has `tool` or `result`; a piece that states the agent's working directory, `cwd`; `opaque`, an
-    opaque blob (encrypted reasoning). `detail` holds what a kind says besides:
+    opaque blob (encrypted reasoning); `attachment`, what it is when it is a file sent along ("image",
+    "document"), its text then only names it. `detail` holds what a kind says besides:
 
+        REASONING        thinking: its words as a reader sees them ("" when encrypted; else, its text)
         SKILL            name, args, instructions; call, the id of the tool call that loaded it (Claude Code's Skill)
         AGENT_REPORT     from (the subagent's id or path), text (its report)
         PEER_MESSAGE     name (who sent it), text
@@ -161,6 +166,7 @@ class Part:
     cwd: Optional[str] = None
     opaque: bool = False
     detail: Dict[str, Any] = field(default_factory=dict)
+    attachment: Optional[str] = None
 
 
 class RenameError(ValueError):
@@ -313,8 +319,10 @@ class Harness(ABC):
         """Each piece read, one Part per piece, in order. The whole list, because what a piece is may
         depend on its neighbours."""
 
-    def read_one(self, payload) -> List[Part]:
-        """A stored piece read on its own (its neighbours not known): one Part per piece it splits into."""
+    def read_one(self, payload, kind: Optional[str] = None) -> List[Part]:
+        """A stored piece read on its own (its neighbours not known): one Part per piece it splits into. `kind`, the Kind
+        it was read as when it was stored, with its neighbours: what a harness whose pieces its neighbours decide (a
+        skill's bare instructions, after the call that loaded it) reads it as again. By default, not needed."""
         return self.read(self.items([payload]))
 
     def words(self, text: str) -> tuple:
