@@ -25,8 +25,9 @@ ones it started:
                      whether a process runs (no /proc: macOS); 0 when none has
     role             what the session is for, besides its messages: "coordinator", its gatherer's gatherer agent
                      (coordination.py), run with that role's instructions added to its harness's own on every run
-                     (`instructions`); or, as JSON, {"docwriter": key}: the agent of a DocWriter (docwriter.py),
-                     started with its tools and instructions (`extra_args`); NULL, an actor like any other
+                     (`instructions`); or, as JSON, {"docwriter": key}: the agent of a DocWriter (docwriter.py), or
+                     {"browser": key}: a Browser's (browser.py), started with its tools and instructions
+                     (`extra_args`); NULL, an actor like any other
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
 --output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
@@ -397,23 +398,24 @@ def instructions(s: dict) -> Optional[str]:
 
 
 def extra_args(s: dict) -> List[str]:
-    """What a session's harness is started with besides its own options, as its `role` says -- a DocWriter's agent:
-    its tools and instructions (docwriter.py's `launch_args`); [] for any other."""
+    """What a session's harness is started with besides its own options, as its `role` says -- a DocWriter's agent, or
+    a Browser's: its tools and instructions (docwriter.py's, browser.py's `launch_args`); [] for any other."""
     if not str(s.get("role") or "").startswith("{"):
         return []
-    from . import docwriter                     # here: it uses this module
-    return docwriter.launch_args(s)
+    from . import browser, docwriter            # here: they use this module
+    return docwriter.launch_args(s) or browser.launch_args(s)
 
 
 def known_role(role: str) -> bool:
-    """Whether `role` is one a session may have: one of ROLES, or a DocWriter's ({"docwriter": key}, docwriter.py)."""
+    """Whether `role` is one a session may have: one of ROLES, a DocWriter's ({"docwriter": key}, docwriter.py), or a
+    Browser's ({"browser": key}, browser.py)."""
     if role in ROLES:
         return True
     try:
         got = json.loads(role)
     except (TypeError, ValueError):
         return False
-    return isinstance(got, dict) and isinstance(got.get("docwriter"), str)
+    return isinstance(got, dict) and (isinstance(got.get("docwriter"), str) or isinstance(got.get("browser"), str))
 
 
 def login_shell() -> str:
@@ -704,7 +706,7 @@ class Sessions:
         if model and not re.fullmatch(r"[A-Za-z0-9._:/@-]+", model):
             raise SessionError(f"model {model!r}: not a model's name")
         if role is not None and not known_role(role):
-            raise SessionError(f"role {role!r}: one of {', '.join(ROLES)}, or a DocWriter's")
+            raise SessionError(f"role {role!r}: one of {', '.join(ROLES)}, or a DocWriter's or a Browser's")
         session_id = str(uuid.uuid4())
         conn = self._db()
         try:
