@@ -1157,6 +1157,8 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .bw-menu.list button { padding-left: 26px; }
 .bw-menu.list button.on::before { content: "✓"; position: absolute; left: 9px; }
 .bw-menu .grp { padding: 5px 10px 2px; color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.bw-menu .note { color: var(--muted); margin-left: 10px; }
+.bw-menu.suggest { min-width: 120px; }
 .bw-menu hr { border: 0; border-top: 1px solid var(--ring); margin: 4px 2px; }
 .bw-menu.field { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px; }
 .bw-menu.field button { width: auto; color: #2563EB; }
@@ -10834,7 +10836,8 @@ function bwUiDraw(b) {
   const p = st.popup;
   if (p && p.n !== b.popSeen) {
     b.popSeen = p.n;
-    if (Date.now() - b.userAt < BW_USER_WAIT) bwPopOpen(b, p);
+    if (p.k === "suggest" && !p.options.length) { if (b.pop && b.pop.classList.contains("suggest")) bwPopClose(b); }   // gone
+    else if (Date.now() - b.userAt < BW_USER_WAIT) bwPopOpen(b, p);
   }
   if (!p && b.pop) bwPopClose(b);                  // the page it was on went
   // the page's file chooser: the user's own, at once if they just acted, else from the bar
@@ -10894,6 +10897,7 @@ function bwPopOpen(b, p) {
     s.selectedIndex = p.i;
     bwPlace(s, box);
     b.stage.append(s);
+    s.getBoundingClientRect();                     // laid out first: its list opens where it is, not at the view's corner
     s.addEventListener("change", () => { const i = s.selectedIndex; bwPopClose(b); back(); bwPost(b, "choose", { n: p.n, index: i }).catch(bwSay(b)); });
     try { s.showPicker(); b.pop = s; return; } catch (e) { s.remove(); }
     const items = [];                              // the browser shows none now: a list of the dashboard's
@@ -10914,6 +10918,7 @@ function bwPopOpen(b, p) {
     if (p.type === "color") input.addEventListener("input", () => { clearTimeout(b.colorT); b.colorT = setTimeout(send, 150); });
     bwPlace(input, box);
     b.stage.append(input);
+    input.getBoundingClientRect();                 // laid out first: its picker opens where it is
     try { input.showPicker(); b.pop = input; return; } catch (e) { input.remove(); }
     input.className = "";                          // the browser opens none now: the field, to open it from
     input.removeAttribute("style");
@@ -10924,6 +10929,10 @@ function bwPopOpen(b, p) {
     bwPlace(m, [box[0], box[1] + box[3] + 2, 0, 0]);
     Object.assign(m.style, { width: "", height: "" });
     return;
+  }
+  if (p.k === "suggest") {                         // a field's suggestions, under it: the field keeps the keys
+    return bwMenu(b, box[0], box[1] + box[3] + 2, p.options.map((o, i) => ({ label: o.t, note: o.l,
+      run: () => bwPost(b, "choose", { n: p.n, index: i }).catch(bwSay(b)) })), "suggest", { focus: false, width: box[2] });
   }
   if (p.k === "menu") {                            // the right-click menu, where the page has none of its own
     const [x, y] = p.at || [b.pointer.x, b.pointer.y];
@@ -10955,14 +10964,16 @@ function bwPopOpen(b, p) {
   }
   if (p.k === "find") bwFindOpen(b);
 }
-// A menu of the dashboard's over the page, at (x, y): items {label, run, on?, disabled?} | {head} | null (a line).
-function bwMenu(b, x, y, items, kind = "") {
+// A menu of the dashboard's over the page, at (x, y): items {label, note?, run, on?, disabled?} | {head} | null (a
+// line); focused (its keys its own) unless `focus` is false, at least `width` wide.
+function bwMenu(b, x, y, items, kind = "", { focus = true, width = 0 } = {}) {
   bwPopClose(b);
   const m = bwShield(el("div", { class: `bw-menu ${kind}`.trim(), role: "menu" }));
   for (const it of items) {
     if (!it) { if (m.lastChild && m.lastChild.localName !== "hr") m.append(el("hr")); continue; }
     if (it.head) { m.append(el("div", { class: "grp", text: it.head })); continue; }
-    const btn = el("button", { type: "button", role: "menuitem", class: it.on ? "on" : "", text: it.label, title: it.label });
+    const btn = el("button", { type: "button", role: "menuitem", class: it.on ? "on" : "", title: it.label, tabindex: focus ? null : "-1" },
+      it.label, it.note ? el("span", { class: "note", text: it.note }) : null);
     btn.disabled = !!it.disabled;
     btn.addEventListener("click", () => { bwPopClose(b); b.stage.focus({ preventScroll: true }); it.run(); });
     m.append(btn);
@@ -10977,12 +10988,13 @@ function bwMenu(b, x, y, items, kind = "") {
       all[i < 0 ? (down ? 0 : n - 1) : (i + (down ? 1 : n - 1)) % n].focus();
     }
   });
+  if (width) m.style.minWidth = `${width}px`;
   b.stage.append(m);
   b.pop = m;
   const w = b.stage.clientWidth, h = b.stage.clientHeight;
   m.style.left = `${Math.max(4, Math.min(x, w - m.offsetWidth - 4))}px`;
   m.style.top = `${y + m.offsetHeight + 4 > h ? Math.max(4, y - m.offsetHeight) : y}px`;
-  (m.querySelector("button.on:not([disabled])") || m.querySelector("button:not([disabled])"))?.focus({ preventScroll: true });
+  if (focus) (m.querySelector("button.on:not([disabled])") || m.querySelector("button:not([disabled])"))?.focus({ preventScroll: true });
 }
 // The find bar, in the Browser's bar (Cmd+F, where the page takes it not; or the right-click menu): Enter for the
 // next, Shift+Enter the one before, Esc to close it.

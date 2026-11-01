@@ -1263,7 +1263,7 @@ class Browser:
             elif k == "tip":
                 text = str(m.get("text") or "")[:1000]
                 tab.tip = {"text": text, "at": _point(m.get("at"))} if text.strip() else None
-            elif k in ("select", "picker", "menu", "find"):
+            elif k in ("select", "picker", "menu", "find", "suggest"):
                 self.ui_n += 1
                 tab.popup = {"n": self.ui_n, "k": k, "ctx": params.get("executionContextId"), **_popup(k, m)}
             else:
@@ -1274,8 +1274,8 @@ class Browser:
         """What the user chose in the drop-down's list or the picker `n` (`_ui`), shown by the view: set in the page,
         its `input` and `change` sent, as if chosen there."""
         with self.lock:
-            tab = next((t for t in self.tabs if t.popup and t.popup["n"] == n and t.popup["k"] in ("select", "picker")),
-                       None)
+            tab = next((t for t in self.tabs if t.popup and t.popup["n"] == n
+                        and t.popup["k"] in ("select", "picker", "suggest")), None)
             p = dict(tab.popup) if tab is not None else None
         if tab is None or p is None:
             raise BrowserError("that list is gone: the page changed", 409)
@@ -1284,6 +1284,11 @@ class Browser:
             if index is None or not 0 <= index < len(p["options"]):
                 raise BrowserError("no such option")
             what, said = index, f'chose "{p["options"][index]["t"]}" in drop-down{name}'
+        elif p["k"] == "suggest":
+            if index is None or not 0 <= index < len(p["options"]):
+                raise BrowserError("no such suggestion")
+            what = p["options"][index]["t"]
+            said = f'chose the suggestion "{what}" for field{name}'
         else:
             if value is None:
                 raise BrowserError("a value, please")
@@ -2193,6 +2198,29 @@ UI_JS = r"""(() => {
     }
   }, true);
 
+  // a field's suggestions (its <datalist>): those matching what it has, shown by the dashboard under it, as the
+  // user clicks into it or types; none: gone
+  let suggesting = null;
+  const listed = (el) => !!el && el.localName === 'input' && !!el.list && !el.disabled && !el.readOnly;
+  const suggest = (i) => {
+    const want = (i.value || '').toLowerCase();
+    const options = [...i.list.options].filter((o) => !o.disabled && o.value && o.value !== i.value
+      && (o.value.toLowerCase().includes(want) || (o.label || '').toLowerCase().includes(want)))
+      .slice(0, 200).map((o) => ({ t: o.value.slice(0, 300), l: o.label && o.label !== o.value ? o.label.slice(0, 300) : '' }));
+    if (!options.length && suggesting !== i) return;
+    suggesting = options.length ? i : null;
+    open = i;
+    say({ k: 'suggest', options, box: box(i), name: nameOf(i) });
+  };
+  const unsuggest = () => { if (suggesting) { suggesting = null; say({ k: 'suggest', options: [] }); } };
+  addEventListener('input', (e) => { const i = real(e); if (listed(i)) suggest(i); }, true);
+  addEventListener('mousedown', (e) => {
+    const i = real(e);
+    if (e.button === 0 && listed(i)) setTimeout(() => { if (i.getRootNode().activeElement === i) suggest(i); }, 0);
+  }, true);
+  addEventListener('focusout', (e) => { if (suggesting && real(e) === suggesting) unsuggest(); }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && suggesting && real(e) === suggesting) unsuggest(); }, true);
+
   // the right-click menu, where the page shows none of its own; Cmd+F, where the page takes it not
   addEventListener('contextmenu', (e) => {
     const path = e.composedPath(), el = real(e), p = at(e.clientX, e.clientY);
@@ -2225,20 +2253,28 @@ UI_JS = r"""(() => {
       if (!again) sel.removeAllRanges();
       else if (sel.rangeCount) { if (back) sel.collapseToStart(); else sel.collapseToEnd(); }
       const found = !!q && window.find(q, false, back, true, false, false, false);
+      // every match, in the page's order: in its text, and in its text fields' values (Chrome's find looks there too)
       const want = q.toLowerCase(), hits = [];
+      const field = (n) => n.localName === 'textarea' || (n.localName === 'input' && TEXTY.has((n.getAttribute('type') || '').toLowerCase()));
       if (want) {
-        const walk = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
-        for (let t = walk.nextNode(); t && hits.length < 1000; t = walk.nextNode()) {
-          const s = t.data.toLowerCase();
+        const walk = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+        for (let n = walk.nextNode(); n && hits.length < 1000; n = walk.nextNode()) {
+          const box = n.nodeType === 1 ? n : n.parentElement;
+          if (n.nodeType === 1 && !field(n)) continue;
+          if (n.nodeType === 3 && box && box.localName === 'textarea') continue;   // (its first value, not its value)
+          const s = (n.nodeType === 1 ? n.value || '' : n.data).toLowerCase();
           let i = s.indexOf(want);
-          if (i < 0 || (t.parentElement && t.parentElement.checkVisibility && !t.parentElement.checkVisibility())) continue;
-          for (; i >= 0 && hits.length < 1000; i = s.indexOf(want, i + want.length)) hits.push([t, i]);
+          if (i < 0 || (box && box.checkVisibility && !box.checkVisibility())) continue;
+          for (; i >= 0 && hits.length < 1000; i = s.indexOf(want, i + want.length)) hits.push([n, i]);
         }
       }
       let index = -1;
-      if (found && sel.rangeCount) {
+      const now = document.activeElement;
+      if (found && now && field(now) && now.selectionEnd > now.selectionStart) {
+        index = hits.findIndex(([n, i]) => n === now && i === now.selectionStart);
+      } else if (found && sel.rangeCount) {
         const r = sel.getRangeAt(0);
-        index = hits.findIndex(([t, i]) => t === r.startContainer && i === r.startOffset);
+        index = hits.findIndex(([n, i]) => n === r.startContainer && i === r.startOffset);
       }
       return { count: hits.length, index };
     },
@@ -2272,7 +2308,8 @@ def _link(v) -> str:
 
 
 def _popup(k: str, m: dict) -> dict:
-    """What a list, picker or menu UI_JS asked for has, as the view is to be told it, cut to size."""
+    """What a list, picker, a field's suggestions or a menu UI_JS asked for has, as the view is to be told it,
+    cut to size."""
     def s(key: str, n: int) -> str:
         return str(m.get(key) or "")[:n]
     if k == "select":
@@ -2287,6 +2324,11 @@ def _popup(k: str, m: dict) -> dict:
         return {"box": _numbers(m.get("box"), 4), "name": s("name", 80),
                 "type": kind if kind in PICKER_TYPES else "date", "value": s("value", 100), "min": s("min", 100),
                 "max": s("max", 100), "step": s("step", 40)}
+    if k == "suggest":
+        options = m.get("options") if isinstance(m.get("options"), list) else []
+        return {"box": _numbers(m.get("box"), 4), "name": s("name", 80),
+                "options": [{"t": str(o.get("t") or "")[:300], "l": str(o.get("l") or "")[:300]}
+                            for o in options[:200] if isinstance(o, dict) and o.get("t")]}
     if k == "menu":
         return {"at": _point(m.get("at")), "link": _link(m.get("link")), "linkText": s("linkText", 200),
                 "img": _link(m.get("img")), "sel": s("sel", 100_000), "editable": bool(m.get("editable"))}

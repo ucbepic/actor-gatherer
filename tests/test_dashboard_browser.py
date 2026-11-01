@@ -71,9 +71,11 @@ WIDGETS = """<!doctype html><title>Widgets</title>
 <a class=r id=dl download="hello.txt" href="data:text/plain,hi" style="top:490px">Download</a>
 <p class=r id=out style="top:520px"></p>
 <p class=r style="top:560px">apple, Apple and apples</p>
+<input class=r id=fruit list=fruits aria-label=Fruit style="top:600px">
+<datalist id=fruits><option value=apple><option value=apricot><option value=banana label=Yellow></datalist>
 <script>
 const log = (s) => document.getElementById('out').textContent += s + ' ';
-for (const id of ['size', 'day', 'hue', 'up']) document.getElementById(id).addEventListener('change',
+for (const id of ['size', 'day', 'hue', 'up', 'fruit']) document.getElementById(id).addEventListener('change',
   (e) => log(id + '=' + (e.target.files ? [...e.target.files].map((f) => f.name).join() : e.target.value)));
 drop.addEventListener('dragover', (e) => e.preventDefault());
 drop.addEventListener('drop', (e) => { e.preventDefault(); log('dropped=' + [...e.dataTransfer.files].map((f) => f.name).join()); });
@@ -245,6 +247,8 @@ class ShownTest(unittest.TestCase):
         self.assertEqual(browser._popup("select", {"i": "1", "box": [1, 2]})["i"], -1)
         self.assertIsNone(browser._popup("select", {"box": [1, 2]})["box"])
         self.assertEqual(browser._popup("picker", {"type": "evil"})["type"], "date")
+        got = browser._popup("suggest", {"options": [{"t": "a" * 400, "l": 5}, {"t": ""}, "junk"] + [{"t": "b"}] * 300})
+        self.assertEqual((len(got["options"]), got["options"][0]), (198, {"t": "a" * 300, "l": "5"}))   # 200 taken
         menu = browser._popup("menu", {"link": "javascript:alert(1)", "img": "https://x.org/a.png", "at": [1, 2]})
         self.assertEqual((menu["link"], menu["img"], menu["at"]), ("", "https://x.org/a.png", [1.0, 2.0]))
 
@@ -660,6 +664,22 @@ class ChromeTest(Home):
         self.b.choose(p["n"], value="#ff0000")
         self.assertIn("hue=#ff0000", self.page_says())
 
+    def test_a_field_s_suggestions_are_the_view_s_and_the_one_chosen_fills_it(self):
+        self.widgets()
+        self.click_at(self.at("fruit"))
+        p = self.popup("suggest")
+        self.assertEqual([(o["t"], o["l"]) for o in p["options"]], [("apple", ""), ("apricot", ""), ("banana", "Yellow")])
+        self.assertEqual((p["name"], len(p["box"])), ("Fruit", 4))
+        self.b.input([{"type": "text", "text": "ap"}])               # typed: those matching, each keystroke
+        self.assertTrue(self.until(lambda: [o["t"] for o in self.b.state()["popup"]["options"]] == ["apple", "apricot"]))
+        p = self.b.state()["popup"]
+        self.b.choose(p["n"], index=1)
+        self.assertIn("fruit=apricot", self.page_says())
+        self.assertIn('chose the suggestion "apricot" for field "Fruit"', self.b.log)
+        self.assertTrue(self.until(lambda: self.b.state()["popup"]["options"] == []))   # none left: gone
+        with self.assertRaises(browser.BrowserError):
+            self.b.choose(self.b.state()["popup"]["n"], index=0)
+
     def test_a_tooltip_shows_after_a_hover_and_goes_with_a_click(self):
         self.widgets()
         x, y = self.at("tip")
@@ -689,6 +709,11 @@ class ChromeTest(Home):
         self.assertEqual(self.text("evaluate", expression="String(getSelection())"), "Apple")
         self.assertEqual(self.b.find("apple", back=True, again=True), {"count": 3, "index": 0})
         self.assertEqual(self.b.find("nowhere at all"), {"count": 0, "index": -1})
+        self.text("evaluate", expression="document.getElementById('fruit').value = 'apple pie', 0")   # in a field too
+        self.assertEqual(self.b.find("apple"), {"count": 4, "index": 0})
+        for i in (1, 2, 3):
+            self.assertEqual(self.b.find("apple", again=True), {"count": 4, "index": i})
+        self.assertEqual(self.text("evaluate", expression="document.activeElement.id"), "fruit")
         cmd_f = [{"type": "key", "down": d, "key": "f", "code": "KeyF", "keyCode": 70, "modifiers": 4} for d in (True, False)]
         self.b.input(cmd_f)
         n = self.popup("find")["n"]

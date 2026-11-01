@@ -488,7 +488,7 @@ Not done yet:
 - **Frames inside frames.** A snapshot is the main frame's accessibility tree; an iframe from another site (a payment
   widget, a video) shows as one element, and Pick picks the iframe. Its own tree is a `frameId` away.
 - **What the screen lacks.** Typing composed by an input method (Chinese, Japanese); sound; zoom; a field's suggestion
-  list (`<datalist>`, autofill); a site asking for the camera, the microphone or the place. In a frame from another
+  list from autofill; a site asking for the camera, the microphone or the place. In a frame from another
   site (a payment widget), the pointer's shape, tooltips, drop-downs and pickers stay as Chrome has them -- the page's
   script runs only in the frames of its own origin (another site's runs in a process of its own, a target the
   dashboard would attach to: `Target.setAutoAttach`). A drop-down's list, opened with `showPicker` in the user's
