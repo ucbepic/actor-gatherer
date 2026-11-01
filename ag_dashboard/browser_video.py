@@ -42,6 +42,8 @@ RESIZE_WAIT = 3.0           # the most a window's resize is waited for
 WINDOWS = threading.Lock()  # a window opened (a tab, attached) or resized, one at a time: Chrome has been seen to answer
                             # neither a resize of a captured tab's window nor an attach to a tab opening then
 START_LOCK = threading.Lock()   # one capture started at a time: the extension's answer goes to the capturer waiting
+LOADING = threading.Lock()      # the extension loaded once in a Chrome: loaded again, it is reloaded, and every
+                                # capturer page then open stops hearing from it
 
 MANIFEST = {"manifest_version": 3, "name": "ag capture", "version": "1.0", "description": "The ag dashboard's Browser, as video",
             "permissions": ["tabCapture", "activeTab"], "action": {}, "background": {"service_worker": "worker.js"}}
@@ -161,6 +163,22 @@ def extension_dir(home_dir: str) -> str:
     return path
 
 
+def extension(cdp, home_dir: str) -> str:
+    """The extension's id in `cdp`'s Chrome: loaded the first time (its worker waited for: its button pressed before
+    that is lost), the same id after, for every Browser's capturer."""
+    with LOADING:
+        ext = getattr(cdp, "capture_extension", None)
+        if ext:
+            return ext
+        ext = cdp.call("Extensions.loadUnpacked", {"path": extension_dir(home_dir)})["id"]
+        worker, end = f"chrome-extension://{ext}/worker.js", time.time() + 5
+        while time.time() < end and not any(t.get("url") == worker for t in cdp.call(
+                "Target.getTargets", {"filter": [{"type": "service_worker"}]})["targetInfos"]):
+            time.sleep(0.05)
+        cdp.capture_extension = ext
+        return ext
+
+
 class Capture:
     """One Browser's video (module doc): its capturer page, the tab it captures, whether its chunks come. Its calls to
     Chrome go through the Browser's connection; `got` is handed each binding call of the capturer page -- on the
@@ -207,11 +225,7 @@ class Capture:
         """The capturer page's session in `cdp`'s Chrome: the extension loaded and its page opened, if they aren't."""
         if self.cdp is cdp and self.session is not None:
             return self.session
-        self.ext = cdp.call("Extensions.loadUnpacked", {"path": extension_dir(self.home_dir)})["id"]
-        worker, end = f"chrome-extension://{self.ext}/worker.js", time.time() + 5   # its worker running: a press of its
-        while time.time() < end and not any(t.get("url") == worker for t in cdp.call(   # button before it, lost
-                "Target.getTargets", {"filter": [{"type": "service_worker"}]})["targetInfos"]):
-            time.sleep(0.05)
+        self.ext = extension(cdp, self.home_dir)
         with WINDOWS:
             target = cdp.call("Target.createTarget", {"url": "about:blank", "newWindow": True})["targetId"]
             session = cdp.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
@@ -246,6 +260,16 @@ class Capture:
             self.cdp, self.target, self.session, self.bars = cdp, target, session, max(0, bars or 0)
             self.tab_targets = {}
         return session
+
+    def _drop_page(self) -> None:
+        with self.lock:
+            cdp, target = self.cdp, self.target
+            self.cdp = self.target = self.session = None
+        if cdp is not None and target is not None:
+            try:
+                cdp.post("Target.closeTarget", {"targetId": target})
+            except ValueError:
+                pass
 
     def _tab_target(self, cdp, tab) -> str:
         """The id of the tab `tab`'s page is in -- the one in its window, at its address (the window's shown one, if
@@ -321,6 +345,8 @@ class Capture:
                     error = exc
                     with self.lock:
                         self.tab_targets.pop(tab.target, None)
+                    if "no answer" in str(exc):          # its page no longer hearing the extension: a new one
+                        self._drop_page()
                 finally:
                     with self.lock:
                         self.starting = None

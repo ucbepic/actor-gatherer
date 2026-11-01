@@ -214,6 +214,21 @@ class VideoChromeTest(Home):
         self.assertTrue(self.keys(got), self.b.video.why)
         self.assertEqual(self.b.tab().title, "My doc - Docs")
 
+    def test_two_browsers_watched_in_turn_each_get_their_video_back(self):
+        other = self.bs.get(self.bs.create("g", self.root, "claude")["key"])
+        for b in (self.b, other):
+            b.live()
+            b.resize(600, 400, 1.0)
+        a = self.b.join(video=True)
+        self.assertTrue(self.keys(self.watch(a, lambda g: bool(self.keys(g)))), self.b.video.why)
+        o = other.join(video=True)                     # another Browser's capturer: the extension not loaded again
+        self.assertTrue(self.keys(self.watch(o, lambda g: bool(self.keys(g)))), other.video.why)
+        self.b.leave(a)
+        other.leave(o)
+        a = self.b.join(video=True)                    # back to the first: its capturer still hears the extension
+        self.addCleanup(self.b.leave, a)
+        self.assertTrue(self.keys(self.watch(a, lambda g: bool(self.keys(g)))), self.b.video.why)
+
     def test_the_config_turns_it_off(self):
         self.config('[dashboard]\nbrowser_video = false\n')
         self.b.live()
