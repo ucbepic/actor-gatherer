@@ -1,4 +1,5 @@
-"""The MCP server a DocWriter actor reaches its document tools by (docwriter.py): MCP's streamable HTTP transport,
+"""The MCP server an actor reaches the dashboard's tools by -- a DocWriter's its document tools (docwriter.py), a
+Browser's its browser tools (browser.py): MCP's streamable HTTP transport,
 the least of it -- each JSON-RPC request POSTed, answered with JSON, no stream of the server's own -- which Claude
 Code (`"type": "http"` in --mcp-config) and codex (`mcp_servers.<name>.url`) both speak.
 
@@ -13,7 +14,7 @@ import json
 from typing import Callable, List, Optional, Tuple
 
 PROTOCOL = "2025-06-18"     # the version answered to a client that names none
-NAME = "docwriter-doc"      # the server's name: the tools' names, as the harness shows them, carry it
+NAME = "docwriter-doc"      # DocWriter's server's name (`handle` takes another's): the tools' names, as the harness shows them, carry it
 
 
 def result(text: str, error: bool = False) -> dict:
@@ -21,7 +22,8 @@ def result(text: str, error: bool = False) -> dict:
     return {"content": [{"type": "text", "text": text}], **({"isError": True} if error else {})}
 
 
-def handle(body: bytes, tools: List[dict], call: Callable[[str, dict], dict]) -> Tuple[int, Optional[dict]]:
+def handle(body: bytes, tools: List[dict], call: Callable[[str, dict], dict],
+           name: str = NAME) -> Tuple[int, Optional[dict]]:
     """One POST to the server: (status, JSON to answer with, or None for none). `tools`: [{name, description,
     inputSchema}]; `call(name, arguments)`: a tool's result (`result`). A batch -- a list of messages -- is answered
     with the list of their answers."""
@@ -30,13 +32,13 @@ def handle(body: bytes, tools: List[dict], call: Callable[[str, dict], dict]) ->
     except ValueError:
         return 400, _error(None, -32700, "not JSON")
     if isinstance(message, list):
-        answers = [a for a in (_one(m, tools, call) for m in message) if a is not None]
+        answers = [a for a in (_one(m, tools, call, name) for m in message) if a is not None]
         return (200, answers) if answers else (202, None)
-    answer = _one(message, tools, call)
+    answer = _one(message, tools, call, name)
     return (200, answer) if answer is not None else (202, None)
 
 
-def _one(message, tools: List[dict], call: Callable[[str, dict], dict]) -> Optional[dict]:
+def _one(message, tools: List[dict], call: Callable[[str, dict], dict], server: str = NAME) -> Optional[dict]:
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
         return _error(None, -32600, "not a JSON-RPC 2.0 message")
     if "id" not in message:                     # a notification, or a client's answer: nothing to say
@@ -45,7 +47,7 @@ def _one(message, tools: List[dict], call: Callable[[str, dict], dict]) -> Optio
     if method == "initialize":
         return _ok(mid, {"protocolVersion": params.get("protocolVersion") or PROTOCOL,
                          "capabilities": {"tools": {"listChanged": False}},
-                         "serverInfo": {"name": NAME, "version": "1"}})
+                         "serverInfo": {"name": server, "version": "1"}})
     if method == "ping":
         return _ok(mid, {})
     if method == "tools/list":
