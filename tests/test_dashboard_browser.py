@@ -43,6 +43,16 @@ if (!location.search) navigator.credentials.get({publicKey: {...key, userVerific
     allowCredentials: [{type: 'public-key', id: new Uint8Array(16), transports: ['internal']}]}})
   .then(() => asked = 'given', (e) => asked = e.name);
 </script>"""
+# A text box, and a frame like Google Docs': the focus in it, no selection a script can read, its app filling the
+# clipboard itself on a copy and taking what is pasted from the paste's own data.
+CLIP = """<!doctype html><title>Clipboard</title><textarea id="t">plain text here</textarea>
+<iframe id="f" src="clip-frame.html"></iframe><script>window.log = [];</script>"""
+CLIP_FRAME = """<!doctype html><div id="e" contenteditable></div><script>
+document.addEventListener('copy', (ev) => { ev.clipboardData.setData('text/plain', "the app's words");
+  ev.clipboardData.setData('text/html', "<b>the app's</b> words"); ev.preventDefault(); });
+document.addEventListener('paste', (ev) => { parent.log.push(ev.clipboardData.getData('text/plain') + ' | ' +
+  ev.clipboardData.getData('text/html')); ev.preventDefault(); });
+</script>"""
 
 
 class Home(unittest.TestCase):
@@ -174,6 +184,8 @@ class WordsTest(unittest.TestCase):
         self.assertEqual(redo["commands"], ["redo"])
         self.assertEqual(browser._key_event({"key": "a"}, False, 0)["type"], "keyUp")
         self.assertIsNone(browser._key_event({"key": ""}, True, 0))
+        alt = browser._key_event({"key": "Alt", "code": "AltLeft", "keyCode": 18, "location": 1}, True, 1)
+        self.assertNotIn("nativeVirtualKeyCode", alt)       # one would make macOS beep for a key the page leaves unused
 
 
 def ax(nid, role, name="", kids=(), parent=None, node=None, value=None, ignored=False, props=None):
@@ -508,6 +520,48 @@ class ChromeTest(Home):
             pubKeyCredParams: [{type: 'public-key', alg: -7}]}}).then(() => made = 'made', (e) => made = e.name); 0""")
         time.sleep(1)
         self.assertEqual(self.text("evaluate", expression="made"), "waiting")
+
+    def test_copy_cut_and_paste_are_the_page_s_own_through_its_clipboard(self):
+        """Cmd+C, X and V as the page would have them: its copy and paste handlers run (Google Docs has no selection
+        to read); what a copy put on Chrome's clipboard comes back for the user's, and a paste is put there first."""
+        self.write("clip.html", CLIP)
+        self.write("clip-frame.html", CLIP_FRAME)
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=self.root))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.text("navigate", url=f"http://localhost:{server.server_address[1]}/clip.html")   # a secure page
+        time.sleep(0.5)
+        js = lambda expression: self.text("evaluate", expression=expression)
+        copy = lambda cut=False: self.b.input([{"type": "copy", "cut": cut, "modifiers": 4}]).get("clipboard")
+
+        js("t.focus(); t.setSelectionRange(0, 5)")
+        self.assertEqual(copy(), {"text": "plain"})
+        self.assertEqual(copy(cut=True), {"text": "plain"})
+        self.assertEqual(js("t.value"), " text here")
+        self.assertEqual(copy(), {})                              # nothing selected: the user's clipboard stays
+        js("f.contentDocument.getElementById('e').focus()")
+        self.assertEqual(js("String(getSelection())"), "")
+        self.assertEqual(copy(), {"text": "the app's words", "html": "<b>the app's</b> words"})
+        self.b.input([{"type": "paste", "text": "from the Mac", "html": "<i>from</i> the Mac"}])
+        self.assertEqual(js("log[0]").split(" | ")[0], "from the Mac")
+        self.assertIn("<i>from</i> the Mac", js("log[0]"))
+        js("t.focus(); t.setSelectionRange(0, 0)")
+        self.b.input([{"type": "paste", "text": "Pasted", "html": ""}])
+        self.assertEqual(js("t.value"), "Pasted text here")
+        self.assertEqual(js("navigator.permissions.query({name: 'clipboard-read'}).then((p) => p.state)"), "prompt")
+
+        self.text("navigate", url=os.path.join(self.root, "clip.html"))    # file://: no clipboard, what is selected
+        time.sleep(0.3)
+        js("t.focus(); t.setSelectionRange(0, 5)")
+        self.assertEqual(copy(), {"text": "plain"})
+        js("t.setSelectionRange(5, 5)")
+        self.b.input([{"type": "paste", "text": "!", "html": ""}])
+        self.assertEqual(js("t.value"), "plain! text here")
 
     def test_its_tabs_open_again_after_the_chrome_stopped(self):
         self.text("navigate", url=os.path.join(self.root, "two.html"))

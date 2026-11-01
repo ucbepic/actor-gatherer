@@ -10607,9 +10607,20 @@ async function bwFlush(b) {
   b.sending = true;
   while (b.queue.length) {
     const events = b.queue.splice(0);
-    try { await bwPost(b, "input", { events }); } catch (e) { setLive(`Browser: ${e.message}`); }
+    try {
+      const r = await bwPost(b, "input", { events });
+      if (r && r.clipboard) bwToClipboard(b, r.clipboard);
+    } catch (e) { setLive(`Browser: ${e.message}`); }
   }
   b.sending = false;
+}
+// What a copy or cut in the page put on its Chrome's clipboard, onto the user's: its text, and its formatting if
+// it had some (Google Docs', a code editor's colours). Nothing when nothing was copied: the user's stays.
+function bwToClipboard(b, c) {
+  if (!c.text && !c.html) return;
+  const item = { "text/plain": new Blob([c.text || ""], { type: "text/plain" }) };
+  if (c.html) item["text/html"] = new Blob([c.html], { type: "text/html" });
+  navigator.clipboard.write([new ClipboardItem(item)]).catch(() => navigator.clipboard.writeText(c.text || "")).catch(bwSay(b));
 }
 const bwMods = (ev) => (ev.altKey ? 1 : 0) | (ev.ctrlKey ? 2 : 0) | (ev.metaKey ? 4 : 0) | (ev.shiftKey ? 8 : 0);
 const BW_BUTTONS = ["left", "middle", "right"];
@@ -10681,10 +10692,10 @@ function bwInput(b) {
     ev.stopPropagation();                            // the page's keys, not the dashboard's (its Esc, its shortcuts)
     if (b.mode && ev.key === "Escape") { ev.preventDefault(); return bwMode(b, null); }
     const cmd = ev.metaKey || ev.ctrlKey;
-    if (cmd && (ev.key === "v" || ev.key === "V")) return;   // the paste event brings the clipboard's text
-    if (cmd && (ev.key === "c" || ev.key === "C")) {          // what the page has selected, to the user's clipboard
+    if (cmd && (ev.key === "v" || ev.key === "V")) { b.pasteMods = bwMods(ev); return; }   // the paste event brings the clipboard
+    if (cmd && /^[cxCX]$/.test(ev.key)) {                     // the page's own copy or cut, then onto the user's clipboard
       ev.preventDefault();
-      bwPost(b, "copy", {}).then((r) => r.text && navigator.clipboard.writeText(r.text)).catch(bwSay(b));
+      bwQueue(b, { type: "copy", cut: /x/i.test(ev.key), modifiers: bwMods(ev) });
       return;
     }
     if (cmd && ["r", "R"].includes(ev.key) && !ev.shiftKey) { ev.preventDefault(); bwPost(b, "nav", { action: "reload" }).catch(bwSay(b)); return; }
@@ -10694,15 +10705,15 @@ function bwInput(b) {
   });
   st.addEventListener("keyup", (ev) => {
     ev.stopPropagation();
-    if (b.mode || ((ev.metaKey || ev.ctrlKey) && /^[cvrlCVRL]$/.test(ev.key))) return;
+    if (b.mode || ((ev.metaKey || ev.ctrlKey) && /^[cvxrlCVXRL]$/.test(ev.key))) return;
     ev.preventDefault();
     bwQueue(b, { type: "key", down: false, key: ev.key, code: ev.code, keyCode: ev.keyCode, location: ev.location, modifiers: bwMods(ev) });
   });
-  st.addEventListener("paste", (ev) => {
-    const text = ev.clipboardData && ev.clipboardData.getData("text/plain");
-    if (!text) return;
+  st.addEventListener("paste", (ev) => {                       // pasted by the page itself, its formatting kept
+    const d = ev.clipboardData, text = d ? d.getData("text/plain") : "", html = d ? d.getData("text/html") : "";
+    if (!text && !html) return;
     ev.preventDefault();
-    bwQueue(b, { type: "text", text });
+    bwQueue(b, { type: "paste", text, html, modifiers: b.pasteMods || 4 });
   });
 }
 // The chips of what the user picked, above the message box: each going with the next message, or taken off.
