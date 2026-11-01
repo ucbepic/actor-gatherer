@@ -461,9 +461,10 @@ class Branches:
         return got
 
     def create(self, gatherer: str, project: str, harness: str = "claude", approve: bool = False,
-               model: Optional[str] = None) -> dict:
+               model: Optional[str] = None, permission_mode: str = "auto") -> dict:
         """A new actor of `harness` in `gatherer`, on a new branch of `project` (one of the gatherer's): its worktree
-        made beside the project, the session made there (sessions.py's `create`). The session, with its `branch`."""
+        made beside the project, the session made there (sessions.py's `create`, in `permission_mode`). The session,
+        with its `branch`."""
         mine = next((p for p in projects(gatherer) if p["path"] == project), None)
         if mine is None:
             raise BranchError(f"{project} is not one of {gatherer}'s projects")
@@ -477,7 +478,7 @@ class Branches:
         os.makedirs(os.path.dirname(where), exist_ok=True)
         _git(project, "worktree", "add", "--quiet", "-b", branch, where, start)
         try:
-            s = self.started.create(gatherer, where, harness=harness, model=model)
+            s = self.started.create(gatherer, where, permission_mode, harness=harness, model=model)
         except Exception:
             _git(project, "worktree", "remove", "--force", where, ok=(0, 128))
             _git(project, "branch", "-D", branch, ok=(0, 1))

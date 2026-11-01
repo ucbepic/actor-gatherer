@@ -114,7 +114,7 @@ def ensure() -> str:
 #: ag's own commands: no harness may be named one. `gatherers`, `show` and `new`
 #: are the home's (`ag home <them>`), given at the top for short.
 HOME_SHORTCUTS = ("gatherers", "show", "new", "model")
-RESERVED = ("help", "home", "config", "status", "stop", "dashboard", "actors") + HOME_SHORTCUTS
+RESERVED = ("help", "home", "config", "status", "stop", "dashboard", "actors", "preview") + HOME_SHORTCUTS
 
 
 def load() -> Dict[str, Any]:

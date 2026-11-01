@@ -361,6 +361,39 @@ Not done yet:
   it, or the edit endpoint take more.
 - **Codex.** Nothing in the panel is Claude Code's, but it has only been tried with Claude Code actors.
 
+### The preview (Execute)
+
+The Editor's Execute button (preview.py, page.html's "the project's preview") runs a git project's preview -- a shell
+command, in the checkout of the file open -- and shows what it makes beside the file: a file of the checkout (image,
+SVG, PDF, HTML, Markdown, text), the page of a server it starts (a URL: kept running until Stop, the panel closed, or
+IDLE with no page watching), or its output. One preview per repository, in dashboard.db's `previews`, shared by its
+worktrees. The reader sets it in the panel's form (prefilled with a guess by the file open); an actor with
+`ag preview set`, told of it by the gatherer guide. An actor's command runs only once the reader lets it ("Run it");
+`ag preview run` runs only a command let run. HTML and SVG are served sandboxed (an opaque origin: no call to the
+dashboard's API); a server's page is its own origin. A PDF is shown in pdf.js's viewer (DocWriter's copy, served at
+/vendor/pdfjs/), kept from run to run: each new build opens at the page, zoom and place the reader had; the PDF's own
+scripts are off. SyncTeX both ways, for a build that wrote it (-synctex=1, in the LaTeX guess): a double-click in the
+PDF opens its source in the Editor at the line; "→ PDF" in the Editor's header, or ⌘+double-click (Ctrl+ elsewhere) on a
+line of the source, shows it in the PDF, marked.
+
+Not done yet:
+
+- **One preview per project.** A project with a figure script and a paper has to switch between them; named previews
+  (a menu by the button) would hold both.
+- **Run on save.** It runs on Execute (or Re-run) only; a switch could run it again after each save of a file in the
+  project.
+- **Runs live in the dashboard's memory.** A restart stops a server it ran and forgets the output (the preview
+  itself is kept).
+- **An actor's run shows only if the panel is open** on that checkout. An actor on a branch of its own runs in its
+  worktree, which the reader's panel (on the project) does not follow.
+- **A server's page is not the agent's to see.** It is a plain frame; once the Browser actor lands, a URL preview
+  could open in its browser, where the agent can look at it and click.
+- **SyncTeX after a change of options only.** latexmk does not rebuild when only its options changed: -synctex=1 added
+  to a preview whose PDF is up to date writes no SyncTeX until the source changes (the panel says so). Nor does the PDF
+  follow the cursor as it moves: "→ PDF" or ⌘+double-click asks.
+- **A page from the checkout that uses modules** (`<script type="module">`) does not load sandboxed (an opaque origin
+  fetches modules with CORS); such an app is previewed through its dev server.
+
 ## Actors on branches of their own
 
 An actor started from a gatherer's "+ more" drop-down, "Actor on a branch…" (branches.py) works in a worktree of one of the gatherer's projects,

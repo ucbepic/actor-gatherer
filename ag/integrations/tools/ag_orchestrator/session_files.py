@@ -30,7 +30,6 @@ import time
 from typing import Callable, Dict, Optional, Tuple
 
 from harness_kit import Fact, Facts, Harness
-from harness_kit.base import follow as read_on
 
 from .records import fact, record, session_file
 
@@ -146,19 +145,15 @@ class SessionFiles:
 
     async def _read(self, gatherer: str, channel: str, f: _Followed) -> None:
         """What the record says since it was last read, and what has come due, recorded."""
-        try:
-            st = os.stat(f.path)
-        except OSError:
-            st = None
-        now = (st.st_ino, st.st_size, st.st_mtime_ns) if st else None
+        now = f.follower.stamp(f.path)                        # (inode, size, mtime), as harness_kit's Follower has it
         facts = []
         if now is not None and now != f.seen:
-            if f.seen is not None and (now[0] != f.seen[0] or now[1] < f.offset):    # written anew: from its start
+            if f.seen is not None and f.follower.anew(now, f.seen, f.offset):         # written anew: from its start
                 f.follower, f.offset = f.harness.follower(f.path), 0
-            if now[1] - f.offset > 1 << 20:                   # a long read (the first of a long session): off the loop
-                facts, f.offset = await asyncio.to_thread(read_on, f.path, f.follower, f.offset)
+            if f.follower.database or now[1] - f.offset > 1 << 20:     # a database, or a long read: off the loop
+                facts, f.offset = await asyncio.to_thread(f.follower.read_on, f.path, f.offset)
             else:
-                facts, f.offset = read_on(f.path, f.follower, f.offset)
+                facts, f.offset = f.follower.read_on(f.path, f.offset)
             f.seen = now
         facts += f.follower.due(time.time())
         if f.outputs and time.time() - f.looked >= ACTIVITY_SECONDS:

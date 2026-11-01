@@ -934,6 +934,68 @@ button:disabled { opacity: .5; cursor: default; }
 .ed-changes .ed-ch-go { flex: none; margin-left: auto; padding: 1px 8px; font-size: 11.5px; }
 .ed-changes .asked { padding: 0 16px 6px 34px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ed-changes .none { padding: 14px 16px; color: var(--muted); font-size: 12.5px; }
+/* beside the file, in its place when no actor's changes show: the project's preview (pvDraw) -- what its command makes,
+   or what it prints */
+.ed-exec { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; }
+.ed-topdf { padding: 3px 8px; white-space: nowrap; }
+.ed-exec svg { color: var(--good); }
+.ed-exec.busy svg { animation: ed-pv-pulse .9s ease-in-out infinite alternate; }
+@keyframes ed-pv-pulse { from { opacity: .3; } to { opacity: 1; } }
+.ed-pv { flex: none; width: min(520px, 50%); max-width: calc(100% - 200px); min-height: 0; display: flex; flex-direction: column;
+  border-left: 1px solid var(--ring); background: var(--surface); }
+.ed-pv[hidden] { display: none; }
+.ed-pv-h { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; padding: 4px 6px 4px 10px; min-height: 31px; box-sizing: border-box;
+  border-bottom: 1px solid var(--ring); font-size: 12.5px; color: var(--ink-2); }
+.ed-pv-h .t { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--ink); flex: none; }
+.ed-pv-h .t svg { color: var(--good); }
+.ed-pv-h .nm { flex: 1 1 0; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-pv-h > button { flex: none; padding: 1px 8px; font-size: 11.5px; }
+.ed-pv-h > .x { border: 0; background: none; font-size: 17px; line-height: 1; padding: 3px 7px; color: var(--muted); }
+.ed-pv-h > .x:hover { color: var(--ink); background: var(--wash); }
+.ed-pv-open { flex: none; color: var(--muted); text-decoration: none; padding: 0 4px; }
+.ed-pv-open:hover { color: var(--ink); }
+.ed-pv-tabs { display: inline-flex; flex: none; border: 1px solid var(--ring); border-radius: 6px; overflow: hidden; }
+.ed-pv-tabs button { border: 0; border-radius: 0; background: none; padding: 1px 8px; font-size: 11.5px; color: var(--muted); }
+.ed-pv-tabs button + button { border-left: 1px solid var(--ring); }
+.ed-pv-tabs button.on { background: var(--wash); color: var(--ink); }
+.ed-pv-st { flex: none; font-size: 11px; padding: 1px 8px; border-radius: 9px; background: var(--wash); color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.ed-pv-st.run { color: var(--s1); } .ed-pv-st.ok { color: var(--good); } .ed-pv-st.bad { color: var(--critical); }
+.ed-pv-st.run::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  margin-right: 5px; vertical-align: 1px; animation: ed-pv-pulse .9s ease-in-out infinite alternate; }
+.ed-pv-cmd { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--grid); font-size: 11.5px; color: var(--muted); }
+.ed-pv-cmd[hidden] { display: none; }
+.ed-pv-cmd code { flex: 1; min-width: 0; font: 11.5px/1.5 var(--mono); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-pv-cmd code .to { color: var(--muted); }
+.ed-pv-cmd .by { flex: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ed-pv-cmd .by img { width: 14px; height: 14px; border-radius: 50%; }
+.ed-pv-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.ed-pv-body > [hidden] { display: none !important; }
+.ed-pv-card { flex: none; max-height: 100%; overflow: auto; padding: 12px 14px; display: grid; gap: 9px; align-content: start; font-size: 12.5px; color: var(--ink-2); }
+.ed-pv-card .head { font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ed-pv-card .head img { width: 18px; height: 18px; border-radius: 50%; }
+.ed-pv-card .note, .ed-pv-card .head .note { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+.ed-pv-card .err { color: var(--critical); overflow-wrap: anywhere; }
+.ed-pv-card .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.ed-pv-card code { font: 11.5px var(--mono); }
+.ed-pv-card pre { margin: 0; padding: 6px 8px; font: 12px/1.5 var(--mono); color: var(--ink); background: var(--hl-bg); border: 1px solid var(--grid);
+  border-radius: 5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ed-pv-form, .ed-pv-ask { display: grid; gap: 9px; }
+.ed-pv-form label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); font-weight: 550; }
+.ed-pv-form label .note { font-weight: 400; }
+.ed-pv-form input { font: 12px/1.4 var(--mono); padding: 5px 7px; color: var(--ink); background: var(--page); border: 1px solid var(--ring);
+  border-radius: 5px; width: 100%; box-sizing: border-box; }
+.ed-pv-result { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.ed-pv-result.off { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+.ed-pv-result > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
+.ed-pv-result > iframe.pdf { background: var(--page); }
+.ed-pv-result > .img { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; box-sizing: border-box;
+  background: repeating-conic-gradient(#eef0f2 0 25%, #fff 0 50%) 50% / 16px 16px; }
+.ed-pv-result > .img img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ed-pv-result > .md-box { padding: 12px 16px; font-size: 13px; }
+.ed-pv-result > pre, .ed-pv-out { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 8px 10px; font: 12px/1.5 var(--mono); color: var(--ink);
+  background: var(--hl-bg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ed-pv-note { padding: 14px; color: var(--muted); font-size: 12.5px; }
 .ed-noav { display: inline-block; background: var(--who); }
 .ed-avs.many { padding: 1px 5px 1px 2px; border-radius: 10px; background: color-mix(in srgb, var(--warning) 26%, transparent); }
 .ed-avs .n { font-size: 10.5px; font-weight: 650; margin-left: 4px; color: var(--ink); }
@@ -951,6 +1013,46 @@ button:disabled { opacity: .5; cursor: default; }
   .ed-person { width: 10px; height: 10px; padding: 0; font-size: 0; border-radius: 50%; background: var(--who); border: 0; flex: none; }
   .ed-changed { font-size: 0; } .ed-changed::before { margin-right: 0; } .ed-writer .nm { display: none; } }
 .ed-grip { position: absolute; left: 0; right: 0; bottom: -7px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
+/* the chat minimized under the Editor (setChatMin): the Editor the column's height but for the row of message boxes, each
+   pane's as tall as what it shows -- a frame's told by its page (fitMini) -- and no head of its own */
+.work.chat-min > .ed-top { flex: 1 1 0; }
+.work.chat-min > .ed-top > .ed-grip { display: none; }
+.work.chat-min > .panes { flex: none; }
+.work.chat-min .pane > iframe { flex: none; margin-top: auto; }   /* the strips side by side, along the bottom */
+.pane:has(> main > .chat.mini) > .pane-top { display: none; }
+main:has(> .chat.mini) { align-items: flex-end; }
+/* a pane minimized: what the agent asks the reader, if it does, over the message box; the way back at its left, the actor's
+   status at its right */
+.chat.mini { flex: 1 1 auto; min-height: 48px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  grid-template-areas: "note note note" "back box st" ". err st"; }
+.chat.mini > * { grid-area: note; }
+.chat.mini > .mini-back { grid-area: back; }
+.chat.mini > :is(.composer, .readonly, .mini-sh) { grid-area: box; }
+.chat.mini > .err { grid-area: err; padding: 0 8px 6px 0; }
+.chat.mini > .mini-st { grid-area: st; }
+.chat.mini .composer, .chat.mini .readonly { border-top: 0; padding: 8px 8px 8px 0; }
+.chat.mini .asking-note { max-height: 360px; }      /* not in vh: a frame is as tall as its pane (fitMini) */
+.mini-back { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: 0 4px 0 8px; padding: 0;
+  border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
+.mini-back:hover, .mini-back:focus-visible { background: var(--wash); color: var(--ink); }
+.mini-st { align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 56px;
+  margin: 0; padding: 4px 10px 5px; border: 0; border-left: 1px solid var(--grid); border-radius: 0; background: none; cursor: pointer;
+  font: 10.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.mini-st:hover, .mini-st:focus-visible { background: var(--wash); }
+.mini-st .pic { display: flex; align-items: center; justify-content: center; height: 26px; }
+.mini-st .spin::before { content: "✻"; display: inline-block; color: var(--term-accent); font-size: 16px; animation: term-spin 1.2s steps(1) infinite; }
+.mini-st .still { position: relative; display: inline-flex; }
+.mini-st .still img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
+.mini-st .mk { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; display: grid; place-items: center;
+  box-shadow: 0 0 0 1.5px var(--surface); color: #fff; font: 700 9px/1 system-ui, sans-serif; }
+.mini-st .mk.ask { background: var(--warning); } .mini-st .mk.err { background: var(--critical); }
+.mini-st .mk.bg { right: -2px; bottom: 0; width: 8px; height: 8px; background: var(--good); }
+.mini-st .n { display: flex; align-items: center; gap: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mini-st .n:empty { display: none; }
+.mini-st .c { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2); } .mini-st .c.err { color: var(--critical); }
+.mini-st .chg-a { color: var(--term-ok); } .mini-st .chg-r { color: var(--term-err); }
+.mini-sh { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 10px 8px 10px 0; color: var(--ink-2); font-size: 12.5px; }
+.mini-sh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-grip:hover, .ed-grip.on { background: color-mix(in srgb, var(--s1) 35%, transparent); }
 .ed-close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); }
 .ed-close:hover { color: var(--ink); background: var(--wash); }
@@ -1090,6 +1192,18 @@ button.ed-person { cursor: pointer; }
 .ed-body .cm-textfield { background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 4px; }
 .ed-body .cm-button { background: var(--wash); background-image: none; color: var(--ink); border: 1px solid var(--ring); border-radius: 4px; }
 .ed-body .cm-tooltip { background: var(--surface); color: var(--ink); border: 1px solid var(--ring); }
+/* LaTeX (assets/src/editor/latex.mjs): titles larger, math tinted, emphasis as it prints, braces and options faint */
+.ed-body .hl-tex-h1 { font-size: 1.3em; font-weight: 700; } .ed-body .hl-tex-h2 { font-size: 1.15em; font-weight: 700; }
+.ed-body .hl-tex-h3 { font-size: 1.04em; font-weight: 650; }
+.ed-body .hl-tex-math { color: var(--hl-num); background: color-mix(in srgb, var(--hl-num) 10%, transparent); }
+.ed-body .hl-tex-mcmd { font-weight: 600; }
+.ed-body .hl-tex-em { font-style: italic; } .ed-body .hl-tex-ul { text-decoration: underline; text-underline-offset: 2px; }
+.ed-body .hl-tex-tt { background: color-mix(in srgb, var(--ink) 7%, transparent); border-radius: 3px; }
+.ed-body .hl-tex-url { color: var(--hl-fn); text-decoration: underline; text-underline-offset: 2px; }
+.ed-body .hl-tex-verb { color: var(--hl-str); }
+.ed-body .hl-tex-special { color: var(--hl-kw); font-weight: 600; }
+.ed-body .hl-tex-opt { color: var(--muted); }
+.ed-body .hl-tex-brace { color: var(--muted); font-weight: 400; font-style: normal; }
 .ed-body .ed-disk { background: color-mix(in srgb, var(--who, var(--s2)) 26%, transparent); }
 /* the conflict zone: the lines edited here since the file was opened, tinted very lightly */
 .ed-body .ed-zone { background: color-mix(in srgb, var(--s1) 7%, transparent); }
@@ -1490,12 +1604,12 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-status > .buddy { margin: 2px 0 0 4px; }
 /* the turn over: the actor small, done -- a check at its corner, still; grown in if the page saw it end (--r) */
 .files .fl-done { display: flex; align-items: center; margin: 6px 6px 0 17px; }
-.files .fl-done .done { position: relative; display: inline-flex; flex: none; transform-origin: 30% 90%;
+:is(.files .fl-done, .mini-st) .done { position: relative; display: inline-flex; flex: none; transform-origin: 30% 90%;
   animation: w-arrive .5s cubic-bezier(.3, 1.3, .5, 1) var(--r, -60s) 1 both; }
-.files .fl-done .done img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
-.files .fl-done .done .ok { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: #22a55a;
+:is(.files .fl-done, .mini-st) .done img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
+:is(.files .fl-done, .mini-st) .done .ok { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: #22a55a;
   box-shadow: 0 0 0 1.5px var(--surface); display: grid; place-items: center; }
-.files .fl-done .done .ok svg { width: 8px; height: 8px; }
+:is(.files .fl-done, .mini-st) .done .ok svg { width: 8px; height: 8px; }
 /* before its first message: the actor waving hello (greeting()), in the middle of the conversation's space -- under the
    message sent, while it waits to reach the agent */
 .files .fl-talk.hi { display: flex; flex-direction: column; }
@@ -1676,7 +1790,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .stage .swish.s2 { animation-name: w-swish2; }
 @keyframes w-swish { 0%, 6%, 14%, 26%, 34%, 100% { opacity: 0; } 10%, 30% { opacity: .9; } }
 @keyframes w-swish2 { 0%, 16%, 24%, 36%, 44%, 100% { opacity: 0; } 20%, 40% { opacity: .9; } }
-@media (prefers-reduced-motion: reduce) { svg.stage, svg.stage *, .files .fl-done .done { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { svg.stage, svg.stage *, :is(.files .fl-done, .mini-st) .done { animation: none !important; }
   svg.stage .leave, svg.stage .o-confetti { display: none !important; } }
 /* the stage and, while it thinks, its character's effect round it (.buddy) laid over the character */
 .stage-box { position: relative; display: inline-flex; flex: none; isolation: isolate; }
@@ -2635,6 +2749,9 @@ const ICONS = {
   forward: "M6.25 3.5 10.75 8l-4.5 4.5",
   reload: "M13.25 8a5.25 5.25 0 1 1-1.54-3.71M13.25 2.5v3h-3",
   plus: "M8 3.25v9.5M3.25 8h9.5",
+  play: "M5 3.25v9.5L12.75 8z",                                        // run: the Editor's preview
+  minimize: "M4 5.5 8 9.5l4-4M3 12.75h10",                             // the chat minimized under the Editor: down to a line
+  restore: "M4 10.5 8 6.5l4 4M3 3.25h10",                              // and shown again: up from it
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -2929,7 +3046,7 @@ const mainSignature = () => {
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
-    state.details && state.detailsTab, edShown(), bwSignature()]);
+    state.details && state.detailsTab, edShown(), bwSignature(), chatMin()]);
 };
 // The page's state, small under its name: its dot green while live, amber paused, red on an error.
 const setLive = (text) => {
@@ -4410,7 +4527,8 @@ function paneReady() {
     earlier: (pick) => setEarlierTurns(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
-    editor: () => keepingPlace(renderMain),          // the Editor opened or closed above the panes: its head, in the bar or not
+    editor: () => minRedraw(),                       // the Editor opened or closed above the panes: its head, in the bar or not
+    minimized: () => minRedraw(),                    // the chat minimized under the Editor, or shown again (setChatMin)
     escape: () => escapeShown(),                     // an Esc on the page outside the frame, this pane in focus
   });
   PANE.ready(window, state.selected);
@@ -5050,12 +5168,13 @@ function renderMain() {
   const x = document.getElementById("pane-close"), shell = isShell(state.selected[1]);
   x.title = shell ? "Close this pane: the terminal runs on, under its gatherer (Terminate ends it)" : "Close this pane";
   x.setAttribute("aria-label", x.title);
-  if (shell) { patch(main, [shellCard(state.selected[1])]); return; }
+  if (shell) { patch(main, [chatMin() ? shellMini(state.selected[1]) : shellCard(state.selected[1])]); fitMini(); return; }
   const info = selectedInfo() || {};
-  const kids = [chatCard(info), ...(state.details ? [detailsPanel(info)] : [])];
+  const kids = [chatCard(info), ...(state.details && !chatMin() ? [detailsPanel(info)] : [])];
   const open = new Set([...main.querySelectorAll("details[open][id]")].map((d) => d.id));
   for (const k of kids) for (const d of k.querySelectorAll("details[id]")) if (open.has(d.id)) d.open = true;
   patch(main, kids);
+  fitMini();
   if (document.getElementById("size-chart") && state.agent && state.agent.reads) drawCharts();
 }
 // Put `kids` in `parent`, keeping each node already there that is the same as its new one: the browser
@@ -5208,7 +5327,7 @@ function gathererDetails(a) {                        // what ag did for the agen
 // a snapshot) has its history and no box; so has every actor in a view to read it by (`readOnly`: the ones in Details).
 function chatCard(info) {
   const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
-  const view = chatView(), feed = chatFeed(view);
+  const view = chatMin() ? MINI_VIEW : chatView(), feed = chatFeed(view);
   const writable = hasChat(info) && !SNAPSHOT && !view.readOnly;
   const held = info.chattable === false
     ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}: `
@@ -5222,7 +5341,7 @@ function chatCard(info) {
       const m = document.getElementById("chat-list"); if (m) m.scrollTop = m.scrollHeight - from;
     },
     rerender: () => keepingPlace(renderMain), api: agDashboard };
-  const card = el("section", { class: "chat", "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}`,
+  const card = el("section", { class: "chat" + (view.mini ? " mini" : ""), "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}`,
     "data-morph": "", "data-for": signature([state.selected, view.id, writable, held, !!info.session]) });
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
@@ -5237,6 +5356,8 @@ function chatCard(info) {
       SNAPSHOT ? null : el("button", { type: "button", class: "details-btn", "aria-expanded": edShown() ? "true" : "false", "aria-label": "Editor",
         title: "Editor, at this actor's work -- the folder holding the files it changed lately, else its working directory: files edited live, above the actors' views -- with everyone who has a file open, and what the actors write to them as it lands. Closed by its ×",
         onclick: edAtActor }, strokeIcon(ICONS.code, 16)),
+      SNAPSHOT || !edShown() ? null : el("button", { type: "button", class: "details-btn", "aria-label": "Minimize the chat", title: MIN_TIP,
+        onclick: () => setChatMin(true) }, strokeIcon(ICONS.minimize, 16)),
       el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
         title: "Details: what ag saw and did for this actor (its context, calls, history and builds), and the history's other views",
         onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.panel, 16)))];
@@ -5244,7 +5365,7 @@ function chatCard(info) {
   // the Gatherer works) does not make them flash under the pointer. A view's own tools are made again each
   // draw: what they do may be the draw's.
   const same = !tools.length && heading.length === controls.children.length && heading.every((n, i) => n.isEqualNode(controls.children[i]));
-  if (!same) controls.replaceChildren(...heading);
+  if (!same && !view.mini) controls.replaceChildren(...heading);   // minimized: the head hidden, kept as it was
   const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1", "data-morph": "",
     role: "log", "aria-label": `Chat history, ${view.name}` });
   // its blocks, put in by patch(): a block kept from the last draw is still on the page, and is left there
@@ -5255,7 +5376,7 @@ function chatCard(info) {
       blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
-  card.append(frame);
+  if (!view.mini) card.append(frame);
   if (view.chat === false) {                         // not the conversation: no message box, and no word that there is none
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
@@ -6514,6 +6635,21 @@ const SUMMARIES = {
   update_plan: (i) => ({ title: "Update Plan", body: () => todoView(i.plan), quiet: true }),
   Skill: (i) => ({ title: "Skill", arg: str(i.skill) }),
   ToolSearch: (i) => ({ title: "Tool Search", arg: str(i.query) }),
+  // agy's (Antigravity's): its file tools as Claude Code's, its subagents by their role
+  read_file: (i) => SUMMARIES.Read({ file_path: i.Path, offset: i.StartLine }),
+  write_file: (i) => SUMMARIES.Write({ file_path: i.Path, content: str(i.Content) }),
+  edit_file: (i) => SUMMARIES.Edit({ file_path: i.Path, old_string: str(i.Target), new_string: str(i.Replacement) }),
+  run_command: (i) => ({ title: "Bash", arg: firstLine(str(i.CommandLine), 200), note: str(i.toolSummary) || undefined,
+    doing: str(i.toolSummary) || undefined }),
+  search_web: (i) => ({ title: "Web Search", arg: `"${str(i.query)}"` }),
+  invoke_subagent: (i) => ({ title: str(i.Role) || "Agent", arg: firstLine(str(i.Prompt), 160) }),
+  send_message: (i) => ({ title: "Message", arg: firstLine(str(i.Message), 160) }),
+  ask_question: (i) => { let qs = i.questions; if (typeof qs === "string") { try { qs = JSON.parse(qs); } catch (e) { qs = []; } }
+    qs = Array.isArray(qs) ? qs : []; return { title: "Question", arg: firstLine(str((qs[0] || {}).question), 160) + (qs.length > 1 ? ` + ${plural(qs.length - 1, "more")}` : "") }; },
+  manage_task: (i) => ({ title: "Task", arg: [str(i.Action), str(i.TaskId)].filter(Boolean).join(" ") }),
+  manage_subagents: (i) => ({ title: "Subagents", arg: str(i.Action) }),
+  define_subagent: (i) => ({ title: "Define Agent", arg: str(i.Name) }),
+  schedule: (i) => ({ title: "Schedule", arg: firstLine(str(i.Prompt), 160) }),
 };
 function summary(call) {
   const inner = (call.calls || []).filter((c) => c.input !== null && c.input !== undefined);
@@ -6759,7 +6895,7 @@ CHAT_FEEDS.agent = {
   load: async () => {},
   data: () => state.agent && state.agent.reads ? { items: state.agent.reads, pending: [], earlier: false } : null,
 };
-const chatFeed = (view = chatView()) => CHAT_FEEDS[view.feed] || CHAT_FEEDS.history;
+const chatFeed = (view = chatView()) => (chatMin() ? CHAT_FEEDS.files : CHAT_FEEDS[view.feed]) || CHAT_FEEDS.history;
 
 // The views that come with the page.
 addChatView({
@@ -7164,6 +7300,7 @@ function barActs() {
       strokeIcon(ICONS.code, 14), edAtActor),
     act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),
       () => setDetails(!state.details), !!state.details),
+    act("Minimize the chat", MIN_TIP, strokeIcon(ICONS.minimize, 14), () => setChatMin(true)),
     act("Close this pane", "Close this pane", "×", () => $("pane-close").click(), null, "close"));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
@@ -7194,8 +7331,16 @@ function callLabel(c, n) {
 const CC_EXIT = /^(?:Error: )?Exit code (-?\d+)\n?/;
 const CODEX_HEAD = /^(?:Chunk ID: [^\n]*\n)?(?:Wall time: ([^\n]*)\n)?(?:Process exited with code (-?\d+)\n)?(?:Original token count: [^\n]*\n)?Output:\n/;
 const CWD_NOTE = /\n?Shell cwd was reset to [^\n]*\s*$/;
+// agy's header on each tool's output: when it was made, and when it finished
+const AGY_HEAD = /^Created At: [^\n]*\n(?:Completed At: [^\n]*\n)?/;
+// and on a command's: "Command exited with code 0.", then "Command output:" (after a note when it was cut short)
+const AGY_EXIT = /(^|\n)Command exited with code (-?\d+)\.\n\n?(?:Command output:\n)?/;
 function outputParts(text) {
   let t = String(text ?? ""), exit = null, took = null, m;
+  if ((m = AGY_HEAD.exec(t))) {
+    t = t.slice(m[0].length);
+    if ((m = AGY_EXIT.exec(t))) { exit = m[2]; t = t.slice(0, m.index) + m[1] + t.slice(m.index + m[0].length); }
+  }
   if ((m = CODEX_HEAD.exec(t))) { took = m[1] || null; exit = m[2] ?? null; t = t.slice(m[0].length); }
   else if ((m = CC_EXIT.exec(t))) { exit = m[1]; t = t.slice(m[0].length); }
   return { text: t.replace(CWD_NOTE, "").replace(/\n+$/, ""), exit, took };
@@ -7605,10 +7750,7 @@ const isInterrupting = () => !!interrupting && !!state.selected && interrupting.
 // queue; in the dashboard agent's queue. Not seen for long, with its terminal open: it may be asking something there
 // first (whether to trust the folder, on a new actor's first message), and the way to it.
 function pendingTalk(info, h) {
-  const k = state.selected && key(...state.selected);
-  for (let i = sentHere.length - 1; i >= 0; i--)
-    if (sentHere[i].key === k && heardCount(h, sentHere[i].text) > sentHere[i].base) sentHere.splice(i, 1);
-  const mine = sentHere.filter((m) => m.key === k);
+  const mine = sentHereNow(h);
   const list = [...h.typed.filter((q) => q.sent === null && !q.chat).map((q) => q.text), ...h.queued, ...mine.map((m) => m.text)];
   const chats = h.typed.filter((q) => q.chat && q.sent === null && !list.some((t) => sameWords(t, q.text)));
   list.push(...chats.map((q) => q.text));  // sent from Chat elsewhere (or before a reload), not had yet: its `chat_sent`
@@ -7620,6 +7762,13 @@ function pendingTalk(info, h) {
     el("span", { class: "lbl" }, unseen ? "Pending · not seen by the session yet" : "Pending",
       asks ? "; its terminal may be asking something first. " : null,
       asks ? el("button", { type: "button", class: "to-term", onclick: () => setChatView("terminal") }, "Open the terminal") : null));
+}
+// What was sent from here to the selected actor and the session has not recorded yet (`h`: heard(info)): those it has, dropped.
+function sentHereNow(h) {
+  const k = state.selected && key(...state.selected);
+  for (let i = sentHere.length - 1; i >= 0; i--)
+    if (sentHere[i].key === k && heardCount(h, sentHere[i].text) > sentHere[i].base) sentHere.splice(i, 1);
+  return sentHere.filter((m) => m.key === k);
 }
 // The turns Claude Code has started and ag has not stored yet, each by its first message as Claude Code recorded it when
 // it went to the model (the agent's `typed`, data.py's: sent, not as part of the turn it was written in; data.py's
@@ -8645,6 +8794,7 @@ const ED_WRAP_KEY = "ag-editor-wrap";
 const ED_SHOWN_KEY = "ag-dashboard-editor", ED_HEIGHT_KEY = "ag-dashboard-editor-height";
 const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
   timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
+  pv: null, pvSide: null,
   branches: [], brSig: "", brs: null,
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })(),   // on unless turned off
   wrap: (() => { try { return localStorage.getItem(ED_WRAP_KEY) !== "0"; } catch (e) { return true; } })() };  // long lines wrapped: likewise
@@ -8749,9 +8899,10 @@ function edDrawChanges() {
   if (!c || c.path !== ed.file) {
     ed.changes = null;
     if (!side.hidden) { side.hidden = true; side.replaceChildren(); }
-    return;
+    return pvDraw();                                 // the preview, if open, back in its place
   }
   side.hidden = false;
+  pvDraw();                                          // the preview, if open: hidden while the changes show
   const name = edWriterName(c.w), mins = `${ED_CHANGES_S / 60} minutes`;
   const list = c.got && !c.err ? [...(c.got.changes || [])].reverse() : [];
   const doc = ed.s && ed.s.view ? ed.s.view.state.doc.toString() : "";
@@ -8782,6 +8933,455 @@ function edSelectText(text) {
   if (i < 0) return;
   v.dispatch({ selection: { anchor: i, head: i + text.length }, effects: s.A.EditorView.scrollIntoView(i, { y: "center" }) });
   v.focus();
+}
+// The project's preview (preview.py), beside the file (ed.pvSide): what the command the header's Execute button runs
+// makes -- a file it writes, the page of a server it starts -- or its output. Its project is the git repository of the
+// file open (else of the folder shown), its command run in the file's checkout. Set here (its form) or by an actor
+// (`ag preview set`), whose command runs only once the reader lets it. The panel follows its checkout's runs
+// (/api/preview/stream), an actor's (`ag preview run`) among them. It shares the right side with an actor's changes:
+// hidden while they show. Closed (×), a server it runs is stopped; left open, it opens again with the page (ED_PV_KEY).
+const ED_PV_KEY = "ag-dashboard-editor-preview";
+const PV_OUT_MAX = 300000;                           // the most characters of a run's output this page keeps
+const PV_ANSI = /\x1b(?:\[[0-?]*[ -\/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
+const pvPath = () => ed.file || ed.root;
+// Its output as a terminal would leave it: no colours, and a line rewritten (\r: a progress bar) as it was last.
+const pvClean = (t) => t.replace(PV_ANSI, "").replace(/\r\n/g, "\n").split("\n")
+  .map((l) => l.includes("\r") ? l.split("\r").filter(Boolean).pop() || "" : l).join("\n");
+async function pvAbout(path) {
+  const r = await fetch(`/api/preview?${new URLSearchParams({ path })}`, { cache: "no-store" });
+  const got = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(got.error || `${r.status}`);
+  return got;
+}
+// The panel opened (or its project looked at again, another file open): -> its state, or null (closed meanwhile).
+async function pvOpen(path) {
+  let pv = ed.pv;
+  if (!pv) {
+    pv = ed.pv = { path, about: null, run: null, out: "", picked: null, form: null, es: null, err: "", busy: false,
+      dom: null, sig: "", card: "", tick: null };
+    try { localStorage.setItem(ED_PV_KEY, "1"); } catch (e) { /* this page only */ }
+  }
+  pv.path = path;
+  pvDraw();
+  try {
+    const a = await pvAbout(path);
+    if (ed.pv !== pv || pv.path !== path) return ed.pv === pv ? pv : null;
+    const moved = !pv.about || pv.about.checkout !== a.checkout;
+    pv.about = a; pv.err = "";
+    if (moved) { pv.run = a.run; pv.out = ""; pv.picked = null; pv.sig = ""; }
+    if (moved || !pv.es || pv.es.readyState === 2) pvListen(pv);
+  } catch (e) { if (ed.pv === pv) pv.err = e.message; }
+  if (ed.pv !== pv) return null;
+  pvDraw(); edHead();
+  return pv;
+}
+// Its checkout's runs and its project's preview, as they change: the latest run and its output first.
+function pvListen(pv) {
+  if (pv.es) pv.es.close();
+  const es = pv.es = new EventSource(`/api/preview/stream?${new URLSearchParams({ path: pv.about.checkout })}`);
+  const on = (name, f) => es.addEventListener(name, (e) => {
+    if (ed.pv !== pv || pv.es !== es) return;
+    let v;
+    try { v = JSON.parse(e.data); } catch (x) { return; }
+    f(v);
+  });
+  on("run", (r) => {
+    if (pv.run && r.id !== pv.run.id && r.started < pv.run.started) return;   // an earlier run's end, after the next began
+    if (!pv.run || r.id !== pv.run.id) { pv.out = ""; pv.picked = null; }
+    pv.run = r; pvDraw(); edHead();
+  });
+  on("out", (o) => {
+    if (o.reset) pv.out = (o.dropped ? "…\n" : "") + o.text;
+    else if (pv.run && o.id === pv.run.id) pv.out += o.text;
+    else return;
+    if (pv.out.length > PV_OUT_MAX) pv.out = "…" + pv.out.slice(-PV_OUT_MAX);
+    pvOut(pv);
+  });
+  on("preview", (p) => { if (pv.about) pv.about.preview = p; pvDraw(); edHead(); });
+}
+// The header's Execute: the panel opened, and the preview run -- or, with none set, its form, prefilled with a guess;
+// an actor's command not yet let run, asked about first.
+async function edExecute() {
+  const path = pvPath();
+  if (!path || (ed.pv && ed.pv.busy)) return;
+  if (ed.changes) edChangesClose();
+  const pv = await pvOpen(path);
+  if (!pv || !pv.about) return;
+  const p = pv.about.preview;
+  if (!p) return pvEdit(pv);
+  if (p.needs_ok) return pvDraw();                   // its card asks
+  pvRun(pv);
+}
+async function pvRun(pv, ok = null) {
+  if (!pv.about || pv.busy) return;
+  const s = ed.s;                                    // the file as it is here: saved first
+  if (s && s.state && s.state.dirty && !s.state.missing && !edDiskConflicts(s).length) await edSave(s);
+  pv.busy = true; pv.err = ""; pv.picked = null; pvDraw(); edHead();
+  try {
+    const got = await post("/api/preview/run", { path: pv.path, ...(ed.file ? { file: ed.file } : {}), ...(ok !== null ? { ok } : {}) });
+    if (ed.pv === pv) {
+      pv.about.preview = got.preview; pv.about.token = got.token;
+      if (!pv.run || got.run.id !== pv.run.id) { pv.run = got.run; pv.out = got.output || ""; }
+    }
+  } catch (e) { if (ed.pv === pv) pv.err = e.message; }
+  pv.busy = false;
+  if (ed.pv === pv) { pvDraw(); edHead(); }
+}
+async function pvStop(pv) {
+  try { await post("/api/preview/stop", { path: pv.path }); } catch (e) { if (ed.pv === pv) { pv.err = e.message; pvDraw(); } }
+}
+function pvEdit(pv) {
+  const p = pv.about && (pv.about.preview || pv.about.guess) || { command: "", show: "" };
+  pv.form = { command: p.command || "", show: p.show || "", node: null };
+  pvDraw();
+}
+// Closed: its stream ended, a server it runs stopped -- and not opened again with the page.
+function pvClose() {
+  const pv = ed.pv;
+  if (!pv) return;
+  ed.pv = null;
+  if (pv.es) pv.es.close();
+  clearInterval(pv.tick);
+  if (pv.run && pv.run.server && (pv.run.state === "running" || pv.run.state === "ready")) pvStop(pv);
+  try { localStorage.removeItem(ED_PV_KEY); } catch (e) { /* this page only */ }
+  pvDraw(); edHead();
+}
+// The editor closed: its stream ended, the panel kept for when it opens again (a server left alone, until IDLE).
+function pvSleep() {
+  const pv = ed.pv;
+  if (pv && pv.es) { pv.es.close(); pv.es = null; }
+}
+// An actor, as the list has it, by the id it asked as (its channel, or the id its session was started under).
+function pvActor(id) {
+  for (const g of (state.home && state.home.gatherers) || [])
+    for (const a of g.agents)
+      if (a.channel === id || (a.session && (a.session.session_id === id || a.session.started_as === id))) return a;
+  return null;
+}
+function pvBy(p) {
+  if (!p.set_by) return el("span", { class: "by", title: `Set ${clock(p.set_at, true)}` }, `set by you, ${ago(p.set_at)}`);
+  const a = pvActor(p.set_by);
+  return el("span", { class: "by", title: `Set by ${p.set_by === "cli" ? "`ag preview set` in a shell" : `actor ${p.set_by}`}, ${clock(p.set_at, true)}` },
+    a && a.avatar ? el("img", { src: `/avatars/${a.avatar}.svg`, alt: "", draggable: "false" }) : null,
+    `set by ${p.set_by === "cli" ? "a shell" : a ? edWhoName(a) : `actor ${p.set_by.slice(0, 8)}`}, ${ago(p.set_at)}`);
+}
+function pvState(r) {
+  if (!r) return ["", "Not run yet"];
+  const t = (r.ended || Date.now() / 1000) - r.started, took = t < 10 ? `${Math.max(t, 0.1).toFixed(1)}s` : spell(t);
+  return ({ running: ["run", r.server ? `Starting · ${took}` : `Running · ${took}`], ready: ["ok", r.command ? "Serving" : "Shown"],
+    done: ["ok", r.command ? `Done · ${took}` : "Shown"], failed: ["bad", `Failed · exit ${r.code}`],
+    stopped: ["", "Stopped"], "timed out": ["bad", "Stopped: it ran over 5 minutes"] })[r.state] || ["", r.state];
+}
+// What the body shows unless the reader picks: the result once there is one; the output while it is made, or when it
+// failed, or is all there is.
+function pvAuto(r) {
+  const s = (r && r.shows) || {};
+  if (!r) return "result";
+  if (!s.url && !s.path) return "output";
+  if (r.state === "failed" || r.state === "timed out") return "output";
+  if (s.url) return r.state === "ready" ? "result" : "output";
+  return r.state === "running" || !s.exists ? "output" : "result";
+}
+function pvDraw() {
+  const side = ed.pvSide, pv = ed.pv;
+  if (!side) return;
+  if (!pv || ed.changes) {
+    if (!side.hidden) side.hidden = true;
+    if (!pv && side.firstChild) side.replaceChildren();
+    return;
+  }
+  side.hidden = false;
+  if (!pv.dom) {
+    pv.dom = { head: el("div", { class: "ed-pv-h" }), cmd: el("div", { class: "ed-pv-cmd" }), card: el("div", { class: "ed-pv-card" }),
+      result: el("div", { class: "ed-pv-result" }), output: el("pre", { class: "ed-pv-out", tabindex: "0", "aria-label": "Its output" }),
+      stat: el("span", { class: "ed-pv-st", role: "status" }) };
+    pv.dom.output.addEventListener("scroll", () => { const o = pv.dom.output; pv.pinned = o.scrollTop + o.clientHeight >= o.scrollHeight - 8; });
+    pv.pinned = true;
+  }
+  if (side.firstChild !== pv.dom.head)
+    side.replaceChildren(pv.dom.head, pv.dom.cmd, el("div", { class: "ed-pv-body" }, pv.dom.card, pv.dom.result, pv.dom.output));
+  const a = pv.about, p = a && a.preview, r = pv.run;
+  // the status, counting while it runs
+  const [cls, said] = pv.busy && !(r && r.state === "running") ? ["run", "Starting…"] : pvState(r);
+  pv.dom.stat.className = `ed-pv-st ${cls}`; pv.dom.stat.textContent = said;
+  const live = r && (r.state === "running" || (r.server && r.state === "ready"));     // a process of its own, to stop
+  if (r && r.state === "running" && !pv.tick) pv.tick = setInterval(() => { if (ed.pv !== pv || !pv.run || pv.run.state !== "running") { clearInterval(pv.tick); pv.tick = null; return; }
+    pv.dom.stat.textContent = pvState(pv.run)[1]; }, 1000);
+  const card = pv.form ? "form" : pv.err && !a ? "err" : !a ? "loading" : !p ? "none" : p.needs_ok ? "ask" : !r ? "idle" : "";
+  const tab = card ? null : pv.picked || pvAuto(r);
+  const hasResult = r && r.shows && (r.shows.url || r.shows.path);
+  const url = r && r.shows && (r.shows.url || (r.shows.path && r.shows.exists && a && `/preview/${a.token}/${r.shows.rel.split("/").map(encodeURIComponent).join("/")}?v=${r.shows.mtime}`));
+  // the header: what it is, how its run went, and what can be done
+  const btn = (text, title, onclick, attrs = {}) => el("button", { type: "button", title, onclick, ...attrs }, text);
+  pv.dom.head.replaceChildren(...[
+    el("span", { class: "t" }, strokeIcon(ICONS.play, 13), "Preview"),
+    el("span", { class: "nm", title: a ? (a.git ? `The git project ${a.key}, its worktrees too` : `The folder ${a.key} (not in a git project)`) : null,
+      text: a ? a.name : "" }),                      // the room left: none, in a narrow panel
+    card === "" || pv.busy ? pv.dom.stat : null,
+    tab && hasResult ? el("span", { class: "ed-pv-tabs", role: "group", "aria-label": "Show" },
+      ...[["result", "Result"], ["output", "Output"]].map(([k, t]) => btn(t, k === "result" ? "What it makes" : "What it printed",
+        () => { pv.picked = k; pvDraw(); }, { class: tab === k ? "on" : null, "aria-pressed": tab === k ? "true" : "false" }))) : null,
+    live ? btn("Stop", r.server ? "Stop its server" : "Stop its run", () => pvStop(pv))     // in Re-run's place while it runs
+      : p && !p.needs_ok && !pv.form ? btn(r ? "Re-run" : "Run", `Run it again: ${p.command || "(nothing to run)"}`, () => pvRun(pv), { disabled: pv.busy ? "" : null }) : null,
+    p && !pv.form ? btn("Edit", "Change the command, or what it shows", () => pvEdit(pv)) : null,
+    btn("×", r && r.server && (live || r.state === "ready") ? "Close the preview, and stop its server" : "Close the preview", pvClose,
+      { class: "x", "aria-label": "Close the preview" })].filter(Boolean));
+  // what runs, and who set it
+  pv.dom.cmd.hidden = !p || !!pv.form;
+  if (p && !pv.form) pv.dom.cmd.replaceChildren(
+    el("code", { title: `In ${a.checkout}: ${p.command || "nothing to run"}${p.show ? `, showing ${p.show}` : ""}` },
+      p.command ? `$ ${p.command}` : "(nothing to run)", p.show ? el("span", { class: "to", text: `  →  ${p.show}` }) : null),
+    url && tab === "result" ? el("a", { class: "ed-pv-open", href: url, target: "_blank", rel: "noopener", title: "Open it in a tab of its own" }, "↗") : null,
+    pvBy(p));
+  // the body: a card (the form, the question, a note), else the result or the output
+  const err = pv.err ? el("div", { class: "err", text: pv.err }) : null;
+  pv.dom.card.hidden = !card && !pv.err;
+  if (card === "form") {
+    if (!pv.form.node) pv.form.node = pvForm(pv);
+    if (pv.card !== "form" + pv.err || pv.dom.card.lastChild !== pv.form.node) {
+      pv.card = "form" + pv.err;
+      pv.dom.card.replaceChildren(...[err, pv.form.node].filter(Boolean));
+    }
+  } else {
+    const sig = JSON.stringify([card, pv.err, p && [p.command, p.show, p.set_by, p.needs_ok], a && a.name]);
+    if (sig !== pv.card) {
+      pv.card = sig;
+      pv.dom.card.replaceChildren(...[err, card === "ask" ? pvAsk(pv) : card === "none" ? pvNone(pv) : card === "idle"
+        ? el("div", { class: "note", text: "Not run yet: Execute (or Run) runs it, here." }) : card === "loading" ? el("div", { class: "note", text: "Loading…" }) : null].filter(Boolean));
+    }
+  }
+  pv.dom.result.classList.toggle("off", tab !== "result");      // laid out still: a PDF's viewer keeps its place
+  pv.dom.output.hidden = tab !== "output";
+  if (tab === "result") pvResult(pv, url);
+  if (tab === "output") pvOut(pv);
+}
+// Its form: the command and what it shows, saved for the project (and run, by Enter or "Save and run").
+function pvForm(pv) {
+  const f = pv.form, a = pv.about || {};
+  const field = (label, key, placeholder, hint) => {
+    const input = el("input", { type: "text", value: f[key], placeholder, spellcheck: "false", autocomplete: "off" });
+    input.addEventListener("input", () => { f[key] = input.value; });
+    input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); save(true); } });
+    return el("label", {}, label, input, el("span", { class: "note", text: hint }));
+  };
+  const save = async (run) => {
+    try {
+      const got = await post("/api/preview/set", { path: pv.path, command: f.command, show: f.show });
+      if (ed.pv !== pv) return;
+      pv.about = { ...pv.about, ...got }; pv.form = null; pv.err = ""; pv.card = "";
+      pvDraw(); edHead();
+      if (run) pvRun(pv);
+    } catch (e) { if (ed.pv === pv) { pv.err = e.message; pvDraw(); } }
+  };
+  const rel = ed.file && a.checkout && ed.file.startsWith(a.checkout + "/") ? ed.file.slice(a.checkout.length + 1) : null;
+  const node = el("div", { class: "ed-pv-form" },
+    el("div", { class: "head" }, a.preview ? "Change this project's preview" : "Set up a preview for this project",
+      a.name ? el("span", { class: "note", text: ` · ${a.name}${a.git ? ", and its worktrees" : ""}` }) : null),
+    field("Command", "command", "python3 {file}", "Run through your shell in the project's checkout. Empty: nothing runs, what it shows is shown as it is."),
+    field("Show", "show", "out.png · {stem}.pdf · http://localhost:5173", "A file in the project it makes, or the URL of a server it starts (kept running until Stop). Empty: what it prints."),
+    el("div", { class: "note" }, el("code", { text: "{file}" }), " ", el("code", { text: "{stem}" }), " ", el("code", { text: "{name}" }), " ",
+      el("code", { text: "{dir}" }), rel ? ` stand for the file open, ${rel}, its path without its extension, its name, and its folder.`
+        : " stand for the file open in the Editor: its path in the project, without its extension, its name, and its folder."),
+    el("div", { class: "row" },
+      el("button", { type: "button", class: "primary", onclick: () => save(true) }, "Save and run"),
+      el("button", { type: "button", onclick: () => save(false) }, "Save"),
+      el("button", { type: "button", onclick: () => { pv.form = null; pv.err = ""; pv.card = ""; if (pv.about && !pv.about.preview) pvClose(); else pvDraw(); } }, "Cancel")),
+    el("div", { class: "note" }, "Actors can set it too, with ", el("code", { text: "ag preview set" }), ": you are asked before an actor's command first runs."));
+  setTimeout(() => { const i = node.querySelector("input"); if (i && ed.pv === pv && pv.form && pv.form.node === node) i.focus(); }, 0);
+  return node;
+}
+// An actor's command, not yet let run: what it is, who set it, and Run it.
+function pvAsk(pv) {
+  const a = pv.about, p = a.preview, who = pvActor(p.set_by);
+  return el("div", { class: "ed-pv-ask" },
+    el("div", { class: "head" }, who && who.avatar ? el("img", { src: `/avatars/${who.avatar}.svg`, alt: "", draggable: "false" }) : null,
+      `${p.set_by === "cli" ? "A shell" : who ? edWhoName(who) : `Actor ${p.set_by.slice(0, 8)}`} set this project's preview, ${ago(p.set_at)}:`),
+    el("pre", { text: `$ ${p.command}` }),
+    el("div", { class: "note", text: `Shows: ${p.show || "what it prints"}. It runs in ${edTilde(a.checkout)} as you, outside the actor's own permissions, so it waits for you to let it.` }),
+    el("div", { class: "row" },
+      el("button", { type: "button", class: "primary", onclick: () => pvRun(pv, p.command) }, "Run it"),
+      el("button", { type: "button", onclick: () => pvEdit(pv) }, "Edit…")));
+}
+function pvNone(pv) {
+  return el("div", {}, el("div", { class: "note", text: `No preview is set for ${pv.about.name} yet.` }),
+    el("div", { class: "row" }, el("button", { type: "button", class: "primary", onclick: () => pvEdit(pv) }, "Set one up")));
+}
+// The result: drawn again only when another run's, or its file changed.
+function pvResult(pv, url) {
+  const r = pv.run, s = (r && r.shows) || {}, box = pv.dom.result;
+  const sig = JSON.stringify([r && r.id, url, s.kind, s.exists, r && r.state === "ready"]);
+  if (sig === pv.sig) return;
+  pv.sig = sig;
+  if (!r) return box.replaceChildren();
+  if (s.error) return box.replaceChildren(el("div", { class: "ed-pv-note", text: s.error }));
+  if (s.path && !s.exists) return box.replaceChildren(el("div", { class: "ed-pv-note" },
+    el("code", { text: s.rel }), r.state === "running" ? " is not there yet." : " is not there: the command did not make it."));
+  if (s.url && r.state !== "ready") return box.replaceChildren(el("div", { class: "ed-pv-note", text: `Waiting for ${s.url} to answer…` }));
+  if (s.kind === "image" || s.kind === "svg")
+    return box.replaceChildren(el("div", { class: "img" }, el("img", { src: url, alt: s.rel || "", draggable: "false" })));
+  if (s.kind === "pdf" && pv.about && pv.about.pdfjs) return pvPdf(pv, box, url);
+  if (s.kind === "pdf" || s.kind === "url") return box.replaceChildren(el("iframe", { src: url, title: "The preview", class: s.kind }));
+  if (s.kind === "html")
+    return box.replaceChildren(el("iframe", { src: url, title: "The preview", sandbox: "allow-scripts allow-forms allow-modals allow-popups" }));
+  box.replaceChildren(el("div", { class: "ed-pv-note", text: "Loading…" }));
+  fetch(url, { cache: "no-store" }).then((x) => x.ok ? x.text() : Promise.reject(new Error(`${x.status}`))).then((text) => {
+    if (ed.pv !== pv || pv.sig !== sig) return;
+    box.replaceChildren(s.kind === "markdown" ? el("div", { class: "files md-box" }, markdown(text)) : el("pre", { text }));
+  }).catch((e) => { if (ed.pv === pv && pv.sig === sig) box.replaceChildren(el("div", { class: "ed-pv-note", text: `It could not be read: ${e.message}` })); });
+}
+// A PDF, in pdf.js's viewer (DocWriter's copy, /vendor/pdfjs): one viewer kept from run to run, each new build opened
+// in it where the reader was -- its page, zoom and place (the viewer's `_location`, as a bookmark it opens at) -- not on
+// page 1 again. In the dashboard's colours; the PDF's own scripts not run.
+const pvViewer = (url) => `/vendor/pdfjs/web/viewer.html?file=${encodeURIComponent(url)}`;
+function pvPdf(pv, box, url) {
+  const had = pv.pdf;
+  if (had && had.frame.parentNode === box) { if (had.url !== url) pvPdfOpen(had, url); return; }
+  const frame = el("iframe", { class: "pdf", title: "The preview", src: pvViewer(url) });
+  const f = pv.pdf = { frame, url };
+  frame.addEventListener("load", () => { pvPdfTheme(f); pvPdfHooks(pv, f); });
+  box.replaceChildren(frame);
+}
+async function pvPdfOpen(f, url) {
+  f.url = url;
+  let app = null;
+  try { app = f.frame.contentWindow.PDFViewerApplication; } catch (e) { /* not the viewer's page */ }
+  if (!app || !app.pdfViewer || !app.initialized) { f.frame.src = pvViewer(url); return; }
+  const at = app.pdfViewer._location;
+  if (at && at.pdfOpenParams) app.initialBookmark = at.pdfOpenParams.slice(1);
+  try { await app.open({ url }); } catch (e) { f.frame.src = pvViewer(url); }
+}
+function pvPdfTheme(f) {
+  let root;
+  try { root = f && f.frame.contentDocument && f.frame.contentDocument.documentElement; } catch (e) { return; }
+  if (!root) return;
+  const cs = getComputedStyle(document.documentElement), v = (k) => cs.getPropertyValue(k).trim();
+  const vars = { "--bg": "--page", "--bg-surface": "--page", "--bg-elevated": "--surface", "--text": "--ink",
+    "--text-secondary": "--ink-2", "--text-faint": "--muted", "--accent": "--s1", "--bg-hover": "--wash", "--border-light": "--ring" };
+  for (const [k, from] of Object.entries(vars)) if (v(from)) root.style.setProperty(k, v(from));
+  root.setAttribute("data-docwriter-theme", dwTheme());       // its stylesheet's colours, from those
+  root.style.colorScheme = dwTheme();
+}
+window.addEventListener("ag-theme", () => { if (ed.pv && ed.pv.pdf) pvPdfTheme(ed.pv.pdf); });
+// SyncTeX between the PDF and its source (preview.py's `synctex`), for a build that wrote it (-synctex=1): a double-click
+// in the PDF opens its source in the Editor at that line (pvFromPdf); "→ PDF" in the Editor's header shows the cursor's
+// line in the PDF, marked a moment (edToPdf).
+const pvPdfApp = (f) => { try { return f && f.frame.contentWindow.PDFViewerApplication; } catch (e) { return null; } };
+function pvPdfHooks(pv, f) {
+  let box = null;
+  try { box = f.frame.contentDocument.getElementById("viewerContainer"); } catch (e) { /* not the viewer's page */ }
+  if (!box || box.agSync) return;
+  box.agSync = true;
+  box.addEventListener("dblclick", (ev) => pvFromPdf(pv, f, ev));
+}
+async function pvFromPdf(pv, f, ev) {
+  const app = pvPdfApp(f), at = ev.target && ev.target.closest && ev.target.closest(".page");
+  if (!app || !at || ed.pv !== pv || !pv.run || !pv.about) return;
+  const n = Number(at.dataset.pageNumber), view = app.pdfViewer.getPageView(n - 1);
+  if (!view || !view.pdfPage) return;
+  const r = view.div.getBoundingClientRect(), [px, py] = view.viewport.convertToPdfPoint(ev.clientX - r.left, ev.clientY - r.top);
+  const page = view.pdfPage.view;                      // [x0, y0, x1, y1]: SyncTeX's are from its top left
+  const got = await pvSync(pv, { page: n, x: px - page[0], y: page[3] - py });
+  if (!got || ed.pv !== pv) return;
+  const path = `${pv.about.checkout}/${got.file}`;
+  if (!ed.s || ed.s.path !== path) edOpen(path);
+  edGoLine(path, got.line);
+}
+async function pvSync(pv, ask) {
+  const s = pv.run && pv.run.shows;
+  if (!s || !s.rel) return null;
+  let said;
+  try {
+    const got = await post("/api/preview/synctex", { path: pv.about.checkout, pdf: s.rel, ...ask });
+    if (got.ok) return got;
+    const asks = /synctex/i.test((pv.about.preview && pv.about.preview.command) || "");
+    said = { "no-synctex": asks ? "This PDF has no SyncTeX yet: its build did not write it (latexmk saw nothing to rebuild). Change the source, or delete the PDF, and run it again."
+        : "This PDF has no SyncTeX: add -synctex=1 to the preview's command (Edit), and run it again.",
+      "no-tool": "SyncTeX needs TeX's synctex tool where the dashboard runs.",
+      "no-match": "SyncTeX has no match for that place." }[got.reason] || `SyncTeX: ${got.reason}`;
+  } catch (e) { said = e.message; }
+  if (ed.pv === pv) {                                  // said above the result a moment
+    pv.err = said; pvDraw();
+    setTimeout(() => { if (ed.pv === pv && pv.err === said) { pv.err = ""; pvDraw(); } }, 6000);
+  }
+  return null;
+}
+// A line of the file open in the Editor (once it is: just opened, its document comes a moment later), selected and shown.
+async function edGoLine(path, line) {
+  for (let i = 0; i < 80 && !(ed.s && ed.s.path === path && ed.s.view); i++) await new Promise((r) => setTimeout(r, 100));
+  const s = ed.s;
+  if (!s || s.path !== path || !s.view) return;
+  const doc = s.view.state.doc, l = doc.line(Math.max(1, Math.min(line, doc.lines)));
+  s.view.dispatch({ selection: { anchor: l.from, head: l.to }, effects: s.A.EditorView.scrollIntoView(l.from, { y: "center" }) });
+  s.view.focus();
+}
+// Whether the file open is a TeX source of the PDF the preview shows: "→ PDF" offered.
+const edTexToPdf = () => {
+  const pv = ed.pv, sh = pv && pv.run && pv.run.shows;
+  return !!(sh && sh.kind === "pdf" && sh.exists && pv.pdf && ed.file && /\.(tex|ltx)$/i.test(ed.file)
+    && pv.about && edUnder(ed.file, pv.about.checkout));
+};
+// `at`: the place in the file (⌘/Ctrl+double-click's); else the cursor's.
+async function edToPdf(at = null) {
+  const pv = ed.pv, s = ed.s;
+  if (!edTexToPdf() || !s || !s.view) return;
+  const head = at ?? s.view.state.selection.main.head, l = s.view.state.doc.lineAt(head);
+  if (pv.picked === "output") { pv.picked = "result"; pvDraw(); }
+  const got = await pvSync(pv, { mode: "forward", file: ed.file, line: l.number, column: head - l.from });
+  if (got && ed.pv === pv) pvPdfMark(pv.pdf, got);
+}
+// ⌘+double-click (Ctrl+ elsewhere) in a TeX source: that place in the PDF -- taken before CodeMirror's own double-click
+// (a word selected, ⌘ adding it as one more cursor), the cursor left there alone.
+const edToPdfKey = (ev) => MAC ? ev.metaKey : ev.ctrlKey;
+function edToPdfClick(ev) {
+  if (ev.button !== 0 || ev.detail !== 2 || !edToPdfKey(ev)) return;
+  const s = ed.s;
+  if (!s || !s.view || !edTexToPdf()) return;
+  const at = s.view.posAtCoords({ x: ev.clientX, y: ev.clientY });
+  if (at == null) return;
+  ev.preventDefault(); ev.stopPropagation();
+  s.view.dispatch({ selection: { anchor: at } });
+  edToPdf(at);
+}
+// The place SyncTeX found, scrolled to in the viewer (its zoom kept) and marked, fading.
+function pvPdfMark(f, got) {
+  const app = pvPdfApp(f), view = app && app.pdfViewer.getPageView(got.page - 1);
+  if (!view || !view.pdfPage) return;
+  const page = view.pdfPage.view, h = got.h ?? got.x, v = got.v ?? got.y;
+  const w = Math.max(got.w || 0, 24), tall = Math.max(got.height || 0, 9);
+  const top = page[3] - v + tall;                      // the box's top, in the PDF's own space
+  app.pdfViewer.scrollPageIntoView({ pageNumber: got.page,
+    destArray: [null, { name: "XYZ" }, page[0] + Math.max(0, h - 36), Math.min(page[3], top + 48), null] });
+  requestAnimationFrame(() => {
+    const [x1, y1, x2, y2] = view.viewport.convertToViewportRectangle([page[0] + h, page[3] - v, page[0] + h + w, top]);
+    const mark = f.frame.contentDocument.createElement("div");
+    Object.assign(mark.style, { position: "absolute", left: `${Math.min(x1, x2) - 3}px`, top: `${Math.min(y1, y2) - 3}px`,
+      width: `${Math.abs(x2 - x1) + 6}px`, height: `${Math.abs(y2 - y1) + 6}px`, background: "rgba(255, 190, 0, .38)",
+      borderRadius: "3px", pointerEvents: "none", zIndex: "10", transition: "opacity .8s" });
+    view.div.append(mark);
+    setTimeout(() => { mark.style.opacity = "0"; }, 1800);
+    setTimeout(() => mark.remove(), 2800);
+  });
+}
+document.addEventListener("webviewerloaded", (ev) => {     // the viewer, before it starts: no scripts of the PDF's
+  const w = ev.detail && ev.detail.source;
+  if (!ed.pv || !ed.pv.pdf || ed.pv.pdf.frame.contentWindow !== w) return;
+  try {                                              // its stored preferences would set it again: not read
+    w.PDFViewerApplicationOptions.set("disablePreferences", true);
+    w.PDFViewerApplicationOptions.set("enableScripting", false);
+  } catch (e) { /* an older viewer */ }
+});
+// The output, as it comes: written once a frame, kept scrolled to its end unless the reader scrolled up.
+function pvOut(pv) {
+  if (pv.outQueued) return;
+  pv.outQueued = true;
+  requestAnimationFrame(() => {
+    pv.outQueued = false;
+    if (ed.pv !== pv || !pv.dom) return;
+    const o = pv.dom.output, r = pv.run;
+    const text = pvClean(pv.out);
+    o.textContent = text || (r && r.state === "running" ? "" : r && r.command ? "(It printed nothing.)" : "(Nothing ran.)");
+    if (pv.pinned) o.scrollTop = o.scrollHeight;
+  });
 }
 // The writers in the tree: their avatars, overlapped; two or more, on an amber ground with their count.
 function edAvatars(writers, what) {
@@ -8958,6 +9558,7 @@ function edGo(dir) {
   try { localStorage.setItem(ED_ROOT_KEY, dir); } catch (e) { /* this page only */ }
   ed.branches = []; edBranches();
   edBar(); edTree(); edList(dir); edFetchBranches();
+  if (ed.pv && !ed.file) pvOpen(dir);                // no file open: the folder's project's preview
 }
 function edTick() {
   if (ed.timer) return;
@@ -8976,6 +9577,7 @@ async function edOpen(path) {
   if (ed.s && ed.s.path === path && !ed.s.err) return;
   edClose();
   ed.file = path; ed.err = "";
+  if (ed.pv) pvOpen(path);                           // its project's preview, if that shows
   if (!ed.lists.has(edDir(path))) edList(edDir(path));      // its writers
   edTree(); edHead();
   let A;
@@ -9453,7 +10055,7 @@ function edHead() {
   const s = ed.s;
   if (!ed.file) {
     ed.head.replaceChildren(el("span", { class: "ed-hint", text: "Pick a file to edit it. Everyone with it open sees the others' edits as they type, and what an actor writes to it shows here as it lands." }),
-      el("span", { class: "grow", style: "flex: 1" }), edCloseBtn());
+      el("span", { class: "grow", style: "flex: 1" }), edExecBtn(), edCloseBtn());
     return;
   }
   const st = s && s.state;
@@ -9514,6 +10116,9 @@ function edHead() {
       "aria-label": "Wrap long lines", onclick: () => edSetWrap(!ed.wrap) }, strokeIcon(ICONS.wrap, 15)),
     el("label", { class: "ed-auto", title: "Save the file a moment after each edit to it, yours or another's: the actors read it as it is typed. Not while a conflict with the file waits." },
       el("input", { type: "checkbox", checked: ed.auto ? "" : null, onchange: (ev) => edSetAuto(ev.target.checked) }), "Auto-save"),
+    edTexToPdf() ? el("button", { type: "button", class: "ed-topdf", onclick: edToPdf,
+      title: `Show the cursor's line in the PDF beside (SyncTeX), or ${MAC ? "⌘" : "Ctrl"}+double-click a line. Double-click the PDF to come back to its source.` }, "→ PDF") : null,
+    edExecBtn(),
     el("button", { type: "button", class: "primary", title: nc ? "Write it to the file on disk, your lines kept where they conflict (⌘S / Ctrl+S)" : "Write it to the file on disk (⌘S / Ctrl+S)",
       disabled: s && st && (st.dirty || st.missing) ? null : "", onclick: () => s && edSave(s) }, "Save"),
     edCloseBtn()].filter(Boolean));
@@ -9527,12 +10132,14 @@ const edShown = () => PANE ? !!(window.parent.agEditorPanel && window.parent.agE
 // `dir`: the folder to show in it, opened -- a pane's actor's working directory, by its button.
 function setEditor(open, dir = null) {
   if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.set(open, dir); return; }
+  const wasMin = chatMin();
   state.editor = open;
-  if (!open) edClose();
+  if (!open) { edClose(); pvSleep(); keepMin(false); }   // the chat minimized only under it: closed, shown again
   try { localStorage.setItem(ED_SHOWN_KEY, open ? "1" : ""); } catch (e) { /* this page only */ }
   for (const p of panes.others) p.call("editor", open);
   edMount();
   if (open && dir) edGo(dir);
+  if (wasMin && !open) return minRedraw();          // its view's feed loaded again (minimized, the files')
   keepingPlace(renderMain);                          // its button in the header: pressed, or not
   drawn.main = mainSignature();
 }
@@ -9556,12 +10163,106 @@ async function edAtActor() {
   }
   setEditor(true, dir || cwd);
 }
-if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor };
+if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor, min: () => !!state.chatMin, setMin: setChatMin };
+// The chat minimized under the Editor: each pane only its message box, the actor's status at its right -- its avatar, moving
+// while it works, done with a check, a mark while it waits on the reader or stopped on an error -- and under it the latest
+// turn's commands and the lines its changes added and removed; the Editor the rest of the column. One choice for every
+// pane (they share the row under the Editor), kept in this browser while the Editor is open; closed, the chat comes back.
+const MIN_KEY = "ag-dashboard-chat-min";
+const MIN_TIP = "Minimize the chat: only its message box and the actor's status, under the Editor";
+state.chatMin = !PANE && !SNAPSHOT && !!state.editor && (() => { try { return localStorage.getItem(MIN_KEY) === "1"; } catch (e) { return false; } })();
+const chatMin = () => !SNAPSHOT && edShown()
+  && (PANE ? !!(window.parent.agEditorPanel && window.parent.agEditorPanel.min()) : !!state.chatMin);
+function keepMin(on) {
+  state.chatMin = on;
+  try { localStorage.setItem(MIN_KEY, on ? "1" : ""); } catch (e) { /* this page only */ }
+}
+function setChatMin(on) {
+  if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.setMin(on); return; }
+  keepMin(on);
+  for (const p of panes.others) p.call("minimized", on);
+  minRedraw();
+}
+// This page's pane minimized or shown again: its counts are the latest turn's, from the files' feed (chatFeed) -- then, shown
+// again, its view's own feed.
+async function minRedraw() {
+  if (chatMin() && state.files && state.files.turn !== null) { state.files.turn = null; state.files.sel = null; }
+  edMount();
+  await loadChat();
+  keepingPlace(renderMain);
+  drawn.main = mainSignature();
+  if (!chatMin()) chatToEnd();
+}
+// The view a minimized pane draws in place of its own (chatCard): no history, the message box, and miniFoot.
+const MINI_VIEW = { id: "mini", name: "Chat", feed: "files", mini: true, background: false, queued: false, greets: true,
+  render: () => [], footer: (ctx) => miniFoot(ctx) };
+const miniBack = () => el("button", { type: "button", class: "mini-back", title: "Show the chat again", "aria-label": "Show the chat again",
+  onclick: () => setChatMin(false) }, strokeIcon(ICONS.restore, 14));
+function miniFoot({ info, running }) {
+  const d = state.files && state.selected && state.files.key === key(...state.selected) ? state.files.data : null;
+  const [st0, word0] = statusOf(info);
+  // working: its turn, or a message sent from here that has yet to open one -- for a while: not seen for long, its terminal
+  // may be asking something first (pendingTalk), and the status says so
+  const mine = sentHereNow(heard(info)), unseen = !running && mine.some((m) => Date.now() - m.at > UNSEEN_MS);
+  // the latest turn, as loaded -- none while a message sent from here waits to open the next: its numbers are not that one's
+  const t = d && d.turns.length && d.turn === d.turns.length - 1 && !(mine.length && !running) ? d.turns[d.turn] : null;
+  const live = running || (mine.length > 0 && !unseen);
+  const [st, word] = unseen ? ["asking", "Pending · not seen by the session yet; its terminal may be asking something first"] : [st0, word0];
+  const cmds = t ? d.commands : [], failed = cmds.filter((c) => c.error).length;
+  const lines = t ? addChanged(d.files.filter((f) => (showTmp || !f.temporary) && (showGit || !gitOnly(f))).map((f) => f.changed)) : null;
+  const src = bareAvatar(info);
+  const mark = { asking: ["ask", "?"], error: ["err", "!"], failed: ["err", "!"], background: ["bg", ""] }[st];
+  const pic = live ? (src ? buddy(info, !!info.failing) : el("span", { class: "spin", "aria-hidden": "true" }))
+    : t && ["idle", "finished", "closed"].includes(st) ? atRest(info, t.row_id)
+    : src ? el("span", { class: "still", "data-sig": signature([src, st]) }, el("img", { src, alt: "", draggable: "false" }),
+      mark ? el("span", { class: "mk " + mark[0], text: mark[1] }) : null)
+    : null;
+  const said = [live ? (info.failing ? "Retrying" : "Working") : word,
+    t ? plural(cmds.length, "command") + (failed ? `, ${full(failed)} failed` : "") : null,
+    lines ? `${plural(lines[0], "line")} added, ${full(lines[1])} removed` : null].filter(Boolean).join(" · ");
+  return [miniBack(), el("button", { type: "button", class: "mini-st" + (live ? " live" : ""), "data-morph": "",
+    title: `${said}. Show the chat`, "aria-label": `${said}. Show the chat`, onclick: () => setChatMin(false) },
+    el("span", { class: "pic", "data-morph": "" }, pic),
+    el("span", { class: "n" }, t ? el("span", { class: "c" + (failed ? " err" : "") }, strokeIcon(ICONS.terminal, 11), full(cmds.length)) : null,
+      lines && lines[0] ? el("span", { class: "chg-a", text: `+${full(lines[0])}` }) : null,
+      lines && lines[1] ? el("span", { class: "chg-r", text: `−${full(lines[1])}` }) : null))];
+}
+// A shell's pane, minimized: what it is, and the way back.
+function shellMini(id) {
+  const sh = shellOf(id);
+  return el("section", { class: "chat mini shell", "aria-label": "Terminal", "data-for": signature([id, "mini"]) }, miniBack(),
+    el("span", { class: "mini-sh" }, strokeIcon(ICONS.terminal, 13), el("span", { text: sh ? `Terminal · ${shellPath(sh)}` : "Terminal" })));
+}
+// In a frame: as tall as its minimized pane -- the row under the Editor as tall as its tallest -- else as its pane is laid out.
+let miniFit = null;
+function fitMini() {
+  const f = PANE && window.frameElement;
+  if (!f) return;
+  const card = document.querySelector("#main > .chat.mini");
+  if (miniFit && miniFit.card === card) return;
+  if (miniFit) miniFit.obs.disconnect();
+  miniFit = null;
+  if (!card) { f.style.height = ""; return; }
+  const obs = new ResizeObserver(() => { f.style.height = `${Math.ceil(card.getBoundingClientRect().height)}px`; });
+  obs.observe(card);
+  miniFit = { card, obs };
+}
 const edCloseBtn = () => el("button", { type: "button", class: "ed-close", title: "Close the editor", "aria-label": "Close the editor",
   onclick: () => setEditor(false) }, "×");
+// Execute: the project's preview run, and shown beside the file (edExecute).
+function edExecBtn() {
+  const pv = ed.pv, p = pv && pv.about && pv.about.preview, r = pv && pv.run;
+  const running = !!(pv && (pv.busy || (r && r.state === "running")));
+  return el("button", { type: "button", class: "ed-exec" + (running ? " busy" : ""), disabled: pv && pv.busy ? "" : null,
+    title: p ? (p.needs_ok ? `An actor set this project's preview: ${p.command}. Press to see it, and let it run`
+      : `Run ${p.command || "nothing"}${p.show ? `, and show ${p.show}` : ", and show what it prints"}, beside the file`)
+      : "Run this project's preview, and show what it makes beside the file: the first time, set what it runs",
+    onclick: edExecute }, strokeIcon(ICONS.play, 13), "Execute");
+}
 // Shown or hidden as `state.editor` says, drawn the first time it is shown: called by each draw of the main view.
 function edMount() {
   if (PANE || SNAPSHOT) return;
+  document.querySelector(".work").classList.toggle("chat-min", chatMin());
   const top = document.getElementById("ed-top");
   if (!state.editor) { top.hidden = true; return; }
   if (state.home && state.home.editor === false) {
@@ -9575,16 +10276,19 @@ function edMount() {
     ed.tree = el("div", { class: "ed-rows" });
     ed.head = el("div", { class: "ed-head" });
     ed.body = el("div", { class: "ed-body" + (ed.wrap ? " wrap" : "") });
+    ed.body.addEventListener("mousedown", edToPdfClick, true);     // before CodeMirror's: ⌘+double-click, to the PDF
     ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "An actor's changes to the file" });
+    ed.pvSide = el("aside", { class: "ed-pv", hidden: "", "aria-label": "The project's preview" });
     ed.brs = el("div", { class: "ed-brs" });
     const nav = el("nav", { class: "ed-tree", "aria-label": "Files" }, ed.bar, ed.brs, ed.tree);
     const colGrip = () => el("div", { class: "ed-col-grip", role: "separator", "aria-orientation": "vertical",
       title: "Drag to resize · double-click: the width it had first" });
-    const treeGrip = colGrip(), sideGrip = colGrip();
+    const treeGrip = colGrip(), sideGrip = colGrip(), pvGrip = colGrip();
     ed.host = el("div", { class: "ed" }, nav, treeGrip,
-      el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, sideGrip, ed.side)));
+      el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, sideGrip, ed.side, pvGrip, ed.pvSide)));
     widthGrip(treeGrip, "ag-dashboard-editor-tree-width", nav, "width", 120, (x) => x - nav.getBoundingClientRect().left);
     widthGrip(sideGrip, "ag-dashboard-editor-changes-width", ed.side, "width", 200, (x) => ed.side.getBoundingClientRect().right - x);
+    widthGrip(pvGrip, "ag-dashboard-editor-preview-width", ed.pvSide, "width", 220, (x) => ed.pvSide.getBoundingClientRect().right - x);
     top.replaceChildren(ed.host, topGrip(top));
   }
   const opening = top.hidden;
@@ -9597,6 +10301,9 @@ function edMount() {
   if (opening) {                                     // shown again: drawn, and its file opened again
     ed.barSig = ""; edBar(); edTree(); edHead();
     if (ed.file && !ed.s) edOpen(ed.file);
+    let pvShown = !!ed.pv;                           // its preview too, if left open (by this page, or before a reload)
+    try { pvShown = pvShown || localStorage.getItem(ED_PV_KEY) === "1"; } catch (e) { /* this page only */ }
+    if (pvShown && pvPath()) pvOpen(pvPath());
   }
   edTick();
 }
