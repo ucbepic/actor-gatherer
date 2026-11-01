@@ -23,8 +23,6 @@ READ_LINE = re.compile(r"^\s*(\d+)(?:\t|→)(.*)$")              # a Read result
 GREP_LINE = re.compile(r"^(\d+)[:-](.*)$")                       # grep -n on one file: "12:text"
 GREP_PATH_LINE = re.compile(r"^([^\s:][^:]*):(\d+)[:-](.*)$")    # grep -n on several: "a/b.py:12:text"
 SED_RANGE = re.compile(r"^(\d+)(?:,(\d+|\$))?p$")
-SHELLS = {"Bash", "shell", "exec_command", "local_shell", "shell_command", "run_command"}
-EDITS = {"Edit", "MultiEdit", "Write", "NotebookEdit", "apply_patch", "write_file", "edit_file"}
 GLOB = re.compile(r"[*?[]")
 
 
@@ -313,16 +311,6 @@ def shell_reads(command: str, output: str, cwd: str):
         else:
             found.append((r["path"], "lines", r["start"], lines[:r["count"]] if r.get("count") else lines))
     return found, other
-
-
-def _shell_text(name: str, inp) -> (str, Optional[str]):
-    """A shell call's command and its working directory, whichever harness's."""
-    if not isinstance(inp, dict):
-        return str(inp or ""), None
-    c = inp.get("command", inp.get("cmd", inp.get("CommandLine", "")))      # Antigravity's: CommandLine
-    if isinstance(c, list):
-        c = c[2] if len(c) >= 3 and c[0] in ("bash", "sh", "zsh") and c[1] in ("-lc", "-c") else " ".join(c)
-    return str(c or ""), inp.get("workdir") or inp.get("cwd")
 
 
 # ------------------------------------------------------------------ shell commands that change files

@@ -404,7 +404,11 @@ change is a fact of the harness to move here, read by the dashboard through a fi
       its shell command go by the view; Chat's labels, the files a call read and changed, its work kind (`work.doing`:
       `Action` and shape) too. A subagent a call started is the harness's to say (`spawned`), and a script's calls'
       results (`script_results`). `Action.PUBLISH` for a tool that publishes (Claude Code's Artifact).
-   b. ag's file checks (`shell.py`'s SHELLS and EDITS, `check.py`) read the view, not tool names.
+   b. **Built.** ag's file checks read each call as its harness's rules do (`ToolCall`: its view and `Action`), not by
+      tool names and input keys: `check.py` (what a call names, reads, writes and says it changes), `calls.py` (calls
+      and results by the harness's rules -- else whichever harness's rules find calls among the items --, a result's
+      output as `shown`, a script's calls by `script_results`, the last results by the parts' kinds). `shell.py`'s
+      SHELLS, EDITS and `_shell_text` are gone; `ToolCall.server` marks a tool the provider ran.
 4. Asks and status: one status rule over events (`_claude_status` and `_codex_status` joined, `RECORDED` gone),
    questions in one shape from each harness, codex's plan offer an `asked`; `Harness.plan_choices` for the plan
    card's buttons; whether an ask shows again in a terminal opened after it (`codex_dialog`, `answer`).

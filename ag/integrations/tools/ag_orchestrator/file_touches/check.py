@@ -33,8 +33,9 @@ import shlex
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from ag.integrations.tools.ag_connection.ag_client import home
-from harness_kit.shell import (EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _expand, _patch_files, _path, _resolve,
-                       _shell_text, _simple_commands, shell_changes, shell_reads)
+from harness_kit import Action, Shape, ToolCall
+from harness_kit.shell import (GLOB, GREP_PATH_LINE, READ_LINE, _expand, _patch_files, _path, _resolve, _simple_commands,
+                       shell_changes, shell_reads)
 
 MAX_BYTES = 2 << 20        # the most of a file read: a larger one is told changed by its size and time alone
 MAX_NAMED = 64             # the most files an answer's calls name that are looked at
@@ -43,8 +44,15 @@ LINE_CHARS = 400           # the most of one line sent
 MAX_HUNKS = 50             # the most changed places sent for one file
 MAX_UNNAMED = 200          # the most files the watcher saw change, unnamed, kept for one answer
 CONTEXT = 2                # the lines around a change sent with it
-SEARCHES = {"Grep", "Glob"}
-DELEGATES = {"Agent", "Task"}   # a call whose subagent runs tools of its own: what they change, it changes
+CHANGES = (Shape.SHELL, Shape.WRITE, Shape.EDIT, Shape.PATCH)   # the calls that may change a file they name
+
+
+def _shell(call: ToolCall, cwd: Optional[str]) -> Tuple[str, Optional[str]]:
+    """A shell call's command and where it runs, as its harness's rules show it (its view); ("", cwd) for another."""
+    v = call.view or {}
+    if v.get("shape") != Shape.SHELL:
+        return "", cwd
+    return str(v.get("command") or ""), _resolve(v["cwd"], cwd or "") if isinstance(v.get("cwd"), str) and v["cwd"] else cwd
 
 
 class Look:
@@ -127,21 +135,23 @@ def _words(command: str, cwd: Optional[str]) -> Iterable[str]:
                 yield p
 
 
-def named(name: str, inp, cwd: Optional[str]) -> List[str]:
-    """The files a call names, absolute: the path an edit or read tool is given (every file of a
-    patch), or every word of a shell command that is a file -- or one it says it writes, which may
-    not be there yet."""
-    out = []
-    if isinstance(inp, dict) and name not in SHELLS:
-        for k in ("file_path", "notebook_path", "path", "Path"):          # Antigravity's: Path
-            if isinstance(inp.get(k), str) and inp[k]:
-                out.append(_resolve(inp[k], cwd or ""))
-    if name == "apply_patch":
-        body = inp if isinstance(inp, str) else (inp or {}).get("input") or (inp or {}).get("patch") or ""
-        out += [_resolve(p, cwd or "") for p, _, _ in _patch_files(str(body))]
-    if name in SHELLS:
-        command, workdir = _shell_text(name, inp)
-        here = _resolve(workdir, cwd or "") if workdir else cwd
+def named(call: ToolCall, cwd: Optional[str]) -> List[str]:
+    """The files a call names, absolute, as its harness's rules show it (its view): the path a read, a write, an edit
+    or a search is given (every file of a patch), or every word of a shell command that is a file -- or one it says it
+    writes, which may not be there yet; a tool its rules show no other way, the path its input gives."""
+    v, out = call.view or {}, []
+    shape = v.get("shape")
+    if shape in (Shape.READ, Shape.WRITE, Shape.EDIT, Shape.SEARCH):
+        if isinstance(v.get("path"), str) and v["path"]:
+            out.append(_resolve(v["path"], cwd or ""))
+    elif shape not in (Shape.SHELL, Shape.PATCH) and isinstance(call.input, dict):
+        for k in ("file_path", "notebook_path", "path"):
+            if isinstance(call.input.get(k), str) and call.input[k]:
+                out.append(_resolve(call.input[k], cwd or ""))
+    if shape == Shape.PATCH:
+        out += [_resolve(p, cwd or "") for p, _, _ in _patch_files(str(v.get("patch") or ""))]
+    if shape == Shape.SHELL:
+        command, here = _shell(call, cwd)
         out += [p for p in _words(command, here) if os.path.isfile(p)]
         out += [p for p, _, _ in shell_changes(command, here)[0] if not GLOB.search(p)]
     seen, kept = set(), []
@@ -152,11 +162,11 @@ def named(name: str, inp, cwd: Optional[str]) -> List[str]:
     return kept
 
 
-def before(calls: Dict[str, Tuple[str, object]], cwd: Optional[str]) -> Dict[str, Optional[Look]]:
+def before(calls: Dict[str, ToolCall], cwd: Optional[str]) -> Dict[str, Optional[Look]]:
     """The files the calls name, as they are before they run (None: not there): what `check` compares."""
     out: Dict[str, Optional[Look]] = {}
-    for name, inp in calls.values():
-        for p in named(name, inp, cwd):
+    for call in calls.values():
+        for p in named(call, cwd):
             if len(out) >= MAX_NAMED:
                 return out
             if p not in out:
@@ -165,19 +175,6 @@ def before(calls: Dict[str, Tuple[str, object]], cwd: Optional[str]) -> Dict[str
 
 
 # ------------------------------------------------------------------ what a call showed of a file
-
-SHELL_CWD_NOTE = re.compile(r"\n?Shell cwd was reset to [^\n]*\s*$")
-CODEX_HEADER = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: [^\n]*\n)?(?:Process exited with code [^\n]*\n)?"
-                          r"(?:Original token count: [^\n]*\n)?Output:\n")
-
-
-def shell_output(text: str) -> str:
-    """A shell call's output as the command printed it: without Claude Code's note that it reset the
-    shell's directory, or codex's header (wall time, exit code) before it."""
-    text = SHELL_CWD_NOTE.sub("", text or "")
-    m = CODEX_HEADER.match(text)
-    return text[m.end():] if m else text
-
 
 def _clip(lines: List[str]) -> Tuple[List[str], int]:
     return [t[:LINE_CHARS] for t in lines[:MAX_LINES]], max(0, len(lines) - MAX_LINES)
@@ -255,7 +252,7 @@ class _Found:
         return out
 
 
-def _reads(name: str, inp, text: str, cwd: Optional[str], was: Dict[str, Optional[Look]], moved: set,
+def _reads(call: ToolCall, text: str, cwd: Optional[str], was: Dict[str, Optional[Look]], moved: set,
            found: _Found) -> None:
     """What the call showed of files it read, each kept where the file says so (see the module's
     docstring). A file changed while the calls ran (`moved`) is matched as it was before them
@@ -293,8 +290,9 @@ def _reads(name: str, inp, text: str, cwd: Optional[str], was: Dict[str, Optiona
         elif sure and (not texts or path in moved):                # nothing to match it against
             found.hit(path, n, shown, None)
 
-    if name == "Read" and isinstance(inp, dict) and inp.get("file_path"):
-        path = _resolve(str(inp["file_path"]), cwd or "")
+    v = call.view or {}
+    if v.get("shape") == Shape.READ and isinstance(v.get("path"), str) and v["path"]:
+        path = _resolve(v["path"], cwd or "")
         if text.strip() == "[image]":
             if path in moved or os.path.isfile(path):
                 found.unsplit(path, image=True)
@@ -311,10 +309,9 @@ def _reads(name: str, inp, text: str, cwd: Optional[str], was: Dict[str, Optiona
         if not runs and (path in moved or os.path.isfile(path)):
             found.unsplit(path)                                    # an empty file, or lines not shown
         return
-    if name in SHELLS:
-        command, workdir = _shell_text(name, inp)
-        here = _resolve(workdir, cwd or "") if workdir else cwd
-        reads, _ = shell_reads(command, shell_output(text), here or "")
+    if v.get("shape") == Shape.SHELL:
+        command, here = _shell(call, cwd)
+        reads, _ = shell_reads(command, text, here or "")
         for path, how, n, got in reads:
             paths = sorted(glob.glob(path))[:MAX_NAMED] if GLOB.search(path) else [path]
             if GLOB.search(path) and how == "lines" and len(paths) != 1:
@@ -327,8 +324,8 @@ def _reads(name: str, inp, text: str, cwd: Optional[str], was: Dict[str, Optiona
                 elif os.path.isfile(p) or p in moved:
                     found.unsplit(p)
         return
-    if name in SEARCHES:
-        root = _resolve(str(inp.get("path") or "."), cwd or "") if isinstance(inp, dict) else cwd or ""
+    if v.get("shape") == Shape.SEARCH:
+        root = _resolve(str(v.get("path") or "."), cwd or "")
         for line in text.split("\n"):
             m = GREP_PATH_LINE.match(line)
             if m:
@@ -395,16 +392,17 @@ def created(path: str, now: Optional[Look] = None) -> Optional[Tuple[str, dict]]
     return "created", {"lines": lines, **({"cut": cut} if cut else {})}
 
 
-def check(calls: List[Tuple[str, str, object, str, bool]], cwd: Optional[str],
+def check(calls: List[Tuple[str, ToolCall, str, bool]], cwd: Optional[str],
           was: Dict[str, Optional[Look]], watched: Dict[str, str], seen: Optional[Dict[str, List[str]]] = None) -> List[dict]:
-    """What an answer's calls did to files: `calls`, [(call id, name, input, result text, error)] --
+    """What an answer's calls did to files: `calls`, [(call id, the call as its harness's rules read it, its output as it
+    printed it -- the harness's own lines about the run taken off: ToolResult.shown --, error)] --
     those whose results are in; `was`, the files they name as they were before they ran (`before`;
     {}: not looked at); `watched`, {path: created/modified/deleted}, what the watcher saw change while
     they ran; `seen`, files' lines as last seen (a file changed, not looked at before, is told from
     them). Touches, in the order of the calls (see the module's docstring)."""
     seen = seen or {}
-    names = {cid: named(name, inp, cwd) for cid, name, inp, _, _ in calls}
-    says = {cid: _writes(name, inp, cwd) for cid, name, inp, _, _ in calls}
+    names = {cid: named(call, cwd) for cid, call, _, _ in calls}
+    says = {cid: _writes(call, cwd) for cid, call, _, _ in calls}
     changes: Dict[str, Tuple[str, dict]] = {}
     watched = {p: "modified" if how == "created" and p in seen else how for p, how in watched.items()}   # seen before
     for path in list(was) + [p for p in watched if p not in was]:
@@ -421,21 +419,21 @@ def check(calls: List[Tuple[str, str, object, str, bool]], cwd: Optional[str],
             if got[0] == "modified":
                 got[1]["path"] = path                      # for _share; not sent (see below)
             changes[path] = got
-    runners = [cid for cid, name, _, _, _ in calls if name in SHELLS or name in EDITS]
-    shells = [cid for cid, name, _, _, _ in calls if name in SHELLS or name in DELEGATES]   # may change a file
-                                                                                           # it doesn't name
+    runners = [cid for cid, call, _, _ in calls if (call.view or {}).get("shape") in CHANGES]
+    shells = [cid for cid, call, _, _ in calls if (call.view or {}).get("shape") == Shape.SHELL
+              or call.action == Action.DELEGATE]    # may change a file it doesn't name: a subagent's tools, its
     owners: Dict[str, List[str]] = {}                       # a change's calls: those that say they write it,
     for p in changes:                                       # else those of the runners that name it
         owners[p] = [cid for cid in runners if p in says[cid]] or [cid for cid in runners if p in names[cid]]
     unnamed = [p for p in changes if not owners[p]][:MAX_UNNAMED]
-    by_id = {cid: (name, inp) for cid, name, inp, _, _ in calls}
+    by_id = {cid: call for cid, call, _, _ in calls}
     shares = {p: _share(changes[p], owners[p], by_id, cwd) for p in changes if len(owners[p]) > 1}
     out: List[dict] = []
-    for cid, name, inp, text, error in calls:
+    for cid, call, text, error in calls:
         mine = []
         if not error:
             found = _Found()
-            _reads(name, inp, text or "", cwd, was, set(changes), found)
+            _reads(call, text or "", cwd, was, set(changes), found)
             mine += found.touches(cid, names[cid])
         for p, (how, detail) in changes.items():
             if cid in owners[p]:
@@ -450,20 +448,19 @@ def check(calls: List[Tuple[str, str, object, str, bool]], cwd: Optional[str],
     return out
 
 
-def _says(name: str, inp, path: str, cwd: Optional[str]) -> Optional[List[Tuple[List[str], List[str]]]]:
-    """The changes a call says it makes to `path`: [(old lines, new lines)] -- an edit's strings, a
-    patch's hunks, a command's text written or replaced; None when it says it changes it but not how
-    (`sed -i`, a script), or writes it whole."""
-    if name in ("Edit", "MultiEdit") and isinstance(inp, dict):
-        edits = [inp] if name == "Edit" else [e for e in inp.get("edits") or [] if isinstance(e, dict)]
-        return [(str(e.get("old_string") or "").split("\n"), str(e.get("new_string") or "").split("\n")) for e in edits]
-    if name == "apply_patch":
-        body = inp if isinstance(inp, str) else (inp or {}).get("input") or (inp or {}).get("patch") or ""
-        return [(old, new) for p, how, hunks in _patch_files(str(body)) if _resolve(p, cwd or "") == path
+def _says(call: ToolCall, path: str, cwd: Optional[str]) -> Optional[List[Tuple[List[str], List[str]]]]:
+    """The changes a call says it makes to `path`, as its harness's rules show it (its view): [(old lines, new lines)]
+    -- an edit's strings, a patch's hunks, a command's text written or replaced; None when it says it changes it but
+    not how (`sed -i`, a script), or writes it whole."""
+    v = call.view or {}
+    if v.get("shape") == Shape.EDIT:
+        return [(str(e.get("old") or "").split("\n"), str(e.get("new") or "").split("\n"))
+                for e in v.get("edits") or [] if isinstance(e, dict)]
+    if v.get("shape") == Shape.PATCH:
+        return [(old, new) for p, how, hunks in _patch_files(str(v.get("patch") or "")) if _resolve(p, cwd or "") == path
                 and how == "update" for old, new in hunks] or None
-    if name in SHELLS:
-        command, workdir = _shell_text(name, inp)
-        here = _resolve(workdir, cwd or "") if workdir else cwd
+    if v.get("shape") == Shape.SHELL:
+        command, here = _shell(call, cwd)
         out = []
         for p, how, what in shell_changes(command, here)[0]:
             if p == path and how == "pairs":
@@ -474,7 +471,7 @@ def _says(name: str, inp, path: str, cwd: Optional[str]) -> Optional[List[Tuple[
     return None
 
 
-def _share(change: Tuple[str, dict], owners: List[str], calls: Dict[str, Tuple[str, object]],
+def _share(change: Tuple[str, dict], owners: List[str], calls: Dict[str, ToolCall],
            cwd: Optional[str]) -> Dict[str, dict]:
     """A change to a file made by several of the calls, shared out: each place it changed goes to the
     calls whose stated change it is (an edit's new text is in it, or its old text was), the places none
@@ -485,7 +482,7 @@ def _share(change: Tuple[str, dict], owners: List[str], calls: Dict[str, Tuple[s
     if how != "modified" or not places:
         return {cid: detail for cid in owners}
     path = detail.get("path")
-    stated = {cid: _says(*calls[cid], path, cwd) if path else None for cid in owners}
+    stated = {cid: _says(calls[cid], path, cwd) if path else None for cid in owners}
 
     def claims(pairs, h) -> bool:
         new = {t.strip() for t in h["new"] if t.strip()}
@@ -501,12 +498,13 @@ def _share(change: Tuple[str, dict], owners: List[str], calls: Dict[str, Tuple[s
     return {cid: {"hunks": mine[cid]} if mine[cid] else {} for cid in owners}
 
 
-def _writes(name: str, inp, cwd: Optional[str]) -> set:
-    """The files a call says it changes: an edit tool's, or a shell command's that says so (harness_kit/shell.py)."""
-    if name in EDITS:
-        return set(named(name, inp, cwd))
-    if name in SHELLS:
-        command, workdir = _shell_text(name, inp)
-        here = _resolve(workdir, cwd or "") if workdir else cwd
+def _writes(call: ToolCall, cwd: Optional[str]) -> set:
+    """The files a call says it changes, as its harness's rules show it: a write's, an edit's or a patch's, or a shell
+    command's that says so (harness_kit/shell.py)."""
+    shape = (call.view or {}).get("shape")
+    if shape in (Shape.WRITE, Shape.EDIT, Shape.PATCH):
+        return set(named(call, cwd))
+    if shape == Shape.SHELL:
+        command, here = _shell(call, cwd)
         return {p for p, _, _ in shell_changes(command, here)[0]}
     return set()

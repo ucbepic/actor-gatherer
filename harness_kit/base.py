@@ -157,7 +157,8 @@ class ToolCall:
     [{label, description}]}]} or {kind: "plan", plan: its text, None when the call carries none}). A call
     that runs a script calling other tools (codex's code mode) has those calls, in the order written
     (`calls`: each a ToolCall with no id, its input None where the script does not write it out). `view`, how it is
-    shown, whichever harness's (a Shape and what it holds: `Shape`'s doc)."""
+    shown, whichever harness's (a Shape and what it holds: `Shape`'s doc). `server`: a tool the model's provider ran
+    itself (Claude Code's web search), not the harness."""
     id: Optional[str]
     name: str
     input: Any = None
@@ -166,6 +167,7 @@ class ToolCall:
     ask: Optional[dict] = None
     calls: List["ToolCall"] = field(default_factory=list)
     view: Dict[str, Any] = field(default_factory=dict)
+    server: bool = False
 
 
 @dataclass

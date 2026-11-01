@@ -590,7 +590,7 @@ def tool_call(b: dict) -> ToolCall:
     path = inp.get(key) if key and isinstance(inp, dict) else None
     ask = ask_of(name, inp)
     return ToolCall(b.get("id"), name, inp, action, [path] if isinstance(path, str) and path else [], ask,
-                    view=view_of(name, inp, ask))
+                    view=view_of(name, inp, ask), server=b.get("type") == "server_tool_use")
 
 
 def view_of(name: str, inp, ask: Optional[dict] = None) -> dict:
