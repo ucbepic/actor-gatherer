@@ -229,6 +229,71 @@ class WordingTest(ParallelBase):
         self.assertIn("They are tasks given by the same\n   user, on the same material. A definition, convention, "
                       "correction or exclusion the\n   user stated there applies to THIS work", text)
 
+class BeforeItBeganTest(ParallelBase):
+    """With no build in use, the other channels' requests made before this one began are messages
+    only while they fit the budget a joined session gets for them; past it, one block of the newest."""
+
+    BLOCK = "# Requests made in parallel sessions before this one"
+
+    def setUp(self):
+        super().setUp()
+        self.cfg = ProactiveContextManagerConfig(parallel_message="P[{channel}]: {text}", all_task_tokens=200,
+                                                 parallel_index_tokens=100, **KNOBS)
+        self.policy = ProactiveContextManager(codex.FORMAT, self.llm, self.cfg)
+        self.m = Manager(self.policy)
+        self.wrapped = codex.CodexItems(self.m)
+        self.wrapped.init("w")
+
+    def earlier(self, count):
+        self.put(PREAMBLE + [user(f"earlier request number {n}", 100 + n) for n in range(count)], channel="c2")
+
+    def blocks(self, context):
+        return [t for t in self.texts(context) if t.startswith(self.BLOCK)]
+
+    def test_within_the_budget_they_stay_messages(self):
+        self.earlier(3)
+        self.put(PREAMBLE + [user("my task", 1)])
+        context = self.read()
+        self.assertEqual(self.blocks(context), [])
+        self.assertEqual(len(self.parallel(context)), 3)
+
+    def test_past_it_they_are_one_block_of_the_newest_before_the_session(self):
+        self.earlier(60)
+        self.put(PREAMBLE + [user("my task", 1)])
+        context = self.read()
+        texts = self.texts(context)
+        [block] = self.blocks(context)
+        self.assertEqual(self.parallel(context), [])
+        self.assertIn("earlier request number 59", block)                # the newest kept
+        self.assertNotIn("earlier request number 0 ", block + " ")
+        self.assertRegex(block, r"\[\d+ earlier requests left out: ids \d+-\d+ — read them from the `events` table\]")
+        self.assertLess(texts.index(block), texts.index("my task"))
+        self.assertLessEqual(self.policy.tokenizer.count(block), 300)       # all_task_tokens + parallel_index_tokens
+
+    def test_requests_made_since_it_began_are_still_messages(self):
+        self.earlier(60)
+        self.put(PREAMBLE + [user("my task", 1), call(1)])
+        self.read()
+        self.put([user("a later request", 300)], channel="c2")
+        self.put([output(1)])
+        context = self.read()
+        self.assertEqual(len(self.blocks(context)), 1)
+        self.assertEqual(self.parallel(context), ["P[c2]: a later request"])
+        self.assertEqual(self.texts(context)[-1], "P[c2]: a later request")   # mid-turn: at the end
+
+    def test_the_block_is_made_once_and_stays_where_it_was(self):
+        self.earlier(60)
+        self.put(PREAMBLE + [user("my task", 1)])
+        first = self.texts(self.read())
+        self.put([call(1), output(1), agent("done", 1)])
+        self.put([user("a later request", 300)], channel="c2")
+        self.put([user("my next task", 2)])
+        second = self.texts(self.read())
+        self.assertEqual(second[:len(first)], first)                     # a prefix: nothing moved or changed
+        made = self.m._conn("w").execute("SELECT count(*) FROM _made_items WHERE name = 'parallel_before'").fetchone()
+        self.assertEqual(made[0], 1)
+
+
 class OwnChangeTest(ParallelBase):
     """A change counts as the agent's own only when a call that came in with it could have WRITTEN
     the file; a read of it (any tool row naming it) no longer hides it."""
