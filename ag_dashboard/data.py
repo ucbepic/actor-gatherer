@@ -1251,6 +1251,45 @@ def harness_of(gatherer: str, channel: str) -> Optional[str]:
 _USAGE: Dict[tuple, dict] = {}      # (database, channel) -> (its last read, its usage): reads only add up
 
 
+def _channel_items(tables: set) -> str:
+    """SQL, a subquery over `:channel`, for the items every read of a channel returned: (read_id, position, row_id,
+    made_id). ag keeps them as stays (each item's run through its context's reads: those with the same properties),
+    and the stays that span a read are its items; an older file's read log is one row per item, as an older ag left
+    it (`_read_items` a table) or as ag keeps it aside until it is moved (`_read_items_old`)."""
+    channel = f"ifnull(r.{CHANNEL}, '') = :channel"
+    if "_read_items" in tables:                     # a table: not moved to stays (yet)
+        return f"(SELECT i.read_id, i.position, i.row_id, i.made_id FROM _read_items i JOIN _reads r ON r.read_id = i.read_id AND {channel})"
+    old = (" UNION ALL SELECT i.read_id, i.position, i.row_id, i.made_id FROM _read_items_old i "
+           f"JOIN _reads r ON r.read_id = i.read_id AND {channel}") if "_read_items_old" in tables else ""
+    return ("(SELECT r.read_id, s.position, s.row_id, s.made_id FROM _reads r JOIN _stays s ON s.context_id = r.context_id "
+            f"AND s.from_read <= r.read_id AND (s.to_read IS NULL OR s.to_read >= r.read_id) WHERE {channel}{old})")
+
+
+#: Each read's sum from the stays without listing any read's items: a stay adds its item's size at the read it
+#: came in at and takes it off after the last read it was in; each read's sum is what has been added up to it, in
+#: its context.
+SENT_BY_STAYS = f"""
+WITH r AS (SELECT read_id, context_id, lead(read_id) OVER (PARTITION BY context_id ORDER BY read_id) AS nxt
+           FROM _reads WHERE ifnull({CHANNEL}, '') = :channel),
+s AS (SELECT s.from_read, s.to_read, coalesce(e.tokens, m.tokens, 0) AS tok FROM _stays s
+      LEFT JOIN events e ON e.row_id = s.row_id LEFT JOIN _made_items m ON m.made_id = s.made_id
+      WHERE s.context_id IN (SELECT context_id FROM r)),
+d AS (SELECT from_read AS at, tok FROM s UNION ALL SELECT r.nxt, -s.tok FROM s JOIN r ON r.read_id = s.to_read
+      WHERE r.nxt IS NOT NULL),
+g AS (SELECT at, sum(tok) AS t FROM d GROUP BY at)
+SELECT r.read_id, sum(coalesce(g.t, 0)) OVER (PARTITION BY r.context_id ORDER BY r.read_id) FROM r LEFT JOIN g ON g.at = r.read_id"""
+
+
+def _sent_by_read(conn, channel: str, tables: set) -> Dict[int, int]:
+    """{read_id: ag's count of all it returned} for each read of the channel, by the sizes stored now."""
+    if "_stays" in tables and not {"_read_items", "_read_items_old"} & tables:
+        return dict(conn.execute(SENT_BY_STAYS, {"channel": channel}))
+    return dict(conn.execute(
+        f"SELECT i.read_id, coalesce(sum(e.tokens), 0) + coalesce(sum(m.tokens), 0) FROM {_channel_items(tables)} i "
+        "LEFT JOIN events e ON e.row_id = i.row_id LEFT JOIN _made_items m ON m.made_id = i.made_id GROUP BY i.read_id",
+        {"channel": channel}))
+
+
 def _usage(conn, channel: str, tables: set) -> dict:
     """Every item every read of the channel sent, added up by kind and name -- each message
     counted once per call it went in -- with the harness's preamble of each call (PREAMBLE):
@@ -1268,9 +1307,9 @@ def _usage(conn, channel: str, tables: set) -> dict:
     rows = conn.execute(
         f"SELECT CASE WHEN i.row_id IS NULL THEN 'made' WHEN {since} THEN 'recent' ELSE 'kept' END AS kind, "
         "coalesce(t.name, m.name, '?') AS item, count(*) AS n, sum(coalesce(e.tokens, m.tokens, 0)) AS tok "
-        f"FROM _read_items i JOIN _reads r ON r.read_id = i.read_id AND ifnull(r.{CHANNEL}, '') = ? {cut}"
+        f"FROM {_channel_items(tables)} i JOIN _reads r ON r.read_id = i.read_id {cut}"
         "LEFT JOIN events e ON e.row_id = i.row_id LEFT JOIN event_types t ON t.event_type_id = e.event_type_id "
-        "LEFT JOIN _made_items m ON m.made_id = i.made_id GROUP BY 1, 2", (channel,)).fetchall()
+        "LEFT JOIN _made_items m ON m.made_id = i.made_id GROUP BY 1, 2", {"channel": channel}).fetchall()
     entries = [{"group": RECENT if r["kind"] == "recent" else KEPT if r["kind"] == "kept"
                 else AG_KINDS.get(r["item"], "ag's sections"), "name": r["item"], "items": r["n"], "tokens": r["tok"] or 0}
                for r in rows]
@@ -1288,10 +1327,7 @@ def _usage(conn, channel: str, tables: set) -> dict:
                 e["items"] += 1
                 e["tokens"] += known[i]["tokens"]
     entries += list(by_name.values())
-    sent = dict(conn.execute(
-        "SELECT i.read_id, coalesce(sum(e.tokens), 0) + coalesce(sum(m.tokens), 0) FROM _read_items i "
-        f"JOIN _reads r ON r.read_id = i.read_id AND ifnull(r.{CHANNEL}, '') = ? LEFT JOIN events e ON e.row_id = i.row_id "
-        "LEFT JOIN _made_items m ON m.made_id = i.made_id GROUP BY i.read_id", (channel,)))
+    sent = _sent_by_read(conn, channel, tables)
     not_counted = sum(max(0, r[2] - sent.get(r[0], 0) - sum(known[i]["tokens"] for i in ids[r[0]] if i in known))
                       for r in per_read if r[2])
     usage = {"tokens": sum(e["tokens"] for e in entries), "entries": entries, "not_counted": not_counted}
@@ -1340,11 +1376,7 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
             tasks.append({"index": r["task_index"], "name": r["name"], "description": r["description"],
                           "first_row": r["first_row"], "last_row": r["last_row"], "tokens": r["tokens"],
                           "started": _seconds(times.get(r["first_row"])), "ended": _seconds(times.get(r["last_row"]))})
-    sent = dict(conn.execute(                # ag's count of all it sent: what each read returned, added up
-        "SELECT i.read_id, coalesce(sum(e.tokens), 0) + coalesce(sum(m.tokens), 0) FROM _read_items i "
-        f"JOIN _reads r ON r.read_id = i.read_id AND ifnull(r.{CHANNEL}, '') = ? "
-        "LEFT JOIN events e ON e.row_id = i.row_id LEFT JOIN _made_items m ON m.made_id = i.made_id "
-        "GROUP BY i.read_id", (channel,)))
+    sent = _sent_by_read(conn, channel, tables)     # ag's count of all it sent: what each read returned, added up
     pre = dict(conn.execute(f"SELECT read_id, preamble_json FROM _reads WHERE ifnull({CHANNEL}, '') = ?", (channel,))) \
         if "preamble_json" in read_cols else {}
     known = _preambles(conn, [i for raw in pre.values() for i in _preamble_ids(raw)])

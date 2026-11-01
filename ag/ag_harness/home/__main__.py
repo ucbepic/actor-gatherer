@@ -35,6 +35,11 @@
                                                         ordinary one, adopted at its next user message --
                                                         once it has N user messages since the last; what
                                                         came of it, as JSON (`Manager.requested`)
+    python -m ag.ag_harness.home migrate [<gatherer> ...] [--no-vacuum] [--now]
+                                                        a gatherer's file an older ag wrote moved to the
+                                                        current layout (ag/ag_harness/store/migrate.py): those
+                                                        named, else every one due; a line for each. ag runs it
+                                                        in the background as it starts (ag/cli/main.py)
 
 `ag home ...` runs the same.
 """
@@ -339,6 +344,30 @@ def cmd_insert(h, gatherer: str, properties: str, events: str) -> int:
     return 0
 
 
+def cmd_migrate(h, gatherers, vacuum: bool, now: bool = False) -> int:
+    """Each gatherer's file moved to the current layout (store/migrate.py): those named, else every one due. One run
+    at a time in a home: another that finds it running leaves it to it."""
+    import fcntl
+    from ..store import migrate
+    h.ensure()
+    with open(os.path.join(h.root, "migrate.lock"), "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print("another `ag home migrate` is running in this home", flush=True)
+            return 0
+        names = gatherers or [g for g in (sorted(os.listdir(paths.TRACE_DIR)) if os.path.isdir(paths.TRACE_DIR) else [])
+                              if migrate.due(paths.db_path(g))]
+        failed = 0
+        for g in names:
+            try:
+                print(migrate.said(migrate.migrate(g, vacuum=vacuum, now=now)), flush=True)
+            except Exception as exc:  # noqa: BLE001 - the next gatherer's is still to do
+                print(f"{g}: failed: {exc!r}", flush=True)
+                failed += 1
+        return 1 if failed else 0
+
+
 def logged_error(root: str, purpose: str) -> str:
     """The error this process's last call for `purpose` logged (CallLog names each record after the
     process and the purpose), or "" when it logged none."""
@@ -397,6 +426,10 @@ def main(argv=None) -> int:
     bu.add_argument("gatherer")
     bu.add_argument("--properties", default="{}", help="the events' properties, as a JSON object")
     bu.add_argument("--min-messages", type=int, default=0, help="only with this many user messages since the last build")
+    mi = sub.add_parser("migrate")
+    mi.add_argument("gatherer", nargs="*")
+    mi.add_argument("--no-vacuum", action="store_true", help="keep the space freed in the file (ag fills it first)")
+    mi.add_argument("--now", action="store_true", help="move the read log without waiting for an older ag to stop")
     co = sub.add_parser("complete")
     co.add_argument("--purpose", default="ask", help="the call's name in the call log")
     co.add_argument("--system", default="", help="the system message")
@@ -414,6 +447,8 @@ def main(argv=None) -> int:
             return cmd_list(h)
         if a.cmd == "gatherers":
             return cmd_gatherers(h)
+        if a.cmd == "migrate":
+            return cmd_migrate(h, a.gatherer, not a.no_vacuum, a.now)
         if a.cmd == "contract":
             print(json.dumps(contract(h, a.gatherer, a.policy, a.poller, a.no_pollers)))
             return 0

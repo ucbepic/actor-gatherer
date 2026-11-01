@@ -3,8 +3,8 @@
     event types register_type (define one; get its id if defined), event_types, has_type
     properties  Spec, spec (what each type declares), property_values
     events      row_of, insert, insert_many, locate; Row, rows, read; high_water
-    made items  make_item, made_items
-    read log    Ref, record_read, last_read, basis_opened
+    made items  make_item (each item once: made_sha), made_items
+    read log    Ref, record_read, read_items, last_read, basis_opened
     counts      counted_rows, uncounted, record_counts
     polls       polled_at, mark_polled
     old tables  old_tables, mark_migrated
@@ -31,7 +31,7 @@ from ag.ag_interface import Event, EventType, Property, Tokenizer, property_colu
 from ag.ag_interface.event import PROPERTY_NAME
 from ag.ag_interface.store import Ref, Row, event_text  # noqa: F401 - the interface's, used here too
 
-from .schema import add_properties, identifying_names, index, property_names
+from .schema import add_properties, identifying_names, index, property_names, stays, writing
 
 
 def _now() -> str:
@@ -436,22 +436,36 @@ def read(conn: sqlite3.Connection, match: Optional[Dict[str, Any]] = None) -> li
 
 # ---------------------------------------------------------------- made items
 
+def made_sha(name: Optional[str], source: Optional[str], item_json: str) -> str:
+    """What makes two made items the same one (`_made_items.sha`): their name, source and text."""
+    return hashlib.sha256(json.dumps([name, source, item_json], ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 def make_item(conn: sqlite3.Connection, item: Any, tokenizer: Tokenizer, *,
               properties: Optional[Dict[str, Any]] = None, name: Optional[str] = None,
               source: Optional[str] = None) -> int:
     """Store an item the manager made, with its size and the properties of
-    the read it is for; returns its made_id.
+    the read it is first made for; returns its made_id. Stored once: an item
+    made again with the same name, source and text (`made_sha`), for this read
+    or any other, is the one stored, as it was first stored.
 
     Raises:
         ValueError: a property the gatherer has no column for.
     """
     names, values = _given(conn, properties, "a made item")
     raw = json.dumps(item, ensure_ascii=False)
+    sha = made_sha(name, source, raw)
+    found = conn.execute("SELECT made_id FROM _made_items WHERE sha = ?", (sha,)).fetchone()
+    if found:
+        return found[0]
     with conn:
         cur = conn.execute(
-            f"INSERT INTO _made_items (created_at, name, source, item_json, tokens{_columns(names)}) "
-            f"VALUES (?, ?, ?, ?, ?{', ?' * len(names)})", (_now(), name, source, raw, tokenizer.count(raw), *values))
-    return cur.lastrowid
+            f"INSERT OR IGNORE INTO _made_items (created_at, name, source, item_json, tokens, sha{_columns(names)}) "
+            f"VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)})",
+            (_now(), name, source, raw, tokenizer.count(raw), sha, *values))
+    if cur.rowcount:
+        return cur.lastrowid
+    return conn.execute("SELECT made_id FROM _made_items WHERE sha = ?", (sha,)).fetchone()[0]   # another just made it
 
 
 def made_items(conn: sqlite3.Connection, made_ids) -> dict:
@@ -476,21 +490,67 @@ def record_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], 
     manager's count, `limit_tokens`, the harness's own limit the call
     stated, `preamble_ids`, the _preambles it sent besides its messages, and
     `sent_tokens`, all of it as counted now, `process`, {"pid", "started"}, the harness's process
-    that made the call, and `run`, the harness's run that made it, as its launcher named it), and a
-    `_read_items` row per item it returned, in order. Returns the read_id."""
+    that made the call, and `run`, the harness's run that made it, as its launcher named it), and the
+    items it returned, in order: as stays of its context (`log_items`) once the file keeps them, else a
+    `_read_items` row each (schema.py). Returns the read_id."""
     names, values = _given(conn, properties, "a read")
     preamble = json.dumps(list(preamble_ids)) if preamble_ids else None
     pid, started = (process.get("pid"), process.get("started")) if isinstance(process, dict) else (None, None)
-    with conn:
+    with writing(conn):
         cur = conn.execute(f"INSERT INTO _reads (read_at, row_id, manager, basis, est_tokens, limit_tokens, preamble_json, "
                            f"sent_tokens, pid, pid_started, run{_columns(names)}) "
                            f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?{', ?' * len(names)})",
                            (_now(), row_id, manager, basis, est_tokens, limit_tokens, preamble, sent_tokens,
                             pid, started, run, *values))
         read_id = cur.lastrowid
-        conn.executemany("INSERT INTO _read_items (read_id, position, row_id, made_id) VALUES (?, ?, ?, ?)",
-                         [(read_id, i, r.row_id, r.made_id) for i, r in enumerate(refs)])
+        if stays(conn):
+            context = conn.execute("SELECT context_id FROM _reads WHERE read_id = ?", (read_id,)).fetchone()[0]
+            log_items(conn, context, read_id, [(r.row_id, r.made_id) for r in refs])
+        else:
+            conn.executemany("INSERT INTO _read_items (read_id, position, row_id, made_id) VALUES (?, ?, ?, ?)",
+                             [(read_id, i, r.row_id, r.made_id) for i, r in enumerate(refs)])
     return read_id
+
+
+def log_items(conn: sqlite3.Connection, context: int, read_id: int, items: List[Tuple[Optional[int], Optional[int]]]) -> None:
+    """Keep what read `read_id` of `context` returned, [(row_id, made_id)] in order, as stays (schema.py): the
+    part it shares with the context's read before it, from the start, goes on (each stay as it is); from the first
+    difference on, that read's stays end at it and this read's items start stays of their own. The read before's
+    stays are the context's open ones -- or, when none are (an older file's read log just moved, migrate.py),
+    those that end at it. A made item an older file kept copies of is named by the one kept (`_made_folded`): a
+    read made while migrate.py folded them may name a copy. Within the transaction that logged the read."""
+    if any(m is not None for _, m in items) and conn.execute("SELECT EXISTS (SELECT 1 FROM _made_folded)").fetchone()[0]:
+        made = [m for _, m in items if m is not None]
+        kept = dict(conn.execute(f"SELECT old, made_id FROM _made_folded WHERE old IN ({','.join('?' * len(made))})", made))
+        items = [(r, kept.get(m, m)) for r, m in items]
+    prev = conn.execute("SELECT max(read_id) FROM _reads WHERE context_id = ? AND read_id < ?",
+                        (context, read_id)).fetchone()[0]
+    before = [] if prev is None else conn.execute(
+        "SELECT rowid, row_id, made_id, to_read FROM _stays WHERE context_id = ? AND to_read IS NULL ORDER BY position",
+        (context,)).fetchall() or conn.execute(
+        "SELECT rowid, row_id, made_id, to_read FROM _stays WHERE context_id = ? AND to_read = ? ORDER BY position",
+        (context, prev)).fetchall()
+    same = 0
+    while same < min(len(before), len(items)) and (before[same][1], before[same][2]) == tuple(items[same]):
+        same += 1
+    conn.executemany("UPDATE _stays SET to_read = ? WHERE rowid = ?", [(prev, s[0]) for s in before[same:] if s[3] is None])
+    conn.executemany("UPDATE _stays SET to_read = NULL WHERE rowid = ?", [(s[0],) for s in before[:same] if s[3] is not None])
+    conn.executemany("INSERT INTO _stays (context_id, position, row_id, made_id, from_read) VALUES (?, ?, ?, ?, ?)",
+                     [(context, i, r, m, read_id) for i, (r, m) in enumerate(items) if i >= same])
+
+
+def read_items(conn: sqlite3.Connection, read_id: int) -> List[Tuple[Optional[int], Optional[int]]]:
+    """What read `read_id` returned, in order: [(row_id, made_id)] -- the open stays of its context when it is the
+    context's latest read (the usual question: `last_read`), else the stays that span it (`_read_items`)."""
+    found = conn.execute("SELECT context_id, (SELECT max(p.read_id) FROM _reads p WHERE p.context_id = r.context_id) "
+                         "FROM _reads r WHERE read_id = ?", (read_id,)).fetchone()
+    if found and found[0] is not None and found[1] == read_id and stays(conn):
+        items = conn.execute("SELECT row_id, made_id FROM _stays WHERE context_id = ? AND to_read IS NULL "
+                             "ORDER BY position", (found[0],)).fetchall()
+        if items:
+            return items
+    return conn.execute("SELECT row_id, made_id FROM _read_items WHERE read_id = ? ORDER BY position",
+                        (read_id,)).fetchall()
 
 
 def last_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = None) -> Optional[dict]:
@@ -508,8 +568,7 @@ def last_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = N
                        _unset_is_empty(given.values())).fetchone()
     if not row:
         return None
-    refs = [Ref(r, m) for r, m in conn.execute(
-        "SELECT row_id, made_id FROM _read_items WHERE read_id = ? ORDER BY position", (row[0],))]
+    refs = [Ref(r, m) for r, m in read_items(conn, row[0])]
     ids = [i for i in json.loads(row[8] or "[]") if isinstance(i, int)]
     fixed = conn.execute(f"SELECT COALESCE(SUM(tokens), 0) FROM _preambles WHERE preamble_id IN ({','.join('?' * len(ids))})",
                          ids).fetchone()[0] if ids else 0
@@ -583,8 +642,9 @@ def record_counts(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]
             cur = conn.execute(f"UPDATE events SET tokens = ?, counted = 1 WHERE event_id = ?{where}",
                                (tokens, event_id, *values))
             found["events"] += cur.rowcount
-        for made_id, tokens in made.items():
-            cur = conn.execute("UPDATE _made_items SET tokens = ?, counted = 1 WHERE made_id = ?", (tokens, made_id))
+        for made_id, tokens in made.items():                         # a copy migrate.py folded: the one kept
+            cur = conn.execute("UPDATE _made_items SET tokens = ?, counted = 1 WHERE made_id = coalesce("
+                               "(SELECT made_id FROM _made_folded WHERE old = ?), ?)", (tokens, made_id, made_id))
             found["made"] += cur.rowcount
         for name, text, tokens in preamble:
             sha = hashlib.sha256(f"{name}\u0000{text}".encode("utf-8")).hexdigest()

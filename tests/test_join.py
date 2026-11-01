@@ -111,13 +111,16 @@ class GuideTest(JoinBase):
         conn = self.m._conn("w")
         self.assertEqual(conn.execute("SELECT count(*) FROM _made_items WHERE name = 'gatherer_guide'").fetchone()[0], 1)
 
-    def test_each_channel_has_its_own(self):
+    def test_every_channel_is_sent_the_one_kept(self):
         self.put(PREAMBLE + [user("mine", 1)])
         self.put(PREAMBLE + [user("theirs", 2)], channel="c2")
         self.read()
         self.read("c2")
         conn = self.m._conn("w")
-        self.assertEqual(conn.execute("SELECT count(*) FROM _made_items WHERE name = 'gatherer_guide'").fetchone()[0], 2)
+        guide = conn.execute("SELECT made_id FROM _made_items WHERE name = 'gatherer_guide'").fetchall()
+        self.assertEqual(len(guide), 1)                                  # the same text, kept once
+        for channel in ("c1", "c2"):
+            self.assertIn(guide[0][0], [r.made_id for r in store.last_read(conn, ch(channel))["refs"]])
 
     def test_none_when_configured_off(self):
         self.cfg.gatherer_guide = ""

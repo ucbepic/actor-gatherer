@@ -91,9 +91,9 @@ class InitTest(StoreTest):
         self.assertTrue(os.path.isfile(ag.ag_harness.db_path("s")))
         self.assertEqual(self.rows(), [])
         tables = {r["name"] for r in self.query("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        self.assertTrue({"event_types", "events", "tasks", "_reads", "_read_items", "_made_items",
-                         "_builds", "_boundaries"} <= tables)
-        self.assertNotIn("items", tables)
+        self.assertTrue({"event_types", "events", "tasks", "_reads", "_read_items", "_contexts", "_stays", "_made_items",
+                         "_made_folded", "_builds", "_boundaries"} <= tables)     # the read log as every ag keeps it,
+        self.assertNotIn("items", tables)                                       # till migrate.py moves it to stays
 
     def test_defines_the_policys_types_in_order(self):
         self.assertEqual(self.types(), POLICY_TYPES)
