@@ -10774,7 +10774,19 @@ function bwUi(b) {
   b.userAt = 0; b.pointer = { x: 0, y: 0 }; b.pop = null;
   const at = (ev) => { const r = st.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
   const inPop = (ev) => b.pop && b.pop.contains(ev.target);
-  st.addEventListener("pointerdown", (ev) => { if (inPop(ev)) return; b.userAt = Date.now(); b.pointer = at(ev); bwPopClose(b); }, true);
+  st.addEventListener("pointerdown", (ev) => {
+    if (inPop(ev)) return;
+    b.userAt = Date.now(); b.pointer = at(ev); b.down = true; b.later = null;
+    bwPopClose(b);
+  }, true);
+  const up = () => {                               // the button up: a list or chooser the page asked for meanwhile, opened
+    b.down = false;
+    const later = b.later;
+    b.later = null;
+    if (later) setTimeout(later, 0);
+  };
+  st.addEventListener("pointerup", up, true);
+  st.addEventListener("pointercancel", up, true);
   st.addEventListener("pointermove", (ev) => { b.pointer = at(ev); }, true);
   st.addEventListener("wheel", (ev) => { if (!inPop(ev)) bwPopClose(b); }, { capture: true, passive: true });
   st.addEventListener("keydown", (ev) => {
@@ -10837,7 +10849,7 @@ function bwUiDraw(b) {
   if (p && p.n !== b.popSeen) {
     b.popSeen = p.n;
     if (p.k === "suggest" && !p.options.length) { if (b.pop && b.pop.classList.contains("suggest")) bwPopClose(b); }   // gone
-    else if (Date.now() - b.userAt < BW_USER_WAIT) bwPopOpen(b, p);
+    else if (Date.now() - b.userAt < BW_USER_WAIT) bwWhenUp(b, () => bwPopOpen(b, p));
   }
   if (!p && b.pop) bwPopClose(b);                  // the page it was on went
   // the page's file chooser: the user's own, at once if they just acted, else from the bar
@@ -10849,7 +10861,7 @@ function bwUiDraw(b) {
     b.chooser.replaceChildren(el("div", { text: `The page asks for ${many ? "files" : "a file"}` }),
       el("div", { class: "row" }, el("button", { type: "button", onclick: () => bwPost(b, "chosen", { n: c.n, ids: [] }).catch(bwSay(b)) }, "Cancel"),
         el("button", { type: "button", class: "primary", onclick: () => bwChoose(b, c) }, many ? "Choose files…" : "Choose a file…")));
-    if (Date.now() - b.userAt < BW_USER_WAIT) bwChoose(b, c);
+    if (Date.now() - b.userAt < BW_USER_WAIT) bwWhenUp(b, () => bwChoose(b, c));
   }
   // a download done, from now on: shown in its folder
   const d = (st.downloads || []).at(-1);
@@ -10863,6 +10875,12 @@ function bwUiDraw(b) {
       el("button", { type: "button", class: "x", "aria-label": "Dismiss", title: "Dismiss", text: "×",
         onclick: () => { b.dlSeen = d.i; b.dl.hidden = true; } }));
   }
+}
+// `open` now, or once the user's mouse button is up, if it is down: a Mac's own menu (a drop-down's list), opened while
+// the button is down, takes its release as a choice -- of the item put under the pointer, the one chosen already --
+// and closes at once.
+function bwWhenUp(b, open) {
+  if (b.down) b.later = open; else open();
 }
 // The user's own file chooser, for the page's: the files chosen sent, then given to the page.
 function bwChoose(b, c) {
@@ -10899,15 +10917,22 @@ function bwPopOpen(b, p) {
     b.stage.append(s);
     s.getBoundingClientRect();                     // laid out first: its list opens where it is, not at the view's corner
     s.addEventListener("change", () => { const i = s.selectedIndex; bwPopClose(b); back(); bwPost(b, "choose", { n: p.n, index: i }).catch(bwSay(b)); });
-    try { s.showPicker(); b.pop = s; return; } catch (e) { s.remove(); }
-    const items = [];                              // the browser shows none now: a list of the dashboard's
-    let last = null;
-    p.options.forEach((o, i) => {
-      if (o.g && o.g !== last) items.push({ head: o.g });
-      last = o.g;
-      items.push({ label: o.t, on: i === p.i, disabled: o.d, run: () => bwPost(b, "choose", { n: p.n, index: i }).catch(bwSay(b)) });
-    });
-    return bwMenu(b, box[0], box[1] + box[3], items, "list");
+    const own = () => {                            // a list of the dashboard's, under the field
+      const items = [];
+      let last = null;
+      p.options.forEach((o, i) => {
+        if (o.g && o.g !== last) items.push({ head: o.g });
+        last = o.g;
+        items.push({ label: o.t, on: i === p.i, disabled: o.d, run: () => bwPost(b, "choose", { n: p.n, index: i }).catch(bwSay(b)) });
+      });
+      bwMenu(b, box[0], box[1] + box[3], items, "list", { width: box[2] });
+    };
+    try { s.showPicker(); } catch (e) { s.remove(); return own(); }   // the browser shows none now
+    b.pop = s;
+    setTimeout(() => {                             // its list closed at once, nothing chosen and the user not on it since:
+      if (b.pop === s && !s.matches(":open")) own();   // never shown (a Chrome with no window shows none)
+    }, 300);
+    return;
   }
   if (p.k === "picker") {                          // a date's or a color's: the user's Chrome's own picker
     const input = el("input", { type: p.type, class: "pop-native", tabindex: "-1", "aria-hidden": "true" });
