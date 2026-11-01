@@ -4632,15 +4632,16 @@ function startButtons(g) {
 // The "+ more" drop-down's starts: what each is, said under it, and what choosing it does.
 function moreStarts(g, hs, where) {
   const there = where ? `in ${where}` : "in a directory you choose";
+  const tooled = hs.filter((h) => (harnessInfo(h) || {}).mcp);    // DocWriter's and a Browser's agent: given their tools
   return [
     hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in a worktree of a project: its changes merged into the project",
       run: (button) => openBranchMenu(g, button) } : null,
-    hs.length && state.home.docwriter ? { icon: ICONS.quill, text: "DocWriter…", note: "write with an agent that proposes its edits beside your text",
-      run: (button) => openPop(`more:${g.name}`, button, dwBox(g, hs)) } : null,
-    hs.length && state.home.browser ? { icon: ICONS.globe, text: "Browser…", note: "a browser you and an agent use together: point it at what you mean",
-      run: (button) => hs.length > 1 ? openPop(`more:${g.name}`, button, popMenu("New Browser, its agent on",
-        hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => addSession(g, BW_START + h) }))))
-        : addSession(g, BW_START + hs[0]) } : null,
+    tooled.length && state.home.docwriter ? { icon: ICONS.quill, text: "DocWriter…", note: "write with an agent that proposes its edits beside your text",
+      run: (button) => openPop(`more:${g.name}`, button, dwBox(g, tooled)) } : null,
+    tooled.length && state.home.browser ? { icon: ICONS.globe, text: "Browser…", note: "a browser you and an agent use together: point it at what you mean",
+      run: (button) => tooled.length > 1 ? openPop(`more:${g.name}`, button, popMenu("New Browser, its agent on",
+        tooled.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => addSession(g, BW_START + h) }))))
+        : addSession(g, BW_START + tooled[0]) } : null,
     state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: there, run: () => addSession(g, SHELL_START) } : null,
   ].filter(Boolean);
 }
@@ -7499,12 +7500,14 @@ function filesRender({ info, session, running, writable, held }) {
     el("span", { class: "badges" }, ...f.kinds.map((k) => kindMark(k, 12, k === "write" && f.created ? "created" : undefined)),
       showGit && (f.git || []).length ? gitMark(f.git) : null));
   const folded = state.files.folded || (state.files.folded = new Set());
-  // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
-  // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
+  // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. A
+  // harness's memory of a directory (harness_kit's `memory_folder`) marked, the long name it gives the directory cut.
   const MEMORY = memoryFolders();
+  const memoryKey = MEMORY.length ? new RegExp(MEMORY.map(([re]) => re.source).join("|")) : /(?!)/;
   const label = (above, path) => path === UNKNOWN ? "relative to an unknown folder"
     : (under(path, home) && !under(above, home) ? "~" + path.slice(home.length)
-      : above === null ? path : path.slice(above.length + 1)).replace(/(\.claude\/projects\/)[^/]+(\/memory)$/, "$1…$2") + "/";
+      : above === null ? path : path.slice(above.length + 1))
+      .replace(memoryKey, (m, ...g) => m.replace(g.slice(0, MEMORY.length).find((k) => k !== undefined) ?? "", "…")) + "/";
   const grow = (node, into, depth, above) => {
     for (const [, sub] of [...node.dirs].sort((x, y) => (x[0] === UNKNOWN) - (y[0] === UNKNOWN) || x[0].localeCompare(y[0]))) {
       let dir = sub;

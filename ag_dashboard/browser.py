@@ -489,9 +489,10 @@ MINE_OFF = ("Your Chrome is not open to the dashboard: open chrome://inspect/#re
 
 
 def _chrome_env() -> Dict[str, str]:
-    """The dashboard's environment, less what ties it to a session it runs in (its harness's, ag's)."""
+    """The dashboard's environment, less what ties it to a session it runs in (its harness's: sessions.PARENT_SESSION;
+    ag's)."""
     env = dict(os.environ)
-    for k in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "ANTHROPIC_BASE_URL", "AG_ACTOR", "AG_DASHBOARD"):
+    for k in (*sessions.PARENT_SESSION, "ANTHROPIC_BASE_URL", "AG_ACTOR", "AG_DASHBOARD"):
         env.pop(k, None)
     return env
 

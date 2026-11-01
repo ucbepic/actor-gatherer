@@ -1041,7 +1041,10 @@ class ClaudeCode(Harness):
         return sorted({config_dir(env), os.path.abspath(os.path.expanduser("~/.claude")),
                        os.path.abspath(os.path.expanduser("~/.claude.json"))})
 
-    memory_folder = r"/\.claude/projects/[^/]+/memory"     # <config>/projects/<the directory's key>/memory
+    memory_folder = r"/\.claude/projects/([^/]+)/memory"   # <config>/projects/<the directory's key>/memory
+    session_env = ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID",
+                   "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_SESSION_ATTENDED",
+                   "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH")
 
     saves = {"agents": {"where": "every Codex and Claude Code session there reads it, in full, at its start",
                         "user": "an AGENTS.md is a directory's: save it to one"},

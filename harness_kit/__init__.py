@@ -43,6 +43,16 @@ HARNESSES: Dict[str, Harness] = {h.name: h for h in (ClaudeCode(), Codex(), Anti
 DEFAULT = "claude"
 
 
+def register(harness: Harness) -> Harness:
+    """`harness` added to HARNESSES (or put in place of the one of its name): a harness whose class lives outside this
+    package, known to everything that reads harnesses through it -- ag, and the dashboard, once registered before they
+    load. Returns it."""
+    if not isinstance(harness, Harness) or not harness.name:
+        raise ValueError("a Harness with a name")
+    HARNESSES[harness.name] = harness
+    return harness
+
+
 def runnable() -> List[str]:
     """The names of the harnesses a session can be started on in a terminal (`Harness.runs_in_terminal`), in order."""
     return [n for n, h in HARNESSES.items() if h.runs_in_terminal]

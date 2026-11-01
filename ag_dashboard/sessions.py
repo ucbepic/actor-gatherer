@@ -137,10 +137,9 @@ ACTOR_VAR, DASHBOARD_VAR = "AG_ACTOR", "AG_DASHBOARD"
 DASHBOARD: Optional[str] = None                # this dashboard's address, as its server set it (server.py's `serve`)
 SHELL_ID = re.compile(r"shell:[0-9a-f]{12}")   # a shell's id (`shell`): never a channel's
 GATHERER = re.compile(r"[A-Za-z0-9._-]+")      # the names ag takes
-# What says the dashboard itself runs inside a Claude Code session; its agents are sessions of their own.
-PARENT_SESSION = ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID",
-                  "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_SESSION_ATTENDED",
-                  "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH")
+# What says the dashboard itself runs inside a harness's session (harness_kit's `session_env`); its agents are sessions
+# of their own.
+PARENT_SESSION = tuple(sorted({v for h in harness_kit.HARNESSES.values() for v in h.session_env}))
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS sessions (
     session_id      TEXT PRIMARY KEY,
