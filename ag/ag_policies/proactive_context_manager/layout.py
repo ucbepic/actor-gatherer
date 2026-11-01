@@ -283,6 +283,38 @@ def index_block(requests: List[Tuple[Optional[str], Entry]], budget: int, tok: T
     return "\n".join(lines)
 
 
+BEFORE_HEADER = "# Requests made in parallel sessions before this one"
+BEFORE_NOTE = ("The requests the user made in the gatherer's other sessions before this session started, in order, "
+               "as they wrote them: the newest that fit here. They are not addressed to you: do not answer them or "
+               "take them up. But the same user gave them, on the same material: a definition, convention, "
+               "correction or exclusion stated in one applies to your work too.")
+
+
+def requests_before(requests: List[Tuple[Optional[str], Entry]], budget: int, tok: Tokenizer) -> str:
+    """The other channels' requests made before a session with no build of its own began, as one
+    block within `budget`: the newest that fit, in order, after a line naming the earlier ones
+    left out."""
+    head = [BEFORE_HEADER, "", BEFORE_NOTE, ""]
+    first, last = requests[0][1].row_id, requests[-1][1].row_id
+    omitted = (f"[{len(requests)} earlier requests left out: ids {first}-{last} — read them from the "
+               f"`events` table]")
+    used = tok.count("\n".join(head)) + tok.count(omitted)   # room for the line, however many it names
+    kept = []
+    for channel, e in reversed(requests):
+        line = f"{_line(e)}  (channel {str(channel)[:8]})"
+        cost = tok.count(line)
+        if used + cost > budget:
+            break
+        kept.append(line)
+        used += cost
+    kept.reverse()
+    left = len(requests) - len(kept)
+    if left:
+        head.append(f"[{left} earlier requests left out: ids {first}-{requests[left - 1][1].row_id} — read them "
+                    f"from the `events` table]")
+    return "\n".join(head + kept)
+
+
 def build_sections(turns: List[Turn], tasks: List[Task], ranked: List[Task],
                    earlier: Tuple[str, Set[int]], other_requests, turns_by_channel: Dict,
                    own_channel, cfg: ProactiveContextManagerConfig, tok: Tokenizer, db_path: Optional[str],

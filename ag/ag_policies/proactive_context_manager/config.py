@@ -198,7 +198,10 @@ class ProactiveContextManagerConfig:
     # mid-turn. Its text is the same wherever it goes: it stays there, and a
     # changed text would leave out the thinking after it. `{text}` is the
     # request; `{channel}` the other channel's id; `{db_path}` and
-    # `{channel_column}` where its work can be read.
+    # `{channel_column}` where its work can be read. With no build, those made
+    # before the channel began are messages only while they fit within
+    # all_task_tokens + parallel_index_tokens; past that, one block of the
+    # newest that fit (policy.requests_before).
     parallel_message: str = (
         "The user sent this to another session working in parallel with you:\n{text}\n\n"
         "This is how the gatherer shows you what the user asks its other sessions, where it arrived in "
