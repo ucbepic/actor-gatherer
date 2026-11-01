@@ -10933,8 +10933,20 @@ function bwPopOpen(b, p) {
     const items = [];
     if (p.link) items.push({ label: "Open link in new tab", run: tab(p.link) }, { label: "Copy link address", run: () => copy(p.link) }, null);
     if (p.img) items.push({ label: "Open image in new tab", run: tab(p.img) }, { label: "Copy image address", run: () => copy(p.img) }, null);
-    if (p.sel) items.push({ label: "Copy", run: () => copy(p.sel) });
-    if (p.editable) items.push({ label: "Paste", run: () => navigator.clipboard.readText().then((text) => { if (text) bwQueue(b, { type: "text", text }); }).catch(bwSay(b)) });
+    const own = (cut) => () => bwQueue(b, { type: "copy", cut, modifiers: 4 });   // the page's own copy, as Cmd+C's
+    const paste = async () => {                      // as Cmd+V: the page's own paste, with the clipboard's formatting
+      let text = "", html = "";
+      try {
+        for (const item of await navigator.clipboard.read()) {
+          if (item.types.includes("text/plain")) text = await (await item.getType("text/plain")).text();
+          if (item.types.includes("text/html")) html = await (await item.getType("text/html")).text();
+        }
+      } catch (e) { text = await navigator.clipboard.readText(); }
+      if (text || html) bwQueue(b, { type: "paste", text, html, modifiers: 4 });
+    };
+    if (p.sel && p.editable) items.push({ label: "Cut", run: own(true) });
+    if (p.sel) items.push({ label: "Copy", run: own(false) });
+    if (p.editable) items.push({ label: "Paste", run: () => paste().catch(bwSay(b)) });
     if (p.sel || p.editable) items.push(null);
     items.push({ label: "Back", run: nav("back") }, { label: "Forward", run: nav("forward") }, { label: "Reload", run: nav("reload") }, null,
       { label: "Find in page…", run: () => bwFindOpen(b) },
