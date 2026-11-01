@@ -147,7 +147,8 @@ context manager's home (data.py), read-only. Standard library only.
                                           (browser_video.py), every one from a key frame on, in order
     POST /browser/w/<key>/<what>          what the user does in it: input {events}, nav {url | action}, resize {width,
                                           height, dpr}, hover {x, y}, pick {x, y | box}, unpick {id}, dialog {accept, text?},
-                                          copy -> {text}, tab {action: switch | close | new, index?, url?}; and the MCP
+                                          copy {cut?} -> {text?, html?}, tab {action: switch | close | new, index?,
+                                          url?} (input answers {clipboard} for a copy among its events); and the MCP
                                           server its actor calls (mcp)
     POST /api/browser {gatherer, cwd, harness?, model?}   a new Browser, its actor a new session of `harness` in the
                                           gatherer, in `cwd` (browser.py's `create`) -> {key, channel, ...}
@@ -726,8 +727,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 b = browsers.get(key)
                 num = lambda k: None if body.get(k) is None else float(body[k])    # noqa: E731
                 if what == "input":
-                    b.input(body.get("events") if isinstance(body.get("events"), list) else [])
-                    return self.answer({})
+                    return self.answer(b.input(body.get("events") if isinstance(body.get("events"), list) else []))
                 if what == "nav":
                     return self.answer({"done": b.navigate(str(body.get("url") or ""), str(body.get("action") or ""))})
                 if what == "resize":
@@ -746,7 +746,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer({"done": b.answer_dialog(bool(body.get("accept")),
                                                                 body.get("text") if isinstance(body.get("text"), str) else None)})
                 if what == "copy":
-                    return self.answer({"text": b.selection()})
+                    return self.answer(b.copy(bool(body.get("cut"))))
                 if what == "tab":
                     action, i = str(body.get("action") or ""), int(body.get("index") or 0)
                     if action == "switch":
