@@ -94,7 +94,8 @@ class GathererStore(ABC):
     def make_item(self, item: Any, tokenizer: Tokenizer, *, properties: Optional[Dict[str, Any]] = None,
                   name: Optional[str] = None, source: Optional[str] = None) -> int:
         """Store an item the policy made for the model, with the properties
-        of the read it is for; its made id."""
+        of the read it is first made for; its made id. Stored once: made again
+        with the same name, source and text, for any read, it is the same id."""
 
     @abstractmethod
     def made_items(self, made_ids) -> dict:

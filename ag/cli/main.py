@@ -226,6 +226,7 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
                       f"in {config.path()}")
     if out.session:
         claim(gatherer or out.session, out.session, opts["quiet"])
+    migrations(opts["quiet"])
     os.execvpe(out.argv[0], out.argv, out.env)
     return 127  # not reached
 
@@ -308,11 +309,53 @@ def stop(settings) -> int:
     return 0
 
 
+def migrations(quiet: bool = False) -> None:
+    """A gatherer file an older ag wrote, moved to the current layout once (ag/ag_harness/store/migrate.py), as ag
+    starts: `ag home migrate` in the background, for the home's gatherers that are due, so ag starts as it would; its
+    output in logs/migrate.log. Never in ag's way: a problem here is only said."""
+    try:
+        due = _migrate_module().due
+        root = config.home()
+        folder = os.path.join(root, "gatherers")
+        found = {g: due(os.path.join(folder, g, "context.db")) for g in sorted(os.listdir(folder))} \
+            if os.path.isdir(folder) else {}
+        names = [g for g, what in found.items() if what]
+        if not names:
+            return
+        log = os.path.join(root, "logs", "migrate.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        with open(log, "a") as out:
+            subprocess.Popen([os.environ.get("AG_PYTHON") or sys.executable, "-m", "ag.ag_harness.home", "migrate", *names],
+                             cwd=REPO, env={**os.environ, **python_env()}, stdin=subprocess.DEVNULL, stdout=out,
+                             stderr=subprocess.STDOUT, start_new_session=True)
+        moving = [g for g, what in found.items() if what == "move"]
+        if moving and not quiet:
+            say(f"moving gatherer{'s' if len(moving) > 1 else ''} {', '.join(moving)} to the current layout "
+                f"in the background (log: {log})")
+    except Exception as exc:  # noqa: BLE001
+        say(f"could not start moving gatherers to the current layout: {exc}")
+
+
+def _migrate_module():
+    """ag/ag_harness/store/migrate.py alone, by its path: what is due is read without importing the store's package
+    (and the manager with it), which would slow every start."""
+    import importlib.util
+    name = "ag_store_migrate"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, os.path.join(REPO, "ag", "ag_harness", "store", "migrate.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules[name] = module
+    return sys.modules[name]
+
+
 def dashboard(args: List[str]) -> int:
     """`ag` alone, or `ag dashboard [--host H] [--port N] [--no-open] [--out FILE]`: the dashboard (its own
     package, ag_dashboard, which reads the home's files and imports nothing of ag), on this home, opened
     in the browser -- unless --no-open."""
     from ag_dashboard.__main__ import main as dashboard_main
+    if not {"--out", "-h", "--help"} & {a.split("=")[0] for a in args}:   # a page written, or its usage: nothing runs
+        migrations()
     try:
         return dashboard_main(["--home", config.home(), "--open", *args])
     except SystemExit as exc:                 # its argument errors: the usage is printed

@@ -525,10 +525,10 @@ class CommandTest(HomeBase):
         out = os.path.join(self.tmp.name, "d.html")
         with unittest.mock.patch.dict(os.environ, {"AG_HOME": paths.AG_HOME}):       # ag's home: the test's
             self.assertEqual(main.dashboard(["--out", out]), 0)
-        with open(out) as fh:
-            self.assertIn('"g\\u0000c1"', fh.read())
-        with unittest.mock.patch("sys.stderr"):
-            self.assertEqual(main.dashboard(["--bogus"]), 2)
+            with open(out) as fh:
+                self.assertIn('"g\\u0000c1"', fh.read())
+            with unittest.mock.patch("sys.stderr"):
+                self.assertEqual(main.dashboard(["--bogus"]), 2)
 
     def test_ag_alone_starts_the_dashboard_opened_in_the_browser(self):
         from ag.cli import main

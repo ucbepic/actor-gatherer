@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ag.ag_harness  # noqa: E402
 from ag.ag_harness import Manager  # noqa: E402
+from ag.ag_harness.store import operations as store  # noqa: E402
 import codex_items as codex  # noqa: E402
 from ag.ag_policies.proactive_context_manager.events import context_stream, environment_update  # noqa: E402
 from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
@@ -412,7 +413,11 @@ class BothTest(OutsideBase):
             self.assertEqual((self.shown(context), self.notices(context)),
                              (["@#analytics alice: hi"], ["Notice: File notes.txt was changed on disk (at 2)."]))
         conn = self.m._conn("w")
-        self.assertEqual(conn.execute("SELECT count(*) FROM _made_items").fetchone()[0], 4)
+        self.assertEqual(conn.execute("SELECT count(*) FROM _made_items").fetchone()[0], 2)   # the same text, kept once
+        reads = [r for (r,) in conn.execute("SELECT read_id FROM _reads ORDER BY read_id")]
+        made = [[m for _, m in store.read_items(conn, r) if m is not None] for r in reads]
+        self.assertEqual(len(made[-1]), 2)
+        self.assertEqual(made[-1], made[-2])                             # both reads name them
 
 
 class AfterABuildTest(OutsideBase):

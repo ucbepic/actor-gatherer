@@ -10,9 +10,15 @@ One SQLite file per gatherer (paths.py):
     events               every event stored, in the order first seen, each of
                          one event type, with the tokenizer's count of each
     _made_items          items a policy MADE (e.g. condensation messages),
-                         exactly as sent; never read back as history (internal)
+                         exactly as sent, each once; never read back as history (internal)
     _reads, _read_items  the read log: what each read returned, in order, and in
-                         response to which event (internal)
+                         response to which event (internal). A file starts with
+                         `_read_items` a table, one row per item of every read, as every
+                         ag has kept it; migrate.py moves it to STAYS once no older ag has
+                         the file open: `_stays` keeps each item's run through its
+                         context's reads (`_contexts`: the reads with the same
+                         properties), so a read that extends the one before adds rows
+                         only for what it adds, and `_read_items` becomes a view of them
     _preambles           what harnesses sent besides their messages (system prompts, tool
                          definitions), each text once; a read names its own (internal)
     _polls               when each poller (a source of events from outside the
@@ -22,10 +28,12 @@ One SQLite file per gatherer (paths.py):
     _migrated            which one-time copies were made in the file (internal): "records", an older
                          gatherer's `_pending`, `_recaps`, `_names`, `_touches` and `_reads.error` copied
                          into events (ag/integrations/tools/ag_orchestrator/migrate.py); those tables
-                         are no longer made, and stay in an older file as they were
+                         are no longer made, and stay in an older file as they were. "stays", the
+                         file's read log moved into stays and an older ag's copies of one made item
+                         folded into one (migrate.py)
 
 A leading underscore marks a table internal to the manager (`_made_items`,
-`_reads`, `_read_items`, `_polls`, `_withdrawn`, `_open`, `_migrated`), which the agent has no reason to know about; the
+`_reads`, `_read_items`, `_contexts`, `_stays`, `_polls`, `_withdrawn`, `_open`, `_migrated`), which the agent has no reason to know about; the
 others (`event_types`, `events`) it may be pointed at. Operations on these
 tables are in operations.py.
 
@@ -96,8 +104,10 @@ CREATE TABLE IF NOT EXISTS event_type_properties (
 );
 
 -- Items the manager MADE rather than received: a condensation of earlier
--- history, sent to the model as a message. Stored exactly as sent. Never part
--- of `events`, so never read back as history.
+-- history, sent to the model as a message. Stored exactly as sent, each once:
+-- an item made again with the same name, source and text is the one stored
+-- (`sha`), whatever read it is for. Never part of `events`, so never read back
+-- as history.
 CREATE TABLE IF NOT EXISTS _made_items (
     made_id     INTEGER PRIMARY KEY,
     created_at  TEXT    NOT NULL,   -- (and the properties of the read it was made for)
@@ -105,7 +115,9 @@ CREATE TABLE IF NOT EXISTS _made_items (
     source      TEXT,               -- what made it, in the manager's terms (e.g. a build)
     item_json   TEXT    NOT NULL,   -- the item, exactly as returned by read
     tokens      INTEGER,            -- its size, by the manager's tokenizer (or, `counted`, the provider's)
-    counted     INTEGER             -- 1: `tokens` is the provider's count (`record_counts`)
+    counted     INTEGER,            -- 1: `tokens` is the provider's count (`record_counts`)
+    sha         TEXT                -- of its name, source and text (`made_sha`): what makes it the same item;
+                                    -- NULL: made by an older ag, not yet folded (migrate.py)
 );
 
 -- One row per read: what the manager returned as the context, when, and in
@@ -133,7 +145,15 @@ CREATE TABLE IF NOT EXISTS _reads (
                                     -- server's /r/<run>/: codex's, the id of the process ag started); NULL = none
     error_status INTEGER,           -- no longer set: a failed call is a `call_failed` event (an older
     error       TEXT,               -- file's copied there once, `_migrated`)
-    answered_at TEXT                -- no longer set: an answer is its `reply_end` event
+    answered_at TEXT,               -- no longer set: an answer is its `reply_end` event
+    context_id  INTEGER             -- the reads it shares its context with: those with the same properties
+                                    -- (set as it is logged, `_reads_context`); NULL: an older file's, until moved
+);
+
+-- The contexts reads share: one per combination of properties a read was made with.
+CREATE TABLE IF NOT EXISTS _contexts (
+    context_id  INTEGER PRIMARY KEY,
+    key         TEXT    NOT NULL UNIQUE   -- the properties set, as JSON, by name (`context_key`)
 );
 
 -- What a harness sends besides its messages -- its system prompt, its tool definitions --
@@ -148,7 +168,9 @@ CREATE TABLE IF NOT EXISTS _preambles (
 );
 
 -- What each read returned, in order: a stored event (row_id) or a made item
--- (made_id), exactly one of the two.
+-- (made_id), exactly one of the two. One row per item of every read, as every ag
+-- has kept it, until migrate.py moves it into stays: then a view of them (`read_log`),
+-- which an older ag can't open (it indexes this table as it connects).
 CREATE TABLE IF NOT EXISTS _read_items (
     read_id     INTEGER NOT NULL,
     position    INTEGER NOT NULL,
@@ -157,7 +179,32 @@ CREATE TABLE IF NOT EXISTS _read_items (
     PRIMARY KEY (read_id, position),
     CHECK ((row_id IS NULL) != (made_id IS NULL))
 );
-CREATE INDEX IF NOT EXISTS _read_items_row ON _read_items (row_id);
+
+-- The read log as stays, once migrate.py moved it: an item's unbroken run at one
+-- position through a context's reads, from the read it came in at to the last read
+-- it was in (NULL: it is in the context's latest read). A read's items, in order,
+-- are its context's stays that span it (the `_read_items` view); a read that extends
+-- the one before adds a row only for what it adds (`record_read`). Empty before.
+CREATE TABLE IF NOT EXISTS _stays (
+    context_id  INTEGER NOT NULL,
+    position    INTEGER NOT NULL,
+    row_id      INTEGER,
+    made_id     INTEGER,
+    from_read   INTEGER NOT NULL,
+    to_read     INTEGER,
+    CHECK ((row_id IS NULL) != (made_id IS NULL))
+);
+CREATE INDEX IF NOT EXISTS _stays_open ON _stays (context_id, position) WHERE to_read IS NULL;
+CREATE INDEX IF NOT EXISTS _stays_from ON _stays (context_id, from_read);
+
+-- An older file's copies of one made item, folded into the one kept (migrate.py): each copy's made_id and the
+-- kept one's. Kept a while after the fold, so a read made while it ran, which may still name a copy, is logged
+-- naming the kept one (`log_items`, the read log's insert trigger); emptied by a later migrate.py. Empty in a
+-- file an older ag never wrote.
+CREATE TABLE IF NOT EXISTS _made_folded (
+    old         INTEGER PRIMARY KEY,
+    made_id     INTEGER NOT NULL
+) WITHOUT ROWID;
 
 -- When each poller was last asked for this gatherer's events: the moment the
 -- next poll starts from.
@@ -238,9 +285,20 @@ def create(conn: sqlite3.Connection) -> None:
         add_column(conn, "_open", "yields INTEGER NOT NULL DEFAULT 0")
     if "identifies" not in {c[1] for c in conn.execute("PRAGMA table_info(event_type_properties)")}:
         add_column(conn, "event_type_properties", "identifies INTEGER NOT NULL DEFAULT 0")
+    if "context_id" not in read_columns:                              # a file from before stays
+        add_column(conn, "_reads", "context_id INTEGER")
+    if "sha" not in {c[1] for c in conn.execute("PRAGMA table_info(_made_items)")}:   # ... and made items kept once
+        add_column(conn, "_made_items", "sha TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS _reads_context ON _reads (context_id, read_id)")
+    if not stays(conn):                              # by event, as before; a view can't be indexed
+        conn.execute("CREATE INDEX IF NOT EXISTS _read_items_row ON _read_items (row_id)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS _made_items_sha ON _made_items (sha)")
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone() is None:
         with writing(conn):                          # a new file: over no property yet
             index(conn, property_names(conn))
+    if not read_log_current(conn):
+        with writing(conn):
+            read_log(conn)
 
 
 def add_column(conn: sqlite3.Connection, table: str, column: str) -> None:
@@ -305,6 +363,104 @@ def index(conn: sqlite3.Connection, names: List[str]) -> None:
     if found is None or found[0] != sql:
         conn.execute("DROP INDEX IF EXISTS _reads_properties")
         conn.execute(sql)
+    if "_stays" in {n for (n,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}:
+        read_log(conn)                               # a read's context is over every property
+
+
+# ---------------------------------------------------------------- the read log, as stays
+
+#: The read log as it was, one row per item of every read, while migrate.py moves it into stays (`switch`).
+OLD_READ_ITEMS = "_read_items_old"
+
+
+def stays(conn: sqlite3.Connection) -> bool:
+    """Whether the file keeps its read log as stays: migrate.py has switched it (`switch`), and `_read_items` is no
+    longer the table every file starts with (SCHEMA) -- a view, or about to be one."""
+    found = conn.execute("SELECT type FROM sqlite_master WHERE name = '_read_items'").fetchone()
+    return not found or found[0] != "table"
+
+
+def context_key(names: List[str], row: str = "") -> str:
+    """SQL for a read's context key: its properties that are set, as a JSON object by name -- `row` the
+    alias (or NEW) its columns are read from. Unset ones are left out (json_patch drops nulls), so a
+    property added later leaves the key of every read made before it as it was."""
+    at = f"{row}." if row else ""
+    pairs = ", ".join(f"'{n.replace(chr(39), chr(39) * 2)}', {at}{property_column(n)}" for n in sorted(names))
+    return f"json_patch('{{}}', json_object({pairs}))"
+
+
+def _read_log_sql(conn: sqlite3.Connection) -> dict:
+    """{name: CREATE statement} for the read log's trigger that gives each read its context, and once it is kept as
+    stays, its view and the view's insert trigger, as this file's properties and tables have them: the view also
+    shows the read log as it was while migrate.py moves it (OLD_READ_ITEMS)."""
+    names = property_names(conn)
+    key = context_key(names, "NEW")
+    out = {"_reads_context": ("CREATE TRIGGER _reads_context AFTER INSERT ON _reads WHEN NEW.context_id IS NULL BEGIN "
+                              f"INSERT OR IGNORE INTO _contexts (key) VALUES ({key}); "
+                              f"UPDATE _reads SET context_id = (SELECT context_id FROM _contexts WHERE key = {key}) "
+                              "WHERE read_id = NEW.read_id; END")}
+    if not stays(conn):
+        return out
+    old = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (OLD_READ_ITEMS,)).fetchone()
+    out["_read_items"] = (
+        "CREATE VIEW _read_items (read_id, position, row_id, made_id) AS "
+        "SELECT r.read_id, s.position, s.row_id, s.made_id FROM _reads r JOIN _stays s "
+        "ON s.context_id = r.context_id AND s.from_read <= r.read_id AND (s.to_read IS NULL OR s.to_read >= r.read_id)"
+        + (f" UNION ALL SELECT read_id, position, row_id, made_id FROM {OLD_READ_ITEMS}" if old else ""))
+    # A read's items written one by one, in order of position, as an older ag writes them (and SQL by hand): at
+    # its first, the context's open stays close at the read before it; an item the read before had at the same
+    # place, after only items that were too, carries its stay on; any other starts a stay. (ag itself writes a
+    # read's items at once: operations.record_read.)
+    ctx = "(SELECT context_id FROM _reads WHERE read_id = NEW.read_id)"
+    prev = f"(SELECT max(p.read_id) FROM _reads p WHERE p.context_id = {ctx} AND p.read_id < NEW.read_id)"
+    made = "coalesce((SELECT f.made_id FROM _made_folded f WHERE f.old = NEW.made_id), NEW.made_id)"
+    out["_read_items_insert"] = (
+        "CREATE TRIGGER _read_items_insert INSTEAD OF INSERT ON _read_items BEGIN "
+        "SELECT RAISE(ABORT, 'no read with this read_id in _reads') WHERE NOT EXISTS "
+        "(SELECT 1 FROM _reads WHERE read_id = NEW.read_id AND context_id IS NOT NULL); "
+        f"UPDATE _stays SET to_read = {prev} WHERE NEW.position = 0 AND to_read IS NULL AND context_id = {ctx}; "
+        f"UPDATE _stays SET to_read = NULL WHERE rowid = (SELECT rowid FROM _stays WHERE context_id = {ctx} "
+        f"AND position = NEW.position AND to_read = {prev} AND row_id IS NEW.row_id AND made_id IS {made}) "
+        f"AND (NEW.position = 0 OR EXISTS (SELECT 1 FROM _stays WHERE context_id = {ctx} "
+        "AND position = NEW.position - 1 AND to_read IS NULL AND from_read < NEW.read_id)); "
+        f"INSERT INTO _stays (context_id, position, row_id, made_id, from_read) SELECT {ctx}, NEW.position, "
+        f"NEW.row_id, {made}, NEW.read_id WHERE NOT EXISTS "
+        f"(SELECT 1 FROM _stays WHERE context_id = {ctx} AND position = NEW.position AND to_read IS NULL); END")
+    return out
+
+
+def read_log_current(conn: sqlite3.Connection) -> bool:
+    """Whether the read log's triggers (and view) are as this file needs them (`read_log` has nothing to do)."""
+    have = dict(conn.execute("SELECT name, sql FROM sqlite_master WHERE name IN "
+                             "('_reads_context', '_read_items_insert') OR (name = '_read_items' AND type = 'view')"))
+    return have == _read_log_sql(conn)
+
+
+def read_log(conn: sqlite3.Connection) -> None:
+    """(Re)make the read log's triggers, and its view once it is kept as stays (`_read_log_sql`), where they differ.
+    Within a transaction holding the write lock (`writing`)."""
+    have = dict(conn.execute("SELECT name, sql FROM sqlite_master WHERE name IN "
+                             "('_reads_context', '_read_items_insert') OR (name = '_read_items' AND type = 'view')"))
+    want = _read_log_sql(conn)
+    if "_read_items" in want and have.get("_read_items") != want["_read_items"]:
+        conn.execute("DROP VIEW IF EXISTS _read_items")             # drops its trigger too
+        have.pop("_read_items_insert", None)
+        conn.execute(want["_read_items"])
+    for name in ("_reads_context", "_read_items_insert"):
+        if name in want and have.get(name) != want[name]:
+            conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+            conn.execute(want[name])
+
+
+def switch(conn: sqlite3.Connection) -> None:
+    """Keep the read log as stays from now on: the `_read_items` table set aside as OLD_READ_ITEMS -- shown through
+    the view, written to by no one, until migrate.py moves it -- and the view made in its place. What migrate.py does
+    once no older ag has the file open: one could no longer open it. Within a transaction holding the write lock."""
+    if stays(conn):
+        return
+    conn.execute(f"ALTER TABLE _read_items RENAME TO {OLD_READ_ITEMS}")
+    conn.execute("DROP INDEX IF EXISTS _read_items_row")          # by event: nothing reads it
+    read_log(conn)
 
 
 def add_properties(conn: sqlite3.Connection, names) -> None:
