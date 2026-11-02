@@ -325,6 +325,20 @@ class Picked(Home):
     def test_another_actor_s_message_is_as_typed(self):
         self.assertEqual(self.bs.compose({"role": None}, "hi"), ("hi", None))
 
+    def test_its_actor_is_named_once_by_the_name_given_else_by_its_folder(self):
+        named = queue.Queue()
+        with mock.patch.object(browser, "NAME_WAIT", 0), \
+                mock.patch.object(browser, "available", lambda: True), \
+                mock.patch.object(browser.naming, "record",
+                                  lambda g, channel, name: named.put((g, channel, browser.naming.clean(name)))):
+            self.bs.name_actor(self.cfg["key"], "Checkout")
+            self.assertEqual(named.get(timeout=5), ("g", self.cfg["channel"], "Checkout"))
+            self.bs.name_actor(self.cfg["key"])              # named already: not again
+            other = self.bs.create("g", self.root, "claude")
+            self.bs.name_actor(other["key"])
+            self.assertEqual(named.get(timeout=5), ("g", other["channel"], "Browser · site"))
+            self.assertTrue(named.empty())
+
     def test_refs_say_why_they_do_not_work(self):
         self.b.ref_n = 5
         with self.assertRaisesRegex(browser.BrowserError, "e3 is gone"):
