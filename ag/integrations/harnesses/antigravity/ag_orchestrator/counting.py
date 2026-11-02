@@ -7,10 +7,18 @@ Why. ag counts with o200k_base, and Gemini's tokenizer gives ~20% more for the s
 thinks. Counted by the endpoint, a call rebuilt from its read came within 3% of the call's own count.
 
 What Gemini counts. The endpoint takes the request as `generateContentRequest` (its model, contents, system
-instruction, tools and tool config) and answers `totalTokens`. A thought signature (`thoughtSignature`, the base64
-agy sends back on each function call) costs nothing: a call with a 9,792-character signature counts as one with 408.
-Thought text sent back counts as text does, so reasoning is counted as a message is (`COSTS_REASONING` off). The
-endpoint refuses a function response whose call is not right before it, and a function call without its signature:
+instruction, tools and tool config) and answers `totalTokens`. Thought text sent back counts as text does, in the
+endpoint and the call alike, so reasoning is counted as a message is. A thought signature (`thoughtSignature`, the
+base64 agy sends back on a function call, or on the first part of an answer that has none) is the endpoint's blind
+spot: it counts as nothing there (a call with a 9,792-character signature counts as one with 408), but the call is
+charged for it. Measured 2026-11-01 on 74 calls of an actor (gemini-4-argon): the endpoint's count of each call
+rebuilt from its read matched the call's own count to the token when the context held no signature, and fell short by
+0.114 tokens a signature character with them (mean error 142 tokens, up to 2.7% of a context). So a signed event
+costs the endpoint's count of it and its signature at a rate per character (`COSTS_HIDDEN`): once a call's own count
+is back, the rate is the call's count over the endpoint's count of the request as sent, over every signature character
+it sent (`hidden_counts`) -- all of them, not only the new, so a hook started again costs none of the old ones to the
+new -- and each signed event first counted since is set again at it. Until a channel's first count is back, the rate
+is the measured one (SIGNATURE_RATE). The endpoint refuses a function response whose call is not right before it, and a function call without its signature:
 a step is cut only once every call has its response -- after the last response, or after a content not the model's
 (agy sends a function response in the model's role) -- so a model's thought, words and calls stay together, with
 their signatures, and with their responses (`ends_step`).
@@ -27,6 +35,8 @@ from typing import Optional, Set, Tuple
 from ag.integrations.tools.ag_orchestrator import counting
 
 COUNTED = ("systemInstruction", "tools", "toolConfig", "cachedContent")   # what the endpoint takes besides contents
+SIGNATURE_RATE = 0.114      # tokens a signature character costs a call, until a channel's own calls say (the doc)
+MIN_SIGNED = 2000           # signature characters a call sends at least, to learn the rate from: fewer, too few to tell
 CREDENTIALS = ("x-goog-api-key", "authorization", "x-goog-user-project")
 GENERATE = re.compile(r"/models/([^/:]+):(?:stream)?[gG]enerateContent$")   # a model call's path
 PLACEHOLDER = [{"role": "user", "parts": [{"text": "x"}]}]
@@ -37,13 +47,19 @@ def model_of(path: str) -> Optional[str]:
     return found.group(1) if found else None
 
 
+def signature_chars(item) -> int:
+    """The length of an item's thought signatures: what the endpoint counts as nothing of it."""
+    parts = item.get("parts") if isinstance(item, dict) else None
+    return sum(len(p.get("thoughtSignature") or "") for p in parts or () if isinstance(p, dict))
+
+
 class Counter(counting.Counter):
     """The provider's counts of Antigravity's calls (the shared Counter, with Gemini's countTokens)."""
 
     INPUT = "contents"
     PLACEHOLDER = PLACEHOLDER
     PREAMBLE = ("systemInstruction", "tools")
-    COSTS_REASONING = False
+    COSTS_HIDDEN = True               # thought signatures: nothing to the endpoint, the call is charged for them
 
     def where(self, request, body: dict) -> Optional[Tuple[str, dict]]:
         upstream, path = getattr(request, "upstream", None), getattr(request, "path", "") or ""
@@ -92,3 +108,33 @@ class Counter(counting.Counter):
 
     def made_weight(self, item) -> int:
         return sum(len(p.get("text") or "") for p in item.get("parts") or () if isinstance(p, dict))
+
+    @staticmethod
+    def rate(ch: counting.Channel) -> float:
+        return ch.rate if ch.rate is not None else SIGNATURE_RATE
+
+    def extra(self, ch: counting.Channel, item) -> int:
+        chars = signature_chars(item)
+        return round(chars * self.rate(ch)) if chars else 0
+
+    def hidden_estimate(self, ch: counting.Channel, items: list) -> int:
+        return round(self.rate(ch) * sum(signature_chars(i) for i in items))
+
+    def hidden_counts(self, ch: counting.Channel, sent: Optional[counting.Sent], tokens: int,
+                      exact: Optional[int]) -> dict:
+        """The rate a signature character costs, from the call's own count (`tokens`) over the endpoint's count of the
+        request as sent (`exact`), over every signature character it sent; then each signed event this process
+        counted the step of and has not costed by a call's own count: its endpoint count and its signature at it."""
+        if sent is None or not isinstance(exact, int):
+            return {}
+        signed = [(at, signature_chars(item)) for kind, at, item in sent.parts if kind == "event"]
+        chars = sum(c for _, c in signed)
+        if chars < MIN_SIGNED or tokens < exact:
+            return {}
+        ch.rate = (tokens - exact) / chars
+        counts = {}
+        for at, c in signed:
+            if c and at and at in ch.visible and at not in ch.reasoning:
+                ch.reasoning[at] = round(c * ch.rate)
+                counts[at] = ch.visible[at] + ch.reasoning[at]
+        return {"counts": counts}
