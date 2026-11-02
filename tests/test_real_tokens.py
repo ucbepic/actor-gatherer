@@ -179,6 +179,19 @@ class MeasuredOverTest(unittest.TestCase):
         build = tables.latest_build(self.m._conn("s"), "c1")
         self.assertEqual(build["reason"], tables.LIMIT)
 
+    def test_under_by_both_counts_but_over_as_the_provider_would_count_the_next_a_build_starts(self):
+        self.put(PREAMBLE + long_turn(6))
+        _, read_id = self.read()
+        sent = store.last_read(self.m._conn("s"), ch("c1"))["sent_tokens"]
+        self.m.record_real_tokens("s", read_id, int(sent * 1.3))          # under the limit, 30% over ag's count
+        self.assertLess(int(sent * 1.3), self.cfg.max_context_tokens)
+        self.put(long_turn(2, start=10)[1:])                # the next steps: ag's count still under the limit ...
+        self.read()
+        self.assertEqual(self.spawned, ["build"])           # ... the provider's, by the same 30%, over it
+        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["reason"], tables.LIMIT)
+        now = store.last_read(self.m._conn("s"), ch("c1"))["sent_tokens"]
+        self.assertLessEqual(int(now * 1.3), self.cfg.max_context_tokens)   # meanwhile, left out to fit as it counts
+
     def test_a_count_under_the_limit_starts_nothing(self):
         self.put(PREAMBLE + long_turn(3))
         _, read_id = self.read()

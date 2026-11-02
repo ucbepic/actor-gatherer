@@ -47,4 +47,29 @@ go. Claude Code and Codex are connected this way.
   session (a Claude Code session, a Codex thread), read from the request.
 - Proxies run detached: the first run with a given upstream starts one, and later runs and
   other sessions reuse it. `ag status` lists them and `ag stop` stops them.
+
+Counting tokens
+---------------
+
+The Gatherer sizes every context -- when it builds, where it cuts the running task, what it
+leaves out -- against a budget the model's provider counts. ag's own tokenizer (o200k_base)
+only estimates that count: Anthropic's and OpenAI's come within a few percent of it, Gemini's
+about 20% over it. A harness whose context is sized by ag's estimate alone gets built for too
+late, or over and over. Give the Gatherer the provider's counts:
+
+- **Report each call's own count.** Once the answer is back, its input tokens go to the read
+  the call came from (the proxy's `measured`; Pi's and OpenCode's `measured.ts`). Every
+  harness should do this. The Gatherer then scales its own counts by how far the last call's
+  count ran over them (up to 1.5 times), so even a harness that does nothing more is sized
+  about right.
+- **Replace ag's counts with the provider's.** A proxied harness whose provider has a count
+  endpoint subclasses the shared counter (`ag/integrations/tools/ag_orchestrator/counting.py`;
+  its doc's "A NEW HARNESS" lists what to supply). After each call, it counts each new step,
+  the Gatherer's own items and the preamble with the endpoint. Near the budget, it counts the
+  request before sending it. Codex (OpenAI's `input_tokens`) and Antigravity (Gemini's
+  `countTokens`) use it; Claude Code has its own (Anthropic's `count_tokens`).
+- **Check it on a real call.** Rebuild one call from its read and count it whole with the
+  endpoint, then compare with the call's own count: they should agree within a few percent.
+  Before its counter, Antigravity's calls ran 10-21% over ag's count, and its builds repeated
+  without shrinking anything.
 """

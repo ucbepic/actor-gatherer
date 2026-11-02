@@ -233,6 +233,31 @@ class StrictMaxTest(Base):
         self.assertEqual(first.type.name, "user_message")    # the running task's start: verbatim as before
         self.assertIn("next request", self.texts(context))
 
+    def test_a_running_task_that_fits_by_ag_s_count_but_not_the_provider_s_is_cut(self):
+        self.put(PREAMBLE + conversation(8) + long_turn(3, start=50))       # as above: fits by ag's count
+        self.read()
+        conn = self.m._conn("s")
+        before = store.last_read(conn, ch("c1"))
+        self.m.record_real_tokens("s", before["read_id"], int(before["sent_tokens"] * 1.45))   # Gemini-like: more
+        self.run_build("s", "c1")
+        self.put([user("next request", 99)])
+        self.read()
+        conn = self.m._conn("s")
+        last = store.rows(conn, match=ch("c1"))[-1].row_id
+        self.assertEqual(tables.latest_build(conn, "c1")["open_from_row"], last + 1)   # cut, as the provider counts
+        after = store.last_read(conn, ch("c1"))
+        self.assertLessEqual(int(after["sent_tokens"] * 1.45), self.cfg.max_context_tokens)
+
+    def test_the_provider_s_drift_is_its_count_over_ag_s_within_bounds(self):
+        drift = ProactiveContextManager.drift_of
+        self.assertEqual(drift(None), 1.0)
+        self.assertEqual(drift({"real_tokens": None, "sent_tokens": 100}), 1.0)      # not counted yet
+        self.assertEqual(drift({"real_tokens": 90, "sent_tokens": 100}), 1.0)        # the provider counted less
+        self.assertAlmostEqual(drift({"real_tokens": 120, "sent_tokens": 100}), 1.2)
+        self.assertEqual(drift({"real_tokens": 900, "sent_tokens": 100}), 1.5)       # not a tokenizer's: capped
+        self.policy.drift = 1.2
+        self.assertEqual(self.policy.by_provider(1000), 1200)
+
     def test_pinned_rows_keep_the_newest_within_their_budget(self):
         items = PREAMBLE + [user("q", 1)]
         for n in range(1, 25):
