@@ -39,10 +39,12 @@ Google's internal Cloud Code API, which none of this reads.
     record       `conversations/<id>.db` in its data folder (~/.gemini/antigravity-cli): SQLite, a row per step
                  (`steps`: idx, step_type, status, step_payload, protobuf), whose status changes in place --
                  read whole (Record). What only it says: a turn it gave up on an error (an ERROR_MESSAGE step,
-                 written as the error shows), a step interrupted; and the name the conversation was given
-                 (`/rename`, in `annotations/<id>.pbtxt`). Esc, and messages queued while a turn runs, it
-                 does not keep: the hook server sees the former (the call hung up on), and agy sends a stopped
-                 turn's message again with the next (it is not taken back)
+                 written as the error shows), a step the user stopped (Esc: the step under way CANCELED --
+                 a tool's, as its call comes or runs, or waits for the user's leave -- or INTERRUPTED), as it
+                 settles; and the name the conversation was given (`/rename`, in `annotations/<id>.pbtxt`).
+                 Esc before any of an answer came, and messages queued while a turn runs, it does not keep:
+                 the hook server sees the former (the call hung up on), and agy sends a stopped turn's message
+                 again with the next (it is not taken back)
 """
 
 import json
@@ -106,7 +108,8 @@ APPEND = "--append-system-prompt"
 DOWN, NEXT, ENTER, TOGGLE = "\x1b[B", "\x1b[C", "\r", " "
 #: Its steps' types and statuses, as its protobuf enums number them (CortexStepType, CortexStepStatus).
 STEP_ERROR = 17                                  # ERROR_MESSAGE
-STATUS_INTERRUPTED = 12
+STATUS_CANCELED, STATUS_INTERRUPTED = 6, 12
+STOPPED = frozenset({STATUS_CANCELED, STATUS_INTERRUPTED})   # the user stopped it (Esc): the turn ends there
 STILL = frozenset({0, 1, 2, 8, 9, 11})           # unspecified, pending, running, generating, waiting, queued
 
 
@@ -356,10 +359,14 @@ def field(blob, *path):
     return value
 
 
-def step_at(payload) -> Optional[float]:
-    """When a step was made, as its payload says (its metadata's timestamp)."""
-    secs, nanos = field(payload, 5, 1, 1), field(payload, 5, 1, 2)
+def step_at(payload, which: int = 1) -> Optional[float]:
+    """When a step was made, as its payload says (its metadata's `created_at`), or another of its metadata's times
+    (`which`: COMPLETED_AT)."""
+    secs, nanos = field(payload, 5, which, 1), field(payload, 5, which, 2)
     return secs + (nanos or 0) / 1e9 if isinstance(secs, int) else None
+
+
+COMPLETED_AT = 8        # a step's metadata's (CortexStepMetadata's) `completed_at`: when it settled, stopped or done
 
 
 def error_of(payload) -> Tuple[Optional[str], Optional[int]]:
@@ -401,7 +408,7 @@ def title_in(path: str) -> Optional[str]:
 
 class Record(Follower):
     """agy's record of a conversation (module doc), read whole each time it changes: an ERROR_MESSAGE step a turn
-    stopped on an error (`turn_stopped`), a step interrupted; and its name (`name`), from its annotations file. The
+    stopped on an error (`turn_stopped`), a step the user stopped (canceled or interrupted); and its name (`name`), from its annotations file. The
     offset is the first step not settled yet (its status may still change)."""
     database = True
 
@@ -445,8 +452,9 @@ class Record(Follower):
                 why, code = error_of(payload)
                 facts.append(Fact(Facts.TURN_STOPPED, f"step{idx}", step_at(payload) or _written(path),
                                   {"how": "error", "error": why, "status": code, "turn": None}))
-            elif status == STATUS_INTERRUPTED:
-                facts.append(Fact(Facts.TURN_STOPPED, f"step{idx}.interrupted", step_at(payload) or _written(path),
+            elif status in STOPPED:                 # when it was stopped: not made, which may be before the call
+                at = step_at(payload, COMPLETED_AT) or step_at(payload) or _written(path)   # whose answer it is of
+                facts.append(Fact(Facts.TURN_STOPPED, f"step{idx}.interrupted", at,
                                   {"how": "interrupted", "error": None, "status": None, "turn": None}))
             if settled and status not in STILL:
                 offset = idx + 1

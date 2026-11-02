@@ -198,9 +198,10 @@ without it the hook looks where the harness would by default.
 The doc's `question_settled`, `turn_interrupted` and `gave_up` are `ask_settled` and `turn_stopped`'s `how`. Codex's
 async question has a result only once every question it asked has its reply (the dashboard read each reply as it came).
 
-A turn's stop counts only while nothing came after it: the dashboard takes the newest of ag's latest activity and
-the newest message ag stored (`data.newest`) -- a message is stored as a read begins, before its context is built and
-the read recorded. The same goes for a hang-up (`since_said`): codex hangs up a call to send a question's reply at
+A turn's stop counts only while no call began after it: the dashboard takes the newest of ag's newest read and the
+newest message ag stored (`data.began`) -- a message is stored as a read begins, before its context is built and the
+read recorded. Not the answer's end: agy cancels the step an answer makes as the answer ends (Esc pressed as it
+came), while the hook server stores that end, ms apart and either first. The same goes for a hang-up (`since_said`): codex hangs up a call to send a question's reply at
 once, and Claude Code's message taken back on Esc is withdrawn with its read.
 
 **The dashboard** reads them through `data.Record` (`record_of`: an actor's newest 400 facts) and `typed` /
