@@ -33,7 +33,9 @@ class ProactiveContextManagerConfig:
     # (its verbatim events since the cut, with the notices, stream messages and other
     # channels' requests among them), the history's preamble, the sections' overview, and
     # what the harness sends besides the context (its system prompt and tools) -- is at most
-    # max_context_tokens: above it, on any read, a build is started, waited for, and cuts
+    # max_context_tokens, as the provider counts it (the policy's `by_provider`: ag's counts, which the
+    # hooks replace by the provider's, scaled by how far the provider's count of the channel's last call
+    # ran over them): above it, on any read, a build is started, waited for, and cuts
     # the running task so the context is below it again. At a user message, X being that size:
     #     X <  min_context_tokens   no build
     #     min <= X                  ask the model whether this message starts a new

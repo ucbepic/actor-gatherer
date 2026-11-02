@@ -33,6 +33,10 @@ Besides its turns:
     what it asks   and its background tasks, from the answers and the calls' new pieces (harness_kit's `derived`)
     its record     followed (session_files.py): a turn given up on an error, its name
     instructions   a run's (told.py, by the URL's /r/<run>/), after the system instruction of each of its calls
+    its counts     Gemini's own (counting.py, with its countTokens): what each call holds that is not counted yet,
+                   after it is sent, in place of ag's tokenizer's; near the budget, the call counted first and, over
+                   it, read again -- as codex's hook does. Option `count`: "on" (the default), "check" (the count
+                   before sending only) or "off".
 """
 
 import os
@@ -47,11 +51,12 @@ from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
 from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of
+from ag.integrations.tools.ag_orchestrator.call_ag import READ, call_ag, keep_read, preamble_of, report_measured
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ag.integrations.tools.ag_orchestrator.proxy_hook import ProxyHook
 from ag.integrations.tools.ag_orchestrator.records import derived, record
 from ..adaptor.adaptor import AntigravityAdaptor
+from .counting import Counter
 from .told import Told
 
 ANSWERED = "antigravity_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
@@ -59,6 +64,7 @@ FILES = "antigravity_files"         # the same, for what the answer's calls do t
 TITLE = "antigravity_title"         # the same, for a title call: (label, run, the call), its conversation known by its answer
 SUBAGENT_OF = "antigravity_subagent"   # the same, for a subagent's call: (gatherer, channel, the subagent)
 NAME_CHARS = 120                    # the longest name kept
+COUNT_FROM = 0.5                    # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
 def _print(gatherer: str, line: str) -> None:
@@ -73,6 +79,8 @@ class AntigravityContextManager(ProxyHook):
         ag_clients: the server client per gatherer (`AgClients` of `ag_client.AgClient` by default).
         adaptor: the adaptor, or its class as "module:Class"; Antigravity's own by default.
         files: "on" (what each tool call did to files, found on disk) or "off".
+        count: "on" (Gemini's counts of what each call holds, `counting.py`), "check" (only the count before
+            sending, near the budget) or "off".
         log: (gatherer, line) -> None, for what each model call came to.
     """
     harness = Antigravity()
@@ -80,13 +88,17 @@ class AntigravityContextManager(ProxyHook):
 
     def __init__(self, cwd: Optional[str] = None, ag_clients: Optional[AgClients] = None,
                  log: Callable[[str, str], None] = _print, adaptor: Union[Adaptor, str, None] = None, files: str = "on",
-                 home: Optional[str] = None):
+                 home: Optional[str] = None, count: str = "on"):
         ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("antigravity"))
         if files not in ("on", "off"):
             raise ValueError(f"files: {files!r}, not on or off")
         super().__init__(ag_clients, log, Files(ag_clients, log, harness=self.harness) if files == "on" else None)
         self.cwd = cwd
         self.adaptor = load_adaptor(adaptor) if isinstance(adaptor, str) else (adaptor or AntigravityAdaptor())
+        if count not in ("on", "check", "off"):
+            raise ValueError(f"count: {count!r}, not on, check or off")
+        self.counter = Counter(self.adaptor, enabled=count != "off", log=log)
+        self.count_events = count == "on"
         self.runs = {}                    # (label, run) -> (gatherer, session): the one whose own turn it sent last
         self.told = Told(home or os.environ.get("AG_HOME"))     # each run's instructions (told.py)
         self.callers: Dict[str, str] = {}                       # a subagent's conversation -> its caller's
@@ -127,20 +139,52 @@ class AntigravityContextManager(ProxyHook):
             self.files.arrived(gatherer, channel, cwd, items)
         # its last answer and what came after -- its calls' results, tasks' notices: what they say of its asks and tasks
         self.derive(gatherer, channel, self.harness.read(items[answer_start(items):]), items, asks=False)
-        out = {}
-        messages, note = await call_ag(
-            self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd, items, self.adaptor, out=out,
-            limit=getattr(request, "limit", None), process=getattr(request, "process", None), run=run,
-            preamble=preamble_of({"systemInstruction": body.get("systemInstruction"), "tools": body.get("tools")}))
-        self.log(gatherer, f"[{channel}] {note}")
-        keep_read(request, gatherer, out)
+        client = self.ag_clients.client(gatherer)
+        preamble = preamble_of({"systemInstruction": body.get("systemInstruction"), "tools": body.get("tools")})
+
+        async def read():
+            out = {}
+            new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd, items, self.adaptor, out=out,
+                                      limit=getattr(request, "limit", None), process=getattr(request, "process", None),
+                                      run=run, preamble=preamble)
+            self.log(gatherer, f"[{channel}] {note}")
+            return new, out
+
+        messages, out = await read()
+        size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
+        if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:
+            counted = await self.counter.exact(gatherer, channel, request,
+                                               dict(body, contents=items if messages is None else messages))
+            if counted is not None and counted > budget:
+                self.log(gatherer, f"[{channel}] counted {counted} tokens before sending (ag's count {size}), "
+                                   f"over the budget {budget}: read again")
+                await client.request("measured", {"gatherer": gatherer, "read_id": out["read_id"], "tokens": counted})
+                again, out_again = await read()
+                if "read_id" in out_again:
+                    messages, out = again, out_again
+        keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         self.called(gatherer, channel, call, out.get("read_id"))
         # its record followed (session_files.py) once the call is stored: agy makes it before its first call, so it is
         # found at once -- and a new gatherer's database is made by that first call's insert, which another would race
         self.following(request, gatherer, channel, call)
+        sent = items if messages is None else messages
+        if self.count_events and "read_id" in out:
+            self.counter.sent(gatherer, channel, out, sent, preamble)
+            self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, items, sent, out)
         if messages is None or messages == items:
             return body if told else None                 # nothing to change: agy's own bytes go through
         return dict(body, contents=messages)
+
+    async def measured(self, request, tokens: Optional[int]) -> None:
+        """The hook server's report, once the answer is back: the call's input tokens, to the read -- and to the
+        counter, which counts by them what the count endpoint cannot (`Counter.reported`)."""
+        await report_measured(self.ag_clients, request, tokens)
+        state = getattr(request, "state", None) or {}
+        read, answered = state.get(READ), state.get(ANSWERED)
+        if self.count_events and read and answered and isinstance(tokens, int):
+            gatherer, read_id = read
+            self.counter.reported(request, self.ag_clients.client(gatherer), gatherer, answered[1], read_id, tokens,
+                                  request.body if isinstance(request.body, dict) else {})
 
     def subagent(self, request, call) -> None:
         """A subagent's call: as it is -- ag takes no part in its conversation, as in a Claude Code subagent's -- recorded

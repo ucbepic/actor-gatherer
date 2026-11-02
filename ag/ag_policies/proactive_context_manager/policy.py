@@ -71,6 +71,15 @@ to keep_pinned_tokens, the newest kept. What still does not fit -- a step
 larger than the room the build leaves -- is left out with a note naming its
 rows (`stubbed`).
 
+Every one of these checks counts as the provider does (`by_provider`): the
+hooks replace ag's counts by the provider's as they learn them, and what is
+still ag's is scaled by how far the provider's own count of the channel's last
+call ran over ag's (`drift_of`). The build that a provider's count over the
+limit starts so decides by that same count where to cut and what to leave out,
+and does not keep the running task whole because ag's own count says it fits
+(2026-11-01: an Antigravity actor, Gemini counting 20% over ag, started a build
+at every call for minutes, each keeping the cut where it was).
+
 A user message the boundary check finds starts a new task gets its build: the read waits
 for it up to build_wait_seconds. One that takes longer is taken up at the turn's next call
 (`for_this_turn`), not left for the next user message: the turn itself stays verbatim, so
@@ -105,6 +114,9 @@ PARALLEL_REQUEST = "parallel_request"
 PARALLEL_BEFORE = "parallel_before"   # with no build: the other channels' requests before the channel began, as one block
 CURRENT_REQUEST = "Current request"   # the running task a `limit` build starts at the last user message
 LEFT_OUT = "left_out"           # a step stubbed to keep the context within max_context_tokens
+DRIFT_MAX = 1.5                 # the most `drift_of` scales ag's count by: tokenizers differ by up to ~25% (Gemini's
+                                # over o200k_base); a provider's count further over ag's is something ag does not see,
+                                # not its own items counted short, and is left to `measured_over`
 GUIDE = "gatherer_guide"        # the guide every context opens with
 AGENT_STEP = ("agent_message", "tool_call", "agent_reasoning")   # what an agent step may start with
 ROLE = "role"                   # a channel's role, as the dashboard records it: {role, private} (`unseen`)
@@ -235,6 +247,7 @@ class ProactiveContextManager(Policy):
         # a max_context_tokens of the gatherer's own (or a whole config) wins over a harness's limit
         self.max_given = config is not None or "max_context_tokens" in (options or {})
         self._limited: Dict[int, ProactiveContextManagerConfig] = {}
+        self.drift = 1.0                            # by_provider's, set for each read and each build
 
     @property
     def groups(self):
@@ -300,13 +313,14 @@ class ProactiveContextManager(Policy):
         at_user = history.opens_turn(rows[-1], types, self.groups)
         latest = tables.build_for(conn, ch)
         last = conn.last_read(channel.of(ch))
+        self.drift = self.drift_of(last)
         build, made = self.choose(conn, types, rows, latest, last, at_user or self.for_this_turn(latest, rows, types), read)
         items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
-        over = size > cfg.max_context_tokens or self.measured_over(last, build, ch)
+        over = self.by_provider(size) > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if over and not at_user and tables.waiting(latest, last):        # a ready build: taken now, not at the user
             build, made = self.choose(conn, types, rows, latest, last, True, read)
             items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
-            over = size > cfg.max_context_tokens or self.measured_over(last, build, ch)
+            over = self.by_provider(size) > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if at_user or over:
             latest = tables.build_for(conn, ch)
             started = self.start_due(conn, types, read, rows, latest, build, size, over)
@@ -316,10 +330,11 @@ class ProactiveContextManager(Policy):
                 latest = tables.build_for(conn, ch)
                 build, made = self.choose(conn, types, rows, latest, last, True, read)
                 items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
-        if size > cfg.max_context_tokens:                # still over: the steps that do not fit, left out
+        if self.by_provider(size) > cfg.max_context_tokens:   # still over: the steps that do not fit, left out
             items, refs, size, own = self.assemble(conn, rows, build, made, types, read, stub=True)
-        if size > cfg.max_context_tokens:
-            self.log(f"[{ch}] context {size} tokens, over max_context_tokens={cfg.max_context_tokens}")
+        if self.by_provider(size) > cfg.max_context_tokens:
+            self.log(f"[{ch}] context {size} tokens ({self.by_provider(size)} as the provider counts), "
+                     f"over max_context_tokens={cfg.max_context_tokens}")
         self.last_tokens = own                      # the part of it the policy arranges
         return Context(items, refs, str(build["build_id"]) if build else None, tokens=own,
                        budget=cfg.max_context_tokens)
@@ -333,6 +348,24 @@ class ProactiveContextManager(Policy):
             return False
         opening = next((r.row_id for r in reversed(rows) if history.opens_turn(r, types, self.groups)), None)
         return opening is not None and build["through_row"] == opening
+
+    @staticmethod
+    def drift_of(last: Optional[dict]) -> float:
+        """How far over ag's count the provider counted a call: `last`'s own count (`real_tokens`, reported after
+        it) over ag's count of all it sent (`sent_tokens`), at most DRIFT_MAX -- 1 when either is not known, or the
+        provider counted no more than ag. The hooks set the provider's counts in place of ag's as they learn them (counting.py),
+        and what is still ag's (new steps not counted yet; a harness with no count endpoint, all of it) is short
+        by about this much."""
+        real, sent = (last or {}).get("real_tokens"), (last or {}).get("sent_tokens")
+        if not isinstance(real, int) or not isinstance(sent, int) or sent <= 0 or real <= sent:
+            return 1.0
+        return min(real / sent, DRIFT_MAX)
+
+    def by_provider(self, tokens: int) -> int:
+        """`tokens`, ag's count, as the provider would count them: scaled by `drift` (the channel's last call's,
+        set at each read and build) -- what max_ and min_context_tokens are checked against, so a build decides
+        by the count that started it."""
+        return tokens if self.drift <= 1.0 else int(tokens * self.drift)
 
     def measured_over(self, last: Optional[dict], build: Optional[dict], ch) -> bool:
         """Whether the provider's count of the last call's context (`real_tokens`, reported
@@ -404,7 +437,7 @@ class ProactiveContextManager(Policy):
         outside = (sum(r.tokens for r in preamble) + sum(g[2] for g in guide) + fixed
                    + read.fixed_tokens)                                          # the model gets these too
         tokens += outside
-        if stub and tokens > cfg.max_context_tokens:
+        if stub and self.by_provider(tokens) > cfg.max_context_tokens:
             entries, tokens = self.stubbed(conn, entries, tokens, types, read)
         for kind, row_id, item, cost in entries:
             items.append(item)
@@ -501,16 +534,16 @@ class ProactiveContextManager(Policy):
 
         note_size = 4 * self.tokenizer.count(f"[Agent steps were left out here ... {conn.path} ...]")
         for step in sorted(steps, key=lambda st: -sum(cost(i) for i in st)):
-            if tokens <= cfg.max_context_tokens or sum(cost(i) for i in step) < 5 * note_size:
+            if self.by_provider(tokens) <= cfg.max_context_tokens or sum(cost(i) for i in step) < 5 * note_size:
                 break                                    # a note per step only for a step far larger than it
             tokens -= stub(step)
         left = [st for st in steps if st[0] not in replaced]
-        if tokens > cfg.max_context_tokens and len(left) > 1:
+        if self.by_provider(tokens) > cfg.max_context_tokens and len(left) > 1:
             run, saved = [], 0
             for st in left[:-1]:                         # the oldest first; the newest step stays
                 run.append(st)
                 saved = sum(cost(i) for s_ in run for i in s_) - note_size // 4
-                if tokens - saved <= cfg.max_context_tokens:
+                if self.by_provider(tokens - saved) <= cfg.max_context_tokens:
                     break
             run_indices = [i for s_ in run for i in s_]
             if all(b == a + 1 or replaced.get(a + 1, 0) is None for a, b in zip(run_indices, run_indices[1:])):
@@ -847,9 +880,9 @@ class ProactiveContextManager(Policy):
                 joining: bool = False) -> int:
         """Where the verbatim part should start: the running task's start -- or, when the sections, the
         pinned rows and the running task from there, with what the model gets besides them (the
-        history's preamble, the harness's `fixed_tokens`), would be over max_context_tokens, after the
-        last event: the running task is then all in "This task so far", and only what comes after it
-        is verbatim."""
+        history's preamble, the harness's `fixed_tokens`), would be over max_context_tokens as the provider
+        counts them (`by_provider`), after the last event: the running task is then all in "This task so
+        far", and only what comes after it is verbatim."""
         cfg, tok = self.config, self.tokenizer
         preamble, body = history.arrange(rows, types, self.groups)
         task_rows = [r for r in body if r.row_id >= running.first_row]
@@ -862,7 +895,7 @@ class ProactiveContextManager(Policy):
                                     cfg.keep_pinned_tokens)
         whole = held + sum(r.tokens for r in pinned) + sum(r.tokens for r in task_rows) \
             + sum(r.tokens for r in preamble) + overview + tok.count(layout.guide(cfg, db_path)) + fixed_tokens
-        return running.first_row if whole <= cfg.max_context_tokens else task_rows[-1].row_id + 1
+        return running.first_row if self.by_provider(whole) <= cfg.max_context_tokens else task_rows[-1].row_id + 1
 
     def not_smaller(self, sections, rows, turns, types: TypeIds) -> Optional[str]:
         pinned = types.of(*self.groups.pinned)
@@ -896,7 +929,7 @@ class ProactiveContextManager(Policy):
             return "build" if over else ""
         if latest and latest["status"] == "ready" and (not in_use or latest["build_id"] != in_use["build_id"]):
             return ""
-        if not over and size < cfg.min_context_tokens and not cfg.build_every_request:
+        if not over and self.by_provider(size) < cfg.min_context_tokens and not cfg.build_every_request:
             return ""
         if over or cfg.build_every_request:
             build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.LIMIT if over else tables.REQUEST)
@@ -1040,6 +1073,7 @@ class ProactiveContextManager(Policy):
             last = conn.last_read(channel.of(channel_of(properties)))
         finally:
             conn.close()
+        self.drift = self.drift_of(last)
         with self.within((last or {}).get("limit_tokens")):
             return self.build_within(gatherer_id, properties, build_id)
 
@@ -1065,7 +1099,7 @@ class ProactiveContextManager(Policy):
                 # one turn, or one task, is built only when it is over the limit: a cut inside it is then due --
                 # all the model gets, with what the harness sends besides it (as its last call stated)
                 fixed = (conn.last_read(channel.of(channel_id)) or {}).get("fixed_tokens") or 0
-                oversized = sum(r.tokens for r in rows) + fixed > cfg.max_context_tokens
+                oversized = self.by_provider(sum(r.tokens for r in rows) + fixed) > cfg.max_context_tokens
                 if len(turns) < 2 and not oversized:
                     return self.nothing(conn, build_id, through_row, "fewer than two turns")
                 tasks, failed, fresh = segmentation.update(turns, tables.tasks_for(conn, channel_id), self.llm,
