@@ -21,8 +21,11 @@ asked for:
     the preamble      the harness's two preamble fields (`PREAMBLE`: its instructions, its tools), once per version:
                       the placeholder with both, with the first alone, and with neither.
 
-Reasoning an endpoint counts as nothing (codex's encrypted reasoning, `COSTS_REASONING`) costs what the call's own
-count is over the endpoint's count of the request as sent, shared among the reasoning new in it (`reasoning_counts`).
+What an endpoint counts as nothing but the call is charged for (`COSTS_HIDDEN`: codex's encrypted reasoning items,
+Gemini's thought signatures) costs what the call's own count is over the endpoint's count of the request as sent
+(`hidden_counts`): codex's, less the reasoning already costed, shared among the reasoning new in it; Gemini's, at a
+rate per signature character, the whole gap over every signature sent. Until a call's own count is back, the hidden
+part costs what it was last found to (`hidden_estimate`, `extra`).
 Without an endpoint (no credentials, one that cannot count, a model it does not know), the call's own counts tell the
 rest: two calls of a channel in a row, the later's context the earlier's with items added (the same build, nothing
 taken out), differ by exactly what those items cost (`differenced`). Near the policy's budget, the hook also counts the
@@ -38,12 +41,15 @@ A NEW HARNESS. A proxied harness whose provider has a count endpoint subclasses 
 the endpoint and its credentials (`where`), what it is posted (`payload`) and answers (`tokens_of`, `unknown_model`),
 the request's conversation field (`INPUT`) and the rest the endpoint takes (`base_of`, `bare_of`), a one-word
 `PLACEHOLDER`, its `PREAMBLE` fields, and its items' shapes (`call_of`, `cut_output`, `ends_step`, `is_reasoning`,
-`made_weight`) -- and its hook calls `exact` near the budget, `sent` and `start` once a call is sent, and `reported`
+`made_weight`; `COSTS_HIDDEN` with `hidden_counts`, `hidden_estimate` and `extra` for what its endpoint does not
+count) -- and its hook calls `exact` near the budget, `sent` and `start` once a call is sent, and `reported`
 with the call's own count (as codex's and Antigravity's hooks do). Codex's (OpenAI's /v1/responses/input_tokens) and
 Antigravity's (Gemini's :countTokens) are the two subclasses; Claude Code's counting.py is older and its own (Anthropic's
 /v1/messages/count_tokens, and its thinking's binding). Check the endpoint against the call's own count on a real
-request before relying on it: rebuild one call from its read and count it whole (Gemini's came within 3% of its
-calls, with thought signatures counting nothing and thought text counting as text).
+request before relying on it: rebuild calls from their reads, count each whole, and compare with the calls' own
+counts -- calls with and without reasoning, tool calls and images, since an endpoint can count a part as nothing that
+the call is charged for (codex's reasoning; Gemini's endpoint matched its calls to the token without signatures, and
+fell short by 0.114 tokens a signature character with them).
 """
 
 import asyncio
@@ -122,7 +128,9 @@ class Channel:
     """What one conversation's counting remembers between calls: caches (see the module's doc), and
     what a call needs until its own count is back."""
     counting: Set[str] = field(default_factory=set)           # event ids this process counted
-    reasoning: Dict[str, int] = field(default_factory=dict)   # a reasoning item's id: its cost
+    reasoning: Dict[str, int] = field(default_factory=dict)   # an item's id: what its hidden part costs
+    visible: Dict[str, int] = field(default_factory=dict)     # an event's id: its count as the endpoint gave it
+    rate: Optional[float] = None                              # a hidden part's cost per unit, as the calls charged it
     texts: Dict[str, int] = field(default_factory=dict)       # the sha of an ag item's text: its cost
     made: Set[int] = field(default_factory=set)               # made ids counted
     preambles: Set[str] = field(default_factory=set)          # the instructions and tools counted
@@ -141,7 +149,8 @@ class Counter:
     INPUT = "input"                   # the request's field holding the conversation
     PLACEHOLDER: list = []            # one one-word user message, in the request's shape
     PREAMBLE = ("instructions", "tools")   # the preamble's two fields, named as preamble_of names them
-    COSTS_REASONING = False           # the endpoint counts reasoning items as nothing: the call's own count costs them
+    COSTS_HIDDEN = False              # the endpoint counts part of what a call is charged as nothing: the call's own
+                                      # count costs it (`hidden_counts`)
 
     def __init__(self, adaptor, enabled: bool = True, log=lambda gatherer, line: None):
         self.adaptor, self.enabled, self.log = adaptor, enabled, log
@@ -202,12 +211,22 @@ class Counter:
         return kind not in (self.call_type, self.reasoning_type) and not waiting
 
     def is_reasoning(self, item) -> bool:
-        """A reasoning item the endpoint counts as nothing (with `COSTS_REASONING`)."""
+        """A reasoning item the endpoint counts as nothing, whole (with `COSTS_HIDDEN`): not counted in a step."""
         return False
 
     def made_weight(self, item) -> int:
         """An ag item's share of a differenced count, as the adaptor sends it: its text's length."""
         return len(json.dumps(item, ensure_ascii=False))
+
+    def extra(self, ch: "Channel", item) -> int:
+        """What an item's hidden part is known to cost, added to the endpoint's count of it when its step is counted:
+        nothing by default (a reasoning item the endpoint counts as nothing is not counted in a step at all)."""
+        return 0
+
+    def hidden_estimate(self, ch: "Channel", items: list) -> int:
+        """What the hidden parts of `items` are known to cost, for a count of a request (`exact`): each reasoning
+        item at what it was found to cost."""
+        return sum(ch.reasoning.get(key_of(self.adaptor, i), 0) for i in items if self.is_reasoning(i))
 
     # ------------------------------------------------------------------ asking the endpoint
 
@@ -284,15 +303,13 @@ class Counter:
         return ClientSession(timeout=ClientTimeout(total=COUNT_SECONDS))
 
     async def exact(self, gatherer: str, channel: str, request, body: dict) -> Optional[int]:
-        """The request counted exactly as it is, its reasoning at what it was found to cost (where the
-        endpoint counts it as nothing); None if it cannot be."""
+        """The request counted exactly as it is, what the endpoint counts as nothing at what it was found to
+        cost (`hidden_estimate`); None if it cannot be."""
         async with self.session() as session:
             n = await self.ask(session, request, body)
         if not isinstance(n, int):
             return None
-        known = self.channel(gatherer, channel).reasoning
-        return n + sum(known.get(key_of(self.adaptor, i), 0) for i in body.get(self.INPUT) or ()
-                       if self.is_reasoning(i))
+        return n + self.hidden_estimate(self.channel(gatherer, channel), body.get(self.INPUT) or [])
 
     def learn(self, gatherer: str, channel: str, context: Optional[list]) -> None:
         """What a context the server answered says reasoning costs: each counted reasoning event's size
@@ -373,7 +390,7 @@ class Counter:
                      exact=None) -> dict:
         found = {"counts": {}, "made": {}, "preamble_counts": []}
         base = self.base_of(body)
-        if self.COSTS_REASONING:                  # as sent: for the reasoning's count
+        if self.COSTS_HIDDEN:                     # as sent: for the hidden parts' count
             whole = await self.ask(session, request, self.with_input(base, sent))
             if exact is not None and not exact.done():
                 exact.set_result(whole if isinstance(whole, int) else None)
@@ -449,7 +466,8 @@ class Counter:
                 continue
             for i, n in costs.items():
                 if due(ids[i]):
-                    found["counts"][ids[i]] = max(n, 0)
+                    ch.visible[ids[i]] = max(n, 0)
+                    found["counts"][ids[i]] = max(n, 0) + self.extra(ch, items[i])
                     ch.counting.add(ids[i])
             done += 1
 
@@ -519,7 +537,7 @@ class Counter:
             sent = ch.sent.pop(read_id, None)
             try:
                 if exact is not None:
-                    counts = self.reasoning_counts(ch, sent, tokens, n) if self.COSTS_REASONING else {}
+                    counts = self.hidden_counts(ch, sent, tokens, n) if self.COSTS_HIDDEN else {}
                 elif not self.can_count(request, body):
                     counts = self.differenced(ch, sent, tokens)
                 else:
@@ -536,9 +554,10 @@ class Counter:
                 self.log(gatherer, f"[{channel}] counted {len(counts.get('counts', {}))} events, "
                                    f"{len(counts.get('made', {}))} of ag's items by the call's own count")
 
-    def reasoning_counts(self, ch: Channel, sent: Optional[Sent], tokens: int, exact: Optional[int]) -> dict:
-        """The cost of the reasoning new in a call: what its own count is over the endpoint's count of it
-        as sent, less the reasoning it sent that is costed already -- shared evenly among the new."""
+    def hidden_counts(self, ch: Channel, sent: Optional[Sent], tokens: int, exact: Optional[int]) -> dict:
+        """What a call's own count (`tokens`) says its hidden parts cost, over the endpoint's count of it as sent
+        (`exact`), as {"counts": {event id: its count}}. By default reasoning items': the rise less the reasoning
+        it sent that is costed already, shared evenly among the reasoning new in it."""
         if sent is None or not isinstance(exact, int):
             return {}
         reasoning = [(k, at) for k, (kind, at, item) in zip(sent.keys, sent.parts)

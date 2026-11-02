@@ -68,8 +68,11 @@ late, or over and over. Give the Gatherer the provider's counts:
   the Gatherer's own items and the preamble with the endpoint. Near the budget, it counts the
   request before sending it. Codex (OpenAI's `input_tokens`) and Antigravity (Gemini's
   `countTokens`) use it; Claude Code has its own (Anthropic's `count_tokens`).
-- **Check it on a real call.** Rebuild one call from its read and count it whole with the
-  endpoint, then compare with the call's own count: they should agree within a few percent.
-  Before its counter, Antigravity's calls ran 10-21% over ag's count, and its builds repeated
-  without shrinking anything.
+- **Check it on real calls.** Rebuild calls from their reads, count each whole with the
+  endpoint, and compare with the calls' own counts, for calls with and without reasoning, tool
+  calls and images. An endpoint can count a part as nothing that the call is still charged for:
+  Codex's encrypted reasoning, and Gemini's thought signatures (about 0.11 tokens a character).
+  Such a part is costed from each call's own count (`COSTS_HIDDEN`). Before its counter,
+  Antigravity's calls ran 10-21% over ag's count, and its builds repeated without shrinking
+  anything; with it, the stored counts come within 0.25% of each call's own.
 """

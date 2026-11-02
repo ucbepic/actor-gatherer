@@ -93,7 +93,7 @@ class Counter(counting.Counter):
     INPUT = "input"
     PLACEHOLDER = PLACEHOLDER
     PREAMBLE = ("instructions", "tools")
-    COSTS_REASONING = True
+    COSTS_HIDDEN = True               # its encrypted reasoning: nothing to the endpoint, the call is charged for it
 
     def where(self, request, body: dict) -> Optional[Tuple[str, dict]]:
         """Its upstream's endpoint with its credentials -- or, under a ChatGPT login, the API's with

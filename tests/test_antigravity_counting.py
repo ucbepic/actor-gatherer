@@ -1,7 +1,8 @@
 """Gemini's own counts of Antigravity's calls (ag/integrations/harnesses/antigravity/ag_orchestrator/counting.py, on the
 shared counter, ag/integrations/tools/ag_orchestrator/counting.py), against a stand-in for Gemini's
 models/<model>:countTokens whose every count is known: each part costs what its content says, and 2 more; a thought
-signature costs nothing; a function response is refused without its call right before it, and a function call
+signature costs nothing to it, though the call itself is charged a token per 8 of its characters (`own_count`), as
+Gemini's calls are charged for them; a function response is refused without its call right before it, and a function call
 without its signature, as Gemini refuses them. agy sends a function response in the model's role, as here. Without
 the key, the calls' own counts are differenced. And the hook: counted before sending near the budget, counted after."""
 import asyncio
@@ -23,7 +24,8 @@ from ag.integrations.harnesses.antigravity.adaptor import to_events as agy  # no
 from ag.integrations.harnesses.antigravity.adaptor.adaptor import AntigravityAdaptor  # noqa: E402
 from ag.integrations.harnesses.antigravity.adaptor.to_messages import ag_message  # noqa: E402
 from ag.integrations.harnesses.antigravity.ag_orchestrator import context_manager as agy_ag  # noqa: E402
-from ag.integrations.harnesses.antigravity.ag_orchestrator.counting import Counter  # noqa: E402
+from ag.integrations.harnesses.antigravity.ag_orchestrator import counting  # noqa: E402
+from ag.integrations.harnesses.antigravity.ag_orchestrator.counting import Counter, signature_chars  # noqa: E402
 from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 
 MODEL = "gemini-4-argon"
@@ -60,6 +62,19 @@ def price(req) -> int:
     system = req.get("systemInstruction")
     return 10 + (len(system["parts"][0]["text"]) // 4 if system else 0) \
         + (len(json.dumps(req["tools"])) // 4 if req.get("tools") else 0) + sum(cost(c) for c in contents)
+
+
+SIG_CHARS = 8            # signature characters a token is, in what a call is charged (the stand-in's)
+
+
+def own_count(body) -> int:
+    """What the call itself reports: the endpoint's count, and its signatures."""
+    return price(body) + sum(signature_chars(c) for c in body["contents"]) // SIG_CHARS
+
+
+def signed_at_first(chars) -> int:
+    """A signature's cost before any call's own count: at the measured rate."""
+    return round(chars * counting.SIGNATURE_RATE)
 
 
 def user(text):
@@ -147,7 +162,7 @@ class CounterTest(Base):
         preamble = {p["name"]: p["tokens"] for p in sent["preamble_counts"]}
         self.assertEqual(preamble, {"systemInstruction": len(SYSTEM) // 4, "tools": len(json.dumps(TOOLS)) // 4})
         self.assertEqual(sum(sent["counts"].values()) + sum(preamble.values()),
-                         price(body_of(items)) - 10)                  # all but the count's own
+                         price(body_of(items)) - 10 + signed_at_first(4000))   # all but the count's own; the signature
 
     async def test_an_item_s_count_is_what_it_costs_its_signature_nothing(self):
         items = turn()
@@ -159,7 +174,7 @@ class CounterTest(Base):
         self.assertEqual(sent["counts"][ids[1]], cost(items[1]))              # a thought, as text
         self.assertEqual(sent["counts"][ids[0]], cost(items[0]))
         self.assertEqual(sent["counts"]["c1"] + sent["counts"]["c2"] + sent["counts"][ids[5]] + sent["counts"][ids[6]],
-                         sum(cost(c) for c in items[3:7]))       # the calls: what is left of their step
+                         sum(cost(c) for c in items[3:7]) + signed_at_first(4000))   # the calls: what is left
 
     async def test_a_model_s_thought_words_calls_and_responses_are_one_step(self):
         counter = Counter(AntigravityAdaptor())
@@ -206,6 +221,54 @@ class CounterTest(Base):
                                           body_of(items)))
         await self.run_call(counter, items, read_id=2)
         self.assertEqual(len(self.asked), asked)
+
+
+class SignatureTest(Base):
+    """What the endpoint does not count, the call's own count does: the thought signatures, at a rate a character."""
+
+    async def call(self, counter, items, read_id=1, uncounted=None):
+        client = Client()
+        out = {"events": agy.to_events(items), "ag_items": [], "read_id": read_id, "basis": None, "uncounted": uncounted}
+        counter.sent("g", "c", out, items, [])
+        counter.start(self.request, client, "g", {"channel": "c"}, body_of(items), items, items, out)
+        counter.reported(self.request, client, "g", "c", read_id, own_count(body_of(items)), body_of(items))
+        await counter.close()
+        await counter.close()
+        return [b for op, b in client.asked if op == "counted"]
+
+    async def test_a_call_s_own_count_prices_its_signatures_and_its_signed_call_again(self):
+        counter = Counter(AntigravityAdaptor())
+        steps, again = await self.call(counter, turn())
+        self.assertEqual(counter.channel("g", "c").rate, 1 / SIG_CHARS)              # 500 tokens over 4,000 characters
+        self.assertEqual(set(again["counts"]), {"c1"})                                # the signed call alone
+        self.assertEqual(again["counts"]["c1"] - steps["counts"]["c1"], 4000 // SIG_CHARS - signed_at_first(4000))
+
+    async def test_the_count_before_sending_takes_the_signatures_at_the_rate(self):
+        counter, body = Counter(AntigravityAdaptor()), body_of(turn())
+        self.assertEqual(await counter.exact("g", "c", self.request, body), price(body) + signed_at_first(4000))
+        counter.channel("g", "c").rate = 1 / SIG_CHARS
+        self.assertEqual(await counter.exact("g", "c", self.request, body), price(body) + 4000 // SIG_CHARS)
+
+    async def test_started_again_old_signatures_set_the_rate_but_are_costed_to_no_new_one(self):
+        items = turn() + [model(functionCall={"id": "c3", "name": "read_file", "args": {"Path": "/work/here/c.txt"}},
+                                thoughtSignature="Zm9v" * 500),
+                          model(functionResponse={"id": "c3", "name": "read_file", "response": {"output": "gamma"}}),
+                          user("And c.txt?")]
+        new = [e["id"] for e in agy.to_events(items[-3:])]
+        counter = Counter(AntigravityAdaptor())                 # a new process: turn() was counted by the last one
+        steps, again = await self.call(counter, items, read_id=2, uncounted=new)
+        self.assertEqual(counter.channel("g", "c").rate, 1 / SIG_CHARS)              # 750 over all 6,000 characters
+        self.assertNotIn("c1", steps["counts"])
+        self.assertEqual(again["counts"], {"c3": steps["counts"]["c3"] - signed_at_first(2000) + 2000 // SIG_CHARS})
+
+    async def test_too_few_signature_characters_to_learn_from_leave_the_rate_as_it_was(self):
+        items = [user("hi"), model(functionCall={"id": "c9", "name": "read_file", "args": {"Path": "/a"}},
+                                   thoughtSignature="Zm9v" * 100),
+                 model(functionResponse={"id": "c9", "name": "read_file", "response": {"output": "a"}})]
+        counter = Counter(AntigravityAdaptor())
+        counted = await self.call(counter, items)
+        self.assertIsNone(counter.channel("g", "c").rate)
+        self.assertEqual(len(counted), 1)                       # the steps' counts, the signature at the measured rate
 
 
 class DifferencedTest(unittest.TestCase):
@@ -294,7 +357,7 @@ class HookTest(Base):
         server = self.server(tokens=whole, budget=whole - 5)             # ag's count at the budget's edge
         await self.go(self.hook(server, count="check"), req)
         self.assertEqual([op for op, _ in server.asked], ["rewrite", "measured", "rewrite"])
-        self.assertEqual(server.asked[1][1]["tokens"], whole)              # the endpoint's count, reported
+        self.assertEqual(server.asked[1][1]["tokens"], whole + signed_at_first(4000))   # with the signature
         self.assertEqual(req.state["ag_read"], ("g", 2))
 
     async def test_far_under_the_budget_nothing_is_counted_before_sending(self):
@@ -302,6 +365,17 @@ class HookTest(Base):
         await self.go(self.hook(server, count="check"), self.req())
         self.assertEqual(self.asked, [])
         self.assertEqual([op for op, _ in server.asked], ["rewrite"])
+
+    async def test_the_call_s_own_count_prices_the_signatures(self):
+        server = self.server(tokens=100)
+        hook, req = self.hook(server), self.req()
+        got = await self.go(hook, req)
+        await hook.measured(req, own_count(dict(body_of(turn()), contents=got["contents"])))
+        await hook.counter.close()
+        await hook.counter.close()
+        again = [b for op, b in server.asked if op == "counted"][-1]
+        self.assertEqual(hook.counter.channel("g", "73dbf702-17a8-4782-a076-b522c70d64ff").rate, 1 / SIG_CHARS)
+        self.assertEqual(set(again["counts"]), {"c1"})
 
     async def test_counting_off(self):
         server = self.server(tokens=10 ** 6, budget=10)
