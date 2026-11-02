@@ -36,7 +36,7 @@ A RUNNING agent may also have stopped where ag does not see it. A model call tha
 hook server (`call_failed`, by its read): `failing` is the run of them at the newest event the agent's
 calls answered -- the harness tries again, each try a read -- and whether a try is under way. Claude Code's
 own record of the session says how its turn STOPPED, when that came after ag last heard of the session -- its
-latest activity, or a message ag stored since, as a new turn's read began (`newest`; `Record.stopped`): Claude
+newest call, or a message ag stored since, as a new turn's read began (`began`; `Record.stopped`): Claude
 Code's API error -- it gave up on the model call, its tries spent, or the error not one to try again -- is ERROR; the user's interruption (Esc), which makes no
 call, IDLE. A failed call with no try since for GIVE_UP_SECONDS counts as given up too -- with no record
 followed (a session of another machine; a hook server from before it followed them), or one that says nothing: Esc while Claude Code waits to try again
@@ -628,7 +628,7 @@ def _status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     if cut is not None:                              # stopped before its answer came, as ag's hook server saw: its
         a["status"], a["turn_over"] = IDLE, True     # record says nothing of it, or says so once it does
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
-    got = rec.stopped(newest(a)) if a["status"] == RUNNING or cut is not None else None
+    got = rec.stopped(began(a)) if a["status"] == RUNNING or cut is not None else None
     if got and got["kind"] == "over" and not (h and h.record_ends_turns):
         got = None                                   # its calls say when a turn is over
     if got and got["kind"] == "error":
@@ -656,11 +656,15 @@ def _status(conn, ch: str, a: dict, tables: set, now: float) -> None:
             a["status"] = ASKING
 
 
-def newest(a: dict) -> Optional[float]:
-    """When the agent was last heard of: its latest activity (`last`), or the newest message ag stored for it
-    (`said_at`), whichever came later -- a message stored as a read begins, before its context is built and the read
-    recorded, so a turn's stop older than it is the last turn's, not this one's."""
-    return max(a.get("last") or 0, a.get("said_at") or 0) or None
+def began(a: dict) -> Optional[float]:
+    """When the agent's newest call began, as far as ag saw: its newest read (`last_read`; its newest event, if ag
+    recorded none), or the newest message ag stored for it (`said_at`), whichever came later -- a message stored as a
+    read begins, before its context is built and the read recorded, so a turn's stop older than it is the last
+    turn's, not this one's. Not when its answer came: a stop during the call is this one's even where the record says
+    it before ag stored the answer's end -- agy cancels the step its answer makes as the answer ends, Esc pressed as
+    it came, while the hook server stores that end (ms apart, either first)."""
+    read = a.get("last_read") if a.get("reads") else a.get("last_event")
+    return max(read or 0, a.get("said_at") or 0) or None
 
 
 def since_said(a: dict, cut: Optional[float]) -> Optional[float]:

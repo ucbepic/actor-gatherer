@@ -346,6 +346,23 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(offset, 2)                        # step 2 still runs: read again from there
         self.assertEqual(rec.read_on(self.db, offset), ([], 2))
 
+    def test_a_step_the_user_stopped_as_it_was_stopped(self):
+        import sqlite3
+        conn = sqlite3.connect(self.db)                  # Esc: the tool call its answer made canceled as it came
+        conn.execute("UPDATE steps SET status = 3 WHERE idx = 2")
+        conn.executemany("INSERT INTO steps VALUES (?, ?, ?, ?)", [
+            (3, 132, 6, pb((1, 132), (5, pb((1, pb((1, 1793581139), (2, 449931000))),
+                                            (8, pb((1, 1793581140), (2, 150518000))))))),
+            (4, 15, 12, pb((1, 15), (5, pb((1, pb((1, 1793581150)),)))))])            # no completed_at: when made
+        conn.commit()
+        conn.close()
+        facts, offset = AGY.follower(self.db).read_on(self.db, 2)
+        self.assertEqual([(f.type, f.key, f.data["how"]) for f in facts],
+                         [("turn_stopped", "step3.interrupted", "interrupted"), ("turn_stopped", "step4.interrupted", "interrupted")])
+        self.assertAlmostEqual(facts[0].at, 1793581140.150518)    # completed_at, not created_at
+        self.assertEqual(facts[1].at, 1793581150)
+        self.assertEqual(offset, 5)
+
     def test_its_name(self):
         rec = AGY.follower(self.db)
         os.makedirs(os.path.join(self.dir, "annotations"))
