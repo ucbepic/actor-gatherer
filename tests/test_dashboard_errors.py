@@ -249,6 +249,23 @@ class StoppedTest(ErrorsBase):
         a = self.actor()
         self.assertEqual((a["status"], a["turn_over"], a["stopped"]["kind"]), (data.IDLE, True, "interrupted"))
 
+    def test_an_interruption_said_before_ag_stored_the_answer_s_end_is_idle(self):
+        """agy cancels the step its answer makes as the answer ends, Esc pressed as it came, while ag's hook server
+        stores that end -- ms apart, either first: the stop is this call's."""
+        now = time.time()
+        self.read(now - 10, tokens=500)
+        conn = sqlite3.connect(self.path)
+        conn.execute("INSERT OR IGNORE INTO event_types (name, created_at) VALUES ('reply_end', ?)", (iso(now),))
+        conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel) VALUES "
+                     "(?, (SELECT event_type_id FROM event_types WHERE name = 'reply_end'), ?, 1, ?)",
+                     (iso(now - 1), json.dumps({"stop": "STOP"}), SESSION))
+        conn.commit()
+        conn.close()
+        self.write({"type": "user", "timestamp": zulu(now - 1.004), "message": {"role": "user", "content": [
+            {"type": "text", "text": "[Request interrupted by user]"}]}})
+        a = self.actor()
+        self.assertEqual((a["status"], a["turn_over"], a["stopped"]["kind"]), (data.IDLE, True, "interrupted"))
+
     def said_again(self):
         """The user writes again: ag stores the message as the read begins, and records the read only once its
         context is built (the policy's boundary check, a build) -- here, not yet."""
