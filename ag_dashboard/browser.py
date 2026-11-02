@@ -2756,7 +2756,7 @@ class Browsers:
         finally:
             conn.close()
 
-        def name():
+        def _name():
             end, sid = time.time() + NAME_WAIT, r["session_id"]
             now = (self._session(sid) or {}).get("session_id") or sid
             while time.time() < end and not sessions._has_calls(r["gatherer"], now):
@@ -2766,7 +2766,7 @@ class Browsers:
                 naming.record(r["gatherer"], now, name or f"Browser · {os.path.basename(r['root']) or r['root']}")
             except naming.NamingError:
                 pass
-        threading.Thread(target=name, name="ag-browser-name", daemon=True).start()
+        threading.Thread(target=_name, name="ag-browser-name", daemon=True).start()
 
     # -- the agent's tools
 
