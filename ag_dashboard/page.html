@@ -1620,10 +1620,13 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
    call ended, once (r-*); between calls, thinking, moving as its character does (its avatar_motion's move: .me.m-<move>).
    Its loops run on the page's clock (--t; its action's, --a, slowing to a stop as a call ends), a reaction from when it
    began (--r), so a redraw restarts neither. */
-/* what it is doing in words, at the end of the latest turn; the actor at work under it, in line with its words */
+/* at the end of the latest turn, its times; the actor at work under them, what it is doing in words beside it */
 .files .fl-working { margin: 6px 0 0 2px; font-size: .93em; min-width: 0; }
 .files .fl-working > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .files .fl-working .now { color: var(--term-accent); }
+/* tall: the words shown beside the avatar (.fl-status, aria-hidden), so these only read out */
+@container talk (not (max-height: 420px)) {
+  .files .fl-working > .now { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } }
 /* when it last did something, and how long the turn has run: counting, dim, above the words */
 .files .fl-working .fl-times { color: var(--muted); font-size: .86em; opacity: .8; font-variant-numeric: tabular-nums; }
 .files .fl-working > .fl-mini { display: none; }
@@ -1649,6 +1652,7 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
 .files .fl-status > .buddy { margin: 2px 0 0 4px; }
+.files .fl-status > .stage-box + .now { margin-top: 6px; }   /* the stage keeps room above the character: words at its middle */
 /* the turn over: the actor small, done -- a check at its corner, still; grown in if the page saw it end (--r) */
 .files .fl-done { display: flex; align-items: center; margin: 6px 6px 0 17px; }
 :is(.files .fl-done, .mini-st) .done { position: relative; display: inline-flex; flex: none; transform-origin: 30% 90%;
@@ -7808,7 +7812,8 @@ function openedTurn(info, q, latest, h) {
       userWords(q.text))),
     latest ? working(info, Math.max(q.sent, (info && info.last) || 0), q.sent, isInterrupting() ? "Interrupting…" : "Working…") : null,
     latest ? pendingTalk(info, h) : null),
-    latest ? el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, { work: {} })) : null].filter(Boolean);
+    latest ? el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, { work: {} }),
+      el("span", { class: "now", style: hueInk(info), text: isInterrupting() ? "Interrupting…" : "Working…" })) : null].filter(Boolean);
 }
 const talkToEnd = () => { const n = document.querySelector("#main .fl-talk"); if (n) n.scrollTop = n.scrollHeight; };
 // Show more of the conversation above where the reader is, keeping what they look at in place.
@@ -7965,7 +7970,8 @@ function filesTalk(d, info, running) {
       done ? finished(info, t) : null,
       t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null])));
     // under the latest turn's box: the actor at work; or, its turn over, the actor done
-    if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, t)));
+    if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, t),
+      el("span", { class: "now", style: hueInk(info), text: now })));
     else if (done) box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
   }
   box.append(...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h)));
