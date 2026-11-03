@@ -371,6 +371,7 @@ class PipeCdp(Cdp):
             try:
                 self.call("Browser.close", {}, timeout=5)
                 self.proc.wait(5)
+                group_ended(self.proc.pid)
                 return
             except (BrowserError, subprocess.TimeoutExpired, OSError):
                 pass
@@ -381,6 +382,33 @@ class PipeCdp(Cdp):
             self.proc.kill()
         except OSError:
             pass
+        group_ended(self.proc.pid)
+
+
+def group_ended(pgid: int, wait: float = 5.0) -> None:
+    """The rest of a Chrome's process group ended, after its browser process: its helpers outlive it a moment (on
+    Linux, the network service still writing the profile's cookies), else killed after `wait` seconds. A Chrome
+    started in a session of its own, so the group is its alone."""
+    end = time.time() + wait
+    while True:
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):
+            return
+        if time.time() >= end:
+            break
+        time.sleep(0.05)
+    try:
+        os.killpg(pgid, 9)
+    except (ProcessLookupError, PermissionError):
+        return
+    end = time.time() + 2
+    while time.time() < end:
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):
+            return
+        time.sleep(0.05)
 
 
 class WsCdp(Cdp):
