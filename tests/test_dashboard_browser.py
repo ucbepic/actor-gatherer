@@ -868,6 +868,34 @@ class ChromeTest(Home):
         self.assertEqual(self.b.tabs, [])
         self.assertIn("Page two", self.text("snapshot"))
 
+    def test_a_page_opened_again_is_read_once_it_has_loaded(self):
+        class Slow(http.server.BaseHTTPRequestHandler):                 # its title at once, its body 1.5 s later
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<!doctype html><title>Slow page</title>" + b" " * 2048)
+                self.wfile.flush()
+                time.sleep(1.5)
+                self.wfile.write(b"<h1>Slow page body</h1>")
+
+            def log_message(self, *args):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.text("navigate", url=f"http://localhost:{server.server_address[1]}/slow.html")
+        time.sleep(1.5)                                  # its pages kept (at most every second)
+        self.bs.chrome.conn.stop()
+        end = time.time() + 5
+        while time.time() < end and self.b.tabs:
+            time.sleep(0.1)
+        self.assertEqual(self.b.tabs, [])
+        got = self.text("snapshot")
+        self.assertIn("Slow page body", got)
+        self.assertNotIn("(loading)", got)
+
 
 @unittest.skipUnless(browser.available(), "no Chrome here")
 class UsersChromeTest(Home):

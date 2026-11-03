@@ -836,8 +836,10 @@ class Browser:
 
     # -- its tabs, opened in the Chrome
 
-    def live(self) -> Cdp:
-        """The Chrome, with this Browser's tabs open in it: those it had (the pages kept), else one, blank."""
+    def live(self, loaded: bool = False) -> Cdp:
+        """The Chrome, with this Browser's tabs open in it: those it had (the pages kept), else one, blank.
+        `loaded`: when they were opened again, the tab shown has loaded (up to LOAD_WAIT) -- for the agent's tools,
+        which would otherwise read a page still empty; a page showing it wants the picture of its loading at once."""
         try:
             cdp = self.chrome.cdp()
         except BrowserError as exc:
@@ -860,9 +862,15 @@ class Browser:
                     raise BrowserError("the browser opened no tab: try again")
                 self.active = min(max(active, 0), len(self.tabs) - 1)
                 self.error = ""
+                shown = self.tabs[self.active]
             self._recast()
             self._publish()
-            return cdp
+        if loaded:
+            end = time.time() + LOAD_WAIT
+            while shown.loading and time.time() < end and not shown.dialog:
+                time.sleep(0.05)
+            self._retitle(shown)
+        return cdp
 
     def _open(self, cdp: Cdp, url: str, select: bool = True, target: Optional[str] = None) -> Tab:
         """A tab of this Browser's: a new one, opened at `url`; or `target`, one Chrome opened for it, at the page it
@@ -892,7 +900,14 @@ class Browser:
                 pass
         self._size(cdp, tab)
         if url and url != "about:blank" and adopted is None:
-            cdp.call("Page.navigate", {"url": url}, session)
+            tab.loading = True        # from now: Page.navigate answers before its frameStartedLoading is handled
+            try:
+                went = cdp.call("Page.navigate", {"url": url}, session)
+            except BaseException:
+                tab.loading = False
+                raise
+            if went.get("errorText") and not went.get("loaderId"):   # nothing loading: a download, or aborted
+                tab.loading = False
         return tab
 
     # PASSKEYS. A page asking for a passkey (Touch ID, a security key, a phone: WebAuthn) makes Chrome show its own
@@ -2793,7 +2808,7 @@ class Browsers:
         """A tool's result (mcp.py's `result`, or with a picture): what went wrong said as an error the agent reads."""
         b = self.get(key)
         try:
-            b.live()
+            b.live(loaded=True)
             self.chrome.touch()
             tab = b.tab()
             if tab.dialog and name not in ("dialog", "tabs", "console"):
