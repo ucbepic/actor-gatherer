@@ -33,6 +33,8 @@ jobs:
       - run: pip install -e .
       - working-directory: tests
         run: PYTHONPATH=.. python -m unittest discover -s .
+      - working-directory: tests
+        run: for i in 1 2 3 4 5; do PYTHONPATH=.. python -m unittest test_dashboard_browser || exit 1; done
 
   frontend:
     runs-on: ubuntu-latest
