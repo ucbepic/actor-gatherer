@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag_dashboard import app, models, server  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
+from test_dashboard_app_host import insert_here  # noqa: E402
 
 
 def waiting(name: str, where: str) -> bool:
@@ -74,7 +75,7 @@ class RoutesTest(unittest.TestCase):
         for methods, path, doc in listed:
             self.assertTrue(doc, f"{methods} {path} has no docstring")
         paths = {p for _, p, _ in listed}
-        for path in ("/api/home", "/api/stream", "/api/terminal", "/api/edit/stream", "/api/preview/stream",
+        for path in ("/api/home", "/api/stream", "/api/terminal", "/api/edit/stream", "/api/apps/stream",
                      "/browser/w/{key}/stream", "/docwriter/w/{key}/stream", "/api/send", "/api/actors/{op:path}"):
             self.assertIn(path, paths)
 
@@ -148,15 +149,22 @@ class StreamsTest(HomeBase):
         self.assertTrue(until(lambda: not room.conns, 2))
         self.assertTrue(until(lambda: not waiting("_taken", "api/common.py"), 2))
 
-    def test_a_preview_stream_stops_watching_once_its_page_goes(self):
-        s = self.open(f"/api/preview/stream?path={self.work}")
-        self.assertTrue(until(lambda: self.httpd.previews.watchers))
+    def app_stream(self) -> str:
+        """The stream of an app's panel: the Preview's (an app that comes with ag), of this test's folder."""
+        h = self.httpd.app_host
+        h._write_fn = insert_here
+        self.addCleanup(h.flush)
+        return f"/api/apps/stream?app=preview&gatherer=g&instance={h.open('preview', 'g', self.work).id}"
+
+    def test_an_app_s_stream_lets_go_of_its_subscription_once_its_page_goes(self):
+        s = self.open(self.app_stream())
+        self.assertTrue(until(lambda: self.httpd.app_host.subs))
         s.close()
-        self.assertTrue(until(lambda: not self.httpd.previews.watchers, 2))
+        self.assertTrue(until(lambda: not self.httpd.app_host.subs, 2))
         self.assertTrue(until(lambda: not waiting("_taken", "api/common.py"), 2))
 
     def test_the_server_s_stop_ends_its_streams(self):
-        streams = [self.open("/api/stream"), self.open(f"/api/preview/stream?path={self.work}")]
+        streams = [self.open("/api/stream"), self.open(self.app_stream())]
         self.assertEqual(streams[0].event(), "home")
         start = time.time()
         self.httpd.shutdown()
@@ -165,7 +173,7 @@ class StreamsTest(HomeBase):
             s.sock.settimeout(5)
             s.rest()                                    # each ended: read to its end, not timed out
         self.assertEqual(self.httpd.hub.watches, set())
-        self.assertEqual(self.httpd.previews.watchers, [])
+        self.assertEqual(self.httpd.app_host.subs, [])
 
 
 class ModelsTest(HomeBase):

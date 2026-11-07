@@ -1,6 +1,6 @@
 # Apps beside agents: plan
 
-Status: being built, from 2026-11-06. Steps 1 (`app_kit/`), 2 (the host), 3 (the tool gateway) and 4 (app panels) are built. This file is the package's design, as
+Status: being built, from 2026-11-06. Steps 1 (`app_kit/`), 2 (the host), 3 (the tool gateway), 4 (app panels) and 5 (Preview) are built. This file is the package's design, as
 `harness_kit/DESIGN.md` is that package's.
 
 ## Goal
@@ -9,10 +9,10 @@ A gatherer holds two kinds of things, and the code and the page should treat the
 
 - **Agents.** The actors: harness sessions (Claude Code, Codex, ...) whose context the gatherer puts together. An
   agent's pane (Chat, Terminal, History, and the read-only Messages, Transcript and Details) shows that agent and
-  nothing else.
-- **Apps.** Everything an agent or the user works *with*: the Editor, the Browser, DocWriter, Preview, and the pieces
-  now built into Chat and History (the files-and-commands panel, the file viewer, Summarize / Generate skill /
-  memory / AGENTS.md). An app has a panel of its own beside or above the agent panes.
+  nothing else. A way of looking at the agent's own history is part of its views, not an app: Chat's files and
+  commands, and its file viewer, stay in Chat (decided 2026-11-07).
+- **Apps.** Everything an agent or the user works *with*: the Editor, the Browser, DocWriter, Preview, and History's
+  Summarize / Generate skill / memory / AGENTS.md. An app has a panel of its own beside or above the agent panes.
 
 An app reaches the rest of the system through two things only:
 
@@ -253,7 +253,6 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   that kind, opening its panel beside the pane:
   - `open-file {path, line, row_id}`
   - `open-url {url}`
-  - `show-activity {channel, turn}`
   - `explain-answer {channel, turn}`
   - `use-history {channel, rows}`
 
@@ -272,8 +271,8 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
 
 | Piece | Becomes | How the agent view reaches it |
 |---|---|---|
-| Files-and-commands panel (Chat's left side) | **Activity** app: the agent's commands and files for the selected turn, from `tool_call`, `tool_output` and `file_touched` | A line per turn ("12 commands · 5 files") raises `show-activity`. The Activity panel follows the focused pane's selection |
-| File viewer (Chat's file pane) | Activity for what a turn read or changed; the **Editor** for the file itself | `open-file` |
+| Files-and-commands panel (Chat's left side) | Stays in Chat: a way of looking at the agent's own history, not an app the user works with | — |
+| File viewer (Chat's file pane) | Stays in Chat, as the panel does; opening the file itself to edit is the Editor's | `open-file` |
 | Background tasks list | Stays in the agent view: the tasks are the agent's | — |
 | Question and plan-approval card, errors | Stay: the harness asks, and the agent waits | — |
 | `/context`, Details, Messages, Transcript | Stay: views of the agent | — |
@@ -296,8 +295,8 @@ app_kit/                  the contract, on ag's (ag.ag_interface): standard libr
   backend.py              App, Host, Instance, Caller, ToolResult
   remote.py               the same calls over HTTP, for an app in its own process
   js/                     @ag/app: the panel SDK and its types
-apps/                     our apps, each a package with an app.toml, built as an outside app would be
-  preview/  activity/  editor/  browser/  docwriter/  skills/  sources/
+ag_apps/                  our apps, each a folder with an app.toml, built as an outside app would be
+  preview/  editor/  browser/  docwriter/  skills/  sources/
 ag/                       knows an app only as event types and pollers
   ag_harness/home/        [apps] in config.toml (what is installed); apps = [...] in gatherer.toml (what is on)
 ag_dashboard/             the host: no app's name in its code
@@ -343,7 +342,7 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
 
 1. **`app_kit`.** Manifest, `App`, `Host`, the remote protocol and their tests. No app uses it yet.
 2. **The host.** Built:
-   - `ag_dashboard/app_host.py` finds apps (the repo's `apps/`, `AG_APPS_PATH`, `<home>/apps/`), runs their
+   - `ag_dashboard/app_host.py` finds apps (`ag_apps/`, the apps that come with ag; `AG_APPS_PATH`, `<home>/apps/`), runs their
      backends (imported from their folder, or started as a process), and keeps instances and attachments as the
      host's records (`app_opened`, `app_closed`, `app_attached`, `app_detached`, `app_call`). A gatherer's are read
      once, the first time it is asked about.
@@ -390,17 +389,34 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - The selection: the actor in the actor's pane in focus last, told to every panel as it changes.
    - The test app, Notes (`tests/apps/notes/`), uses each part, and `frontend/e2e/apps.spec.ts` drives it; the e2e
      dashboard finds it (`AG_APPS_PATH`) and inserts through this checkout's `ag` (`AG_COMMAND`).
-5. **Preview, the first real app.** It is the smallest:
-   - its CLI becomes tools;
-   - its SQLite table becomes events (`preview.set`, `preview.ran`);
-   - its panel is the Editor's preview side today.
-
-   This proves the contract from start to end.
-6. **Activity.** The files-and-commands panel and the file viewer leave Chat. Chat raises `show-activity` and
-   `open-file` and publishes its selection. The Editor's changes panel stops calling Chat's code, and what both use
-   goes to `core/ui`.
+5. **Preview, the first real app.** Built, as one change, so there is never a second preview beside the first:
+   - The apps that come with ag are a package, `ag_apps/` (found through Python's imports, so a wheel carries them).
+     Preview is `ag_apps/preview/`: its run logic (`runs.py`, ported from `ag_dashboard/preview.py`, which is gone,
+     with its routes and table), its backend (`backend.py`), its panel (`panel/`, ported from the Editor's preview
+     side).
+   - What it keeps is its events: `preview.set`, `preview.allowed`, `preview.cleared`, `preview.ran`. One instance
+     per repository (`per-repository`, new in app_kit: worktrees share it), each worktree's runs its own.
+   - Who may run what is as before: the user anything, an agent only a command the user set or let run. Letting one
+     run is the user's alone: a call passing the command as `ok` from an agent is refused.
+   - Its tools are `preview_show`, `_set`, `_run`, `_stop`, `_clear`; `ag preview` is now a client of them.
+   - The Editor asks for it by intents (new in app_kit): Execute and ⌘↵ raise `run`; "→ PDF" and a double-click in a
+     TeX source raise `locate`. The panel sends a PDF's place back as `open-file`, which, with no app taking it, the
+     page gives the Editor.
+   - What two apps share is a library the host serves on each app's origin (`/_ag/lib/`, `ag_dashboard/libs.py`):
+     pdf.js (with SyncTeX in the panel), marked and DOMPurify. The Editor's own PDF viewer keeps `/vendor/pdfjs/`, the
+     same copy.
+   - `Caller.folder` (the agent's working folder) and `Host.panels(instance)` are new in app_kit: an agent's preview
+     runs in its own checkout, and a server no panel shows is stopped.
+   - Checked live: a Claude Code session (Haiku) started by a scratch dashboard was given the gateway at launch, and
+     set and read the preview with its tools.
+   - Not carried over: previews set before this (the old `previews` table) start again from a guess; `ag preview`
+     from a shell that is not an actor's is refused (it was "a shell's" before).
+6. **Activity: dropped** (2026-11-07). The files-and-commands panel and the file viewer stay in Chat: they are a way
+   of looking at the agent's history, not an app the user works with. The Editor's changes panel keeps using Chat's
+   code until the Editor's step.
 7. **The Editor.** Its tree, live editing, conflicts and viewers become the Editor app; it takes `open-file`. Its
-   panel replaces the area above the panes.
+   panel replaces the area above the panes. The whole Editor is to be an app, not only its preview (2026-11-07);
+   deferred for now: it stays in the page until this step is taken up.
 8. **The Browser and DocWriter.**
    - Each becomes instances and attachments, with its tools through the gateway. A stored role
      (`{"browser": key}`) is copied to an `app_attached` once, here: until then they aren't apps the host knows.
@@ -421,14 +437,16 @@ Settled on 2026-11-06:
 1. **Every app's panel is an iframe**, ours and outside ones alike. One way for all apps; outside apps are isolated
    from the dashboard; our apps test the same contract an outside one uses. The cost: the SDK forwards keys, theme,
    focus and drag and drop across the frame, and each open panel costs about a page.
-2. **Which tools an agent is given: every app turned on for the gatherer, at launch.** Works for Claude Code and Codex
+2. **Which tools an agent is given: every app turned on for the gatherer, at launch.** Kept so once Preview, an app
+   that comes with ag, put its tools in every session (2026-11-07): a gatherer turns apps off with `apps = []`. Works for Claude Code and Codex
    alike; costs context for each app's tools, so a gatherer's apps should be few. The others, kept for later:
    - only the apps it's attached to, with the list sent again when that changes. Claude Code refreshes on MCP's
      `tools/list_changed` (checked in its 2.1.319 binary); Codex knows the message, but whether it refreshes
      mid-thread is unconfirmed; and `mcp.py` would have to send notifications.
    - one tool, `app_call(app, tool, args)`, with each app's tools described in the instructions: cheapest in context,
      but the harness can't check arguments against a schema.
-3. **Files and commands leave Chat**, which keeps a one-line count per turn that opens Activity.
+3. **Files and commands stay in Chat** (changed 2026-11-07, from "leave Chat for an Activity app"): they show the
+   agent's own history, so they are part of its views.
 4. **App backends run in the dashboard's process** for now. A separate `ag apps serve`, so apps work without the
    dashboard, can come later: nothing in `app_kit` assumes the dashboard.
 5. **Names carry the app:** `<app>_<tool>` for tools and `<app>.<what>` for event types. One app's names can't collide

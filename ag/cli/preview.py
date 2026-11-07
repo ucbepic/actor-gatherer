@@ -1,6 +1,7 @@
-"""`ag preview`: the preview of a git project -- the command the dashboard Editor's Execute button runs in the project,
-and what it shows beside the file (a file the command writes, the page of a server it starts, or its output) -- asked of
-the dashboard (ag_dashboard/preview.py), over its local API (POST /api/preview/<op>), as `ag actors` asks it.
+"""`ag preview`: the preview of a git project -- the command the Preview app runs in the project (the dashboard
+Editor's Execute button asks it to), and what it shows (a file the command writes, the page of a server it starts, or
+its output) -- asked of the Preview app (ag_apps/preview/) through the dashboard's tool gateway, as `ag apps call
+preview_<op>` asks it.
 
     ag preview [show]                       the preview of the repository of this directory (or --repo D)
     ag preview set <command> [--show S]     set it: <command> run through the shell in the project's checkout (- reads
@@ -13,7 +14,7 @@ the dashboard (ag_dashboard/preview.py), over its local API (POST /api/preview/<
     ag preview stop                         the run stopped
     ag preview clear                        no preview for the repository any more
 
-A preview an actor sets runs only once the user lets it: they are asked when they next press Execute. Who asks is the
+A preview an actor sets runs only once the user lets it: they are asked when they next run the Preview. Who asks is the
 session the command runs in, as for `ag actors`. `--json` prints the answer as JSON. Standard library only."""
 
 import argparse
@@ -56,22 +57,30 @@ def main(argv: List[str]) -> int:
         url = actors.dashboard_url()
         if not url:
             raise actors.ActorsError("no dashboard runs on this home: the preview is the dashboard's (`ag dashboard`)")
-        body = {"path": os.path.abspath(os.path.expanduser(opts.repo or ".")), "actor": actors.actor_id(given=opts.who) or ""}
+        me = actors.actor_id(given=opts.who) or ""
+        if not me:
+            raise actors.ActorsError("not run by an actor (say which with --as <id>): the user sets and runs a preview "
+                                     "in the Preview, beside their conversation")
+        args = {"path": os.path.abspath(os.path.expanduser(opts.repo or "."))}
         if op == "set":
-            body["command"] = sys.stdin.read().strip() if opts.command == ["-"] else " ".join(opts.command)
-            body["show"] = opts.show
+            args["command"] = sys.stdin.read().strip() if opts.command == ["-"] else " ".join(opts.command)
+            args["show"] = opts.show
         if op == "run":
-            body["wait"] = max(0.0, opts.wait)
+            args["wait"] = max(0.0, opts.wait)
             if opts.file:
-                body["file"] = os.path.abspath(os.path.expanduser(opts.file))
-        got = actors.ask(url, op, body, api="preview")
+                args["file"] = os.path.abspath(os.path.expanduser(opts.file))
+        result = actors.ask(url, "agent/call", {"actor": me, "tool": f"preview_{op}", "args": args}, api="apps")
+        said = "".join(c.get("text", "") for c in result.get("content") or [])
+        if result.get("isError"):
+            raise actors.ActorsError(said or "the Preview refused it")
+        got = json.loads(said)
     except actors.ActorsError as exc:
         print(f"ag preview: {exc}", file=sys.stderr)
         return 1
     if opts.json:
         print(json.dumps(got, indent=2))
     else:
-        print(shown(op, got, body["actor"]))
+        print(shown(op, got, me))
     return 0
 
 
@@ -114,8 +123,8 @@ def shown(op: str, got: dict, me: str) -> str:
         r = got.get("run")
         return f"Stopped: its run in {got['checkout']} is {_run(r)}." if r else f"Nothing runs in {got['checkout']}."
     if p is None:
-        return (f"No preview is set for {where}. `ag preview set \"<command>\" --show <file or URL>` sets one: the Editor's "
-                f"Execute button runs it and shows what it makes beside the file.")
+        return (f"No preview is set for {where}. `ag preview set \"<command>\" --show <file or URL>` sets one: the Preview "
+                f"runs it and shows what it makes, when the user runs it (the Editor's Execute) or you do.")
     lines = []
     if op == "set":
         lines.append(f"Set the preview of {where}.")
@@ -125,8 +134,8 @@ def shown(op: str, got: dict, me: str) -> str:
     lines.append(f"  shows:  {p['show'] or 'its output'}")
     lines.append(f"  set by {_by(p['set_by'], me)}, {_ago(p['set_at'])}")
     if p.get("needs_ok"):
-        lines.append("The user has not let this command run yet: they are asked when they next press Execute in the "
-                     "Editor. Until then, `ag preview run` does not run it.")
+        lines.append("The user has not let this command run yet: they are asked when they next run the Preview. Until "
+                     "then, `ag preview run` does not run it.")
     r = got.get("run")
     if op == "run" and r:
         lines.append(f"Ran `{r['command']}` in {r['checkout']}: {_run(r)}." if r.get("command")
@@ -136,7 +145,7 @@ def shown(op: str, got: dict, me: str) -> str:
         out = (got.get("output") or "").rstrip()
         if out:
             lines += ["The end of its output:" if len(out) >= 3990 else "Its output:", out]
-        lines.append("The user sees the run in the Editor's preview, beside the file, if they have it open.")
+        lines.append("The user sees the run in the Preview, beside their conversation, if they have it open.")
     elif r:
         lines.append(f"Its latest run here, {_ago(r['started'])}: {_run(r)}.")
     return "\n".join(lines)

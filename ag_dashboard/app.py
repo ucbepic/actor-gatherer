@@ -15,12 +15,12 @@ from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
 
 from . import apps, server
-from .api import (agent, branches, common, editor, files, history, home, monitor, page, preview, sessions, settings,
-                  stream, terminal, ws)
+from .api import (agent, branches, common, editor, files, history, home, monitor, page, sessions, settings, stream,
+                  terminal, ws)
 from .api import apps as apps_api
 
 ROUTERS = (page.router, home.router, stream.router, agent.router, files.router, history.router, sessions.router,
-           terminal.router, editor.router, preview.router, branches.router, monitor.router, settings.router, ws.router,
+           terminal.router, editor.router, branches.router, monitor.router, settings.router, ws.router,
            apps_api.router,                           # the apps' host (app_host.py)
            *(a.router() for a in apps.APPS))          # each app's own (apps.py)
 WEBSOCKETS = "wsproto" if importlib.util.find_spec("wsproto") else "none"   # without it, the page's streams are its own
@@ -29,7 +29,7 @@ WRITES = ("POST", "PUT", "PATCH", "DELETE")
 
 
 def create(srv: Optional["server.Server"] = None) -> FastAPI:
-    """The app over `srv`'s parts (its sessions, editors, previews, ...: what the routes share); without one, only to
+    """The app over `srv`'s parts (its sessions, editors, apps, ...: what the routes share); without one, only to
     list its routes or make its schema."""
     app = FastAPI(title="ag dashboard", docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
     app.state.server = srv

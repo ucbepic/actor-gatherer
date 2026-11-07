@@ -148,7 +148,8 @@ def call(rows: List[dict], actor: str, name: str, args: dict) -> dict:
         app, tool, inst, own = resolve(row, name, args)
     except AppError as exc:
         return app_kit.ToolResult.error(str(exc)).to_dict()
-    caller = Caller(channel=row["session_id"], gatherer=row["gatherer"], harness=row.get("harness"))
+    caller = Caller(channel=row["session_id"], gatherer=row["gatherer"], harness=row.get("harness"),
+                    folder=row.get("cwd") or None)
     return HOST.call(app, inst, tool, own, caller).to_dict()
 
 

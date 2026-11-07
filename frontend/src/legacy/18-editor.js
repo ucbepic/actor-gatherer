@@ -21,7 +21,7 @@ const ED_WRAP_KEY = "ag-editor-wrap";
 const ED_SHOWN_KEY = "ag-dashboard-editor", ED_HEIGHT_KEY = "ag-dashboard-editor-height";
 const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
   timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
-  pv: null, pvSide: null, v: null, turn: 0,                                                                  // v: 18-editor-view.js's
+  v: null, turn: 0,                                                                  // v: 18-editor-view.js's
   branches: [], brSig: "", brs: null, brOpen: null,
   nav: null, fold: null, cursor: null, revealing: null, newItem: null, pick: null, menu: null, find: null,   // 18-editor-tree.js's
   choose: null, choosing: null, go: null,                                                                     // 18-editor-open.js's
@@ -128,10 +128,9 @@ function edDrawChanges() {
   if (!c || c.path !== ed.file) {
     ed.changes = null;
     if (!side.hidden) { side.hidden = true; side.replaceChildren(); }
-    return pvDraw();                                 // the preview, if open, back in its place
+    return;
   }
   side.hidden = false;
-  pvDraw();                                          // the preview, if open: hidden while the changes show
   const name = edWriterName(c.w), mins = `${ED_CHANGES_S / 60} minutes`;
   const list = c.got && !c.err ? [...(c.got.changes || [])].reverse() : [];
   const doc = ed.s && ed.s.view ? ed.s.view.state.doc.toString() : "";
@@ -163,74 +162,14 @@ function edSelectText(text) {
   v.dispatch({ selection: { anchor: i, head: i + text.length }, effects: s.A.EditorView.scrollIntoView(i, { y: "center" }) });
   v.focus();
 }
-// The project's preview (preview.py), beside the file (ed.pvSide): what the command the header's Execute button runs
-// makes -- a file it writes, the page of a server it starts -- or its output. Its project is the git repository of the
-// file open (else of the folder shown), its command run in the file's checkout. Set here (its form) or by an actor
-// (`ag preview set`), whose command runs only once the reader lets it. The panel follows its checkout's runs
-// (/api/preview/stream), an actor's (`ag preview run`) among them. It shares the right side with an actor's changes:
-// hidden while they show. Closed (×), a server it runs is stopped; left open, it opens again with the page (ED_PV_KEY).
-const ED_PV_KEY = "ag-dashboard-editor-preview";
-const PV_OUT_MAX = 300000;                           // the most characters of a run's output this page keeps
-const PV_ANSI = /\x1b(?:\[[0-?]*[ -\/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
+// The project's preview is an app's (ag_apps/preview; app_kit/DESIGN.md): the Editor asks for it by intents, which the page
+// gives the app that takes them, its pane opened beside (07-panes.js's appIntent) -- `run` (Execute, ⌘↵: the file open,
+// else the folder shown) and `locate` (→ PDF, a double-click in a TeX source: that place in what it built). What the app
+// sends back -- a place in a PDF's source, as `open-file` -- the Editor opens (edShowFile).
 const pvPath = () => ed.file || ed.root;
-// Its output as a terminal would leave it: no colours, and a line rewritten (\r: a progress bar) as it was last.
-const pvClean = (t) => t.replace(PV_ANSI, "").replace(/\r\n/g, "\n").split("\n")
-  .map((l) => l.includes("\r") ? l.split("\r").filter(Boolean).pop() || "" : l).join("\n");
-async function pvAbout(path) {
-  const r = await fetch(`/api/preview?${new URLSearchParams({ path })}`, { cache: "no-store" });
-  const got = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(got.error || `${r.status}`);
-  return got;
-}
-// The panel opened (or its project looked at again, another file open): -> its state, or null (closed meanwhile).
-async function pvOpen(path) {
-  let pv = ed.pv;
-  if (!pv) {
-    pv = ed.pv = { path, about: null, run: null, out: "", picked: null, form: null, es: null, err: "", busy: false,
-      dom: null, sig: "", card: "", tick: null, held: null, peek: null };
-    try { localStorage.setItem(ED_PV_KEY, "1"); } catch (e) { /* this page only */ }
-  }
-  pv.path = path;
-  pvDraw();
-  try {
-    const a = await pvAbout(path);
-    if (ed.pv !== pv || pv.path !== path) return ed.pv === pv ? pv : null;
-    const moved = !pv.about || pv.about.checkout !== a.checkout;
-    pv.about = a; pv.err = "";
-    if (moved) { pv.run = a.run; pv.out = ""; pv.picked = null; pv.sig = ""; pv.held = null; }
-    if (moved || !pv.es || pv.es.readyState === 2) pvListen(pv);
-  } catch (e) { if (ed.pv === pv) pv.err = e.message; }
-  if (ed.pv !== pv) return null;
-  pvDraw(); edHead();
-  return pv;
-}
-// Its checkout's runs and its project's preview, as they change: the latest run and its output first.
-function pvListen(pv) {
-  if (pv.es) pv.es.close();
-  const es = pv.es = window.agNext.stream(`/api/preview/stream?${new URLSearchParams({ path: pv.about.checkout })}`);
-  const on = (name, f) => es.addEventListener(name, (e) => {
-    if (ed.pv !== pv || pv.es !== es) return;
-    let v;
-    try { v = JSON.parse(e.data); } catch (x) { return; }
-    f(v);
-  });
-  on("run", (r) => {
-    if (pv.run && r.id !== pv.run.id && r.started < pv.run.started) return;   // an earlier run's end, after the next began
-    if (!pv.run || r.id !== pv.run.id) { pv.out = ""; pv.picked = null; }
-    if (pv.peek === r.id && r.state !== "running") { pv.picked = null; pv.peek = null; }   // its output looked at while it ran
-    pv.run = r; pvDraw(); edHead();
-  });
-  on("out", (o) => {
-    if (o.reset) pv.out = (o.dropped ? "…\n" : "") + o.text;
-    else if (pv.run && o.id === pv.run.id) pv.out += o.text;
-    else return;
-    if (pv.out.length > PV_OUT_MAX) pv.out = "…" + pv.out.slice(-PV_OUT_MAX);
-    pvOut(pv);
-  });
-  on("preview", (p) => { if (pv.about) pv.about.preview = p; pvDraw(); edHead(); });
-}
-// ⌘↵ (Ctrl+Enter elsewhere) anywhere in the Editor -- the file, its tree, its header, the preview beside, the PDF's viewer:
-// Execute. Taken before CodeMirror's own (a blank line below); a text box (the preview's form) keeps its own Enter.
+const edRuns = () => !!(window.agNext && window.agNext.apps.handler("run"));
+// ⌘↵ (Ctrl+Enter elsewhere) anywhere in the Editor -- the file, its tree, its header, a PDF's viewer: Execute. Taken
+// before CodeMirror's own (a blank line below); a text box keeps its own Enter.
 function edExecKey(ev) {
   if (ev.key !== "Enter" || !(MAC ? ev.metaKey : ev.ctrlKey) || ev.shiftKey || ev.altKey || ev.isComposing) return;
   const t = ev.target;
@@ -238,283 +177,55 @@ function edExecKey(ev) {
   ev.preventDefault(); ev.stopPropagation();
   if (!ev.repeat) edExecute();                       // held down: once
 }
-// The header's Execute: the panel opened, and the preview run -- or, with none set, its form, prefilled with a guess;
-// an actor's command not yet let run, asked about first.
+// Execute: the file saved first (as it is here), then its project's preview run, by the app that takes `run`.
 async function edExecute() {
   const path = pvPath();
-  if (!path || (ed.pv && ed.pv.busy)) return;
-  if (ed.changes) edChangesClose();
-  const pv = await pvOpen(path);
-  if (!pv || !pv.about) return;
-  const p = pv.about.preview;
-  if (!p) return pvEdit(pv);
-  if (p.needs_ok) return pvDraw();                   // its card asks
-  pvRun(pv);
-}
-async function pvRun(pv, ok = null) {
-  if (!pv.about || pv.busy) return;
-  const s = ed.s;                                    // the file as it is here: saved first
+  if (!path || !edRuns()) return;
+  const s = ed.s;
   if (s && s.state && s.state.dirty && !s.state.missing && !edDiskConflicts(s).length) await edSave(s);
-  pv.busy = true; pv.err = ""; pv.picked = null; pvDraw(); edHead();
-  try {
-    const got = await post("/api/preview/run", { path: pv.path, ...(ed.file ? { file: ed.file } : {}), ...(ok !== null ? { ok } : {}) });
-    if (ed.pv === pv) {
-      pv.about.preview = got.preview; pv.about.token = got.token;
-      if (!pv.run || got.run.id !== pv.run.id) { pv.run = got.run; pv.out = got.output || ""; }
-    }
-  } catch (e) { if (ed.pv === pv) pv.err = e.message; }
-  pv.busy = false;
-  if (ed.pv === pv) { pvDraw(); edHead(); }
+  try { await appIntent("run", { path, ...(ed.file ? { file: ed.file } : {}) }); }
+  catch (e) { paneNote(e.message); }
 }
-async function pvStop(pv) {
-  try { await post("/api/preview/stop", { path: pv.path }); } catch (e) { if (ed.pv === pv) { pv.err = e.message; pvDraw(); } }
+// A line of the file open in the Editor (once it is: just opened, its document comes a moment later), selected and shown.
+async function edGoLine(path, line) {
+  for (let i = 0; i < 80 && !(ed.s && ed.s.path === path && ed.s.view); i++) await new Promise((r) => setTimeout(r, 100));
+  const s = ed.s;
+  if (!s || s.path !== path || !s.view) return;
+  const doc = s.view.state.doc, l = doc.line(Math.max(1, Math.min(line, doc.lines)));
+  s.view.dispatch({ selection: { anchor: l.from, head: l.to }, effects: s.A.EditorView.scrollIntoView(l.from, { y: "center" }) });
+  s.view.focus();
 }
-function pvEdit(pv) {
-  const p = pv.about && (pv.about.preview || pv.about.guess) || { command: "", show: "" };
-  pv.form = { command: p.command || "", show: p.show || "", node: null };
-  pvDraw();
+// A file opened in the Editor, at a line: what an `open-file` no app takes comes to (a place in a PDF's source).
+async function edShowFile(path, line) {
+  if (!state.editor) setEditor(true, ed.root && edUnder(path, ed.root) ? ed.root : edDir(path));
+  if (!ed.s || ed.s.path !== path) edOpen(path);
+  if (line) edGoLine(path, line);
 }
-// Closed: its stream ended, a server it runs stopped -- and not opened again with the page.
-function pvClose() {
-  const pv = ed.pv;
-  if (!pv) return;
-  ed.pv = null;
-  if (pv.es) pv.es.close();
-  clearInterval(pv.tick);
-  if (pv.run && pv.run.server && (pv.run.state === "running" || pv.run.state === "ready")) pvStop(pv);
-  try { localStorage.removeItem(ED_PV_KEY); } catch (e) { /* this page only */ }
-  pvDraw(); edHead();
+// Whether the file open is a TeX source, an app here showing places in what it built: "→ PDF" offered.
+const edTexToPdf = () => !!(ed.file && /\.(tex|ltx)$/i.test(ed.file) && window.agNext && window.agNext.apps.handler("locate"));
+// `at`: the place in the file (a double-click's); else the cursor's.
+async function edToPdf(at = null) {
+  const s = ed.s;
+  if (!edTexToPdf() || !s || !s.view) return;
+  const head = at ?? s.view.state.selection.main.head, l = s.view.state.doc.lineAt(head);
+  try { await appIntent("locate", { path: ed.file, line: l.number, column: head - l.from }); }
+  catch (e) { paneNote(e.message); }
 }
-// The editor closed: its stream ended, the panel kept for when it opens again (a server left alone, until IDLE).
-function pvSleep() {
-  const pv = ed.pv;
-  if (pv && pv.es) { pv.es.close(); pv.es = null; }
+// A double-click in a TeX source's text: that place in the PDF too -- the word under it selected by CodeMirror, as
+// always (a modifier held, or a button of a box in the text: CodeMirror's or the box's alone).
+function edToPdfClick(ev) {
+  if (ev.button !== 0 || ev.detail !== 2 || ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;
+  const s = ed.s, t = ev.target;
+  if (!s || !s.view || !edTexToPdf() || !s.view.contentDOM.contains(t) || (t.closest && t.closest("button, input, a"))) return;
+  const at = s.view.posAtCoords({ x: ev.clientX, y: ev.clientY });
+  if (at != null) edToPdf(at);
 }
-// An actor, as the list has it, by the id it asked as (its channel, or the id its session was started under).
-function pvActor(id) {
-  for (const g of (state.home && state.home.gatherers) || [])
-    for (const a of g.agents)
-      if (a.channel === id || (a.session && (a.session.session_id === id || a.session.started_as === id))) return a;
-  return null;
-}
-function pvBy(p) {
-  if (!p.set_by) return el("span", { class: "by", title: `Set ${clock(p.set_at, true)}` }, `set by you, ${ago(p.set_at)}`);
-  const a = pvActor(p.set_by);
-  return el("span", { class: "by", title: `Set by ${p.set_by === "cli" ? "`ag preview set` in a shell" : `actor ${p.set_by}`}, ${clock(p.set_at, true)}` },
-    a && a.avatar ? el("img", { src: `/avatars/${a.avatar}.svg`, alt: "", draggable: "false" }) : null,
-    `set by ${p.set_by === "cli" ? "a shell" : a ? edWhoName(a) : `actor ${p.set_by.slice(0, 8)}`}, ${ago(p.set_at)}`);
-}
-function pvState(r) {
-  if (!r) return ["", "Not run yet"];
-  const t = (r.ended || Date.now() / 1000) - r.started, took = t < 10 ? `${Math.max(t, 0.1).toFixed(1)}s` : spell(t);
-  return ({ running: ["run", r.server ? `Starting · ${took}` : `Running · ${took}`], ready: ["ok", r.command ? "Serving" : "Shown"],
-    done: ["ok", r.command ? `Done · ${took}` : "Shown"], failed: ["bad", `Failed · exit ${r.code}`],
-    stopped: ["", "Stopped"], "timed out": ["bad", "Stopped: it ran over 5 minutes"] })[r.state] || ["", r.state];
-}
-// What the body shows unless the reader picks: the result once there is one -- a file's, the one made before kept while
-// the next is made (pvShown), "Building…" over it -- and the output when it failed, or is all there is; a server's
-// output while it starts.
-function pvAuto(r) {
-  const s = (r && r.shows) || {};
-  if (!r) return "result";
-  if (!s.url && !s.path) return "output";
-  if (r.state === "failed" || r.state === "timed out") return "output";
-  if (s.url) return r.state === "ready" ? "result" : "output";
-  return r.state === "running" || s.exists ? "result" : "output";
-}
-// The address of a run's file to show: while it runs, the one shown before it (pv.held), not the file as it is being
-// written -- a half-written PDF -- which is shown once the run ends; none when nothing was shown before.
-function pvShown(pv, r) {
-  const a = pv.about, s = r && r.shows;
-  if (!s) return null;
-  if (s.url) return s.url;
-  const url = s.path && s.exists && a ? `/preview/${a.token}/${s.rel.split("/").map(encodeURIComponent).join("/")}?v=${s.mtime}` : null;
-  if (r.state === "running" && pv.held !== null && !(pv.held && pv.held.rel !== s.rel))
-    return pv.held && pv.held.url;
-  pv.held = url ? { rel: s.rel, url } : (r.state === "running" ? false : null);   // false: nothing to keep showing, this run
-  return url;
-}
-// "Building…" over the result kept while the next is made: how long it has run; clicked, its output.
-function pvBusyText(pv) {
-  const r = pv.run, t = r && r.state === "running" ? Date.now() / 1000 - r.started : null;
-  pv.dom.busy.replaceChildren(el("span", { text: "Building…" }),
-    t !== null ? el("span", { class: "t", text: t < 10 ? `${Math.max(t, 0.1).toFixed(1)}s` : spell(t) }) : null,
-    el("span", { class: "o", text: "Output" }));
-}
-function pvDraw() {
-  const side = ed.pvSide, pv = ed.pv;
-  if (!side) return;
-  if (!pv || ed.changes) {
-    if (!side.hidden) side.hidden = true;
-    if (!pv && side.firstChild) side.replaceChildren();
-    return;
-  }
-  side.hidden = false;
-  if (!pv.dom) {
-    pv.dom = { head: el("div", { class: "ed-pv-h" }), cmd: el("div", { class: "ed-pv-cmd" }), card: el("div", { class: "ed-pv-card" }),
-      result: el("div", { class: "ed-pv-result" }), output: el("pre", { class: "ed-pv-out", tabindex: "0", "aria-label": "Its output" }),
-      stat: el("span", { class: "ed-pv-st", role: "status" }),
-      edge: el("div", { class: "ed-pv-edge", "aria-hidden": "true" }),
-      busy: el("button", { type: "button", class: "ed-pv-busy", title: "It is being run again: the last one made stays here until the run ends. Click to see its output",
-        onclick: () => { if (ed.pv === pv && pv.run) { pv.picked = "output"; pv.peek = pv.run.id; pvDraw(); } } }) };
-    pv.dom.top = el("div", { class: "ed-pv-top" }, pv.dom.head, pv.dom.cmd);
-    pv.dom.output.addEventListener("scroll", () => { const o = pv.dom.output; pv.pinned = o.scrollTop + o.clientHeight >= o.scrollHeight - 8; });
-    pv.pinned = true;
-  }
-  if (side.firstChild !== pv.dom.edge)
-    side.replaceChildren(pv.dom.edge, pv.dom.top, el("div", { class: "ed-pv-body" }, pv.dom.card, pv.dom.result, pv.dom.output, pv.dom.busy));
-  const a = pv.about, p = a && a.preview, r = pv.run;
-  // the status, counting while it runs
-  const [cls, said] = pv.busy && !(r && r.state === "running") ? ["run", "Starting…"] : pvState(r);
-  pv.dom.stat.className = `ed-pv-st ${cls}`; pv.dom.stat.textContent = said;
-  const live = r && (r.state === "running" || (r.server && r.state === "ready"));     // a process of its own, to stop
-  if (r && r.state === "running" && !pv.tick) pv.tick = setInterval(() => { if (ed.pv !== pv || !pv.run || pv.run.state !== "running") { clearInterval(pv.tick); pv.tick = null; return; }
-    pv.dom.stat.textContent = pvState(pv.run)[1];
-    if (!pv.dom.busy.hidden) pvBusyText(pv); }, 1000);
-  const card = pv.form ? "form" : pv.err && !a ? "err" : !a ? "loading" : !p ? "none" : p.needs_ok ? "ask" : !r ? "idle" : "";
-  const tab = card ? null : pv.picked || pvAuto(r);
-  const hasResult = r && r.shows && (r.shows.url || r.shows.path);
-  const url = pvShown(pv, r);
-  // over its result, its head and command tucked away: slid down while the pointer is at the panel's top edge
-  side.classList.toggle("hov", tab === "result");
-  // a file's run going (or asked for): "Building…" over the one made before it
-  const building = tab === "result" && !!(r && r.shows && r.shows.path) && (r.state === "running" || pv.busy);
-  pv.dom.busy.hidden = !building;
-  if (building) pvBusyText(pv);
-  // the header: what it is, how its run went, and what can be done
-  const btn = (text, title, onclick, attrs = {}) => el("button", { type: "button", title, onclick, ...attrs }, text);
-  pv.dom.head.replaceChildren(...[
-    el("span", { class: "t" }, strokeIcon(ICONS.play, 13), "Preview"),
-    el("span", { class: "nm", title: a ? (a.git ? `The git project ${a.key}, its worktrees too` : `The folder ${a.key} (not in a git project)`) : null,
-      text: a ? a.name : "" }),                      // the room left: none, in a narrow panel
-    card === "" || pv.busy ? pv.dom.stat : null,
-    tab && hasResult ? el("span", { class: "ed-pv-tabs", role: "group", "aria-label": "Show" },
-      ...[["result", "Result"], ["output", "Output"]].map(([k, t]) => btn(t, k === "result" ? "What it makes" : "What it printed",
-        () => { pv.picked = k; pvDraw(); }, { class: tab === k ? "on" : null, "aria-pressed": tab === k ? "true" : "false" }))) : null,
-    live ? btn("Stop", r.server ? "Stop its server" : "Stop its run", () => pvStop(pv))     // in Re-run's place while it runs
-      : p && !p.needs_ok && !pv.form ? btn(r ? "Re-run" : "Run", `Run it again: ${p.command || "(nothing to run)"}`, () => pvRun(pv), { disabled: pv.busy ? "" : null }) : null,
-    p && !pv.form ? btn("Edit", "Change the command, or what it shows", () => pvEdit(pv)) : null,
-    btn("×", r && r.server && (live || r.state === "ready") ? "Close the preview, and stop its server" : "Close the preview", pvClose,
-      { class: "x", "aria-label": "Close the preview" })].filter(Boolean));
-  // what runs, and who set it
-  pv.dom.cmd.hidden = !p || !!pv.form;
-  if (p && !pv.form) pv.dom.cmd.replaceChildren(...[      // (replaceChildren writes a null as "null")
-    el("code", { title: `In ${a.checkout}: ${p.command || "nothing to run"}${p.show ? `, showing ${p.show}` : ""}` },
-      p.command ? `$ ${p.command}` : "(nothing to run)", p.show ? el("span", { class: "to", text: `  →  ${p.show}` }) : null),
-    url && tab === "result" ? el("a", { class: "ed-pv-open", href: url, target: "_blank", rel: "noopener", title: "Open it in a tab of its own" }, "↗") : null,
-    pvBy(p)].filter(Boolean));
-  // the body: a card (the form, the question, a note), else the result or the output
-  const err = pv.err ? el("div", { class: "err", text: pv.err }) : null;
-  pv.dom.card.hidden = !card && !pv.err;
-  if (card === "form") {
-    if (!pv.form.node) pv.form.node = pvForm(pv);
-    if (pv.card !== "form" + pv.err || pv.dom.card.lastChild !== pv.form.node) {
-      pv.card = "form" + pv.err;
-      pv.dom.card.replaceChildren(...[err, pv.form.node].filter(Boolean));
-    }
-  } else {
-    const sig = JSON.stringify([card, pv.err, p && [p.command, p.show, p.set_by, p.needs_ok], a && a.name]);
-    if (sig !== pv.card) {
-      pv.card = sig;
-      pv.dom.card.replaceChildren(...[err, card === "ask" ? pvAsk(pv) : card === "none" ? pvNone(pv) : card === "idle"
-        ? el("div", { class: "note", text: "Not run yet: Execute (or Run) runs it, here." }) : card === "loading" ? el("div", { class: "note", text: "Loading…" }) : null].filter(Boolean));
-    }
-  }
-  pv.dom.result.classList.toggle("off", tab !== "result");      // laid out still: a PDF's viewer keeps its place
-  pv.dom.output.hidden = tab !== "output";
-  if (tab === "result") pvResult(pv, url);
-  if (tab === "output") pvOut(pv);
-}
-// Its form: the command and what it shows, saved for the project (and run, by Enter or "Save and run").
-function pvForm(pv) {
-  const f = pv.form, a = pv.about || {};
-  const field = (label, key, placeholder, hint) => {
-    const input = el("input", { type: "text", value: f[key], placeholder, spellcheck: "false", autocomplete: "off" });
-    input.addEventListener("input", () => { f[key] = input.value; });
-    input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); save(true); } });
-    return el("label", {}, label, input, el("span", { class: "note", text: hint }));
-  };
-  const save = async (run) => {
-    try {
-      const got = await post("/api/preview/set", { path: pv.path, command: f.command, show: f.show });
-      if (ed.pv !== pv) return;
-      pv.about = { ...pv.about, ...got }; pv.form = null; pv.err = ""; pv.card = "";
-      pvDraw(); edHead();
-      if (run) pvRun(pv);
-    } catch (e) { if (ed.pv === pv) { pv.err = e.message; pvDraw(); } }
-  };
-  const rel = ed.file && a.checkout && ed.file.startsWith(a.checkout + "/") ? ed.file.slice(a.checkout.length + 1) : null;
-  const node = el("div", { class: "ed-pv-form" },
-    el("div", { class: "head" }, a.preview ? "Change this project's preview" : "Set up a preview for this project",
-      a.name ? el("span", { class: "note", text: ` · ${a.name}${a.git ? ", and its worktrees" : ""}` }) : null),
-    field("Command", "command", "python3 {file}", "Run through your shell in the project's checkout. Empty: nothing runs, what it shows is shown as it is."),
-    field("Show", "show", "out.png · {stem}.pdf · http://localhost:5173", "A file in the project it makes, or the URL of a server it starts (kept running until Stop). Empty: what it prints."),
-    el("div", { class: "note" }, el("code", { text: "{file}" }), " ", el("code", { text: "{stem}" }), " ", el("code", { text: "{name}" }), " ",
-      el("code", { text: "{dir}" }), rel ? ` stand for the file open, ${rel}, its path without its extension, its name, and its folder.`
-        : " stand for the file open in the Editor: its path in the project, without its extension, its name, and its folder."),
-    el("div", { class: "row" },
-      el("button", { type: "button", class: "primary", onclick: () => save(true) }, "Save and run"),
-      el("button", { type: "button", onclick: () => save(false) }, "Save"),
-      el("button", { type: "button", onclick: () => { pv.form = null; pv.err = ""; pv.card = ""; if (pv.about && !pv.about.preview) pvClose(); else pvDraw(); } }, "Cancel")),
-    el("div", { class: "note" }, "Actors can set it too, with ", el("code", { text: "ag preview set" }), ": you are asked before an actor's command first runs."));
-  setTimeout(() => { const i = node.querySelector("input"); if (i && ed.pv === pv && pv.form && pv.form.node === node) i.focus(); }, 0);
-  return node;
-}
-// An actor's command, not yet let run: what it is, who set it, and Run it.
-function pvAsk(pv) {
-  const a = pv.about, p = a.preview, who = pvActor(p.set_by);
-  return el("div", { class: "ed-pv-ask" },
-    el("div", { class: "head" }, who && who.avatar ? el("img", { src: `/avatars/${who.avatar}.svg`, alt: "", draggable: "false" }) : null,
-      `${p.set_by === "cli" ? "A shell" : who ? edWhoName(who) : `Actor ${p.set_by.slice(0, 8)}`} set this project's preview, ${ago(p.set_at)}:`),
-    el("pre", { text: `$ ${p.command}` }),
-    el("div", { class: "note", text: `Shows: ${p.show || "what it prints"}. It runs in ${edTilde(a.checkout)} as you, outside the actor's own permissions, so it waits for you to let it.` }),
-    el("div", { class: "row" },
-      el("button", { type: "button", class: "primary", onclick: () => pvRun(pv, p.command) }, "Run it"),
-      el("button", { type: "button", onclick: () => pvEdit(pv) }, "Edit…")));
-}
-function pvNone(pv) {
-  return el("div", {}, el("div", { class: "note", text: `No preview is set for ${pv.about.name} yet.` }),
-    el("div", { class: "row" }, el("button", { type: "button", class: "primary", onclick: () => pvEdit(pv) }, "Set one up")));
-}
-// The result: drawn again only when another run's, or its file changed.
-function pvResult(pv, url) {
-  const r = pv.run, s = (r && r.shows) || {}, box = pv.dom.result;
-  // the same address, the same result: not drawn again for a run that kept it (a PDF's viewer keeps its place anyway)
-  const sig = JSON.stringify([url ? null : r && r.id, url, s.kind, url ? null : s.exists, r && r.state === "ready", !url && r && r.state === "running"]);
-  if (sig === pv.sig) return;
-  pv.sig = sig;
-  if (!r) return box.replaceChildren();
-  if (s.error) return box.replaceChildren(el("div", { class: "ed-pv-note", text: s.error }));
-  if (s.path && !url) return box.replaceChildren(el("div", { class: "ed-pv-note" },
-    el("code", { text: s.rel }), r.state === "running" ? " shows here once the run ends." : " is not there: the command did not make it."));
-  if (s.url && r.state !== "ready") return box.replaceChildren(el("div", { class: "ed-pv-note", text: `Waiting for ${s.url} to answer…` }));
-  if (s.kind === "image" || s.kind === "svg")
-    return box.replaceChildren(el("div", { class: "img" }, el("img", { src: url, alt: s.rel || "", draggable: "false" })));
-  if (s.kind === "pdf" && pv.about && pv.about.pdfjs) return pvPdf(pv, box, url);
-  if (s.kind === "pdf" || s.kind === "url") return box.replaceChildren(el("iframe", { src: url, title: "The preview", class: s.kind }));
-  if (s.kind === "html")
-    return box.replaceChildren(el("iframe", { src: url, title: "The preview", sandbox: "allow-scripts allow-forms allow-modals allow-popups" }));
-  box.replaceChildren(el("div", { class: "ed-pv-note", text: "Loading…" }));
-  fetch(url, { cache: "no-store" }).then((x) => x.ok ? x.text() : Promise.reject(new Error(`${x.status}`))).then((text) => {
-    if (ed.pv !== pv || pv.sig !== sig) return;
-    box.replaceChildren(s.kind === "markdown" ? el("div", { class: "files md-box" }, markdown(text)) : el("pre", { text }));
-  }).catch((e) => { if (ed.pv === pv && pv.sig === sig) box.replaceChildren(el("div", { class: "ed-pv-note", text: `It could not be read: ${e.message}` })); });
-}
-// A PDF, in pdf.js's viewer (DocWriter's copy, /vendor/pdfjs): one viewer kept from run to run, each new build opened
-// in it where the reader was -- its page, zoom and place (the viewer's `_location`, as a bookmark it opens at) -- not on
-// page 1 again. In the dashboard's colours; the PDF's own scripts not run. Its sidebar (pages, outline) closed when it
-// opens, whatever the PDF asks (hyperref's PDFs ask for their outline): the reader's toggle opens it, and a new build
-// keeps it as the reader left it.
+// A PDF the Editor shows (18-editor-view.js), in pdf.js's viewer (/vendor/pdfjs: libs.py's copy), in the dashboard's
+// colours, with no scripts of the PDF's and its sidebar closed when it opens.
 const PV_NO_SIDEBAR = 0;                             // pdf.js's SidebarView.NONE
 const pvViewer = (url) => `/vendor/pdfjs/web/viewer.html?file=${encodeURIComponent(url)}`;
-function pvPdf(pv, box, url) {
-  const had = pv.pdf;
-  if (had && had.frame.parentNode === box) { if (had.url !== url) pvPdfOpen(had, url); return; }
-  const frame = el("iframe", { class: "pdf", title: "The preview", src: pvViewer(url) });
-  const f = pv.pdf = { frame, url };
-  frame.addEventListener("load", () => { pvPdfTheme(f); pvPdfHooks(pv, f); });
-  box.replaceChildren(frame);
-}
+// A PDF opened again in its viewer (it changed on disk): where the reader was -- its page, zoom and place -- its sidebar
+// as it was.
 async function pvPdfOpen(f, url) {
   f.url = url;
   let app = null;
@@ -522,7 +233,7 @@ async function pvPdfOpen(f, url) {
   if (!app || !app.pdfViewer || !app.initialized) { f.frame.src = pvViewer(url); return; }
   const at = app.pdfViewer._location;
   if (at && at.pdfOpenParams) app.initialBookmark = at.pdfOpenParams.slice(1);
-  try {                                              // its sidebar as it is: open on the same view, or closed
+  try {
     const side = app.pdfSidebar ? app.pdfSidebar.visibleView : PV_NO_SIDEBAR;
     f.frame.contentWindow.PDFViewerApplicationOptions.set("sidebarViewOnLoad", side);
   } catch (e) { /* an older viewer */ }
@@ -539,126 +250,15 @@ function pvPdfTheme(f) {
   root.setAttribute("data-docwriter-theme", dwTheme());       // its stylesheet's colours, from those
   root.style.colorScheme = dwTheme();
 }
-window.addEventListener("ag-theme", () => { if (ed.pv && ed.pv.pdf) pvPdfTheme(ed.pv.pdf); });
-// SyncTeX between the PDF and its source (preview.py's `synctex`), for a build that wrote it (-synctex=1): a double-click
-// in the PDF opens its source in the Editor at that line (pvFromPdf); "→ PDF" in the Editor's header shows the cursor's
-// line in the PDF, marked a moment (edToPdf).
-const pvPdfApp = (f) => { try { return f && f.frame.contentWindow.PDFViewerApplication; } catch (e) { return null; } };
-function pvPdfHooks(pv, f) {
-  let box = null;
-  try { box = f.frame.contentDocument.getElementById("viewerContainer"); } catch (e) { /* not the viewer's page */ }
-  if (!box || box.agSync) return;
-  box.agSync = true;
-  box.addEventListener("dblclick", (ev) => pvFromPdf(pv, f, ev));
-  box.ownerDocument.addEventListener("keydown", edExecKey, true);   // ⌘↵ in the viewer: Execute, as in the Editor
-}
-async function pvFromPdf(pv, f, ev) {
-  const app = pvPdfApp(f), at = ev.target && ev.target.closest && ev.target.closest(".page");
-  if (!app || !at || ed.pv !== pv || !pv.run || !pv.about) return;
-  const n = Number(at.dataset.pageNumber), view = app.pdfViewer.getPageView(n - 1);
-  if (!view || !view.pdfPage) return;
-  const r = view.div.getBoundingClientRect(), [px, py] = view.viewport.convertToPdfPoint(ev.clientX - r.left, ev.clientY - r.top);
-  const page = view.pdfPage.view;                      // [x0, y0, x1, y1]: SyncTeX's are from its top left
-  const got = await pvSync(pv, { page: n, x: px - page[0], y: page[3] - py });
-  if (!got || ed.pv !== pv) return;
-  const path = `${pv.about.checkout}/${got.file}`;
-  if (!ed.s || ed.s.path !== path) edOpen(path);
-  edGoLine(path, got.line);
-}
-async function pvSync(pv, ask) {
-  const s = pv.run && pv.run.shows;
-  if (!s || !s.rel) return null;
-  let said;
-  try {
-    const got = await post("/api/preview/synctex", { path: pv.about.checkout, pdf: s.rel, ...ask });
-    if (got.ok) return got;
-    const asks = /synctex/i.test((pv.about.preview && pv.about.preview.command) || "");
-    said = { "no-synctex": asks ? "This PDF has no SyncTeX yet: its build did not write it (latexmk saw nothing to rebuild). Change the source, or delete the PDF, and run it again."
-        : "This PDF has no SyncTeX: add -synctex=1 to the preview's command (Edit), and run it again.",
-      "no-tool": "SyncTeX needs TeX's synctex tool where the dashboard runs.",
-      "no-match": "SyncTeX has no match for that place." }[got.reason] || `SyncTeX: ${got.reason}`;
-  } catch (e) { said = e.message; }
-  if (ed.pv === pv) {                                  // said above the result a moment
-    pv.err = said; pvDraw();
-    setTimeout(() => { if (ed.pv === pv && pv.err === said) { pv.err = ""; pvDraw(); } }, 6000);
-  }
-  return null;
-}
-// A line of the file open in the Editor (once it is: just opened, its document comes a moment later), selected and shown.
-async function edGoLine(path, line) {
-  for (let i = 0; i < 80 && !(ed.s && ed.s.path === path && ed.s.view); i++) await new Promise((r) => setTimeout(r, 100));
-  const s = ed.s;
-  if (!s || s.path !== path || !s.view) return;
-  const doc = s.view.state.doc, l = doc.line(Math.max(1, Math.min(line, doc.lines)));
-  s.view.dispatch({ selection: { anchor: l.from, head: l.to }, effects: s.A.EditorView.scrollIntoView(l.from, { y: "center" }) });
-  s.view.focus();
-}
-// Whether the file open is a TeX source of the PDF the preview shows: "→ PDF" offered.
-const edTexToPdf = () => {
-  const pv = ed.pv, sh = pv && pv.run && pv.run.shows;
-  return !!(sh && sh.kind === "pdf" && sh.exists && pv.pdf && ed.file && /\.(tex|ltx)$/i.test(ed.file)
-    && pv.about && edUnder(ed.file, pv.about.checkout));
-};
-// `at`: the place in the file (a double-click's); else the cursor's.
-async function edToPdf(at = null) {
-  const pv = ed.pv, s = ed.s;
-  if (!edTexToPdf() || !s || !s.view) return;
-  const head = at ?? s.view.state.selection.main.head, l = s.view.state.doc.lineAt(head);
-  if (pv.picked === "output") { pv.picked = "result"; pvDraw(); }
-  const got = await pvSync(pv, { mode: "forward", file: ed.file, line: l.number, column: head - l.from });
-  if (got && ed.pv === pv) pvPdfMark(pv.pdf, got);
-}
-// A double-click in a TeX source's text: that place in the PDF too -- the word under it selected by CodeMirror, as
-// always (a modifier held, or a button of a box in the text: CodeMirror's or the box's alone).
-function edToPdfClick(ev) {
-  if (ev.button !== 0 || ev.detail !== 2 || ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;
-  const s = ed.s, t = ev.target;
-  if (!s || !s.view || !edTexToPdf() || !s.view.contentDOM.contains(t) || (t.closest && t.closest("button, input, a"))) return;
-  const at = s.view.posAtCoords({ x: ev.clientX, y: ev.clientY });
-  if (at != null) edToPdf(at);
-}
-// The place SyncTeX found, scrolled to in the viewer (its zoom kept) and marked, fading.
-function pvPdfMark(f, got) {
-  const app = pvPdfApp(f), view = app && app.pdfViewer.getPageView(got.page - 1);
-  if (!view || !view.pdfPage) return;
-  const page = view.pdfPage.view, h = got.h ?? got.x, v = got.v ?? got.y;
-  const w = Math.max(got.w || 0, 24), tall = Math.max(got.height || 0, 9);
-  const top = page[3] - v + tall;                      // the box's top, in the PDF's own space
-  app.pdfViewer.scrollPageIntoView({ pageNumber: got.page,
-    destArray: [null, { name: "XYZ" }, page[0] + Math.max(0, h - 36), Math.min(page[3], top + 48), null] });
-  requestAnimationFrame(() => {
-    const [x1, y1, x2, y2] = view.viewport.convertToViewportRectangle([page[0] + h, page[3] - v, page[0] + h + w, top]);
-    const mark = f.frame.contentDocument.createElement("div");
-    Object.assign(mark.style, { position: "absolute", left: `${Math.min(x1, x2) - 3}px`, top: `${Math.min(y1, y2) - 3}px`,
-      width: `${Math.abs(x2 - x1) + 6}px`, height: `${Math.abs(y2 - y1) + 6}px`, background: "rgba(255, 190, 0, .38)",
-      borderRadius: "3px", pointerEvents: "none", zIndex: "10", transition: "opacity .8s" });
-    view.div.append(mark);
-    setTimeout(() => { mark.style.opacity = "0"; }, 1800);
-    setTimeout(() => mark.remove(), 2800);
-  });
-}
 document.addEventListener("webviewerloaded", (ev) => {     // the viewer, before it starts: no scripts of the PDF's
   const w = ev.detail && ev.detail.source;
-  if (![ed.pv && ed.pv.pdf, ed.v && ed.v.pdf].some((f) => f && f.frame.contentWindow === w)) return;   // the preview's, or a PDF opened
+  if (!(ed.v && ed.v.pdf && ed.v.pdf.frame.contentWindow === w)) return;
   try {                                              // its stored preferences would set it again: not read
     w.PDFViewerApplicationOptions.set("disablePreferences", true);
     w.PDFViewerApplicationOptions.set("enableScripting", false);
     w.PDFViewerApplicationOptions.set("sidebarViewOnLoad", PV_NO_SIDEBAR);
   } catch (e) { /* an older viewer */ }
 });
-// The output, as it comes: written once a frame, kept scrolled to its end unless the reader scrolled up.
-function pvOut(pv) {
-  if (pv.outQueued) return;
-  pv.outQueued = true;
-  requestAnimationFrame(() => {
-    pv.outQueued = false;
-    if (ed.pv !== pv || !pv.dom) return;
-    const o = pv.dom.output, r = pv.run;
-    const text = pvClean(pv.out);
-    o.textContent = text || (r && r.state === "running" ? "" : r && r.command ? "(It printed nothing.)" : "(Nothing ran.)");
-    if (pv.pinned) o.scrollTop = o.scrollHeight;
-  });
-}
 // The writers in the tree: their avatars, overlapped; two or more, on an amber ground with their count.
 function edAvatars(writers, what) {
   if (!writers.length) return null;
@@ -772,7 +372,6 @@ function edGo(dir) {
   edRemember(dir);
   ed.branches = []; edBranches();
   edBar(); edTree(); edList(dir); edFetchBranches();
-  if (ed.pv && !ed.file) pvOpen(dir);                // no file open: the folder's project's preview
 }
 function edTick() {
   if (ed.timer) return;
@@ -795,7 +394,6 @@ async function edOpen(path, how = null) {
   edClose();
   const turn = ++ed.turn;                            // a later pick's, meanwhile, wins
   ed.file = path; ed.err = "";
-  if (ed.pv) pvOpen(path);                           // its project's preview, if that shows
   if (!ed.lists.has(edDir(path))) edList(edDir(path));      // its writers
   edReveal(path);                                    // and its row in the tree, the folders down to it opened
   edRememberFile(path);                              // Go to file's "Opened lately"
@@ -1542,7 +1140,7 @@ function edHead() {
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
   if (!ed.file) {
     ed.head.replaceChildren(el("span", { class: "ed-hint", text: "Pick a file to open it. Text opens to edit: everyone with it open sees the others' edits as they type, and what an actor writes to it shows here as it lands. Images, PDFs, sound and video open to look at." }),
-      el("span", { class: "grow", style: "flex: 1" }), edExecBtn(), edCloseBtn());
+      el("span", { class: "grow", style: "flex: 1" }), ...[edExecBtn(), edCloseBtn()].filter(Boolean));
     return;
   }
   const st = s && s.state;
@@ -1631,7 +1229,7 @@ function setEditor(open, dir = null) {
   if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.set(open, dir); return; }
   const wasMin = chatMin();
   state.editor = open;
-  if (!open) { edClose(); pvSleep(); keepMin(false); edGoClose(); edPickClose(); edMenuClose(); }   // the chat minimized only under it: closed, shown again
+  if (!open) { edClose(); keepMin(false); edGoClose(); edPickClose(); edMenuClose(); }   // the chat minimized only under it: closed, shown again
   try { localStorage.setItem(ED_SHOWN_KEY, open ? "1" : ""); } catch (e) { /* this page only */ }
   for (const p of panes.others) p.call("editor", open);
   edMount();
@@ -1752,15 +1350,11 @@ function fitMini() {
 }
 const edCloseBtn = () => el("button", { type: "button", class: "ed-close", title: "Close the editor", "aria-label": "Close the editor",
   onclick: () => setEditor(false) }, "×");
-// Execute: the project's preview run, and shown beside the file (edExecute).
+// Execute: the project's preview run, by the app that takes `run`, its pane beside (edExecute); none here, no button.
 function edExecBtn() {
-  const pv = ed.pv, p = pv && pv.about && pv.about.preview, r = pv && pv.run;
-  const running = !!(pv && (pv.busy || (r && r.state === "running")));
-  return el("button", { type: "button", class: "ed-exec" + (running ? " busy" : ""), disabled: pv && pv.busy ? "" : null,
-    title: (p ? (p.needs_ok ? `An actor set this project's preview: ${p.command}. Press to see it, and let it run`
-      : `Run ${p.command || "nothing"}${p.show ? `, and show ${p.show}` : ", and show what it prints"}, beside the file`)
-      : "Run this project's preview, and show what it makes beside the file: the first time, set what it runs")
-      + " (⌘↵ / Ctrl+Enter)",
+  if (!edRuns()) return null;
+  return el("button", { type: "button", class: "ed-exec",
+    title: "Run this project's preview, and show what it makes beside: the first time, set what it runs (⌘↵ / Ctrl+Enter)",
     onclick: edExecute, "aria-keyshortcuts": MAC ? "Meta+Enter" : "Control+Enter" }, strokeIcon(ICONS.play, 13), "Execute");
 }
 // Shown or hidden as `state.editor` says, drawn the first time it is shown: called by each draw of the main view.
@@ -1782,20 +1376,18 @@ function edMount() {
     ed.body = el("div", { class: "ed-body" + (ed.wrap ? " wrap" : "") });
     ed.body.addEventListener("mousedown", edToPdfClick, true);     // before CodeMirror's: a double-click, to the PDF too
     ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "An actor's changes to the file" });
-    ed.pvSide = el("aside", { class: "ed-pv", hidden: "", "aria-label": "The project's preview" });
     ed.brs = el("div", { class: "ed-brs" });
     const nav = ed.nav = el("nav", { class: "ed-tree", id: "ed-files", "aria-label": "Files" }, ed.bar, ed.brs, ed.tree);
     ed.fold = el("button", { type: "button", class: "ed-fold", hidden: "", "aria-label": "Show the files",
       "aria-controls": "ed-files", "aria-expanded": "false", onclick: () => edFoldTree(false) });
     const colGrip = () => el("div", { class: "ed-col-grip", role: "separator", "aria-orientation": "vertical",
       title: "Drag to resize · double-click: the width it had first" });
-    const treeGrip = colGrip(), sideGrip = colGrip(), pvGrip = colGrip();
+    const treeGrip = colGrip(), sideGrip = colGrip();
     ed.host = el("div", { class: "ed" }, ed.fold, nav, treeGrip,
-      el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, sideGrip, ed.side, pvGrip, ed.pvSide)));
+      el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, sideGrip, ed.side)));
     ed.host.addEventListener("keydown", edExecKey, true);          // ⌘↵: Execute
     widthGrip(treeGrip, "ag-dashboard-editor-tree-width", nav, "width", 120, (x) => x - nav.getBoundingClientRect().left);
     widthGrip(sideGrip, "ag-dashboard-editor-changes-width", ed.side, "width", 200, (x) => ed.side.getBoundingClientRect().right - x);
-    widthGrip(pvGrip, "ag-dashboard-editor-preview-width", ed.pvSide, "width", 220, (x) => ed.pvSide.getBoundingClientRect().right - x);
     top.replaceChildren(ed.host, topGrip(top));
     edTreeWire(nav);
     let folded = false;
@@ -1812,9 +1404,6 @@ function edMount() {
   if (opening) {                                     // shown again: drawn, and its file opened again
     ed.barSig = ""; edBar(); edTree(); edHead();
     if (ed.file && !ed.s) edOpen(ed.file);
-    let pvShown = !!ed.pv;                           // its preview too, if left open (by this page, or before a reload)
-    try { pvShown = pvShown || localStorage.getItem(ED_PV_KEY) === "1"; } catch (e) { /* this page only */ }
-    if (pvShown && pvPath()) pvOpen(pvPath());
   }
   edTick();
 }

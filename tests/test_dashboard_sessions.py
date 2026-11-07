@@ -20,6 +20,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import app_kit.finding  # noqa: E402
 from ag_dashboard import avatars, data, folders, hiding, saved, seen, server, sessions, titles  # noqa: E402
 import harness_kit  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
@@ -85,6 +86,9 @@ class SessionsBase(unittest.TestCase):
         self.env = unittest.mock.patch.dict(os.environ, {"AG_COMMAND": f"{sys.executable} {fake}", "FAKE_AG_LOG": self.log,
                                                          "FAKE_AG_DELAY": "0", "CLAUDE_CONFIG_DIR": self.claude})
         self.env.start()
+        no_apps = unittest.mock.patch.object(app_kit.finding, "BUILTIN", os.path.join(self.tmp.name, "no-apps"))
+        no_apps.start()                           # no app on: a session is given no apps' tools (the Preview's)
+        self.addCleanup(no_apps.stop)
         self.chat("headless")                     # a message to the agent with no screen; ChatTerminalTest: the default
         self.s = sessions.Sessions()
 

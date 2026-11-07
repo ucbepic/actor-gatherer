@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preview</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<div id="pv" class="pv">
+  <div class="pv-edge" aria-hidden="true"></div>
+  <div class="pv-top"><div class="pv-h"></div><div class="pv-cmd" hidden></div></div>
+  <div class="pv-body">
+    <div class="pv-card" hidden></div>
+    <div class="pv-result"></div>
+    <pre class="pv-out" tabindex="0" aria-label="Its output" hidden></pre>
+    <button type="button" class="pv-busy" hidden title="It is being run again: the last one made stays here until the run ends. Click to see its output"></button>
+  </div>
+</div>
+<script src="/_ag/lib/marked.min.js"></script>
+<script src="/_ag/lib/purify.min.js"></script>
+<script src="/_ag/app.js"></script>
+<script src="panel.js"></script>
+</body>
+</html>

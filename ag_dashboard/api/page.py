@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter
 from starlette.responses import Response
 
-from .. import avatars, home, server
+from .. import avatars, home, libs, server
 from .common import Errors, answer, not_found, send
 
 router = APIRouter(route_class=Errors)
@@ -36,6 +36,13 @@ def editor_bundle() -> Response:
     view."""
     with open(server.EDITOR, "rb") as fh:
         return send(200, fh.read(), "text/javascript; charset=utf-8")
+
+
+@router.get("/vendor/pdfjs/{rel:path}")
+def pdfjs(rel: str) -> Response:
+    """pdf.js and its viewer, which the Editor shows a PDF in (libs.py: the copy apps' panels load too)."""
+    got = libs.lib_file("pdfjs/" + rel)
+    return send(200, *got) if got else not_found()
 
 
 @router.get("/vendor/{name}")

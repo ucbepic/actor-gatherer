@@ -20,6 +20,7 @@ from wsproto.events import (AcceptConnection, CloseConnection, Ping, RejectConne
 from ag_dashboard import server  # noqa: E402
 from ag_dashboard.api import ws  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
+from test_dashboard_app_host import insert_here  # noqa: E402
 from test_dashboard_app import until, waiting  # noqa: E402
 
 
@@ -127,13 +128,17 @@ class StreamsOverOneSocketTest(HomeBase):
         names = {s.next()[1], s.next()[1]}
         self.assertEqual(names, {"home", "agent"})
         self.assertTrue(until(lambda: len(self.httpd.hub.watches) == 1))
-        s.say({"open": "2", "url": f"/api/preview/stream?path={self.work}"})
+        h = self.httpd.app_host                             # an app's panel's stream: the Preview's (one ag comes with)
+        h._write_fn = insert_here
+        self.addCleanup(h.flush)
+        i = h.open("preview", "g", self.work)
+        s.say({"open": "2", "url": f"/api/apps/stream?app=preview&gatherer=g&instance={i.id}"})
         self.assertIsNotNone(s.until("2", "!open"))
-        self.assertTrue(until(lambda: self.httpd.previews.watchers))
+        self.assertTrue(until(lambda: h.subs))
         s.say({"close": "1"})                               # the one let go: the other still open
         self.assertTrue(until(lambda: not self.httpd.hub.watches, 2))
         self.assertTrue(until(lambda: not waiting("next_events", "api/stream.py"), 2))
-        self.assertEqual(len(self.httpd.previews.watchers), 1)
+        self.assertEqual(len(h.subs), 1)
 
     def test_an_event_s_data_comes_as_the_route_sends_it(self):
         s = self.page()

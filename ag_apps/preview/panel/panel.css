@@ -1,0 +1,72 @@
+/* The Preview's panel, in the dashboard's colours (the SDK sets them on :root). Ported from the Editor's preview. */
+:root { --mono: ui-monospace, SFMono-Regular, Menlo, monospace; --s1: #2a78d6; color-scheme: light dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 13px/1.45 system-ui, -apple-system, sans-serif; background: var(--surface, Canvas); color: var(--ink, CanvasText); }
+button { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--ring); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+button:hover { background: var(--wash); }
+button.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+button[disabled] { opacity: .5; cursor: default; }
+@keyframes pv-pulse { from { opacity: .3; } to { opacity: 1; } }
+.pv { position: relative; height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.pv-top { flex: none; }
+.pv-edge { display: none; }
+.pv.hov { overflow: hidden; }
+.pv.hov > .pv-edge { display: block; position: absolute; top: 0; left: 0; right: 0; height: 9px; z-index: 4; }
+.pv.hov > .pv-edge::after { content: ""; position: absolute; top: 3px; left: 50%; width: 38px; height: 4px; margin-left: -19px;
+  border-radius: 2px; background: var(--axis); opacity: 0; transition: opacity .15s; }
+.pv.hov:hover > .pv-edge::after { opacity: 1; }
+.pv.hov > .pv-top { position: absolute; top: 0; left: 0; right: 0; z-index: 5; background: var(--surface);
+  border-bottom: 1px solid var(--ring); transform: translateY(-100%); transition: transform .15s ease .1s; }
+.pv.hov > .pv-edge:hover + .pv-top, .pv.hov > .pv-top:hover, .pv.hov > .pv-top:focus-within { transform: none; transition-delay: 0s; }
+.pv-busy { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 3; display: inline-flex; align-items: center;
+  gap: 7px; padding: 4px 11px; border-radius: 14px; background: var(--surface); box-shadow: 0 2px 10px rgba(0,0,0,.15); font-size: 12px; }
+.pv-busy::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--s1); flex: none;
+  animation: pv-pulse .9s ease-in-out infinite alternate; }
+.pv-busy .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pv-busy .o { color: var(--muted); padding-left: 7px; border-left: 1px solid var(--ring); }
+.pv-busy:hover .o { color: var(--ink); }
+.pv-h { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; padding: 4px 8px 4px 10px; min-height: 31px; }
+.pv-h .t { font-weight: 600; flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.pv-h .t::before { content: "▶"; color: var(--good); font-size: 10px; }
+.pv-h .nm { flex: 1 1 0; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-h > button { flex: none; padding: 1px 8px; font-size: 11.5px; }
+.pv-open { flex: none; color: var(--muted); text-decoration: none; padding: 0 4px; }
+.pv-open:hover { color: var(--ink); }
+.pv-tabs { display: inline-flex; flex: none; border: 1px solid var(--ring); border-radius: 6px; overflow: hidden; }
+.pv-tabs button { border: 0; border-radius: 0; padding: 1px 8px; font-size: 11.5px; color: var(--muted); }
+.pv-tabs button + button { border-left: 1px solid var(--ring); }
+.pv-tabs button.on { background: var(--wash); color: var(--ink); }
+.pv-st { flex: none; font-size: 11px; padding: 1px 8px; border-radius: 9px; background: var(--wash); color: var(--muted); white-space: nowrap; }
+.pv-st.run { color: var(--s1); } .pv-st.ok { color: var(--good); } .pv-st.bad { color: var(--critical); }
+.pv-st.run::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  margin-right: 5px; vertical-align: 1px; animation: pv-pulse .9s ease-in-out infinite alternate; }
+.pv-cmd { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--grid); font-size: 11.5px; color: var(--muted); }
+.pv-cmd[hidden] { display: none; }
+.pv-cmd code { flex: 1; min-width: 0; font: 11.5px/1.5 var(--mono); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-cmd code .to { color: var(--muted); }
+.pv-cmd .by { flex: none; white-space: nowrap; }
+.pv-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.pv-body > [hidden] { display: none !important; }
+.pv-card { flex: none; max-height: 100%; overflow: auto; padding: 12px 14px; display: grid; gap: 9px; align-content: start; font-size: 12.5px; color: var(--ink-2); }
+.pv-card .head { font-weight: 600; color: var(--ink); }
+.pv-card .note, .pv-card .head .note { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+.pv-card .err { color: var(--critical); overflow-wrap: anywhere; }
+.pv-card .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.pv-card code { font: 11.5px var(--mono); }
+.pv-card pre { margin: 0; padding: 6px 8px; font: 12px/1.5 var(--mono); color: var(--ink); background: var(--hl-bg); border: 1px solid var(--grid);
+  border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pv-form, .pv-ask { display: grid; gap: 9px; }
+.pv-form label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); font-weight: 550; }
+.pv-form label .note { font-weight: 400; }
+.pv-form input { font: 12px/1.4 var(--mono); padding: 5px 7px; color: var(--ink); background: var(--page); border: 1px solid var(--ring); border-radius: 6px; }
+.pv-result { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.pv-result.off { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+.pv-result > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
+.pv-result > iframe.pdf { background: var(--page); }
+.pv-result > .img { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; }
+.pv-result > .img img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.pv-result > .md { padding: 12px 16px; font-size: 13px; }
+.pv-result > pre, .pv-out { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 8px 10px; font: 12px/1.5 var(--mono); color: var(--ink);
+  white-space: pre-wrap; overflow-wrap: anywhere; }
+.pv-note { padding: 14px; color: var(--muted); font-size: 12.5px; }

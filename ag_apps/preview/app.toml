@@ -1,0 +1,68 @@
+# A git project's preview: the command that builds or runs it, and what it makes -- a file it writes, the page of a
+# server it starts, or its output -- set by the user or an agent, run by either, shown in its panel. One per git
+# repository (its worktrees share it), each worktree's runs its own. (app_kit/DESIGN.md: the first real app.)
+name = "preview"
+label = "Preview"
+version = "1"
+description = "run a project's preview and see what it makes"
+instances = "per-repository"
+instructions = """Preview runs a project's preview command -- the one that builds or runs it, such as a LaTeX build or a
+dev server -- and shows what it makes beside the user's Editor: a file it writes, the page of a server it starts, or
+its output. When the user asks for a preview, set it with preview_set (command, and `show`: a path in the checkout or
+a URL; {file}, {stem}, {name}, {dir} name the file open in the Editor), and run it with preview_run, once the user has
+let that command run: a command you set waits for them to run it in the Preview first. preview_show says what it is
+now; preview_stop stops its run. The same from the shell: `ag preview` (see `ag preview --help`)."""
+
+[backend]
+python = "backend:PreviewApp"
+
+[panel]
+entry = "panel/index.html"
+
+[[tools]]
+name = "show"
+description = "The project's preview (its command and what it shows), and its latest run."
+input_schema = { type = "object", properties = { path = { type = "string", description = "a file or folder of the project (default: your working directory)" } } }
+
+[[tools]]
+name = "set"
+description = "Set the project's preview: a command run through the shell in the checkout, and what it shows."
+input_schema = { type = "object", properties = { command = { type = "string", description = "run in the checkout; none: what it shows is shown as it is" }, show = { type = "string", description = "a path in the checkout, or a URL (the command a server); none: its output" }, path = { type = "string", description = "a file or folder of the project (default: your working directory)" } } }
+
+[[tools]]
+name = "run"
+description = "Run the project's preview now, as the user has let it run; waits `wait` seconds (default 0) for it to end, or its server to answer, and says how it went."
+input_schema = { type = "object", properties = { file = { type = "string", description = "the file {file} names" }, wait = { type = "number" }, path = { type = "string", description = "a file or folder of the project (default: your working directory)" }, ok = { type = "string", description = "the user's own, from the Preview: the command they let run" } } }
+
+[[tools]]
+name = "stop"
+description = "Stop the preview's run (its server, if it starts one)."
+input_schema = { type = "object", properties = { path = { type = "string" } } }
+
+[[tools]]
+name = "clear"
+description = "No preview for the project any more."
+input_schema = { type = "object", properties = { path = { type = "string" } } }
+
+[[events]]
+name = "preview.set"
+properties = ["by"]
+description = "The project's preview set: {command, show, by} (by: \"\" the user, else the agent's channel)."
+
+[[events]]
+name = "preview.allowed"
+description = "A command an agent set, let run by the user: {command}."
+
+[[events]]
+name = "preview.cleared"
+description = "No preview any more."
+
+[[events]]
+name = "preview.ran"
+description = "A run, once over: {checkout, command, show, by, file, state, code, started, ended}."
+
+[[handles]]
+intent = "run"
+
+[[handles]]
+intent = "locate"

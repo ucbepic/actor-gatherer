@@ -269,6 +269,11 @@ class AppHost:
             h.app.detached(i, channel)
         self._ring(i)
 
+    def panels_of(self, instance: Instance) -> int:
+        """How many panels of the instance are open: its streams that take its backend's messages."""
+        with self.lock:
+            return sum(1 for s in self.subs if s.instance.id == instance.id and s.messages)
+
     def agents_of(self, instance: Instance) -> List[str]:
         with self.lock:
             return sorted(self.attached.get(instance.id, ()))
@@ -479,7 +484,9 @@ class AppHost:
         self._writes.put((gatherer, properties, events, types))
 
     def flush(self, timeout: float = 30.0) -> None:
-        """Everything handed to be written, written (for tests, and before a read that needs it)."""
+        """Everything handed to be written, written (for tests, and before a read that needs it); at once, closed."""
+        if not self._writer.is_alive():
+            return
         done = threading.Event()
         self._writes.put(done)
         done.wait(timeout)
@@ -565,6 +572,9 @@ class Bound(app_kit.Host):
         with self._host.lock:
             return [i for i in self._host.instances.values() if i.app == self._name]
 
+    def panels(self, instance):
+        return self._host.panels_of(self._own(instance))
+
     def instance_of(self, d: dict) -> Instance:
         """The instance an app in its own process names (remote.py's `host_ops`): one of its own, as the host has it."""
         return self._host.instance(str(d.get("gatherer") or ""), str(d.get("id") or ""), self._name)
@@ -577,6 +587,16 @@ def _instance_key(instances: str, folder: Optional[str]) -> Optional[str]:
     if instances == "one" or not folder:
         return None
     real = os.path.realpath(folder)
+    if instances == "per-repository":                  # a worktree's: its repository's, as its other worktrees'
+        try:
+            common = subprocess.run(["git", "-C", real, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                    capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+            got = common.stdout.strip()
+            if common.returncode == 0 and got:
+                return os.path.realpath(os.path.dirname(got) if os.path.basename(got) == ".git" else got)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        instances = "per-checkout"
     if instances == "per-checkout":
         try:
             top = subprocess.run(["git", "-C", real, "rev-parse", "--show-toplevel"], capture_output=True, text=True,

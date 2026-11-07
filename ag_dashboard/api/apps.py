@@ -21,8 +21,8 @@ For agents (tool_gateway.py): POST /mcp/<actor>, the apps' MCP server; POST /api
 For an app in its own process (app_kit's remote.py), with its token: POST /apps/host/<name>/<op>.
 
 On an app's own origin, http://<name>.localhost:<port> (app_host's `origin`), which a page of the dashboard frames:
-GET its panel's files (`/` is its entry) and the panels' SDK (/_ag/app.js), and /api/<path>?gatherer&instance (any
-method) its backend's `request`. A
+GET its panel's files (`/` is its entry), the panels' SDK (/_ag/app.js) and the libraries the dashboard shares with
+apps (/_ag/lib/..., libs.py), and /api/<path>?gatherer&instance (any method) its backend's `request`. A
 write there only from that origin. No other route of the dashboard answers there, its WebSocket included."""
 
 import hmac
@@ -40,12 +40,13 @@ from starlette.responses import Response
 import app_kit
 from app_kit import AppError, Caller, remote
 
-from .. import app_host, mcp, tool_gateway
+from .. import app_host, libs, mcp, tool_gateway
 from .common import Body, Errors, Parts, answer, failure, local_only, not_found, queue_events
 
 router = APIRouter(route_class=Errors)
 ORIGIN_HOST = re.compile(r"^([a-z][a-z0-9-]{0,23})\.localhost(?::\d+)?$")
 SDK_PATH = "/_ag/app.js"                         # the panels' SDK (app_kit/js/app.js), on every app's origin
+LIB_PATH = "/_ag/lib/"                           # the libraries the dashboard shares with apps (libs.py)
 SDK = os.path.join(os.path.dirname(os.path.abspath(app_kit.__file__)), "js", "app.js")
 
 
@@ -295,9 +296,14 @@ class Origins:
                                                    path[len("/api/"):], query, body)
             except AppError as exc:
                 return await _failed(exc)(scope, receive, send)
-            return await Response(r.body, r.status, headers={**r.headers, **_framed(srv)})(scope, receive, send)
+            return await Response(r.body, r.status, headers=_with_framed(r.headers, srv))(scope, receive, send)
         if method != "GET":
             return await send_plain(405, b"its panel's files are read only", scope, receive, send)
+        if path.startswith(LIB_PATH):                # the libraries the dashboard shares with apps (libs.py)
+            got = libs.lib_file(path[len(LIB_PATH):])
+            if got is None:
+                return await send_plain(404, b"not found", scope, receive, send)
+            return await Response(got[0], 200, media_type=got[1], headers=_framed(srv))(scope, receive, send)
         found = SDK if path == SDK_PATH else _panel_file(hosted.manifest, path)
         if found is None:
             return await send_plain(404, b"not found", scope, receive, send)
@@ -308,10 +314,20 @@ class Origins:
 
 
 def _framed(srv) -> dict:
-    """An app's answers framed by the dashboard's own page only, and read as what they say they are."""
+    """An app's answers framed by the dashboard's own page, or by its own (its panel's frames: a PDF's viewer, a page
+    it previews), and read as what they say they are."""
     port = srv.server_port if srv is not None else 0
-    return {"content-security-policy": f"frame-ancestors http://127.0.0.1:{port} http://localhost:{port}",
+    return {"content-security-policy": f"frame-ancestors 'self' http://127.0.0.1:{port} http://localhost:{port}",
             "x-content-type-options": "nosniff", "cache-control": "no-store"}
+
+
+def _with_framed(headers: dict, srv) -> dict:
+    """The app's own headers with the host's: one Content-Security-Policy, its own directives (a page it serves
+    sandboxed) and the host's `frame-ancestors` together."""
+    out = {k.lower(): v for k, v in (headers or {}).items()}
+    framed = _framed(srv)
+    csp = "; ".join(p for p in (out.get("content-security-policy"), framed.pop("content-security-policy")) if p)
+    return {**out, **framed, "content-security-policy": csp}
 
 
 def _panel_file(manifest, path: str) -> Optional[str]:

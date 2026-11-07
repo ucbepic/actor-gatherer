@@ -1,7 +1,7 @@
 """Where apps are, for every host that looks for them (the dashboard's app_host.py, ag's catalog of pollers): each a
 folder holding an app.toml, in these, in order -- an app found in a later one wins its name:
 
-    BUILTIN          the apps that come with ag (apps/ beside this package)
+    BUILTIN          the apps that come with ag (the package ag_apps, installed with it)
     AG_APPS_PATH     folders named in it, os.pathsep apart
     <home>/apps/     the home's own: what `ag apps install` puts there
 
@@ -10,12 +10,26 @@ folder holding an app.toml, in these, in order -- an app found in a later one wi
 
 Standard library only."""
 
+import importlib.util
 import os
 from typing import Dict, List, Tuple
 
 from .manifest import FILE, Manifest, ManifestError, load
 
-BUILTIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "apps")
+
+def _builtin() -> str:
+    """Where the apps that come with ag are: the package ag_apps's folder, wherever it is installed; else beside this
+    package (a checkout)."""
+    try:
+        spec = importlib.util.find_spec("ag_apps")
+    except (ImportError, ValueError):
+        spec = None
+    if spec is not None and spec.submodule_search_locations:
+        return list(spec.submodule_search_locations)[0]
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ag_apps")
+
+
+BUILTIN = _builtin()
 PATH_ENV = "AG_APPS_PATH"
 
 

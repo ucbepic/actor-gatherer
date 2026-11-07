@@ -7,7 +7,7 @@ runs (and the shells it opens), the gatherers `ag new` makes, the builds and mod
 start, its own events `ag home insert` puts in (an actor's name), the harness's own store of a name
 (naming.py), the files a History extract is saved as (where Claude Code reads them, once the reader has
 seen them), ag's config.toml, and the files edited in the Editor panel (editor.py: under the directory the
-page names), the previews it keeps and runs (preview.py: the command a project's Execute button runs, in its checkout)
+page names), and what its apps run and keep (app_host.py: the Preview app's runs, a project's Execute button's)
 -- besides the avatar the home gives an actor it has not seen before
 (avatars.py), kept in the dashboard's own table:
 the gatherers' databases are otherwise only read. They are taken from the dashboard's own page only
@@ -31,7 +31,7 @@ from typing import Optional
 import harness_kit
 
 from . import (actions, app_host, apps, avatars, branches, coordination, data, editor, folders, home, live, migrating,
-               page_build, preview, saved, sessions, tool_gateway)
+               page_build, saved, sessions, tool_gateway)
 
 STATIC, INDEX = page_build.STATIC, page_build.INDEX   # frontend/'s build (vite.config.ts), built by page_build.py
 BUILD = page_build.COMMAND
@@ -156,7 +156,7 @@ class Server:
         self.known = known
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
-        self.listener = self.fallback = self.rest = self.address_file = self.previews = None   # for server_close,
+        self.listener = self.fallback = self.rest = self.address_file = None   # for server_close,
         self.app_host = None
         self.apps = {}                                                                          # which a failed bind calls
         self.socket = self.app = self._uvicorn = self._done = self._failed = None
@@ -166,7 +166,6 @@ class Server:
         self.branches = branches.Branches(self.editors, self.sessions, self.hub.ring)   # the actors' own branches
         self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates,   # actors' `ag actors`
                                               branched=self.branches, apps=self.apps)
-        self.previews = preview.Runs()                                 # the projects' previews, run
         self.keeps_actions = False
         try:
             self.socket = _bind(address)
@@ -302,11 +301,13 @@ class Server:
         """Everything stopped: uvicorn (if it still serves), the parts, the socket, the sessions' agents and shells."""
         self._stop()
         for part in (self.listener, self.fallback, self.rest, self.editors, self.crew, self.branches,
-                     *self.apps.values(), self.previews, self.app_host):
+                     *self.apps.values(), self.app_host):
             if part is not None:
                 part.close()
         if self.keeps_actions:
             actions.ENABLED = False
+        if tool_gateway.HOST is self.app_host:          # the gateway's no longer: no session is given a closed host's
+            tool_gateway.HOST, tool_gateway.ORIGIN = None, ""
         if self.address_file:
             home.forget_address(self.address_file, sessions.DASHBOARD)
         if self.socket is not None:

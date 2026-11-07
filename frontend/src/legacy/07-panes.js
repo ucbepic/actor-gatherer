@@ -285,9 +285,11 @@ async function appIntent(kind, data, g) {
   const type = { md: "text/markdown", txt: "text/plain", pdf: "application/pdf", png: "image/png", jpg: "image/jpeg",
     jpeg: "image/jpeg", svg: "image/svg+xml", html: "text/html", json: "application/json" }[ext] || (ext ? "text/plain" : undefined);
   const app = window.agNext.apps.handler(kind, type);
+  if (!app && kind === "open-file" && data && data.path) return edShowFile(String(data.path), Number(data.line) || 0);   // the Editor's
   if (!app) throw new Error(`no app here takes ${kind}`);
   const folder = data && data.path ? String(data.path).replace(/\/[^/]*$/, "") : null;
-  const p = await openApp(g || (focusedActor() || [])[0], app.name, folder, false);
+  const into = g || (focusedActor() || [])[0] || ((state.home && state.home.gatherers[0]) || {}).name;   // the Editor's: no actor
+  const p = await openApp(into, app.name, folder, false);
   if (!p) throw new Error(`${app.label} could not be opened`);
   p.panel.intent(kind, data || {});
 }

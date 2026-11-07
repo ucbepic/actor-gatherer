@@ -28,12 +28,8 @@ ALLOWED = {
     ("__main__.py", "webbrowser"): "Python's module that opens the page in the user's web browser",
     ("__main__.py", "the browser"): "the user's web browser, which `ag dashboard` opens the page in",
     ("__main__.py", "open a browser"): "the same",
-    ("preview.py", '"BROWSER": "none"'): "the variable that keeps a command the preview runs from opening the user's "
-                                         "web browser",
-    ("preview.py", '"vendor", "docwriter", "pdfjs"'): "pdf.js, which the preview shows a PDF in: DocWriter's build "
-                                                      "puts it in its folder (vendor/docwriter/)",
-    ("preview.py", "from .docwriter import "): "the same PDFs: pdf.js's file types and SyncTeX, code of DocWriter's "
-                                               "that the preview shares, not the app",
+    ("libs.py", '"docwriter", "pdfjs"'): "pdf.js, which the Editor and apps' panels show a PDF in: DocWriter's build "
+                                         "puts it in its folder (vendor/docwriter/)",
 }
 
 

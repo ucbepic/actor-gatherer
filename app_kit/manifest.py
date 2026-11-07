@@ -35,8 +35,9 @@ TOOL_NAME_MAX = 64
 #: The argument the host adds to every tool: which instance, for an agent attached to more than one of the app's.
 INSTANCE_ARG = "instance"
 
-#: How many instances of an app there are: one per gatherer, one per folder, one per git checkout, or any number.
-INSTANCES = ("one", "per-folder", "per-checkout", "many")
+#: How many instances of an app there are: one per gatherer, one per folder, one per git checkout, one per git
+#: repository (its worktrees share it), or any number.
+INSTANCES = ("one", "per-folder", "per-checkout", "per-repository", "many")
 #: Who answers a tool's calls: the app's backend, or its open panel (the call waits for one to be open).
 HANDLED_BY = ("backend", "panel")
 #: The properties the host puts on every app event itself, which an app's event type does not declare: the app's name,
@@ -59,6 +60,8 @@ INTENTS = {
     "show-activity": "channel, turn: what an agent did in a turn",
     "explain-answer": "channel, turn: where an agent's answer came from",
     "use-history": "channel, rows: events of an agent's history picked by the user",
+    "run": "path: run (build, preview) the project of this file or folder, and show what it makes",
+    "locate": "path, line, column?: show where this place of a source is, in what was made from it",
 }
 #: What an app may ask of the host beyond its own events, tools and panel; each shown to the user before it is granted.
 CAPABILITIES = {

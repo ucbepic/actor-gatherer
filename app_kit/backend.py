@@ -55,11 +55,12 @@ class Instance:
 
 @dataclass(frozen=True)
 class Caller:
-    """Who made a tool call: an agent, by its channel (and its gatherer and harness), or the user through the app's
-    panel (`channel` None)."""
+    """Who made a tool call: an agent, by its channel (and its gatherer, harness, and the folder it works in), or the
+    user through the app's panel (`channel` None)."""
     channel: Optional[str] = None
     gatherer: Optional[str] = None
     harness: Optional[str] = None
+    folder: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -67,7 +68,8 @@ class Caller:
     @classmethod
     def from_dict(cls, d: Optional[dict]) -> "Caller":
         d = d or {}
-        return cls(channel=d.get("channel"), gatherer=d.get("gatherer"), harness=d.get("harness"))
+        return cls(channel=d.get("channel"), gatherer=d.get("gatherer"), harness=d.get("harness"),
+                   folder=d.get("folder"))
 
 
 @dataclass
@@ -148,6 +150,10 @@ class Host(ABC):
     def instances(self) -> List[Instance]:
         """The app's open instances, in every gatherer."""
         return []
+
+    def panels(self, instance: Instance) -> int:
+        """How many panels of the instance are open now (a server it runs, left with none, may be stopped)."""
+        return 0
 
 
 class App:

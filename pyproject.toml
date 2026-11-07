@@ -46,7 +46,7 @@ ag = "ag.cli.main:main"   # run a harness with the context manager
 ag-dashboard = "ag_dashboard.__main__:main"   # the dashboard alone (also `ag dashboard`)
 
 [tool.setuptools.packages.find]
-include = ["ag*", "harness_kit*", "app_kit*"]
+include = ["ag*", "harness_kit*", "app_kit*", "ag_apps*"]
 
 [tool.setuptools.package-data]
 # what runs from the installed package besides Python: ag's harness entries, and the TypeScript
@@ -55,4 +55,5 @@ include = ["ag*", "harness_kit*", "app_kit*"]
 ag = ["cli/harnesses.toml", "integrations/**/*.ts"]
 harness_kit = ["marks/*.svg"]
 app_kit = ["js/*.js", "DESIGN.md"]
+ag_apps = ["*/app.toml", "*/panel/*"]
 ag_dashboard = ["static/*", "static/assets/*", "gatherer_agent.md", "vendor/*", "examples/*.js", "avatars/*/*.svg", "avatars/hello.toml"]

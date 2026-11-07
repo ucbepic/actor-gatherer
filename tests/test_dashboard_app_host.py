@@ -121,6 +121,9 @@ class HostBase(HomeBase):
         env = unittest.mock.patch.dict(os.environ, {app_host.PATH_ENV: self.apps_dir})
         env.start()
         self.addCleanup(env.stop)
+        builtin = unittest.mock.patch.object(app_kit.finding, "BUILTIN", os.path.join(self.tmp.name, "no-apps"))
+        builtin.start()                             # the test's apps alone: not the ones ag comes with (ag_apps/)
+        self.addCleanup(builtin.stop)
         self.host = self.new_host()
         self.folder = tempfile.mkdtemp(dir=self.tmp.name)
 
@@ -447,6 +450,14 @@ class GatewayServedTest(GatewayBase):
         conn.close()
         return got
 
+    def test_a_closed_server_s_host_is_no_longer_the_gateway_s(self):
+        self.assertIs(tool_gateway.HOST, self.httpd.app_host)
+        self.assertTrue(tool_gateway.served(self.rows[0]))
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.assertIsNone(tool_gateway.HOST)
+        self.assertFalse(tool_gateway.served(self.rows[0]))     # a session started after it: given no tools of a closed host
+
     def test_the_mcp_server_lists_instructs_and_calls(self):
         init = self.rpc("c1", "initialize", {"protocolVersion": "2025-06-18"})["result"]
         self.assertEqual(init["serverInfo"]["name"], "ag-apps")
@@ -555,7 +566,7 @@ class ServedTest(HostBase):
         host = f"notes.localhost:{self.port}"
         status, headers, raw = self.ask("GET", "/", host=host)
         self.assertEqual((status, raw), (200, b"<!doctype html><title>Notes</title>"))
-        self.assertIn(f"frame-ancestors http://127.0.0.1:{self.port}", headers["content-security-policy"])
+        self.assertIn(f"frame-ancestors 'self' http://127.0.0.1:{self.port}", headers["content-security-policy"])
         self.assertEqual(self.ask("GET", "/api/home", host=host)[0], 404)          # the dashboard's: not here
         self.assertEqual(self.ask("GET", "/api/apps", host=host)[0], 404)
         self.assertEqual(self.ask("GET", "/../app.toml", host=host)[0], 404)

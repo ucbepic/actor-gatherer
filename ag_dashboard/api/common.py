@@ -16,7 +16,7 @@ from sse_starlette import EventSourceResponse
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
 
-from .. import editor, preview, server, sessions
+from .. import editor, server, sessions
 
 LOCAL = ("127.0.0.1", "localhost", "::1")      # the names of this host a page on it is reached by
 REFUSED = "only the dashboard's own page may do that"
@@ -50,7 +50,7 @@ class Answered(Exception):
 
 
 async def parts(request: Request) -> "server.Server":
-    """The server whose app this is: its sessions, editors, previews, ... (server.py's Server)."""
+    """The server whose app this is: its sessions, editors, apps, ... (server.py's Server)."""
     return request.app.state.server
 
 
@@ -101,7 +101,7 @@ Decimal = Annotated[float, BeforeValidator(_decimal)]       # digits, with one p
 
 
 def _read_error(exc: Exception) -> Response:
-    if isinstance(exc, (editor.EditorError, preview.PreviewError)):
+    if isinstance(exc, editor.EditorError):
         return failure(400, str(exc))
     return failure(500, f"{type(exc).__name__}: {exc}")
 
@@ -113,7 +113,7 @@ def _write_error(exc: Exception) -> Response:
 
 
 class Errors(APIRoute):
-    """A route whose errors are answered as the page reads them, JSON {error}: a GET's an editor's or a preview's 400,
+    """A route whose errors are answered as the page reads them, JSON {error}: a GET's an editor's 400,
     any other 500; a POST's ValueError (a session's, a body not a JSON object...) 400 -- with `box` when its terminal's
     message box cannot take it now -- any other 500. An app's routes answer its own errors (api/<name>.py)."""
 

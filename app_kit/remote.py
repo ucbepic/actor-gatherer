@@ -16,6 +16,7 @@ each side POSTs JSON to the other:
     call     {instance, tool, args, caller}         attached  {instance} -> {channels}
              -> {content, isError}                  tell      {instance, message} -> {}
     request  {instance?, method, path, query,       instances {} -> {instances}
+                                                    panels    {instance} -> {panels}
               body (base64)} -> {status, headers,
               body (base64)}
     attached / detached  {instance, channel}
@@ -184,6 +185,7 @@ def host_ops(host: Host, instance_of: Callable[[dict], Instance]) -> Dict[str, C
         "attached": lambda b: {"channels": host.attached(instance_of(b["instance"]))},
         "tell": lambda b: host.tell_panel(instance_of(b["instance"]), dict(b["message"])) or {},
         "instances": lambda b: {"instances": [i.to_dict() for i in host.instances()]},
+        "panels": lambda b: {"panels": host.panels(instance_of(b["instance"]))},
     }
 
 
@@ -257,6 +259,9 @@ class RemoteHost(Host):
 
     def instances(self) -> List[Instance]:
         return [Instance.from_dict(d) for d in self._op("instances", {})["instances"]]
+
+    def panels(self, instance: Instance) -> int:
+        return int(self._op("panels", {"instance": instance.to_dict()})["panels"])
 
 
 def app_ops(app: App) -> Dict[str, Callable[[dict], Optional[dict]]]:
