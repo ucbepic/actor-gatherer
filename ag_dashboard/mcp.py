@@ -3,7 +3,8 @@ Browser's its browser tools (browser.py): MCP's streamable HTTP transport,
 the least of it -- each JSON-RPC request POSTed, answered with JSON, no stream of the server's own -- which Claude
 Code (`"type": "http"` in --mcp-config) and codex (`mcp_servers.<name>.url`) both speak.
 
-    initialize                  the protocol version the client asked for (or PROTOCOL), its tools offered
+    initialize                  the protocol version the client asked for (or PROTOCOL), its tools offered, and its
+                                `instructions` where it has some (what Claude Code adds to its system prompt)
     notifications/*             taken, nothing answered (202)
     tools/list                  `tools`: each one's name, description and input schema
     tools/call                  `call(name, arguments)`: what it says, as MCP's result ({content, isError})
@@ -45,23 +46,24 @@ def result(text: str, error: bool = False) -> dict:
 
 
 def handle(body: bytes, tools: List[dict], call: Callable[[str, dict], dict],
-           name: str = NAME, at: Optional[str] = None) -> Tuple[int, Optional[dict]]:
+           name: str = NAME, at: Optional[str] = None, instructions: str = "") -> Tuple[int, Optional[dict]]:
     """One POST to the server: (status, JSON to answer with, or None for none). `tools`: [{name, description,
     inputSchema}]; `call(name, arguments)`: a tool's result (`result`). A batch -- a list of messages -- is answered
-    with the list of their answers. `at`: the server's endpoint (`endpoint`), its `tools/list` answered kept (`listed`)."""
+    with the list of their answers. `at`: the server's endpoint (`endpoint`), its `tools/list` answered kept (`listed`).
+    `instructions`: what `initialize` tells the client of the server's tools."""
     try:
         message = json.loads(body or b"null")
     except ValueError:
         return 400, _error(None, -32700, "not JSON")
     if isinstance(message, list):
-        answers = [a for a in (_one(m, tools, call, name, at) for m in message) if a is not None]
+        answers = [a for a in (_one(m, tools, call, name, at, instructions) for m in message) if a is not None]
         return (200, answers) if answers else (202, None)
-    answer = _one(message, tools, call, name, at)
+    answer = _one(message, tools, call, name, at, instructions)
     return (200, answer) if answer is not None else (202, None)
 
 
 def _one(message, tools: List[dict], call: Callable[[str, dict], dict], server: str = NAME,
-         at: Optional[str] = None) -> Optional[dict]:
+         at: Optional[str] = None, instructions: str = "") -> Optional[dict]:
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
         return _error(None, -32600, "not a JSON-RPC 2.0 message")
     if "id" not in message:                     # a notification, or a client's answer: nothing to say
@@ -70,7 +72,8 @@ def _one(message, tools: List[dict], call: Callable[[str, dict], dict], server: 
     if method == "initialize":
         return _ok(mid, {"protocolVersion": params.get("protocolVersion") or PROTOCOL,
                          "capabilities": {"tools": {"listChanged": False}},
-                         "serverInfo": {"name": server, "version": "1"}})
+                         "serverInfo": {"name": server, "version": "1"},
+                         **({"instructions": instructions} if instructions else {})})
     if method == "ping":
         return _ok(mid, {})
     if method == "tools/list":

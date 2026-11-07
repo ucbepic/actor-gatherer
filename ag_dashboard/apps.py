@@ -156,7 +156,10 @@ def tools_of(session: dict) -> List[str]:
     waits for each to have listed its tools (sessions.py's `_first_message`): neither Claude Code nor codex waits for
     an MCP server before the turn its first message starts, and that turn then runs without the server's tools."""
     a = of(session)
-    return [a.tools_at(a.key_of(session))] if a is not None and a.launch_args(session) else []
+    if a is None:                               # any other actor: the apps' MCP server, where it was given one
+        from . import tool_gateway
+        return [tool_gateway.endpoint(tool_gateway.actor_of(session))] if tool_gateway.served(session) else []
+    return [a.tools_at(a.key_of(session))] if a.launch_args(session) else []
 
 
 def home_fields() -> Dict[str, type]:

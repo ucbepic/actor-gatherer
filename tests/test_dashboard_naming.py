@@ -187,6 +187,27 @@ class InsertTest(HomeBase):
         self.name_event("")
         self.assertEqual(self.names()["c1"]["by"], "claude")
 
+    def test_types_declared_first_keep_their_flags(self):
+        """An app's event types (its manifest's, as ag EventTypes) declared before its events: their properties
+        required or identifying as declared, where a type first seen on an insert has every property optional."""
+        import sqlite3
+        types = [{"name": "notes.added", "properties": [{"name": "app", "required": True}, {"name": "channel"},
+                                                        {"name": "note", "identifies": True}]}]
+        code, got = self.insert("g", "--properties", json.dumps({"channel": "c1", "app": "notes"}),
+                                "--types", json.dumps(types),
+                                "--events", json.dumps([{"type": "notes.added", "id": "n1", "payload": {"t": "x"},
+                                                         "properties": {"note": "a"}}]))
+        self.assertEqual((code, len(got["rows"])), (0, 1))
+        conn = sqlite3.connect(os.path.join(self.tmp.name, "ag", "gatherers", "g", "context.db"))
+        flags = dict(((n, (r, i)) for n, r, i in conn.execute(
+            "SELECT p.name, p.required, p.identifies FROM event_type_properties p JOIN event_types t "
+            "USING (event_type_id) WHERE t.name = 'notes.added'")))
+        conn.close()
+        self.assertEqual(flags["app"], (1, 0))
+        self.assertEqual(flags["note"], (0, 1))
+        self.assertEqual(self.insert("g", "--types", '[{"properties": []}]', "--events", "[]")[0], 1)
+        self.assertEqual(self.insert("g", "--types", "{}", "--events", "[]")[0], 1)
+
     def test_a_session_started_here_with_no_message_yet_shows_its_name(self):
         self.name_event("Before it began", channel="fresh")
         started = [{"session_id": "fresh", "gatherer": "g", "cwd": "/tmp", "harness": "claude", "status": "stopped",

@@ -68,6 +68,11 @@ class Hub:
         self.on_change: Optional[Callable[..., None]] = None   # an actor's data: (gatherer, channel, what, row)
         self.version = 0                                     # the home's changes rung: one more each
         self.heard: Dict[str, float] = {}                    # gatherer -> when ag last told of a change of it
+        self.listeners: list = []                            # each told the gatherer of every change (`listen`)
+
+    def listen(self, fn: Callable[[Optional[str]], None]) -> None:
+        """`fn(gatherer)` on every change rung (None: any gatherer): the apps' host follows its instances' events so."""
+        self.listeners.append(fn)
 
     def watch(self, gatherer: Optional[str], channel: Optional[str], also=()) -> Watch:
         w = Watch(gatherer, channel, also)
@@ -104,6 +109,9 @@ class Hub:
         told = what == "file" and g is not None and now - self.heard.get(g, 0.0) < HEARD_SECONDS
         if what not in ("llm", "list") and not told and self.on_change:
             self.on_change(g, channel, what, row)            # before the count: a stream that reads it, reads this
+        if what not in ("llm", "list"):
+            for fn in self.listeners:
+                fn(g)
         with self.lock:
             watches = list(self.watches)
             if what != "llm":

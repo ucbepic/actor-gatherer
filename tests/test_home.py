@@ -293,6 +293,70 @@ class PluginEndToEndTest(HomeBase):
         conn.close()
 
 
+class AppPollerTest(HomeBase):
+    """An app's pollers (its manifest's [[pollers]], app_kit's): entries of ag's own catalog, as `<app>.<name>`, built
+    as any is and checked against the policy as any is; run by a gatherer that names them, or its app in `apps`."""
+
+    def setUp(self):
+        super().setUp()
+        folder = os.path.join(self.root, "apps", "tickets_app")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "app.toml"), "w") as fh:
+            fh.write(textwrap.dedent('''
+                name = "tickets_app"
+                label = "Tickets"
+                version = "1"
+
+                [[pollers]]
+                name = "inbox"
+                file = "inbox.py"
+                class = "TicketPoller"
+                args = { ticket = "77" }
+            '''))
+        with open(os.path.join(folder, "inbox.py"), "w") as fh:
+            fh.write(TICKETS)
+
+    def run_with(self, line: str):
+        cfg = self.h.gatherer("demo")
+        with open(cfg.path) as fh:
+            text = fh.read()
+        with open(cfg.path, "w") as fh:                                     # before [options]: a top-level key
+            fh.write(line + "\n" + text)
+        os.utime(cfg.path, (os.path.getmtime(cfg.path) + 5,) * 2)
+        return [type(p).__name__ for p in self.h.gatherer_pollers("demo", "/w")]
+
+    def test_an_app_s_poller_is_in_the_catalog_under_its_app_s_name(self):
+        self.h.ensure()
+        spec = self.h.pollers()["tickets_app.inbox"]
+        self.assertEqual((spec.cls, spec.args), ("TicketPoller", {"ticket": "77"}))
+        self.assertEqual(spec.file, os.path.join(self.root, "apps", "tickets_app", "inbox.py"))
+        self.assertEqual(self.h.problems(), [])
+
+    def test_a_gatherer_runs_it_once_its_app_is_on_there_or_it_names_it(self):
+        self.h.ensure()
+        self.assertEqual([type(p).__name__ for p in self.h.gatherer_pollers("demo", "/w")], ["FileChangePoller"])
+        self.assertEqual(self.run_with('apps = ["tickets_app"]'), ["FileChangePoller", "TicketPoller"])
+        cfg = self.h.gatherer("demo")
+        self.assertEqual(cfg.apps, ["tickets_app"])
+        self.h.write_gatherer(cfg)                                            # written back: `apps` kept
+        self.assertEqual(self.h.gatherer("demo").apps, ["tickets_app"])
+        cfg.apps, cfg.pollers = None, ["tickets_app.inbox"]
+        self.h.write_gatherer(cfg)
+        os.utime(cfg.path, (os.path.getmtime(cfg.path) + 10,) * 2)
+        self.assertEqual([type(p).__name__ for p in self.h.gatherer_pollers("demo", "/w")], ["TicketPoller"])
+
+    def test_its_message_reaches_the_context_as_any_poller_s(self):
+        self.assertEqual(cli(["new", "demo", "--policy", "proactive_context_manager", "--poller", "tickets_app.inbox"]), 0)
+        manager = codex.CodexItems(ag_home.manager("demo"))
+        manager.set_pollers(ag_home.pollers("demo", None))
+        manager.init("demo")
+        row = manager.insert("demo", {"type": "message", "role": "user", "id": "u1",
+                                      "content": [{"type": "input_text", "text": "which numbers?"}]}, channel_id="t")
+        texts = [t for t in (codex.text(i) for i in manager.read("demo", row, channel_id="t"))
+                 if not t.startswith("About this context, from the gatherer.")]
+        self.assertIn("Message in ticket 77 from pat", texts[1])
+
+
 class CliTest(HomeBase):
     def test_list_show_new(self):
         from contextlib import redirect_stdout

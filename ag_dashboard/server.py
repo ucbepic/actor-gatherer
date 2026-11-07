@@ -30,8 +30,8 @@ from typing import Optional
 
 import harness_kit
 
-from . import (actions, apps, avatars, branches, coordination, data, editor, folders, home, live, migrating, page_build, preview,
-               saved, sessions)
+from . import (actions, app_host, apps, avatars, branches, coordination, data, editor, folders, home, live, migrating,
+               page_build, preview, saved, sessions, tool_gateway)
 
 STATIC, INDEX = page_build.STATIC, page_build.INDEX   # frontend/'s build (vite.config.ts), built by page_build.py
 BUILD = page_build.COMMAND
@@ -157,6 +157,7 @@ class Server:
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
         self.listener = self.fallback = self.rest = self.address_file = self.previews = None   # for server_close,
+        self.app_host = None
         self.apps = {}                                                                          # which a failed bind calls
         self.socket = self.app = self._uvicorn = self._done = self._failed = None
         self._lock = threading.Lock()
@@ -171,6 +172,8 @@ class Server:
             self.socket = _bind(address)
             self.server_address = self.socket.getsockname()[:2]
             self.server_port = self.server_address[1]
+            self.app_host = app_host.AppHost(self.server_port)        # the apps (app_kit's): their backends, events
+            self.hub.listen(self.app_host.rung)                       # and instances
             from . import app                                          # FastAPI: only once one serves
             self.app = app.create(self)
         except BaseException:
@@ -178,6 +181,8 @@ class Server:
             raise
         for a in apps.APPS:                                            # where their actors reach it
             a.served_at(f"http://127.0.0.1:{self.server_port}")
+        tool_gateway.HOST, tool_gateway.ORIGIN = self.app_host, f"http://127.0.0.1:{self.server_port}"   # the apps'
+                                                                       # tools, for every session it starts
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once
@@ -297,7 +302,7 @@ class Server:
         """Everything stopped: uvicorn (if it still serves), the parts, the socket, the sessions' agents and shells."""
         self._stop()
         for part in (self.listener, self.fallback, self.rest, self.editors, self.crew, self.branches,
-                     *self.apps.values(), self.previews):
+                     *self.apps.values(), self.previews, self.app_host):
             if part is not None:
                 part.close()
         if self.keeps_actions:

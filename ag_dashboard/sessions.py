@@ -460,9 +460,11 @@ def instructions(s: dict) -> Optional[str]:
 
 def extra_args(s: dict) -> List[str]:
     """What a session's harness is started with besides its own options, as its `role` says -- an app's actor
-    (apps.py): its tools and instructions (the app's `launch_args`); [] for any other."""
+    (apps.py): its tools and instructions (the app's `launch_args`); any other, the tools of its gatherer's apps
+    (tool_gateway.py's `launch_args`: [] where none is on)."""
     if not str(s.get("role") or "").startswith("{"):
-        return []
+        from . import tool_gateway
+        return tool_gateway.launch_args(s)
     from . import apps                          # here: the apps use this module
     return next((got for got in (a.launch_args(s) for a in apps.APPS) if got), [])
 

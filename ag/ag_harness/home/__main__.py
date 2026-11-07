@@ -52,7 +52,7 @@ import shutil
 import sqlite3
 import sys
 
-from ag.ag_interface import property_column
+from ag.ag_interface import EventType, Property, property_column
 from ..store import paths, schema
 from . import CLI_MODELS, ConfigError, GathererConfig, home
 
@@ -316,19 +316,26 @@ def cmd_build(h, gatherer: str, properties: str, min_messages: int) -> int:
     return 0
 
 
-def cmd_insert(h, gatherer: str, properties: str, events: str) -> int:
+def cmd_insert(h, gatherer: str, properties: str, events: str, types: str = "[]") -> int:
     """Events put into the gatherer -- a reader's record of what it did (the dashboard's: a name it gave an actor),
     as the server's `insert` takes a harness's: each {"type", "payload", "id"?, "text"?, "properties"?}, with
-    `properties` (a JSON object, in the policy's own names); a type the gatherer does not have is added. Each one's
-    row on stdout, as JSON: {"rows": [row id, or null when it was stored already]}. Exit 1 when the gatherer has no
-    database, or an argument does not read, or an event is not one."""
+    `properties` (a JSON object, in the policy's own names); a type the gatherer does not have is added, its
+    properties optional -- unless `types` declares it first: a JSON list of {"name", "properties": [{"name",
+    "required"?, "identifies"?}]}, each an EventType registered as the manager registers any (an app's, declared in
+    its manifest). Each event's row on stdout, as JSON: {"rows": [row id, or null when it was stored already]}. Exit 1
+    when the gatherer has no database, or an argument does not read, or an event or a type is not one."""
     from ..server import BadEvent, Server
     try:
-        props, given = json.loads(properties or "{}"), json.loads(events or "[]")
+        props, given, declared = json.loads(properties or "{}"), json.loads(events or "[]"), json.loads(types or "[]")
     except ValueError:
-        props = given = None
-    if not isinstance(props, dict) or not isinstance(given, list):
-        print(json.dumps({"error": "--properties is a JSON object, --events a JSON list"}))
+        props = given = declared = None
+    if not isinstance(props, dict) or not isinstance(given, list) or not isinstance(declared, list):
+        print(json.dumps({"error": "--properties is a JSON object, --events and --types JSON lists"}))
+        return 1
+    try:
+        declared = [_event_type(t) for t in declared]
+    except (TypeError, ValueError, KeyError) as exc:
+        print(json.dumps({"error": f"--types: {exc}"}))
         return 1
     if not os.path.exists(paths.db_path(gatherer)):         # not made here: a misspelled name would make one
         print(json.dumps({"error": f"no database for gatherer {gatherer}"}))
@@ -336,12 +343,25 @@ def cmd_insert(h, gatherer: str, properties: str, events: str) -> int:
     manager = h.manager(gatherer)
     manager.init(gatherer)
     try:
+        for t in declared:
+            manager.add_event_type(gatherer, t)
         rows = [manager.insert(gatherer, e) for e in Server.events_of(manager, gatherer, given, props)]
     except (BadEvent, TypeError, LookupError, ValueError) as exc:
         print(json.dumps({"error": str(exc)}))
         return 1
     print(json.dumps({"rows": rows}))
     return 0
+
+
+def _event_type(t) -> EventType:
+    """An EventType from its JSON: {"name", "properties": [{"name", "required"?, "identifies"?}]}."""
+    if not isinstance(t, dict) or not isinstance(t.get("name"), str) or not t["name"]:
+        raise ValueError(f"not an event type: {str(t)[:120]}")
+    props = t.get("properties") or []
+    if not isinstance(props, list) or not all(isinstance(p, dict) and isinstance(p.get("name"), str) for p in props):
+        raise ValueError(f"{t['name']}: properties are a list of {{name, required?, identifies?}}")
+    return EventType(t["name"], tuple(Property(p["name"], required=bool(p.get("required")),
+                                               identifies=bool(p.get("identifies"))) for p in props))
 
 
 def cmd_migrate(h, gatherers, vacuum: bool, now: bool = False) -> int:
@@ -422,6 +442,8 @@ def main(argv=None) -> int:
     ins.add_argument("gatherer")
     ins.add_argument("--properties", default="{}", help="the events' properties, as a JSON object")
     ins.add_argument("--events", required=True, help='the events, as a JSON list of {"type", "payload", ...}')
+    ins.add_argument("--types", default="[]", help='event types to declare first, as a JSON list of {"name", '
+                     '"properties": [{"name", "required", "identifies"}]}')
     bu = sub.add_parser("build")
     bu.add_argument("gatherer")
     bu.add_argument("--properties", default="{}", help="the events' properties, as a JSON object")
@@ -461,7 +483,7 @@ def main(argv=None) -> int:
         if a.cmd == "model":
             return cmd_model(h, a.model, a.api_base, a.key_env)
         if a.cmd == "insert":
-            return cmd_insert(h, a.gatherer, a.properties, a.events)
+            return cmd_insert(h, a.gatherer, a.properties, a.events, a.types)
         if a.cmd == "build":
             return cmd_build(h, a.gatherer, a.properties, a.min_messages)
         if a.cmd == "complete":

@@ -28,6 +28,8 @@ COMMANDS = (
                                                "or to the gatherer agent (`ag actors --help`)."),
     ("ag preview [set|run|clear ...]", "The preview of a git project, which the dashboard Editor's Execute button runs "
                                        "and shows beside the file (`ag preview --help`)."),
+    ("ag apps [list|call ...]", "The apps of this actor's gatherer: their tools, and a call of one, for a harness the "
+                                "dashboard gives no MCP server (`ag apps --help`)."),
     ("ag gatherers", "List every gatherer: its policy, pollers, events and last activity."),
     ("ag show <gatherer>", "Show a gatherer's resolved settings."),
     ("ag new <gatherer> [--policy P] [--poller X ... | --no-pollers]", "Create a gatherer ahead of use."),

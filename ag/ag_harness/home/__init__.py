@@ -208,6 +208,7 @@ class GathererConfig:
     pollers: List[str]
     options: Dict[str, Any]
     path: str
+    apps: Optional[List[str]] = None         # gatherer.toml's `apps`: the apps on (their pollers run); None: no key
 
 
 # ---------------------------------------------------------------- writing TOML (the little we need)
@@ -229,7 +230,8 @@ def _value(v) -> str:
 def gatherer_toml(cfg: GathererConfig) -> str:
     lines = [f"# The gatherer {cfg.name}: its policy (fixed once it has been read), and its",
              "# pollers (change them any time). Made from ~/.ag/config.toml.",
-             f"policy = {_value(cfg.policy)}", f"pollers = {_value(cfg.pollers)}", "", "[options]",
+             f"policy = {_value(cfg.policy)}", f"pollers = {_value(cfg.pollers)}",
+             *([f"apps = {_value(cfg.apps)}"] if cfg.apps is not None else []), "", "[options]",
              "# this gatherer's overrides of the policy's options"]
     lines += [f"{k} = {_value(v)}" for k, v in cfg.options.items()]
     return "\n".join(lines) + "\n"
@@ -412,14 +414,26 @@ class Home:
         return found
 
     def pollers(self) -> Dict[str, PollerSpec]:
-        """Every poller the catalog names ([pollers.available])."""
+        """Every poller the catalog names ([pollers.available]), and every app's (its manifest's [[pollers]], as
+        `<app>.<name>`: app_kit's PollerDef, an entry of the catalog's own shape)."""
         found = {}
         for name, entry in self._available("pollers").items():
             if not isinstance(entry, dict):
                 raise ConfigError(f"[pollers.available.{name}] is not a table")
             file, module, cls = self._where(entry, f"[pollers.available.{name}]")
             found[name] = PollerSpec(name, file=file, module=module, cls=cls, args=dict(entry.get("args") or {}))
+        for app, polls in self.app_pollers().items():
+            for name, entry in polls.items():
+                file, module, cls = self._where(entry, f"app {app}'s poller {name}")
+                found[name] = PollerSpec(name, file=file, module=module, cls=cls, args=dict(entry.get("args") or {}))
         return found
+
+    def app_pollers(self) -> Dict[str, Dict[str, dict]]:
+        """{app: {"<app>.<name>": its catalog entry}} of the apps found (app_kit's `finding`) that have pollers."""
+        from app_kit import finding                       # an app is one more user of ag's contract
+        manifests, _ = finding.find(self.root)
+        return {m.name: {f"{m.name}.{p.name}": p.catalog(m.folder) for p in m.pollers}
+                for m in manifests.values() if m.pollers}
 
     def default_pollers(self) -> List[str]:
         """[pollers] default: the pollers a new gatherer gets, whatever its policy."""
@@ -647,8 +661,11 @@ class Home:
                 data = tomllib.load(fh)
             except tomllib.TOMLDecodeError as exc:
                 raise ConfigError(f"{path}: {exc}") from exc
+        apps = data.get("apps")
+        if apps is not None and (not isinstance(apps, list) or not all(isinstance(a, str) for a in apps)):
+            raise ConfigError(f"{path}: `apps` is a list of app names")
         return GathererConfig(gatherer, str(data.get("policy") or self.default_policy()),
-                             list(data.get("pollers") or []), dict(data.get("options") or {}), path)
+                             list(data.get("pollers") or []), dict(data.get("options") or {}), path, apps)
 
     def write_gatherer(self, cfg: GathererConfig) -> None:
         os.makedirs(os.path.dirname(cfg.path), exist_ok=True)
@@ -696,7 +713,11 @@ class Home:
                 return self._pollers[key]
             known = self.pollers()
             found = []
-            for name in cfg.pollers:
+            names = list(cfg.pollers)
+            if cfg.apps:                         # the apps on: their pollers too
+                by_app = self.app_pollers()
+                names += [n for a in cfg.apps for n in by_app.get(a, {}) if n not in names]
+            for name in names:
                 spec = known.get(name)
                 if spec is None:
                     raise ConfigError(f"gatherer {gatherer}: poller {name!r} is not known ({cfg.path})")

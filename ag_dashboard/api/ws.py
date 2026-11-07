@@ -36,7 +36,7 @@ from .common import named_here
 
 log = logging.getLogger(__name__)
 router = APIRouter()
-STREAM = re.compile(r"/api/(?:stream|terminal|edit/stream|preview/stream)|/[a-z]+/w/[^/]+/stream")
+STREAM = re.compile(r"/api/(?:stream|terminal|edit/stream|preview/stream|apps/stream)|/[a-z]+/w/[^/]+/stream")
 MAX_OPEN = 64                                    # the most streams one socket holds at once (a page has a few)
 PASSED = (b"host", b"origin", b"user-agent", b"cookie")   # the socket's headers each stream's request has too
 

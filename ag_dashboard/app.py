@@ -17,9 +17,11 @@ from starlette.exceptions import HTTPException
 from . import apps, server
 from .api import (agent, branches, common, editor, files, history, home, monitor, page, preview, sessions, settings,
                   stream, terminal, ws)
+from .api import apps as apps_api
 
 ROUTERS = (page.router, home.router, stream.router, agent.router, files.router, history.router, sessions.router,
            terminal.router, editor.router, preview.router, branches.router, monitor.router, settings.router, ws.router,
+           apps_api.router,                           # the apps' host (app_host.py)
            *(a.router() for a in apps.APPS))          # each app's own (apps.py)
 WEBSOCKETS = "wsproto" if importlib.util.find_spec("wsproto") else "none"   # without it, the page's streams are its own
                                                                            # connections (api/ws.py)
@@ -35,6 +37,7 @@ def create(srv: Optional["server.Server"] = None) -> FastAPI:
     for router in ROUTERS:
         app.include_router(router)
     app.add_middleware(OwnPage)
+    app.add_middleware(apps_api.Origins)         # outermost: an app's origin never reaches the dashboard's routes
     app.add_exception_handler(HTTPException, _no_route)
     app.add_exception_handler(RequestValidationError, _not_valid)
     app.add_exception_handler(common.Answered, _answered)

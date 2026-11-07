@@ -88,6 +88,7 @@ from typing import Any, Dict, List, Optional
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
 from . import answers, avatars, folders, gatherer_folders, hiding, live, saved, sessions, titles
+import app_kit
 import harness_kit
 from harness_kit import USERS, Kind
 from harness_kit.base import output_of as _output  # noqa: F401 - a tool result's words, as files.py reads them
@@ -137,9 +138,12 @@ SENT_SECONDS = 30.0            # a message sent from the queue: shown as written
 PROMPT_SECONDS = 120.0         # one sent between turns: the same
 CHAT_SECONDS = 60.0            # one sent from Chat the harness has not had: shown as pending at most this long
 COORDINATOR_NAME = "Gatherer agent"   # the name a gatherer agent (sessions.py's role) has, unless the reader gives one
+#: The apps' records (app_kit's): the host's own of their instances and agents, and each app's own types, named
+#: `<app>.<what>` -- records like the harness's, never the conversation.
+APP_RECORDS = app_kit.HOST_RECORDS
 #: SQL: an event (`e`) that is the conversation, not a record.
 NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHERE name IN ("
-              + ", ".join(f"'{t}'" for t in RECORDS) + "))")
+              + ", ".join(f"'{t}'" for t in RECORDS + APP_RECORDS) + ") OR instr(name, '.') > 0)")
 #: SQL: an event (`e`) joined to its type (`t`) for one channel's records of a type, SQLite kept on the channel's index
 #: (events_id) by the `+`. Joined on e.event_type_id itself it searches by type, through every channel's records newer
 #: than the row asked for -- once per actor, so the list slowed with every record in the gatherer.
