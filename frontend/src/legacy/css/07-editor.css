@@ -1,9 +1,13 @@
 /* The Editor, above the panes (the actors' views shorter while it is open), the edge between them dragged to resize:
    a folder's tree, and a file in it edited by everyone who has it open, in the page's code colours; what is written
    to the file on disk marked as it lands, in its actor's hue (--who); the actors that changed each file, their avatars */
-.ed-top { flex: 0 0 var(--ed-h, 50%); min-height: 140px; display: flex; flex-direction: column; position: relative;
-  background: var(--page); border-bottom: 5px solid color-mix(in srgb, var(--ink) 14%, var(--page));   /* the edge between it and the panes: a bar, its grip over it */
-  --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* the row above the panes: the Editor and the apps' panels side by side (07-panes.js), as tall as it is dragged; not
+   shown while none of them is */
+.top-row { flex: 0 0 var(--ed-h, 50%); min-height: 140px; display: flex; position: relative; min-width: 0;
+  background: var(--page); border-bottom: 5px solid color-mix(in srgb, var(--ink) 14%, var(--page)); }   /* the edge between it and the panes: a bar, its grip over it */
+.top-row:not(:has(> section:not([hidden]))) { display: none; }
+.ed-top { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative;
+  background: var(--page); --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .ed-top[hidden] { display: none; }
 /* in the page's top row, as tall as it (--top-h), so the rule under the row runs straight across: the file's head, and
    the folder's bar beside it (12-editor-tree.css) */
@@ -63,8 +67,8 @@
 .ed-grip { position: absolute; left: 0; right: 0; bottom: -7px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
 /* the chat minimized under the Editor (setChatMin): the Editor the column's height but for the row of message boxes, each
    pane's as tall as what it shows -- a frame's told by its page (fitMini) -- and no head of its own */
-.work.chat-min > .ed-top { flex: 1 1 0; }
-.work.chat-min > .ed-top > .ed-grip { display: none; }
+.work.chat-min > .top-row { flex: 1 1 0; }
+.work.chat-min > .top-row > .ed-grip { display: none; }
 .work.chat-min > .panes { flex: none; }
 .work.chat-min .pane > iframe { flex: none; margin-top: auto; }   /* the strips side by side, along the bottom */
 .pane:has(> main > .chat.mini) > .pane-top { display: none; }

@@ -153,7 +153,7 @@ export class AppPane {
     public instance: Instance,
     private readonly hooks: PaneHooks,
   ) {
-    this.node = el("section", "pane app-pane");
+    this.node = el("section", "app-pane");
     this.node.dataset.app = app.name;
     this.head = el("div", "app-head");
     this.who = el("span", "app-who");
@@ -394,12 +394,13 @@ export class AppPane {
     return null;
   }
 
-  /** Its agents, as the host has them now (the page asks once its pane is made). */
-  async refresh(): Promise<void> {
+  /** Its agents, as the host has them now: read again, drawn, and given (the page opens the first below it). */
+  async refresh(): Promise<string[]> {
     const got = await get<Listed>(`/api/apps?gatherer=${encodeURIComponent(this.instance.gatherer)}`).catch(() => null);
     if (got) {
       this.attached = got.attached[this.instance.id] || [];
       this.drawHead();
     }
+    return [...this.attached];
   }
 }

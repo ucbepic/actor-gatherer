@@ -12,7 +12,10 @@ A gatherer holds two kinds of things, and the code and the page should treat the
   nothing else. A way of looking at the agent's own history is part of its views, not an app: Chat's files and
   commands, and its file viewer, stay in Chat (decided 2026-11-07).
 - **Apps.** Everything an agent or the user works *with*: the Editor, the Browser, DocWriter, Preview, and History's
-  Summarize / Generate skill / memory / AGENTS.md. An app has a panel of its own beside or above the agent panes.
+  Summarize / Generate skill / memory / AGENTS.md. An app has a panel of its own, in the row above the agent panes
+  (beside the Editor); opening it shows the agent attached to it below. The user talks to an agent in its own views
+  (Chat, Terminal), right below the panel (decided 2026-11-07). An app whose own page has a request box today keeps
+  it (DocWriter's: what the dashboard does now is kept), through a capability to message its attached agents.
 
 An app reaches the rest of the system through two things only:
 
@@ -250,7 +253,7 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   | `native` | in the desktop app, a native web view at a rectangle of the panel (`native_view` capability) |
 
 - **Intents separate agent views from apps.** A view raises an intent and the host sends it to the app that handles
-  that kind, opening its panel beside the pane:
+  that kind, opening its panel in the row above the panes:
   - `open-file {path, line, row_id}`
   - `open-url {url}`
   - `explain-answer {channel, turn}`
@@ -374,7 +377,10 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - The Browser's and DocWriter's own endpoints stay until step 8; their actors are given those, not the gateway.
 4. **App panels** (front end). Built, one change from the plan: app panes join the page's panes as they are (one
    more kind beside the actors', `07-panes.js`), and the layout tree waits; rebuilding the panes as a tree now would
-   rewrite them under every other change to the page.
+   rewrite them under every other change to the page. Changed after step 5 (2026-11-07, its own PR): an app's panel
+   is in the row above the panes (`#top-row`), beside the Editor, sharing its height; each panel's width its share
+   (a bar before it); opening one shows the actor attached to it below, in the pane in focus (one open already: its
+   pane focused); kept in this browser under `ag-dashboard-top-apps`.
    - The SDK, `app_kit/js/app.js`, served on every app's origin at `/_ag/app.js`: events (read, subscribe, insert),
      tools (answer, call), agents, intents, the selection, the theme (its colours set on the panel's `:root`), the
      backend's messages, its own `/api/`; Esc and ⌘/Ctrl keys it leaves unhandled go on to the page.
@@ -417,12 +423,23 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
 7. **The Editor.** Its tree, live editing, conflicts and viewers become the Editor app; it takes `open-file`. Its
    panel replaces the area above the panes. The whole Editor is to be an app, not only its preview (2026-11-07);
    deferred for now: it stays in the page until this step is taken up.
-8. **The Browser and DocWriter.**
-   - Each becomes instances and attachments, with its tools through the gateway. A stored role
-     (`{"browser": key}`) is copied to an `app_attached` once, here: until then they aren't apps the host knows.
-   - `compose` and DocWriter's page-built prompt become `context_stream` events.
-   - The desktop app's native view becomes the capability.
-   - The `browser` and `docwriter` pane views go, and the per-app MCP endpoints with them.
+8. **The Browser and DocWriter.** What they do for the user and the agent today is kept (2026-11-07): only where
+   their panel sits and how they plug in change. DocWriter first, then the Browser, each its own PR.
+   - Each becomes instances (the instance id is its key today, so its profile, logins and saved tabs stay where they
+     are) and attachments, with its tools through the gateway. A stored role (`{"browser": key}`) is copied to an
+     `app_attached` once, here: until then they aren't apps the host knows.
+   - Its panel is in the row above the panes, its actor's Chat and Terminal below: the `browser` and `docwriter` pane
+     views go, and the per-app MCP endpoints with them. "+ Browser" / "+ DocWriter" still make one and a new actor
+     attached to it.
+   - What the agent is told of the app reaches it as ag's events, not by the dashboard rewriting the user's message:
+     the app inserts them, or gives an ag poller that pulls its state before each model call of an attached agent.
+     The Browser's `<browser_state>` (the page, what the user did since, what they picked) becomes its poller's: the
+     same content, now also between the calls of a turn. DocWriter's page-built prompt the same way.
+   - DocWriter's guard on the harness's own edit tools becomes a capability an app declares (the host adds the hook).
+   - DocWriter's own request box stays: its page messages its attached agent through the SDK, as it sends today
+     (`message_agents` capability), the prompt it builds as it builds it.
+   - The desktop app's native view becomes the capability: the panel says where its screen is, the page tells the
+     desktop app.
 9. **Skills & memory, and Sources.** History's actions move to Skills & memory. Sources becomes an app once it is
    merged.
 10. **Apps from outside.** `ag apps install`, the permissions shown at install, and the store's manifest format.

@@ -32,12 +32,12 @@ function project(): { repo: string; plot: string } {
 /** An intent raised from a panel, as the Editor raises it: through the test app's SDK (tests/apps/notes). */
 async function raise(page: Page, kind: string, data: Record<string, unknown>) {
   const row = page.locator("#agents .gatherer-row").first();
-  if (!(await page.locator("#panes > .app-pane[data-app=notes]").count())) {
+  if (!(await page.locator("#top-row > .app-pane[data-app=notes]").count())) {
     await row.hover();
     await row.locator("button.new-more").click();
     await page.locator(".row-menu[role=menu]").getByText("Notes", { exact: true }).click();
     await expect(
-      page.locator("#panes > .app-pane[data-app=notes]").frameLocator("iframe").locator("body[data-ready='1']"),
+      page.locator("#top-row > .app-pane[data-app=notes]").frameLocator("iframe").locator("body[data-ready='1']"),
     ).toHaveCount(1);
   }
   const notes = page.frames().find((f) => /^http:\/\/notes\.localhost:\d+\//.test(f.url()))!;
@@ -48,7 +48,7 @@ async function raise(page: Page, kind: string, data: Record<string, unknown>) {
   );
 }
 
-const previewPane = (page: Page) => page.locator("#panes > .app-pane[data-app=preview]");
+const previewPane = (page: Page) => page.locator("#top-row > .app-pane[data-app=preview]");
 const previewPanel = (page: Page) => previewPane(page).frameLocator("iframe");
 
 test("a run asked for opens the project's Preview on its form, a guess in it, and runs what is saved", async ({

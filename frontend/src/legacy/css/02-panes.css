@@ -86,7 +86,7 @@
   #agents { max-height: 40vh; border-bottom: 1px solid var(--ring); }
   main { overflow: visible; }
   .panes, .work { display: block; } .panes.split .pane:not(.focused), .pane-gutter { display: none; } .pane > iframe { height: 85vh; }
-  .ed-top { height: 70vh; } }
+  .top-row { height: 70vh; } }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }

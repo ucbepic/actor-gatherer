@@ -63,7 +63,7 @@ const agNext = Object.freeze({
    * earlier turns" picked (02-data.js): every turn as it has them, the clicks against it dropped. */
   chat: Object.freeze({ draw: drawTurns, clearFlips: () => useTurns.getState().clearFlips(), cidsOf }),
   /** The apps (features/apps/host.ts): those found, an instance opened, and an app's pane -- its head, its frame and the
-   * bridge to its panel -- which the old page keeps among its panes (src/legacy/07-panes.js's addAppPane). */
+   * bridge to its panel -- which the old page keeps in the top row, above the panes (src/legacy/07-panes.js's addAppPane). */
   apps: Object.freeze({
     load: apps.load,
     found: apps.found,

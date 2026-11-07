@@ -12,17 +12,14 @@ panes.here = { node: document.getElementById("pane-here"), size: 1 };
 panes.focus = panes.here;
 function isAt(sel, g, c) { return !!sel && sel[0] === g && sel[1] === c; }
 function allPanes() { return [panes.here, ...panes.others]; }
-// An app's pane (addAppPane): among the others, but no actor's -- what is said of actors' panes skips it.
-const isApp = (p) => !!p && p.kind === "app";
-const actorPanes = () => panes.others.filter((p) => !isApp(p));
-// The actors open in this page's panes, this page's own first; the one in focus (an app's pane in focus: the actor's
-// pane in focus before it).
+const actorPanes = () => panes.others;           // every pane is an actor's: apps' panels are in the top row (below)
+// The actors open in this page's panes, this page's own first; the one in the pane in focus.
 function openActors() { return PANE ? [] : [...(state.selected ? [state.selected] : []), ...actorPanes().map((p) => [p.g, p.c])]; }
 function focusedActor() {
-  const p = isApp(panes.focus) ? (panes.lastActor || panes.here) : panes.focus;
+  const p = panes.focus;
   return p === panes.here || !panes.others.includes(p) ? state.selected : [p.g, p.c];
 }
-function paneSig() { return [state.selected, panes.others.map((p) => isApp(p) ? ["app", p.app.name, p.instance.id] : [p.g, p.c]), allPanes().indexOf(panes.focus)]; }
+function paneSig() { return [state.selected, panes.others.map((p) => [p.g, p.c]), allPanes().indexOf(panes.focus)]; }
 function paneOf(win) { return panes.others.find((p) => p.frame.contentWindow === win) || null; }
 // A row of the list clicked: shown in the pane in focus, or (Ctrl/⌘) beside it.
 function pick(g, c, ev) { return ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT ? openBeside(g, c) : show(g, c); }
@@ -34,7 +31,7 @@ function pickBeside(g, c, ev) {
 // The actor in the pane in focus -- in `view`, if given; one open already, its pane focused instead.
 async function show(g, c, view = null) {
   const there = actorPanes().find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
-  const p = there || (isApp(panes.focus) ? (panes.others.includes(panes.lastActor) ? panes.lastActor : panes.here) : panes.focus);
+  const p = there || panes.focus;
   if (p !== panes.here) {
     focusPane(p);
     if (!there) { Object.assign(p, { g, c, view: view || p.view }); savePanes(); connect(); renderAgents(); p.call("select", g, c, view); }
@@ -56,7 +53,7 @@ function openBeside(g, c) {
   if (there) return focusPane(there);
   if (allPanes().length >= MAX_PANES) return paneNote(`At most ${MAX_PANES} actors side by side: close one (its ×) to open another.`);
   const from = panes.focus, at = from === panes.here ? 0 : panes.others.indexOf(from) + 1;
-  const p = addPane(g, c, from === panes.here || isApp(from) ? chatView().id : from.view, at);
+  const p = addPane(g, c, from === panes.here ? chatView().id : from.view, at);
   focusPane(p);
   layout(); savePanes(); connect();
 }
@@ -83,8 +80,6 @@ function closePane(p) {
   const i = panes.others.indexOf(p);
   if (i < 0) return;
   panes.others.splice(i, 1);
-  if (isApp(p)) p.panel.destroy();                   // an app's: its streams go; the instance stays open
-  if (panes.lastActor === p) panes.lastActor = null;
   p.gutter.remove(); p.node.remove();                // its page goes, and its terminal's stream; the session stays
   topRow(p, null);
   if (panes.focus === p) focusPane(panes.others[i - 1] || panes.here);
@@ -92,10 +87,9 @@ function closePane(p) {
 }
 // This page's own pane closed: the next pane's actor (and view) moves into it, its frame gone.
 async function closeHere() {
-  const next = actorPanes()[0];                      // an app's pane is never this page's own
+  const next = actorPanes()[0];
   if (!next) return;
   panes.others.splice(panes.others.indexOf(next), 1);
-  if (panes.lastActor === next) panes.lastActor = null;
   next.gutter.remove(); next.node.remove();
   topRow(next, null);
   panes.here.size = next.size;
@@ -107,7 +101,6 @@ async function closeHere() {
 function focusPane(p) {
   if (!p || panes.focus === p) return;
   panes.focus = p;
-  if (!isApp(p)) panes.lastActor = p;
   for (const q of allPanes()) q.node.classList.toggle("focused", q === p);
   for (const q of panes.others) q.call("focused", q === p);
   savePanes();
@@ -200,8 +193,7 @@ function savePanes() {
   try {
     if (!panes.others.length) localStorage.removeItem(PANES_KEY);
     else localStorage.setItem(PANES_KEY, JSON.stringify({ here: state.selected, size: panes.here.size, focus: panes.others.indexOf(panes.focus),
-      others: panes.others.map((p) => isApp(p) ? { app: p.app.name, instance: p.instance.id, g: p.instance.gatherer, size: p.size }
-        : { g: p.g, c: p.c, view: p.view, size: p.size }) }));
+      others: panes.others.map((p) => ({ g: p.g, c: p.c, view: p.view, size: p.size })) }));
   } catch (e) { /* this page only */ }
 }
 // The panes kept, opened again once the home is known: those whose actors are still in it.
@@ -217,13 +209,11 @@ function restorePanes() {
   if (!state.selected) return;
   panes.here.size = +kept.size || 1;
   for (const o of kept.others) {
-    if (o && o.app) { panes.appsKept.push(o); continue; }     // an app's: once the apps are known too (restoreAppPanes)
     if (!o || allPanes().length >= MAX_PANES || !exists(o.g, o.c) || openActors().some((sel) => isAt(sel, o.g, o.c))) continue;
     addPane(o.g, o.c, o.view, panes.others.length, +o.size || 1);
   }
   focusPane(panes.others[kept.focus] || panes.here);
   layout();
-  if (panes.appsLoaded) restoreAppPanes();              // the apps known first: its own now
 }
 // What this page's stream says for the frames: the home for each, an actor for its pane's; kept, for a frame not
 // ready yet (or one shown a new actor).
@@ -233,35 +223,100 @@ function panesTake(name, data) {
   else { const got = JSON.parse(data); to = [got.gatherer, got.channel]; panes.actors.set(key(...to), data); }
   for (const p of actorPanes()) if (!to || isAt(to, p.g, p.c)) p.call("take", name, data);
 }
-// ------------------------------------------------------------------ apps' panes
-// An app's pane (app_kit/DESIGN.md): its head and its panel's frame, made by features/apps/host.ts (window.agNext.apps),
-// kept here among the actors' panes -- resized, focused, closed and kept as they are. What its panel asks goes through
-// it to the dashboard's /api/apps; the agent in focus (appsSelected) and the theme (its `call`) are told to it.
-panes.appsKept = [];
-function addAppPane(app, instance, at, size = 1) {
-  const p = { kind: "app", app, instance, g: instance.gatherer, c: null, size, ready: true };
+// ------------------------------------------------------------------ apps' panels
+// An app's panel (app_kit/DESIGN.md) is in the top row, above the actors' panes, beside the Editor: the row as tall
+// as the Editor's (its grip, 21-start.js), each panel's width its share (`size`, a gutter before it to drag). Opening
+// one opens the actor it is attached to below it, in the pane in focus (one open already: its pane focused). Its head
+// and its iframe are made by features/apps/host.ts (window.agNext.apps); what its panel asks goes through it to the
+// dashboard's /api/apps; the actor in focus (appsSelected) and the theme are told to it. The panels open are kept in
+// this browser (TOP_APPS_KEY), opened again once the apps are known (restoreAppPanes).
+const TOP_APPS_KEY = "ag-dashboard-top-apps";
+panes.apps = [];
+const topRowEl = () => document.getElementById("top-row");
+function topLayout() {
+  const ed = document.getElementById("ed-top");
+  if (ed) ed.style.flexGrow = String(panes.edSize || 1);
+  for (const p of panes.apps) p.node.style.flexGrow = String(p.size);
+}
+// The bar before an app's panel, dragged: it and the panel before it (the Editor, shown, or another app's) resized.
+function topGutter(p) {
+  const bar = el("div", { class: "top-gutter", role: "separator", "aria-orientation": "vertical", title: "Drag to resize · double-click: all the same width" });
+  bar.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    const shown = [...topRowEl().children].filter((n) => n.matches("section:not([hidden])"));
+    const leftNode = shown[shown.indexOf(p.node) - 1];
+    if (!leftNode) return;
+    ev.preventDefault();
+    bar.setPointerCapture(ev.pointerId);
+    const left = panes.apps.find((q) => q.node === leftNode) || null;      // null: the Editor
+    const lSize = () => left ? left.size : (panes.edSize || 1);
+    const wl = leftNode.getBoundingClientRect().width, wr = p.node.getBoundingClientRect().width, share = lSize() + p.size, x0 = ev.clientX;
+    topRowEl().classList.add("resizing");             // the frames let the pointer by while it drags
+    const move = (e) => {
+      const w = Math.min(Math.max(wl + e.clientX - x0, Math.min(MIN_PANE, wl)), wl + wr - Math.min(MIN_PANE, wr));
+      const l = share * w / (wl + wr);
+      if (left) left.size = l; else panes.edSize = l;
+      p.size = share - l;
+      topLayout();
+    };
+    const up = () => { bar.removeEventListener("pointermove", move); topRowEl().classList.remove("resizing"); saveAppPanes(); };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", up, { once: true });
+    bar.addEventListener("pointercancel", up, { once: true });
+  });
+  bar.addEventListener("dblclick", () => { panes.edSize = 1; for (const q of panes.apps) q.size = 1; topLayout(); saveAppPanes(); });
+  return bar;
+}
+function addAppPane(app, instance, size = 1) {
+  const p = { app, instance, g: instance.gatherer, size };
   p.panel = window.agNext.apps.pane(app, instance, {
-    close: () => closePane(p),
-    focus: () => focusPane(p),
+    close: () => closeAppPane(p),
+    focus: () => {},
     intent: (kind, data, from) => appIntent(kind, data, from.instance.gatherer),
     selection: () => appsSelection(),
     agents: (g) => ((state.home && state.home.gatherers.find((x) => x.name === g)) || { agents: [] }).agents
       .filter((a) => !a.closed).map((a) => ({ channel: a.channel, name: (a.name && a.name.text) || a.last_user_message || a.channel })),
   });
   p.node = p.panel.node; p.frame = p.panel.frame;
-  p.call = (what) => p.panel.call(what);
-  p.gutter = gutterFor(p);
-  p.node.addEventListener("pointerdown", () => focusPane(p), true);
-  const before = panes.others[at] ? panes.others[at].gutter : null;
-  document.getElementById("panes").insertBefore(p.gutter, before);
-  document.getElementById("panes").insertBefore(p.node, before);
-  panes.others.splice(at, 0, p);
+  p.gutter = topGutter(p);
+  topRowEl().append(p.gutter, p.node);
+  panes.apps.push(p);
   watchTop(p.node.querySelector(".app-head"), p);
-  p.panel.refresh();
+  topLayout();
   return p;
 }
-// The app's instance for gatherer `g` (in `folder`: the one there, for an app with one per folder), in a pane beside
-// the pane in focus -- its own, if it is open already. The actor in focus attached, if it is `g`'s.
+function closeAppPane(p) {
+  const i = panes.apps.indexOf(p);
+  if (i < 0) return;
+  panes.apps.splice(i, 1);
+  p.panel.destroy();                                 // its streams go; the instance stays open
+  p.gutter.remove(); p.node.remove();
+  topRow(p, null);
+  saveAppPanes(); renderAgents();
+}
+function saveAppPanes() {
+  if (PANE || SNAPSHOT) return;
+  try {
+    if (!panes.apps.length) localStorage.removeItem(TOP_APPS_KEY);
+    else localStorage.setItem(TOP_APPS_KEY, JSON.stringify({ ed: panes.edSize || 1,
+      apps: panes.apps.map((p) => ({ app: p.app.name, instance: p.instance.id, g: p.instance.gatherer, size: p.size })) }));
+  } catch (e) { /* this page only */ }
+}
+// The actor an app's instance is attached to, shown below it: in the pane in focus, unless one of them is open in a
+// pane already (that pane focused). None attached: the panes as they are.
+async function showAttached(p) {
+  const chans = await p.panel.refresh();
+  if (!chans.length) return;
+  const g = p.instance.gatherer;
+  const there = chans.map((c) => actorPanes().find((q) => isAt([q.g, q.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null)).find(Boolean);
+  if (there) return focusPane(there);
+  const agents = ((state.home && state.home.gatherers.find((x) => x.name === g)) || { agents: [] }).agents;
+  const c = chans.find((ch) => agents.some((a) => a.channel === ch && !a.closed)) || chans.find((ch) => agents.some((a) => a.channel === ch));
+  if (c) await show(g, c);
+}
+// The app's instance for gatherer `g` (in `folder`: the one there, for an app with one per folder) in the top row --
+// its panel there already, if it is open -- and the actor it is attached to below it. The actor in focus attached
+// first, if it is `g`'s and `attach`.
 async function openApp(g, name, folder, attach = true) {
   const app = window.agNext.apps.named(name);
   if (!app || PANE || SNAPSHOT) return null;
@@ -270,13 +325,9 @@ async function openApp(g, name, folder, attach = true) {
   let instance;
   try { instance = await window.agNext.apps.open(name, g, folder || null, channel); }
   catch (e) { paneNote(`${app.label}: ${e.message}`); return null; }
-  const there = panes.others.find((p) => isApp(p) && p.instance.id === instance.id);
-  if (there) { focusPane(there); return there; }
-  if (allPanes().length >= MAX_PANES) { paneNote(`At most ${MAX_PANES} panes side by side: close one (its ×) to open ${app.label}.`); return null; }
-  const at = panes.focus === panes.here ? 0 : panes.others.indexOf(panes.focus) + 1;
-  const p = addAppPane(app, instance, at);
-  focusPane(p);
-  layout(); savePanes(); renderAgents();
+  const p = panes.apps.find((q) => q.instance.id === instance.id) || addAppPane(app, instance);
+  saveAppPanes(); renderAgents();
+  await showAttached(p);
   return p;
 }
 // An intent (app_kit's INTENTS) raised by a panel or a view: the app that takes it opened (in `g`) and told it.
@@ -293,27 +344,30 @@ async function appIntent(kind, data, g) {
   if (!p) throw new Error(`${app.label} could not be opened`);
   p.panel.intent(kind, data || {});
 }
-// The agent in focus, as the apps' panels are told it: the actor of the actor's pane in focus last.
+// The agent in focus, as the apps' panels are told it: the actor of the pane in focus.
 function appsSelection() {
   const sel = focusedActor();
   return sel && !isShell(sel[1]) ? { gatherer: sel[0], channel: sel[1] } : null;
 }
 function appsSelected() {
   const sel = appsSelection();
-  for (const p of panes.others) if (isApp(p)) p.panel.selection(sel);
+  for (const p of panes.apps) p.panel.selection(sel);
 }
-// The apps' panes kept (restorePanes), opened again once both the panes kept and the apps are known -- whichever is
-// last calls it: those whose instance is still open.
+// The apps' panels kept, opened again once the apps are known: those whose instance is still open; the actors below
+// as the panes kept them (restorePanes), not opened again for them.
 async function restoreAppPanes() {
-  panes.appsLoaded = true;
-  const kept = panes.appsKept.splice(0);
-  for (const o of kept) {
-    const app = window.agNext.apps.named(o.app);
-    if (!app || allPanes().length >= MAX_PANES || panes.others.some((p) => isApp(p) && p.instance.id === o.instance)) continue;
+  if (PANE || SNAPSHOT) return;
+  let kept = null;
+  try { kept = JSON.parse(localStorage.getItem(TOP_APPS_KEY)); } catch (e) { /* none kept */ }
+  if (!kept || !Array.isArray(kept.apps)) return;
+  panes.edSize = +kept.ed || 1;
+  for (const o of kept.apps) {
+    const app = o && window.agNext.apps.named(o.app);
+    if (!app || panes.apps.some((p) => p.instance.id === o.instance)) continue;
     const inst = await window.agNext.apps.instanceOf(o.app, o.g, o.instance);
-    if (inst) addAppPane(app, inst, panes.others.length, +o.size || 1);
+    if (inst) addAppPane(app, inst, +o.size || 1);
   }
-  if (kept.length) { layout(); savePanes(); }
+  topLayout(); saveAppPanes();
 }
 // What a frame's page asks of this one (its PANE).
 if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({

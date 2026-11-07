@@ -1388,7 +1388,7 @@ function edMount() {
     ed.host.addEventListener("keydown", edExecKey, true);          // ⌘↵: Execute
     widthGrip(treeGrip, "ag-dashboard-editor-tree-width", nav, "width", 120, (x) => x - nav.getBoundingClientRect().left);
     widthGrip(sideGrip, "ag-dashboard-editor-changes-width", ed.side, "width", 200, (x) => ed.side.getBoundingClientRect().right - x);
-    top.replaceChildren(ed.host, topGrip(top));
+    top.replaceChildren(ed.host);
     edTreeWire(nav);
     let folded = false;
     try { folded = localStorage.getItem(ED_TREE_FOLDED_KEY) === "1"; } catch (e) { /* this page only */ }

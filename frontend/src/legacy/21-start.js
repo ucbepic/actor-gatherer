@@ -19,5 +19,9 @@ else {
   watchTop(document.getElementById("pane-head"), "here");
 }
 refresh(true).then(connect).then(() => { if (PANE) paneReady(); }).then(loadOwnViews);
-if (!PANE && !SNAPSHOT) window.agNext.apps.load().then(() => restoreAppPanes()).then(() => { if (state.home) renderAgents(); });
+if (!PANE && !SNAPSHOT) {
+  const row = $("top-row");                          // the row above the panes -- the Editor, apps' panels -- its height dragged
+  row.append(topGrip(row));
+  window.agNext.apps.load().then(() => restoreAppPanes()).then(() => { if (state.home) renderAgents(); });
+}
 if (!SNAPSHOT) setInterval(() => { if (!state.paused) render(); }, AGO_MS);

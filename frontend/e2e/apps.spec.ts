@@ -1,5 +1,5 @@
-// Apps (app_kit/DESIGN.md): an app's pane beside the actors' -- its panel in a frame on the app's own origin, talking to
-// the page through app_kit's SDK (app_kit/js/app.js). The test app is Notes (tests/apps/notes/), which the test home
+// Apps (app_kit/DESIGN.md): an app's panel in the row above the actors' panes, beside the Editor -- in a frame on the
+// app's own origin, talking to the page through app_kit's SDK (app_kit/js/app.js) -- the actor it is attached to below it. The test app is Notes (tests/apps/notes/), which the test home
 // finds (tests/web_home.py: AG_APPS_PATH). The server and its home are one for the whole run: a test leaves what it
 // opened as it found it, or asserts nothing another test changes.
 import type { FrameLocator, Locator, Page } from "@playwright/test";
@@ -15,7 +15,7 @@ async function openNotes(page: Page): Promise<{ pane: Locator; panel: FrameLocat
   await row.hover(); // its buttons shown while hovered
   await row.locator("button.new-more").click();
   await page.locator(".row-menu[role=menu]").getByText("Notes", { exact: true }).click();
-  const pane = page.locator("#panes > .app-pane[data-app=notes]");
+  const pane = page.locator("#top-row > .app-pane[data-app=notes]");
   await expect(pane).toHaveCount(1);
   const panel = pane.frameLocator("iframe");
   await expect(panel.locator("body[data-ready='1']")).toHaveCount(1);
@@ -25,10 +25,15 @@ async function openNotes(page: Page): Promise<{ pane: Locator; panel: FrameLocat
 
 const notesFrame = (page: Page) => page.frames().find((f) => /^http:\/\/notes\.localhost:\d+\//.test(f.url()))!;
 
-test("an app opens beside the actor in focus, attached to it, its panel on an origin of its own", async ({ page }) => {
+test("an app opens above the panes, attached to the actor in focus, its panel on an origin of its own", async ({
+  page,
+}) => {
   await openActor(page, CLAUDE);
   const { pane, panel } = await openNotes(page);
-  await expect(page.locator("#panes > .pane")).toHaveCount(2);
+  await expect(page.locator("#panes > .pane")).toHaveCount(1); // the actor's pane alone, below it
+  const above = (await pane.boundingBox())!,
+    below = (await page.locator("#panes").boundingBox())!;
+  expect(above.y + above.height).toBeLessThanOrEqual(below.y);
   await expect(pane.locator(".app-head")).toContainText("Notes"); // the test home's actors name no folder: its one
   expect(await pane.locator("iframe").getAttribute("src")).toMatch(/^http:\/\/notes\.localhost:\d+\/\?/);
   await expect(panel.locator("#agents")).toContainText(CLAUDE_CHANNEL); // the actor in focus, attached
@@ -44,7 +49,8 @@ test("an app opens beside the actor in focus, attached to it, its panel on an or
   });
   expect(reached).toBe("refused");
   await pane.locator(".app-close").click();
-  await expect(page.locator("#panes > .app-pane")).toHaveCount(0);
+  await expect(page.locator("#top-row > .app-pane")).toHaveCount(0);
+  await expect(page.locator("#top-row")).toBeHidden(); // nothing in it: the panes have the height
 });
 
 test("a note the user adds in the panel is stored, comes back as an event, and is told to the agents", async ({
@@ -98,9 +104,9 @@ test("an intent opens the app that takes it and tells its panel; one no app take
   await notesFrame(page).evaluate(() =>
     (window as unknown as Notes).notes.intents.open("open-file", { path: "/w/demo/plan.md" }),
   );
-  // Notes has an instance per folder: the file's folder's opened beside, and told
-  await expect(page.locator("#panes > .app-pane")).toHaveCount(2);
-  const there = page.locator("#panes > .app-pane", { hasText: "demo" });
+  // Notes has an instance per folder: the file's folder's opened beside it, and told
+  await expect(page.locator("#top-row > .app-pane")).toHaveCount(2);
+  const there = page.locator("#top-row > .app-pane", { hasText: "demo" });
   await expect(there.frameLocator("iframe").locator("#intent")).toHaveText("open-file /w/demo/plan.md");
   const refused = await notesFrame(page).evaluate(() =>
     (window as unknown as Notes).notes.intents.open("open-url", { url: "https://example.com" }).then(
@@ -115,7 +121,7 @@ test("the panel follows the actor in focus, and the agents attached from its hea
   await openActor(page, CLAUDE);
   const { pane, panel } = await openNotes(page);
   await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
-  await expect(page.locator("#panes > .pane")).toHaveCount(3);
+  await expect(page.locator("#panes > .pane")).toHaveCount(2);
   await expect(panel.locator("#focus")).toHaveText(CODEX_CHANNEL); // the actor's pane in focus now
   await pane.locator(".app-agents").click();
   await pane.locator(".app-menu-item", { hasText: CODEX }).click();
@@ -126,12 +132,36 @@ test("the panel follows the actor in focus, and the agents attached from its hea
   await expect(panel.locator("#agents")).not.toContainText(CODEX_CHANNEL);
 });
 
-test("an app's pane is kept with the page's panes", async ({ page }) => {
+test("an app's panel is kept in this browser", async ({ page }) => {
   await openActor(page, CLAUDE);
   await openNotes(page);
   await page.reload();
-  await expect(page.locator("#panes > .app-pane[data-app=notes]")).toHaveCount(1);
-  await expect(page.locator("#panes > .app-pane").frameLocator("iframe").locator("body[data-ready='1']")).toHaveCount(
+  await expect(page.locator("#top-row > .app-pane[data-app=notes]")).toHaveCount(1);
+  await expect(page.locator("#top-row > .app-pane").frameLocator("iframe").locator("body[data-ready='1']")).toHaveCount(
     1,
   );
+});
+
+test("an app opened shows the actor it is attached to below it", async ({ page }) => {
+  await openActor(page, CLAUDE);
+  await openNotes(page);
+  type Notes = { notes: { intents: { open: (k: string, d: object) => Promise<unknown> } } };
+  const raise = () =>
+    notesFrame(page).evaluate(() =>
+      (window as unknown as Notes).notes.intents.open("open-file", { path: "/w/attached/a.md" }),
+    );
+  await raise(); // its own instance, no agent attached: the panes as they were
+  const there = page.locator("#top-row > .app-pane", { hasText: "attached" });
+  await expect(there).toHaveCount(1);
+  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CLAUDE })).toHaveCount(1);
+  await there.locator(".app-agents").click();
+  await there.locator(".app-menu-item", { hasText: CODEX }).click(); // Codex attached to it
+  await expect(there.locator(".app-agents")).toHaveText(/1 agent/);
+  await there.locator(".app-close").click();
+  await raise(); // opened again: its agent shown below, in the pane in focus
+  await expect(there).toHaveCount(1);
+  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CODEX })).toHaveCount(1);
+  await there.locator(".app-agents").click();
+  await there.locator(".app-menu-item", { hasText: CODEX }).click(); // detached again
+  await expect(there.locator(".app-agents")).toHaveText("No agent");
 });
