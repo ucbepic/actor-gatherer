@@ -1,0 +1,50 @@
+# DocWriter (github.com/docwriter-org/docwriter, MIT): a writing app where the author and an agent edit the same draft,
+# the agent's edits proposed beside the text until the author accepts them. One per folder it is opened on, each with
+# an agent of its own (started with it), who alone is given its tools and instructions. Its page is DocWriter's own,
+# built against this app's backend (assets/src/docwriter -> panel/, tools.json, instructions.md).
+name = "docwriter"
+label = "DocWriter"
+version = "1"
+description = "write with an agent that proposes its edits beside your text"
+instances = "many"
+offer = "attached"
+instructions_file = "instructions.md"
+tools_file = "tools.json"
+mark = "mark.svg"
+
+[agent]
+start = true
+name = "DocWriter · {folder}"
+
+# what its agent was asked, as the list shows it: the author's words in DocWriter's prompt, not the workspace's state
+[asked]
+when = "<workspace_state>"
+pattern = '<user_(?:message|feedback)[^>]*>\s*([\s\S]*?)(?:\s*</user_|$)'
+otherwise = "A DocWriter request"
+
+[backend]
+python = "backend:DocWriterApp"
+
+[panel]
+entry = "panel/index.html"
+
+[capabilities]
+message_agents = true
+transcript = true
+edit_guard = true
+
+[[events]]
+name = "docwriter.proposal_resolved"
+description = "The author settled the agent's proposed edits: {file, outcome (accepted, rejected, dismissed), proposals: [{thread, changes: [{before, after}]}], by, via}."
+
+[[events]]
+name = "docwriter.comment"
+description = "The author opened a comment thread on a passage: {file, thread, passage, text, by, via}."
+
+[[events]]
+name = "docwriter.reply"
+description = "The author replied in a thread: {file, thread, text, by, via}."
+
+[[events]]
+name = "docwriter.doc_settings"
+description = "The author changed the agent's settings: the settings, by, via."

@@ -7,7 +7,7 @@
 		<title>DocWriter preview</title>
 		<script>
 			// Where this DocWriter is served, /docwriter/w/<key>: every request of the page goes under it (vite.config.mjs)
-			globalThis.__dwBase = (location.pathname.match(/^.*?\/docwriter\/w\/[^/]+/) || [""])[0];
+			globalThis.__dwBase = (location.pathname.match(/^\/api\/w\/[^/]+\/[0-9a-f]{16}/) || [""])[0];   // its DocWriter's backend
 		</script>
 	</head>
 	<style>

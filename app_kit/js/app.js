@@ -15,6 +15,14 @@ Everything goes through the page around it, by postMessage, which checks it agai
                                                          returns text, {content, isError}, or a promise of either
     ag.tools.call(name, args)                            one of its tools, called by the user: the result
     ag.agents.attached / onChange(cb) / attach(ch) / detach(ch)   the agents (channels) working with this instance
+    ag.agents.state(ch) / onState(cb)                    an attached agent as the page has it: {status, turn_over,
+                                                         asking, failing, stopped, session, name} (cb: each change)
+    ag.agents.send(ch, text) / answer(ch, call, choice) / interrupt(ch)   a message to an attached agent, its question
+                                                         answered, its turn stopped, as the user (capability
+                                                         message_agents): as Chat sends, answers and Esc stops
+    ag.agents.transcript(ch, {after?})                   an attached agent's transcript after row `after`, as the
+                                                         dashboard's Transcript has it: {items: [{row_id, type, parts}]}
+                                                         (capability transcript)
     ag.intents.open(kind, data) / on(kind, cb)           ask for something (open-file, open-url, ...) / be asked
     ag.selection.current / on(cb)                        the agent in focus in the page: {gatherer, channel}
     ag.theme.current / on(cb)                            {mode: "light"|"dark", vars}: the vars also set on :root
@@ -29,9 +37,10 @@ Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as
   const HOST = params.get("host") || "";                  // the dashboard's origin: the only one listened to
   let seq = 0;
   const waiting = new Map();
-  const listeners = { event: new Map(), message: [], attached: [], selection: [], theme: [], intent: new Map() };
+  const listeners = { event: new Map(), message: [], attached: [], selection: [], theme: [], intent: new Map(),
+                      states: [] };
   const handlers = new Map();
-  let info = null, attached = [], selection = null, theme = null;
+  let info = null, attached = [], selection = null, theme = null, states = {};
 
   function send(op, body) {
     return new Promise((resolve, reject) => {
@@ -83,6 +92,7 @@ Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as
     }
     else if (m.push === "selection") { selection = m.value; for (const cb of listeners.selection) cb(selection); }
     else if (m.push === "theme") applyTheme(m.value);
+    else if (m.push === "states") { states = m.value || {}; for (const cb of listeners.states) cb(states); }
     else if (m.push === "intent") { for (const cb of listeners.intent.get(m.kind) || []) cb(m.data); }
   });
 
@@ -119,6 +129,12 @@ Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as
       onChange(cb) { listeners.attached.push(cb); },
       attach: (channel) => send("agents.attach", { channel }),
       detach: (channel) => send("agents.detach", { channel }),
+      state: (channel) => states[channel] || null,
+      onState(cb) { listeners.states.push(cb); },
+      send: (channel, text) => send("agents.send", { channel, text }),
+      answer: (channel, call, choice) => send("agents.answer", { channel, call, choice }),
+      interrupt: (channel) => send("agents.interrupt", { channel }),
+      transcript: (channel, opts) => send("agents.transcript", { channel, after: (opts && opts.after) || 0 }),
     },
     intents: {
       open: (kind, data) => send("intent", { kind, data: data || {} }),
@@ -142,6 +158,7 @@ Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as
       const got = await send("hello", {});
       info = got.info;
       attached = got.attached || [];
+      states = got.states || {};
       selection = got.selection || null;
       if (got.theme) applyTheme(got.theme);
       return ag;

@@ -245,8 +245,13 @@ class AppBase(HomeBase):
     def new_host(self):
         h = app_host.AppHost(0, write=insert_here)
         self.addCleanup(h.close)
-        self.addCleanup(h.flush)
+        self.hosts = getattr(self, "hosts", []) + [h]
         return h
+
+    def tearDown(self):
+        for h in getattr(self, "hosts", []):                # what they write, written while the home is the test's
+            h.flush()
+        super().tearDown()
 
     def call(self, tool, args, channel=None, host=None):
         got = (host or self.host).call("preview", self.i, tool, args, Caller(channel=channel, gatherer="g"))
@@ -343,7 +348,7 @@ class ServedTest(AppBase):
         super().setUp()
         self.httpd = server.serve("127.0.0.1", 0, live_updates=False)
         self.httpd.app_host._write_fn = insert_here
-        self.addCleanup(self.httpd.app_host.flush)
+        self.hosts.append(self.httpd.app_host)
         self.rows = [{"session_id": "c1", "gatherer": "g", "cwd": self.repo, "harness": "claude"}]
         self.httpd.sessions.list = lambda: [dict(r) for r in self.rows]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()

@@ -30,7 +30,7 @@ import mimetypes
 import os
 import re
 from typing import Optional
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, unquote
 
 import anyio
 from fastapi import APIRouter, Depends, Request
@@ -38,15 +38,19 @@ from starlette.datastructures import Headers
 from starlette.responses import Response
 
 import app_kit
+import harness_kit
 from app_kit import AppError, Caller, remote
 
-from .. import app_host, libs, mcp, tool_gateway
+from .. import app_agents, app_host, libs, mcp, tool_gateway
 from .common import Body, Errors, Parts, answer, failure, local_only, not_found, queue_events
 
 router = APIRouter(route_class=Errors)
 ORIGIN_HOST = re.compile(r"^([a-z][a-z0-9-]{0,23})\.localhost(?::\d+)?$")
 SDK_PATH = "/_ag/app.js"                         # the panels' SDK (app_kit/js/app.js), on every app's origin
 LIB_PATH = "/_ag/lib/"                           # the libraries the dashboard shares with apps (libs.py)
+#: A backend request naming its instance in its path, /api/w/<gatherer>/<instance>/<rest>, for URLs a panel can't add a
+#: query to (an image, a page in a frame, a viewer's file): the same as <rest>?gatherer=..&instance=..
+IN_PATH = re.compile(r"^w/([^/]+)/([0-9a-f]{16})(?:/(.*))?$")
 SDK = os.path.join(os.path.dirname(os.path.abspath(app_kit.__file__)), "js", "app.js")
 
 
@@ -187,9 +191,11 @@ async def apps_mcp(srv: Parts, actor: str, request: Request) -> Response:
             row = tool_gateway.row_of(rows, actor)
         except AppError as exc:
             return 404, {"jsonrpc": "2.0", "id": None, "error": {"code": -32001, "message": str(exc)}}
-        return mcp.handle(raw, tool_gateway.tools(row["gatherer"]),
+        channels = tool_gateway.channels_of(row)
+        return mcp.handle(raw, tool_gateway.tools(row["gatherer"], channels),
                           lambda name, args: tool_gateway.call(srv.sessions.list(), actor, name, args),
-                          tool_gateway.NAME, tool_gateway.endpoint(actor), tool_gateway.instructions(row["gatherer"]))
+                          tool_gateway.NAME, tool_gateway.endpoint(actor),
+                          tool_gateway.instructions(row["gatherer"], channels=channels))
     status, got = await anyio.to_thread.run_sync(serve)
     return answer(got, status) if got is not None else Response(status_code=status)
 
@@ -203,6 +209,48 @@ def apps_agent(srv: Parts, body: Body) -> Response:
         return answer(tool_gateway.listed(srv.sessions.list(), actor))
     except AppError as exc:
         return _failed(exc)
+
+
+@router.get("/apps/mark/{name}.svg")
+def apps_mark(srv: Parts, name: str) -> Response:
+    """An app's mark (its manifest's `mark`), from the dashboard's own origin: the badge on an agent it started."""
+    h = getattr(srv, "app_host", None)
+    hosted = h.apps.get(name) if h is not None else None
+    m = hosted.manifest if hosted is not None else None
+    if m is None or not m.mark or not m.folder:
+        return not_found()
+    try:
+        with open(os.path.join(m.folder, m.mark), "rb") as fh:
+            body = fh.read()
+    except OSError:
+        return not_found()
+    return Response(body, 200, media_type="image/svg+xml", headers={"cache-control": "max-age=300",
+                                                                     "content-security-policy": "script-src 'none'"})
+
+
+@router.post("/api/apps/start")
+def apps_start(srv: Parts, body: Body) -> Response:
+    """{app, gatherer, cwd, harness?, model?}: a new instance of an app that starts an agent of its own ([agent] start),
+    and a new actor there attached to it (app_agents.py) -> {instance, session}."""
+    try:
+        app, gatherer = _need(body, "app", "gatherer")
+        got, inst = app_agents.start(srv.sessions, _host(srv), str(app), str(gatherer), str(body.get("cwd") or ""),
+                                     str(body.get("harness") or harness_kit.DEFAULT), str(body.get("model") or "") or None)
+    except AppError as exc:
+        return _failed(exc)
+    return answer({"instance": inst.to_dict(), "session": got})
+
+
+@router.post("/api/apps/guard")
+def apps_guard(srv: Parts, gatherer: str, channel: str, body: Body) -> Response:
+    """{path}: an agent of `gatherer` (`channel`) about to change `path` with its harness's own edit tools, asked by
+    its guard (app_guard.py) -> {deny: why} when an app it is attached to refuses it (an app asking `edit_guard`)."""
+    try:
+        (path,) = _need(body, "path")
+        why = _host(srv).guard(gatherer, channel, str(path))
+    except AppError:
+        why = None
+    return answer({"deny": why} if why else {})
 
 
 @router.post("/api/apps/agent/call")
@@ -263,7 +311,8 @@ async def host_op(srv: Parts, name: str, op: str, request: Request) -> Response:
 
 class Origins:
     """Requests to an app's origin (<name>.localhost) answered here, never by the dashboard's routes: its panel's
-    files, and its backend's /api/. Every other request passes on."""
+    files, and its backend's /api/ -- its instance named by the query (gatherer, instance) or the path (IN_PATH).
+    Every other request passes on."""
 
     def __init__(self, app):
         self.app = app
@@ -289,11 +338,15 @@ class Origins:
                 return await send_plain(403, b"only the app's own panel may do that", scope, receive, send)
             body = await _read_body(receive)
             query = dict(parse_qsl((scope.get("query_string") or b"").decode("latin-1")))
+            rest = path[len("/api/"):]
+            at = IN_PATH.match(rest)              # /api/w/<gatherer>/<instance>/...: what a URL with no query names
+            if at:
+                query = {**query, "gatherer": unquote(at.group(1)), "instance": at.group(2)}
+                rest = at.group(3) or ""
             try:
                 inst = h.instance(query.get("gatherer", ""), query.get("instance", ""), hosted.manifest.name) \
                     if query.get("instance") else None
-                r = await anyio.to_thread.run_sync(h.request, hosted.manifest.name, inst, method,
-                                                   path[len("/api/"):], query, body)
+                r = await anyio.to_thread.run_sync(h.request, hosted.manifest.name, inst, method, rest, query, body)
             except AppError as exc:
                 return await _failed(exc)(scope, receive, send)
             return await Response(r.body, r.status, headers=_with_framed(r.headers, srv))(scope, receive, send)

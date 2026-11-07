@@ -28,8 +28,6 @@ ALLOWED = {
     ("__main__.py", "webbrowser"): "Python's module that opens the page in the user's web browser",
     ("__main__.py", "the browser"): "the user's web browser, which `ag dashboard` opens the page in",
     ("__main__.py", "open a browser"): "the same",
-    ("libs.py", '"docwriter", "pdfjs"'): "pdf.js, which the Editor and apps' panels show a PDF in: DocWriter's build "
-                                         "puts it in its folder (vendor/docwriter/)",
 }
 
 
@@ -94,14 +92,15 @@ class OnlyTheAppsNameAnAppTest(unittest.TestCase):
                 fh.write('"""A DocWriter\'s, a Browser\'s."""\nfrom . import browser as bw, docwriter\n'
                          'if role.get("docwriter"):  # a DocWriter\'s\n    x = srv.browsers.compose(row, text)\n'
                          '    y = f"{a} no DocWriter started {b}"\nz = "/browser/w/"\nw = "a page"\n')
-            self.assertEqual([line for line, _, _ in python_names(mod)], [2, 2, 3, 4, 5, 6])
+            # DocWriter is an app of app_kit's now (ag_apps/docwriter/), not one of the dashboard's: its name is words
+            self.assertEqual([line for line, _, _ in python_names(mod)], [2, 4, 6])
 
 
 class EveryAppGivesTheInterfaceTest(unittest.TestCase):
     """What the shared code asks of an app (apps.py's `App`), each app gives."""
 
     def test_its_name_says_where_it_is(self):
-        self.assertEqual([a.name for a in apps.APPS], ["docwriter", "browser"])
+        self.assertEqual([a.name for a in apps.APPS], ["browser"])        # DocWriter: an app of app_kit's now
         for a in apps.APPS:
             self.assertIs(apps.named(a.name), a)
             self.assertIs(apps.under(f"/{a.name}/w/0123456789abcdef/mcp"), a)

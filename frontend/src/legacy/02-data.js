@@ -125,6 +125,7 @@ async function refresh(userAction = false) {
       const first = state.home.gatherers.find((g) => g.agents.length && !isHidden(g)) || state.home.gatherers.find((g) => g.agents.length);
       if (first) state.selected = [first.name, firstAgent(first).channel];
     }
+    if (state.selected && !PANE) showActorsApp(...state.selected);   // an app's actor (19-app-actors.js): its panel above
     await loadAgent().catch(() => { state.agent = null; });   // a session started here may have no database yet
     await loadChat();
     render(userAction);

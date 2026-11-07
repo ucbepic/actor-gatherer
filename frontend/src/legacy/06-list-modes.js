@@ -934,12 +934,12 @@ function slideList(root, was) {
 // Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
 // on the stream, which starts with them. The actor list is the stream's already.
 async function select(g, c) {
-  if (!isAt(state.selected, g, c)) Object.assign(kindViewId, KIND_VIEWS);   // a DocWriter's, a Browser's actor: in its own
+  if (!isAt(state.selected, g, c)) Object.assign(kindViewId, KIND_VIEWS);   // a Browser's actor: in its own
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null; state.agent = null;
   state.agentVersion = (state.agentVersion || 0) + 1;
   markSeen();
   savePanes();
-  if (!PANE) appsSelected();
+  if (!PANE) { appsSelected(); showActorsApp(g, c); }   // an app's actor: its app's panel above it (19-app-actors.js)
   if (SNAPSHOT || state.paused) { await refresh(true); chatToEnd(); return; }
   connect();
   const main = document.getElementById("main");

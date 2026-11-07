@@ -247,8 +247,8 @@ function pvPdfTheme(f) {
   const vars = { "--bg": "--page", "--bg-surface": "--page", "--bg-elevated": "--surface", "--text": "--ink",
     "--text-secondary": "--ink-2", "--text-faint": "--muted", "--accent": "--s1", "--bg-hover": "--wash", "--border-light": "--ring" };
   for (const [k, from] of Object.entries(vars)) if (v(from)) root.style.setProperty(k, v(from));
-  root.setAttribute("data-docwriter-theme", dwTheme());       // its stylesheet's colours, from those
-  root.style.colorScheme = dwTheme();
+  root.setAttribute("data-docwriter-theme", shownTheme());    // its stylesheet's colours (the viewer DocWriter's build patched), from those
+  root.style.colorScheme = shownTheme();
 }
 document.addEventListener("webviewerloaded", (ev) => {     // the viewer, before it starts: no scripts of the PDF's
   const w = ev.detail && ev.detail.source;

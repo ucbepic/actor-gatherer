@@ -83,6 +83,7 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import harness_kit
+from app_kit import AppError
 
 from . import actions, branches, data, editor, files, folders, naming, saved, sessions
 from .apps import APPS, App
@@ -188,6 +189,23 @@ def instructions(gatherer: str) -> str:
     raise CoordinationError(f"no instructions for the gatherer agent: {INSTRUCTIONS} is missing")
 
 
+
+
+def _app_of(s: dict) -> Optional[str]:
+    """The app of app_kit's whose actor the session is (app_agents.py's `role_of`: DocWriter's), else None."""
+    from . import app_agents, tool_gateway
+    got = app_agents.role_of(s)
+    return got[0] if got and tool_gateway.HOST is not None and got[0] in tool_gateway.HOST.apps else None
+
+
+def _starters() -> Dict[str, Any]:
+    """The apps on this dashboard's host that start an agent of their own ([agent] start), by name: what
+    `ag actors new --<name>` may ask for, besides apps.py's."""
+    from . import tool_gateway
+    h = tool_gateway.HOST
+    if h is None:
+        return {}
+    return {n: x.manifest for n, x in h.apps.items() if x.manifest.agent.start}
 
 
 class Coordination:
@@ -306,7 +324,8 @@ class Coordination:
                 "asked": _clip(_unwrapped(a.get("last_user_message")), ASKED_CHARS),
                 "recap": _clip((a.get("recap") or {}).get("text"), ASKED_CHARS),
                 "last": a.get("last"), "you": bool(me) and a["channel"] == me["channel"],
-                "gatherer_agent": self._is_coordinator(a), **{x.name: x.key_of(s) is not None for x in APPS}}
+                "gatherer_agent": self._is_coordinator(a), **{x.name: x.key_of(s) is not None for x in APPS},
+                **({_app_of(s): True} if _app_of(s) else {})}
 
     # ---- what an actor asks
 
@@ -355,18 +374,20 @@ class Coordination:
             branch: bool = False, approve: bool = False, folder: Optional[str] = None, **app: bool) -> dict:
         """A new actor (module doc), in the folder at the path `folder` if given (made if new). `app`, {<name>: True}:
         the actor of a new one of that app (apps.py), as `ag actors new --<name>` asks."""
-        unknown = sorted(set(app) - {x.name for x in APPS})
-        if unknown:
-            raise TypeError(f"new() got an unexpected keyword argument {unknown[0]!r}")
+        starters = _starters()                            # apps on the host that start an agent of their own
         g, me, agents = self._asker(actor)
         text = _message(text)
-        chosen = [x for x in APPS if app.get(x.name)]
-        if chosen and branch:
-            raise CoordinationError(f"a {chosen[0].label}'s actor works in its folder, not on a branch: "
-                                    f"--{chosen[0].name} or --branch, not both")
-        if len(chosen) > 1:
-            raise CoordinationError("an actor is one app's at most: "
-                                    + " or ".join(f"--{x.name} alone" for x in chosen))
+        asked = [n for n in sorted(app) if app[n]]          # the apps asked for, found here or not
+        found = {x.name: x for x in APPS} | starters
+        label = lambda n: found[n].label if n in found else n   # noqa: E731
+        if asked and branch:
+            raise CoordinationError(f"a {label(asked[0])}'s actor works in its folder, not on a branch: "
+                                    f"--{asked[0]} or --branch, not both")
+        if len(asked) > 1:
+            raise CoordinationError("an actor is one app's at most: " + " or ".join(f"--{n} alone" for n in asked))
+        if asked and asked[0] not in found:               # an app this dashboard's host has none of (or no host)
+            raise CoordinationError(f"this dashboard runs no {asked[0]}: no such app is found here")
+        chosen = [found[n] for n in asked]
         if approve and not branch:
             raise CoordinationError("--approve is for an actor on a branch of its own (--branch): each change it makes "
                                     "there waits for the user in the Editor")
@@ -386,7 +407,9 @@ class Coordination:
         name = naming.clean(name)
         made = on = None
         mode = bs.get("permission_mode") or "auto"
-        if chosen:
+        if chosen and chosen[0] in starters.values():
+            row, made = self._new_with_app(chosen[0].name, g, cwd or "", harness, model, name)
+        elif chosen:
             row, made = self._new_of(chosen[0], g, cwd or "", harness, model, name)
         else:
             if branch:
@@ -430,6 +453,19 @@ class Coordination:
         b = got["branch"]
         row = next(r for r in self.started.list() if r["session_id"] == got["session_id"])
         return row, {k: b[k] for k in ("branch", "project", "worktree", "approve")}
+
+    def _new_with_app(self, app: str, gatherer: str, cwd: str, harness: str, model: Optional[str],
+                      name: Optional[str]) -> Tuple[dict, dict]:
+        """A new instance of the app on `cwd` and its actor (app_agents.py's `start`), named `name`, else as the app
+        names it: (its actor's session, as the dashboard's table has it; {key, root})."""
+        from . import app_agents, tool_gateway
+        try:
+            got, inst = app_agents.start(self.started, tool_gateway.HOST, app, gatherer, cwd, harness, model, name)
+        except AppError as exc:
+            label = tool_gateway.HOST.apps[app].manifest.label if app in tool_gateway.HOST.apps else app
+            raise CoordinationError(f"no {label} started: {exc}") from None
+        row = next(r for r in self.started.list() if r["session_id"] == got["session_id"])
+        return row, {"key": inst.id, "root": inst.folder}
 
     def _new_of(self, app: App, gatherer: str, cwd: str, harness: str, model: Optional[str],
                 name: Optional[str]) -> Tuple[dict, dict]:

@@ -9,7 +9,7 @@
 //   git -C upstream fetch --depth 1 origin main && git -C upstream checkout FETCH_HEAD
 // then npm run build; check the files src/ stands in for (vite.config.mjs) still have the shape src/ expects
 // (git -C upstream diff <old pin> HEAD -- src/routes/api src/lib/server src/lib/yjs-doc.ts, say); and commit
-// upstream -- the new pin -- with ag_dashboard/vendor/docwriter/.
+// upstream -- the new pin -- with ag_apps/docwriter/ (panel/, tools.json, instructions.md) and ag_dashboard/vendor/pdfjs/.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";

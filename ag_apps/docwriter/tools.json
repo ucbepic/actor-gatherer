@@ -1,0 +1,177 @@
+[
+ {
+  "name": "edit_doc",
+  "description": "Replace old_string with new_string in the given file. For a workspace file this creates or updates a pending proposal shown as tracked changes under a comment thread. The document changes only when I accept it. For a path under .docwriter/agent/scratch/ it writes plain text. old_string must match exactly once. Pass replace_all: true to replace every occurrence in one proposal, which suits renames and consistent term changes.",
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "file_path": {
+     "type": "string",
+     "description": "Either the workspace-relative tab id (e.g. \"drafts/chapter-1.md\"), the absolute path to the tab file, or an absolute path inside .docwriter/agent/scratch/."
+    },
+    "old_string": {
+     "type": "string",
+     "description": "Exact substring to replace. Must appear exactly once unless replace_all is true."
+    },
+    "new_string": {
+     "type": "string",
+     "description": "The replacement string. Can be empty to delete."
+    },
+    "replace_all": {
+     "description": "When true, replace every occurrence of old_string in a single proposal (useful for renames or consistent term updates). Default false.",
+     "type": "boolean"
+    },
+    "thread_id": {
+     "description": "The thread this edit belongs to: the id comment_doc returned for its announce comment, the thread_id of the feedback you are answering, or the thread whose pending proposal you are revising (a new proposal on a thread replaces its old one). A passage has one thread, so an edit on a passage another thread already holds must use that thread. Omit only when no thread is about this passage yet; the system then opens one.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "file_path",
+    "old_string",
+    "new_string"
+   ],
+   "additionalProperties": false
+  },
+  "handled_by": "panel"
+ },
+ {
+  "name": "read_doc",
+  "description": "Read the current content of a workspace file or scratch file. For an open tab it returns the document with every pending proposal shown as if accepted, so what you read is what your edits build on.",
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "file_path": {
+     "type": "string",
+     "description": "Workspace-relative tab id, absolute path to an open tab file, or absolute path inside .docwriter/agent/scratch/."
+    }
+   },
+   "required": [
+    "file_path"
+   ],
+   "additionalProperties": false
+  },
+  "handled_by": "panel"
+ },
+ {
+  "name": "write_doc",
+  "description": "Replace the full content of a workspace or scratch file. If the file exists, the write lands as a pending proposal shown as tracked changes. If it does not exist, write_doc creates it and opens it as a new tab with the content pending. Scratch paths are written directly.",
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "file_path": {
+     "type": "string",
+     "description": "Workspace-relative path (e.g. \"drafts/chapter-2.md\"), an absolute path inside the workspace, or an absolute path under .docwriter/agent/scratch/. If the file does not exist, write_doc creates it and opens it as a new tab."
+    },
+    "content": {
+     "type": "string",
+     "description": "The new full content of the file."
+    }
+   },
+   "required": [
+    "file_path",
+    "content"
+   ],
+   "additionalProperties": false
+  },
+  "handled_by": "panel"
+ },
+ {
+  "name": "comment_doc",
+  "description": "Create a new comment thread anchored to existing text in a workspace document. Use it, at any autonomy level, as the announce thread before an edit proposal (see \"Announce edits on a thread\" in your instructions), then pass the thread id it returns to edit_doc. Unprompted observation comments are allowed only at Medium or High autonomy, or when I ask for a comment; at Low autonomy you may otherwise only reply on threads I opened. The comment appears in the document gutter and does not change document text. A passage has one thread: anchoring on text another thread already holds fails and names that thread.",
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "file_path": {
+     "type": "string",
+     "description": "Workspace-relative path (e.g. \"drafts/chapter-1.md\") or absolute path inside the workspace. Must be an existing file."
+    },
+    "anchor_text": {
+     "type": "string",
+     "description": "Exact text in the current document to anchor the comment to. Prefer a short unique passage, usually one sentence or clause."
+    },
+    "message": {
+     "type": "string",
+     "description": "The comment text. Say the useful point directly. Keep it short."
+    },
+    "occurrence_index": {
+     "description": "Zero-based occurrence to anchor when anchor_text appears more than once. Omit only when anchor_text is unique.",
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991
+    },
+    "external_author": {
+     "description": "Name of an external commenter when importing feedback from outside the system. When set, the comment is attributed to that person rather than the agent.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "file_path",
+    "anchor_text",
+    "message"
+   ],
+   "additionalProperties": false
+  },
+  "handled_by": "panel"
+ },
+ {
+  "name": "reply_to_comment",
+  "description": "Reply on an existing comment thread. Route per the \"Where a response goes\" rules in your instructions. Write in the first person and keep it to a few sentences. When the reply says what you would change, propose that change with edit_doc on the same thread in this turn; a reply is never a substitute for the diff, and there is no separate approval step. Pass optional anchor_text to move the thread onto a new passage (re-attach after the passage it was on is gone). To start a new thread, use comment_doc.",
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "file_path": {
+     "type": "string",
+     "description": "Workspace-relative path (e.g. \"drafts/chapter-1.md\") or absolute path inside the workspace. Must be an existing file — comments can only be attached to a tab I can open."
+    },
+    "thread_id": {
+     "type": "string",
+     "description": "Id of the existing thread to reply on (from the \"Open comment threads\" prompt block). Required: agents cannot open new threads."
+    },
+    "message": {
+     "type": "string",
+     "description": "Your reply. Speak in first person (\"I'd cut …\", \"I think …\"), not as a narrator. Keep it shorter than an essay — a few sentences."
+    },
+    "anchor_text": {
+     "description": "Exact current document text to move this thread onto. Use when the passage it was on is gone (e.g. I accepted a neighboring proposal) and you need to re-attach the conversation to the corresponding current passage. Prefer a short unique sentence or clause.",
+     "type": "string"
+    },
+    "occurrence_index": {
+     "description": "Zero-based occurrence to anchor when anchor_text appears more than once. Required only when anchor_text is not unique.",
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991
+    }
+   },
+   "required": [
+    "file_path",
+    "thread_id",
+    "message"
+   ],
+   "additionalProperties": false
+  },
+  "handled_by": "panel"
+ },
+ {
+  "name": "list_threads",
+  "description": "Return comment threads for a workspace tab, with every message in each. Defaults to open (visible) threads. The prompt shows only stubs. Set include_dismissed=true to read threads I dismissed — they stay on the document, hidden from the gutter. Then review_action({ action: \"reopen_thread\", thread_id }) brings one back.",
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "file_path": {
+     "type": "string",
+     "description": "Workspace-relative tab id or absolute path to the tab file."
+    },
+    "include_dismissed": {
+     "description": "If true, also return dismissed (hidden) threads so you can reopen one. Use when I ask about a thread that disappeared or want one brought back.",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "file_path"
+   ],
+   "additionalProperties": false
+  },
+  "handled_by": "panel"
+ }
+]

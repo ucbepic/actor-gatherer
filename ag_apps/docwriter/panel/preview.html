@@ -4,7 +4,7 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
-		<title>DocWriter</title>
+		<title>DocWriter preview</title>
 		<script>
 			(function () {
 				var bg = {"light":"#ffffff","dark":"#0f0f0f","solarized-light":"#fdf6e3","solarized-dark":"#002b36","monokai":"#272822"}, t = new URLSearchParams(location.search).get("theme");
@@ -15,12 +15,12 @@
 		</script>
 		<script>
 			// Where this DocWriter is served, /docwriter/w/<key>: every request of the page goes under it (vite.config.mjs)
-			globalThis.__dwBase = (location.pathname.match(/^.*?\/docwriter\/w\/[^/]+/) || [""])[0];
+			globalThis.__dwBase = (location.pathname.match(/^\/api\/w\/[^/]+\/[0-9a-f]{16}/) || [""])[0];   // its DocWriter's backend
 		</script>
-		<script type="module" crossorigin src="./assets/index-BEgdZPHH.js"></script>
-		<link rel="modulepreload" crossorigin href="./assets/themes-DEsTdALw.js">
-		<link rel="stylesheet" crossorigin href="./assets/themes-Od4WgLo9.css">
-		<link rel="stylesheet" crossorigin href="./assets/index-qW7Sc903.css">
+		<script type="module" crossorigin src="/assets/preview-D0iptnuG.js"></script>
+		<link rel="modulepreload" crossorigin href="/assets/themes-Cfvgcxp9.js">
+		<link rel="stylesheet" crossorigin href="/assets/themes-fwms4W0H.css">
+		<link rel="stylesheet" crossorigin href="/assets/preview-DU_9leKq.css">
 	</head>
 	<style>
 		html, body { margin: 0; padding: 0; height: 100%; }

@@ -194,3 +194,9 @@ class App:
 
     def detached(self, instance: Instance, channel: str) -> None:
         """An agent was detached from the instance."""
+
+    def guard(self, instance: Instance, path: str, caller: Caller) -> Optional[str]:
+        """An agent attached to the instance is about to change `path` with its harness's own edit tools (an app whose
+        manifest asks `edit_guard`): why it must not -- the file is one the app has open, say, and the agent should use
+        the app's tools -- or None to let it."""
+        return None

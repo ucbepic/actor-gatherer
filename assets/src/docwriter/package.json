@@ -1,7 +1,7 @@
 {
   "name": "ag-dashboard-docwriter",
   "private": true,
-  "description": "DocWriter's interface (github.com/docwriter-org/docwriter, MIT) for the dashboard's DocWriter panel: its Svelte page, built against ag's backend into ag_dashboard/vendor/docwriter/ by build.mjs",
+  "description": "DocWriter's interface (github.com/docwriter-org/docwriter, MIT) for the DocWriter app: its Svelte page, built against the app's backend into ag_apps/docwriter/panel/ by build.mjs",
   "type": "module",
   "scripts": {
     "fetch": "node fetch.mjs",

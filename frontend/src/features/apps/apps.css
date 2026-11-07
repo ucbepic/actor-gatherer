@@ -145,3 +145,16 @@
   padding: 6px 10px;
   color: var(--muted);
 }
+
+/* an app's mark (its manifest's `mark`): in a menu, a button that starts it */
+.app-mark {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex: none;
+  display: block;
+}
+.newform .app-mark {
+  width: 14px;
+  height: 14px;
+}

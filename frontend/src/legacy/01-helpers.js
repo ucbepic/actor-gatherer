@@ -111,9 +111,9 @@ function actorLogo(a) {
   const svg = SNAPSHOT && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
   const src = !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg) : `/avatars/${a.avatar}.svg`;
   if (!src) return harnessLogo(a.harness);
-  const dw = !!dwKey(a), bw = !dw && !!bwKey(a);
-  return el("span", { class: "logo avatar" + (dw ? " dw" : bw ? " dw bw" : "") }, el("img", { src, alt: "", draggable: "false" }),
-    dw ? docwriterBadge() : bw ? browserBadge() : null, harnessBadge(a.harness));
+  const mark = appMark(a), bw = !mark && !!bwKey(a);
+  return el("span", { class: "logo avatar" + (mark ? " dw" : bw ? " dw bw" : "") }, el("img", { src, alt: "", draggable: "false" }),
+    mark || (bw ? browserBadge() : null), harnessBadge(a.harness));
 }
 // A Browser's actor's mark on its avatar: a globe, on blue.
 function browserBadge() {
@@ -121,15 +121,6 @@ function browserBadge() {
   const title = svgEl("title"); title.textContent = "Browser";
   svg.append(title, svgEl("circle", { cx: 12, cy: 12, r: 12, fill: "#2563EB" }),
     svgEl("path", { d: ICONS.globe, transform: "translate(4 4)", fill: "none", stroke: "#fff", "stroke-width": 1.5,
-      "stroke-linecap": "round", "stroke-linejoin": "round" }));
-  return svg;
-}
-// A DocWriter's actor's mark on its avatar: DocWriter's quill, on its violet.
-function docwriterBadge() {
-  const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "dw-badge", role: "img", "aria-label": "DocWriter" });
-  const title = svgEl("title"); title.textContent = "DocWriter";
-  svg.append(title, svgEl("circle", { cx: 12, cy: 12, r: 12, fill: "#7C3AED" }),
-    svgEl("path", { d: ICONS.quill, transform: "translate(4 4)", fill: "none", stroke: "#fff", "stroke-width": 1.7,
       "stroke-linecap": "round", "stroke-linejoin": "round" }));
   return svg;
 }

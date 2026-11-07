@@ -1,13 +1,15 @@
-// The page's one stream from the dashboard (ag_dashboard/docwriter.py's `_Page`): its documents' changes (`doc`, each
-// with its tab), the actor's tool calls for the page to run (`call`), the live notices (`live`: a built preview
-// changed) -- one connection for all, as a browser keeps only a few open to a host. Each time it opens -- again,
-// after a drop, the dashboard having forgotten the old one's documents -- `open` is told, and the documents are
-// joined again (yjs-doc.ts).
+// What concerns this page, from the app's backend (core.py's `_Page`): its documents' changes (`doc`, each with its
+// tab), the live notices (`live`: a built preview changed) -- the backend's messages to its panels (the SDK's
+// onMessage), each addressed to one page (`to`: this page's `conn`), the others' ignored. The page joins (page/join),
+// says it is still there every ALIVE ms (page/alive) -- let go meanwhile, it joins again, its documents with it
+// (`down`, then `open`: yjs-doc.ts) -- and leaves as it goes (page/leave). The agent's tool calls come through the
+// SDK too (tools.ts).
 //
 // DocWriter's own page asks for the live notices with `new EventSource('/api/live')` (in its page, its preview
-// button, its preview page): those get a stand-in fed from this stream (`installLive`) -- the preview page, in a
-// frame of this one or a window it opened, from this page's.
+// button, its preview page): those get a stand-in fed from this bus (`installLive`) -- the preview page, in a frame
+// of this one or a window it opened, from this page's.
 import { base } from './base';
+import { ag } from './ag';
 
 type Handler = (value: any) => void;
 export interface Bus {
@@ -17,18 +19,33 @@ export interface Bus {
 }
 
 const RealEventSource = window.EventSource;
+const ALIVE = 10_000;
+const json = { 'Content-Type': 'application/json' };
 
 export function makeBus(): Bus {
 	const conn = crypto.randomUUID();
 	const handlers = new Map<string, Set<Handler>>();
 	let open = false;
 	const emit = (name: string, v: unknown) => { for (const h of [...(handlers.get(name) ?? [])]) h(v); };
-	const es = new RealEventSource(`${base}/stream?${new URLSearchParams({ conn })}`);
-	es.addEventListener('open', () => { open = true; emit('open', null); });
-	for (const name of ['doc', 'call', 'live']) {
-		es.addEventListener(name, (ev) => emit(name, JSON.parse((ev as MessageEvent).data)));
-	}
-	es.onerror = () => { if (open) { open = false; emit('down', null); } };   // EventSource tries again by itself
+	const say = (what: string) => fetch(`${base}/page/${what}`, { method: 'POST', headers: json, body: JSON.stringify({ conn }), keepalive: what === 'leave' });
+	const join = async () => {
+		try {
+			const res = await say('join');
+			if (!res.ok) return;
+		} catch { return; }
+		open = true;
+		emit('open', null);
+	};
+	ag().onMessage((m) => { if (m && m.to === conn && typeof m.name === 'string') emit(m.name, m.value); });
+	void join();
+	setInterval(async () => {
+		let alive = false;
+		try { alive = !!(await (await say('alive')).json()).alive; } catch { /* the dashboard away a moment */ }
+		if (alive) return;
+		if (open) { open = false; emit('down', null); }
+		await join();
+	}, ALIVE);
+	addEventListener('pagehide', () => { void say('leave').catch(() => {}); });
 	return {
 		conn,
 		isOpen: () => open,

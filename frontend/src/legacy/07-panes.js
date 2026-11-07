@@ -267,8 +267,33 @@ function topGutter(p) {
   bar.addEventListener("dblclick", () => { panes.edSize = 1; for (const q of panes.apps) q.size = 1; topLayout(); saveAppPanes(); });
   return bar;
 }
-function addAppPane(app, instance, size = 1) {
-  const p = { app, instance, g: instance.gatherer, size };
+// An actor of the home (its gatherer, its channel), as the page has it now; a codex actor's thread it was renamed to.
+const appActor = (g, c) => {
+  const gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  return (gg && gg.agents.find((a) => a.channel === c || a.started_as === c)) || null;
+};
+// What a panel is told of an attached agent (the SDK's agents.state), as DocWriter's page was told its actor's.
+function appAgentState(g, c) {
+  const a = appActor(g, c);
+  return a && { channel: a.channel, status: statusOf(a)[0], turn_over: a.turn_over, asking: a.asking || null,
+    failing: a.failing || null, stopped: a.stopped || null, name: (a.name && a.name.text) || null,
+    session: a.session ? { session_id: a.session.session_id, terminal: !!a.session.terminal } : null };
+}
+// A message to an attached agent, its question answered, its turn stopped -- as Chat sends, answers and stops (Esc).
+const appSessionOf = (g, c) => { const a = appActor(g, c); return a && a.session ? a.session.session_id : null; };
+function appSend(g, c, text) {
+  const sid = appSessionOf(g, c);
+  return post("/api/send", sid ? { session_id: sid, text } : { gatherer: g, channel: c, text });
+}
+function appAnswer(g, c, call, choice) {
+  return post("/api/answer", { session_id: appSessionOf(g, c) || c, call, choice });
+}
+function appInterrupt(g, c) {
+  const sid = appSessionOf(g, c);
+  return sid ? post("/api/terminal/input", { session_id: sid, data: "\u001b" }) : Promise.resolve(null);
+}
+function addAppPane(app, instance, size = 1, held = false) {
+  const p = { app, instance, g: instance.gatherer, size, held };
   p.panel = window.agNext.apps.pane(app, instance, {
     close: () => closeAppPane(p),
     focus: () => {},
@@ -276,30 +301,75 @@ function addAppPane(app, instance, size = 1) {
     selection: () => appsSelection(),
     agents: (g) => ((state.home && state.home.gatherers.find((x) => x.name === g)) || { agents: [] }).agents
       .filter((a) => !a.closed).map((a) => ({ channel: a.channel, name: (a.name && a.name.text) || a.last_user_message || a.channel })),
+    agentState: appAgentState, send: appSend, answer: appAnswer, interrupt: appInterrupt,
   });
   p.node = p.panel.node; p.frame = p.panel.frame;
   p.gutter = topGutter(p);
+  p.node.hidden = p.gutter.hidden = held;
   topRowEl().append(p.gutter, p.node);
   panes.apps.push(p);
   watchTop(p.node.querySelector(".app-head"), p);
   topLayout();
+  p.panel.refresh();                                 // its agents, as the host has them
   return p;
+}
+// A panel held out of sight shown (opened by the reader), or one shown held (closed while it is needed: appsAtWork).
+function holdAppPane(p, held) {
+  p.held = held;
+  p.node.hidden = p.gutter.hidden = held;
+  if (held) topRow(p, null);
+  topLayout(); saveAppPanes();
 }
 function closeAppPane(p) {
   const i = panes.apps.indexOf(p);
   if (i < 0) return;
+  if (appNeeded(p)) return holdAppPane(p, true);     // its agent at work: its page answers its tools, out of sight
   panes.apps.splice(i, 1);
   p.panel.destroy();                                 // its streams go; the instance stays open
   p.gutter.remove(); p.node.remove();
   topRow(p, null);
   saveAppPanes(); renderAgents();
 }
+// An app whose panel answers tools of its own (DocWriter's documents' tools) runs while an agent attached to it is at
+// work, out of sight if the reader has not opened it: the agent's calls are answered at once, as they were when the
+// app was its actor's view. `appsAtWork`, on each change of the home, holds one for each such agent; one held whose
+// agents are done goes.
+const panelTools = (app) => (app.tools || []).some((t) => t.handled_by === "panel");
+const agentAtWork = (a) => !!a && ["running", "asking"].includes(statusOf(a)[0]);
+function appNeeded(p) {
+  if (!panelTools(p.app)) return false;
+  return (p.panel.agents ? p.panel.agents() : []).some((c) => agentAtWork(appActor(p.instance.gatherer, c)));
+}
+let appsWorking = "";
+async function appsAtWork() {
+  if (PANE || SNAPSHOT || !state.home || !window.agNext) return;
+  for (const p of panes.apps) p.panel.agentsChanged();
+  const working = [];
+  for (const g of state.home.gatherers) for (const a of g.agents) if (agentAtWork(a)) working.push([g.name, a.channel]);
+  const sig = JSON.stringify(working);
+  if (sig !== appsWorking) {
+    appsWorking = sig;
+    for (const [g, c] of working) {
+      let held;
+      try { held = await window.agNext.apps.attachedTo(g, c); } catch (e) { continue; }
+      for (const inst of held) {
+        const app = window.agNext.apps.named(inst.app);
+        if (!app || !panelTools(app) || panes.apps.some((p) => p.instance.id === inst.id)) continue;
+        addAppPane(app, inst, 1, true);
+      }
+    }
+  }
+  for (const p of [...panes.apps]) if (p.held && !appNeeded(p)) {     // its agents done: it goes
+    panes.apps.splice(panes.apps.indexOf(p), 1);
+    p.panel.destroy(); p.gutter.remove(); p.node.remove();
+  }
+}
 function saveAppPanes() {
   if (PANE || SNAPSHOT) return;
   try {
-    if (!panes.apps.length) localStorage.removeItem(TOP_APPS_KEY);
+    if (!panes.apps.some((p) => !p.held)) localStorage.removeItem(TOP_APPS_KEY);
     else localStorage.setItem(TOP_APPS_KEY, JSON.stringify({ ed: panes.edSize || 1,
-      apps: panes.apps.map((p) => ({ app: p.app.name, instance: p.instance.id, g: p.instance.gatherer, size: p.size })) }));
+      apps: panes.apps.filter((p) => !p.held).map((p) => ({ app: p.app.name, instance: p.instance.id, g: p.instance.gatherer, size: p.size })) }));
   } catch (e) { /* this page only */ }
 }
 // The actor an app's instance is attached to, shown below it: in the pane in focus, unless one of them is open in a
@@ -325,7 +395,9 @@ async function openApp(g, name, folder, attach = true) {
   let instance;
   try { instance = await window.agNext.apps.open(name, g, folder || null, channel); }
   catch (e) { paneNote(`${app.label}: ${e.message}`); return null; }
-  const p = panes.apps.find((q) => q.instance.id === instance.id) || addAppPane(app, instance);
+  const there = panes.apps.find((q) => q.instance.id === instance.id);
+  const p = there || addAppPane(app, instance);
+  if (p.held) holdAppPane(p, false);                 // held out of sight while its agent worked: shown now
   saveAppPanes(); renderAgents();
   await showAttached(p);
   return p;
@@ -343,6 +415,21 @@ async function appIntent(kind, data, g) {
   const p = await openApp(into, app.name, folder, false);
   if (!p) throw new Error(`${app.label} could not be opened`);
   p.panel.intent(kind, data || {});
+}
+// An actor an app started, selected: its app's panel in the top row -- shown, if held out of sight -- as a DocWriter's
+// actor showed DocWriter when it was its view. Any other actor: nothing opened.
+async function showActorsApp(g, c) {
+  if (PANE || SNAPSHOT || !window.agNext) return;
+  const gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const r = appRole(gg && gg.agents.find((a) => a.channel === c));
+  const app = r && window.agNext.apps.named(r.app);
+  if (!app) return;
+  const there = panes.apps.find((p) => p.instance.id === r.key);
+  if (there) { if (there.held) holdAppPane(there, false); return; }
+  const inst = await window.agNext.apps.instanceOf(app.name, g, r.key).catch(() => null);
+  if (!inst || panes.apps.some((p) => p.instance.id === inst.id) || !isAt(state.selected, g, c)) return;
+  addAppPane(app, inst);
+  saveAppPanes();
 }
 // The agent in focus, as the apps' panels are told it: the actor of the pane in focus.
 function appsSelection() {
@@ -457,12 +544,16 @@ const startable = () => (state.home.harnesses || []).filter(runsHere);
 const noHarness = () => `None of ${runnableNames("or")} is set up here: install one, or set its command in config.toml ([cli.harnesses])`;
 // Last, its terminal button: a shell (isShell), in that same directory -- or, with none, the form asks for it too.
 const SHELL_START = "shell";                       // the terminal button's, where a harness's name goes
-const DW_START = "docwriter:";                     // a DocWriter's, where a harness's name goes: its actor's harness after it
-const BW_START = "browser:";                       // a Browser's, the same
+const APP_START = "app:";                          // an app's with an agent of its own ([agent] start): app:<name>:<harness>
+const BW_START = "browser:";                       // a Browser's, where a harness's name goes: its actor's harness after it
 const startAny = (gatherer, cwd, harness) => harness === SHELL_START ? startShell(gatherer, cwd)
-  : harness.startsWith(DW_START) ? startDocWriter(gatherer, cwd, harness.slice(DW_START.length))
+  : harness.startsWith(APP_START) ? startWithApp(gatherer, cwd, ...appStart(harness))
   : harness.startsWith(BW_START) ? startBrowser(gatherer, cwd, harness.slice(BW_START.length))
   : startSession(gatherer, cwd, harness);
+const appStart = (v) => { const [name, ...h] = v.slice(APP_START.length).split(":"); return [name, h.join(":")]; };
+// The apps found whose menu entry starts an agent of their own (DocWriter, say): those a new actor is started with.
+const startingApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found())
+  .filter((a) => a.agent && a.agent.start && !a.failed);
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 // Its gatherer agent's button, first (CREW_START): the agent shown, started for the gatherer if it has none -- on the
@@ -523,7 +614,7 @@ function startButtons(g, folder = null, prefix = "") {
       plus(), strokeIcon(ICONS.agent, 16));
   const others = moreStarts(g, hs, where, moreKey);
   const more = others.length ? el("button", { class: "act start new-more" + (starting === SHELL_START || starting === BRANCH_START
-      || starting.startsWith(DW_START) || starting.startsWith(BW_START) ? " busy" : ""), type: "button", ...off, "data-pop": moreKey,
+      || starting.startsWith(APP_START) || starting.startsWith(BW_START) ? " busy" : ""), type: "button", ...off, "data-pop": moreKey,
     title: `More to start in ${place}: ${others.map((o) => o.text.replace("…", "").toLowerCase()).join(", ")}`,
     "aria-label": `More to start in ${place}`, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === moreKey),
     onclick: (ev) => { aimStart(g.name, fid); openMoreMenu(g, hs, ev.currentTarget, moreKey, place); } }, plus(), strokeIcon(ICONS.more, 16)) : null;
@@ -532,19 +623,20 @@ function startButtons(g, folder = null, prefix = "") {
 // The "+ more" drop-down's starts: what each is, said under it, and what choosing it does. `key`: its button's data-pop.
 function moreStarts(g, hs, where, key = `more:${g.name}`) {
   const there = where ? `in ${where}` : "in a directory you choose";
-  const tooled = hs.filter((h) => (harnessInfo(h) || {}).mcp);    // DocWriter's and a Browser's agent: given their tools
+  const tooled = hs.filter((h) => (harnessInfo(h) || {}).mcp);    // an app's and a Browser's agent: given their tools
   return [
     hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in a worktree of a project: its changes merged into the project",
       run: (button) => openBranchMenu(g, button) } : null,
-    tooled.length && state.home.docwriter ? { icon: ICONS.quill, text: "DocWriter…", note: "write with an agent that proposes its edits beside your text",
-      run: (button) => openPop(key, button, dwBox(g, tooled)) } : null,
+    ...(tooled.length ? startingApps() : []).map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null,
+      text: `${a.label}…`, note: a.description || "an app, with an agent of its own",
+      run: (button) => openPop(key, button, appStartBox(g, tooled, a)) })),
     tooled.length && state.home.browser ? { icon: ICONS.globe, text: "Browser…", note: "a browser you and an agent use together: point it at what you mean",
       run: (button) => tooled.length > 1 ? openPop(key, button, popMenu("New Browser, its agent on",
         tooled.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => addSession(g, BW_START + h) }))))
         : addSession(g, BW_START + tooled[0]) } : null,
     state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: there, run: () => addSession(g, SHELL_START) } : null,
-    ...(PANE || SNAPSHOT ? [] : window.agNext.apps.found()).map((a) => ({ icon: ICONS.app, text: a.label,
-      note: a.description || "an app", run: () => openApp(g.name, a.name, startCwd(g)) })),
+    ...(PANE || SNAPSHOT ? [] : window.agNext.apps.found()).filter((a) => !(a.agent && a.agent.start)).map((a) => ({ icon: ICONS.app,
+      text: a.label, note: a.description || "an app", run: () => openApp(g.name, a.name, startCwd(g)) })),
   ].filter(Boolean);
 }
 // `key`: the button's data-pop (the list's "+ actor", or the rail's "+"); `start`: what a harness chosen does; `place`: the
@@ -730,33 +822,35 @@ function folderPicks(g, dir, input, err) {
       onclick: () => { input.value = d; err.textContent = ""; input.focus(); input.setSelectionRange(d.length, d.length); } },
       el("span", { class: "nm", text: d.replace(/\/+$/, "").split("/").pop() || d }), el("span", { class: "at", text: d })))) : null;
 }
-// A new DocWriter -- its own actor -- in a folder of the reader's choice: its box asks which (the gatherer's current one
-// to start with, the folders its actors work in a click away) and the harness its actor runs on: a click on one starts it.
-function dwBox(g, hs) {
+const appMarkImg = (a) => el("img", { class: "app-mark", src: `/apps/mark/${encodeURIComponent(a.name)}.svg`, alt: "", draggable: "false" });
+// A new one of an app with an agent of its own (DocWriter, say) -- and its actor -- in a folder of the reader's choice:
+// its box asks which (the gatherer's current one to start with, the folders its actors work in a click away) and the
+// harness its actor runs on: a click on one starts it.
+function appStartBox(g, hs, app) {
   const cwd = startCwd(g), dir = cwd ? tildePath(cwd, state.home.home_dir) : "";
   const err = el("div", { class: "err", role: "alert" });
   const input = el("input", { type: "text", value: dir, spellcheck: "false", "aria-label": "Folder", placeholder: "~/writing/my-paper",
     oninput: () => { err.textContent = ""; },
-    onkeydown: (ev) => { if (ev.key === "Enter") { ev.preventDefault(); dwGo(g, hs[0], box); } } });
-  const box = el("div", { class: "dw-menu", role: "dialog", "aria-label": "New DocWriter" },
-    el("div", { class: "head", text: "New DocWriter" }),
+    onkeydown: (ev) => { if (ev.key === "Enter") { ev.preventDefault(); appGo(g, hs[0], box, app); } } });
+  const box = el("div", { class: "dw-menu", role: "dialog", "aria-label": `New ${app.label}` },
+    el("div", { class: "head", text: `New ${app.label}` }),
     el("label", {}, "Folder", input),
     folderPicks(g, dir, input, err),
     el("div", { text: "Its agent on" }),
-    el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", class: "go", onclick: () => dwGo(g, h, box) },
+    el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", class: "go", onclick: () => appGo(g, h, box, app) },
       harnessBadge(h), harnessName(h)))),
     err);
   return box;
 }
-// A DocWriter started from its box, in the folder typed there: the box closed once it is, and why not, if it cannot be,
+// One started from its box, in the folder typed there: the box closed once it is, and why not, if it cannot be,
 // said in it.
-async function dwGo(g, harness, box) {
+async function appGo(g, harness, box, app) {
   const input = box.querySelector("input"), err = box.querySelector(".err"), cwd = input.value.trim();
   if (!cwd) { err.textContent = "Which folder?"; input.focus(); return; }
   const go = [...box.querySelectorAll("button.go")];
   for (const b of go) b.disabled = true;
   try {
-    await startDocWriter(g.name, cwd, harness);
+    await startWithApp(g.name, cwd, app.name, harness);
     if (rowPop.el === box) closePop();
   } catch (e) {
     if (box.isConnected) { err.textContent = e.message; placePop(); } else setLive(`Not started: ${e.message}`);
@@ -789,18 +883,24 @@ async function startSession(gatherer, cwd, harness) {
   const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
-// A DocWriter started (docwriter.py's `create`): its actor listed, then shown in DocWriter's view.
-async function startDocWriter(gatherer, cwd, harness) {
-  state.starting = { gatherer, harness: DW_START + harness };
+// One of an app with an agent of its own started (app_agents.py's `start`): its actor listed and shown, its panel above.
+async function startWithApp(gatherer, cwd, name, harness) {
+  state.starting = { gatherer, harness: `${APP_START}${name}:${harness}` };
   renderAgents();
   try {
-    const cfg = await post("/api/docwriter", { gatherer, cwd, harness });
-    await fileStarted(gatherer, cfg.channel);
+    const got = await window.agNext.apps.start(name, gatherer, cwd, harness);
+    await fileStarted(gatherer, got.session.session_id);
     state.adding = null;
     collapsed.delete(gatherer);
     await loadHome();
-    kindViewId.docwriter = "docwriter";              // shown in DocWriter, whichever view its actors were last shown in
-    await show(gatherer, cfg.channel);
+    await show(gatherer, got.session.session_id, "files");
+    const app = window.agNext.apps.named(name);
+    if (app) {
+      const there = panes.apps.find((q) => q.instance.id === got.instance.id);
+      if (there) { if (there.held) holdAppPane(there, false); }
+      else addAppPane(app, got.instance);
+      saveAppPanes();
+    }
   } finally { state.starting = null; renderAgents(); }
 }
 // A Browser started (browser.py's `create`): its actor listed, then shown in the Browser's view.
@@ -1030,17 +1130,20 @@ function newForm() {
   const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length || shell ? "" : noHarness()) });
   const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === adding.harness ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
-  if (state.home.docwriter) for (const h of hs) starts.push(el("button", { type: "submit", value: DW_START + h,
-    class: adding.harness === DW_START + h ? "primary" : "", title: `DocWriter, its agent on ${harnessName(h)}`,
-    ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.quill, 14), "DocWriter", harnessBadge(h)));
+  const tooled = hs.filter((h) => (harnessInfo(h) || {}).mcp);
+  for (const a of tooled.length ? startingApps() : []) for (const h of tooled) starts.push(el("button", { type: "submit",
+    value: `${APP_START}${a.name}:${h}`, class: adding.harness === `${APP_START}${a.name}:${h}` ? "primary" : "",
+    title: `${a.label}, its agent on ${harnessName(h)}`, ...(state.starting ? { disabled: "" } : {}) },
+    a.mark ? appMarkImg(a) : strokeIcon(ICONS.app, 14), a.label, harnessBadge(h)));
   if (state.home.browser) for (const h of hs) starts.push(el("button", { type: "submit", value: BW_START + h,
     class: adding.harness === BW_START + h ? "primary" : "", title: `Browser, its agent on ${harnessName(h)}`,
     ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.globe, 14), "Browser", harnessBadge(h)));
   if (state.home.terminals !== false) starts.push(el("button", { type: "submit", value: SHELL_START, class: shell ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.terminal, 14), "Terminal"));
-  const dwing = String(adding.harness || "").startsWith(DW_START), bwing = String(adding.harness || "").startsWith(BW_START);
+  const appAt = String(adding.harness || "").startsWith(APP_START) ? window.agNext.apps.named(appStart(adding.harness)[0]) : null;
+  const bwing = String(adding.harness || "").startsWith(BW_START);
   const form = el("form", { class: "newform", "aria-label": "New session" },
-    el("div", { class: "desc", text: shell ? `A new terminal, listed under ${fixed}` : dwing ? `A new DocWriter in ${fixed}`
+    el("div", { class: "desc", text: shell ? `A new terminal, listed under ${fixed}` : appAt ? `A new ${appAt.label} in ${fixed}`
       : bwing ? `A new Browser in ${fixed}` : `A new session in ${fixed}` }),
     el("label", {}, "Working directory", cwd),
     err,

@@ -459,18 +459,18 @@ def instructions(s: dict) -> Optional[str]:
 
 
 def extra_args(s: dict) -> List[str]:
-    """What a session's harness is started with besides its own options, as its `role` says -- an app's actor
-    (apps.py): its tools and instructions (the app's `launch_args`); any other, the tools of its gatherer's apps
-    (tool_gateway.py's `launch_args`: [] where none is on)."""
-    if not str(s.get("role") or "").startswith("{"):
-        from . import tool_gateway
-        return tool_gateway.launch_args(s)
-    from . import apps                          # here: the apps use this module
-    return next((got for got in (a.launch_args(s) for a in apps.APPS) if got), [])
+    """What a session's harness is started with besides its own options, as its `role` says -- the actor of an app
+    still in the dashboard (apps.py: the Browser's): its tools and instructions (the app's `launch_args`); any other,
+    an app's of app_kit's among them (app_agents.py: DocWriter's), what the tool gateway gives it (tool_gateway.py's
+    `launch_args`: its gatherer's apps' tools, those of the apps it is attached to, their instructions and guard)."""
+    from . import apps, tool_gateway            # here: the apps use this module
+    own = apps.of(s)
+    return own.launch_args(s) if own is not None else tool_gateway.launch_args(s)
 
 
 def known_role(role: str) -> bool:
-    """Whether `role` is one a session may have: one of ROLES, or an app's actor's ({"<name>": key}, apps.py)."""
+    """Whether `role` is one a session may have: one of ROLES, an app's actor's ({"<name>": key}, apps.py), or the
+    actor an app started ({"app": name, "key": instance}, app_agents.py)."""
     if role in ROLES:
         return True
     try:
@@ -478,6 +478,8 @@ def known_role(role: str) -> bool:
     except (TypeError, ValueError):
         return False
     from . import apps
+    if isinstance(got, dict) and isinstance(got.get("app"), str) and isinstance(got.get("key"), str):
+        return True
     return isinstance(got, dict) and any(isinstance(got.get(a.name), str) for a in apps.APPS)
 
 

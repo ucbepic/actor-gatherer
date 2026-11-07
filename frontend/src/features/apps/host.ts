@@ -14,7 +14,12 @@ export interface AppInfo {
   description: string;
   origin: string;
   instances: string;
+  offer?: string;
+  agent?: { start: boolean; name: string };
+  capabilities?: { message_agents?: boolean; transcript?: boolean; edit_guard?: boolean; native_view?: boolean };
+  tools?: { name: string; handled_by: string }[];
   handles: { intent: string; types: string[] }[];
+  failed?: string | null;
 }
 export interface Instance {
   id: string;
@@ -41,6 +46,23 @@ export interface PaneHooks {
   selection: () => Selection | null;
   /** The gatherer's actors, to attach: each one's channel and the name the list shows it by. */
   agents: (gatherer: string) => { channel: string; name: string }[];
+  /** An actor as the page has it now (its status, whether its turn is over, what it asks, ...), else null. */
+  agentState: (gatherer: string, channel: string) => AgentState | null;
+  /** A message to an actor, as Chat sends one; its question answered, as Chat answers one. */
+  send: (gatherer: string, channel: string, text: string) => Promise<unknown>;
+  answer: (gatherer: string, channel: string, call: string, choice: unknown) => Promise<unknown>;
+  interrupt: (gatherer: string, channel: string) => Promise<unknown>;
+}
+/** What a panel is told of an attached agent (the SDK's agents.state). */
+export interface AgentState {
+  channel?: string;
+  status?: string;
+  turn_over?: boolean;
+  asking?: unknown;
+  failing?: unknown;
+  stopped?: unknown;
+  session?: { session_id?: string; terminal?: boolean } | null;
+  name?: string | null;
 }
 type Msg = Record<string, unknown> & { ag?: number; id?: number; op?: string };
 
@@ -96,6 +118,28 @@ export async function instanceOf(app: string, gatherer: string, id: string): Pro
   const got = await get<Listed>(`/api/apps?gatherer=${encodeURIComponent(gatherer)}`).catch(() => null);
   return (got && got.instances.find((i) => i.id === id && i.app === app)) || null;
 }
+
+/** The instances an agent (gatherer, channel) is attached to, as the host has them (read at most once a second). */
+const attachedRead = new Map<string, { at: number; got: Promise<Listed | null> }>();
+export async function attachedTo(gatherer: string, channel: string): Promise<Instance[]> {
+  let r = attachedRead.get(gatherer);
+  if (!r || Date.now() - r.at > 1000) {
+    r = { at: Date.now(), got: get<Listed>(`/api/apps?gatherer=${encodeURIComponent(gatherer)}`).catch(() => null) };
+    attachedRead.set(gatherer, r);
+  }
+  const got = await r.got;
+  return got ? got.instances.filter((i) => (got.attached[i.id] || []).includes(channel)) : [];
+}
+
+/** An app whose manifest starts an agent of its own ([agent] start): a new instance in `cwd`, and a new actor there
+ * (on `harness`) attached to it -> the instance and the actor's session. */
+export const start = (app: string, gatherer: string, cwd: string, harness: string) =>
+  post<{ instance: Instance; session: { session_id: string; gatherer: string } }>("/api/apps/start", {
+    app,
+    gatherer,
+    cwd,
+    harness,
+  });
 
 /** The app that takes an intent of `kind` (for open-file: a file of that media type), the first found. */
 export function handler(kind: string, mediaType?: string): AppInfo | undefined {
@@ -304,6 +348,7 @@ export class AppPane {
         return {
           info: { ...w, label: this.app.label, title: this.instance.title },
           attached: this.attached,
+          states: this.states(),
           selection: this.hooks.selection(),
           theme: theme(),
         };
@@ -337,6 +382,22 @@ export class AppPane {
         return post("/api/apps/attach", { gatherer: w.gatherer, instance: w.instance, channel: m.channel });
       case "agents.detach":
         return post("/api/apps/detach", { gatherer: w.gatherer, instance: w.instance, channel: m.channel });
+      case "agents.send":
+      case "agents.answer":
+      case "agents.interrupt": {
+        if (!this.app.capabilities?.message_agents) throw new Error(`${this.app.label} may not message its agents`);
+        const ch = this.mine(m.channel);
+        if (m.op === "agents.send") return this.hooks.send(w.gatherer, ch, String(m.text || ""));
+        if (m.op === "agents.answer") return this.hooks.answer(w.gatherer, ch, String(m.call || ""), m.choice);
+        return this.hooks.interrupt(w.gatherer, ch);
+      }
+      case "agents.transcript": {
+        if (!this.app.capabilities?.transcript)
+          throw new Error(`${this.app.label} may not read its agents' transcript`);
+        const p = new URLSearchParams({ gatherer: w.gatherer, channel: this.mine(m.channel) });
+        if (Number(m.after) > 0) p.set("after", String(Number(m.after)));
+        return get(`/api/transcript?${p}`);
+      }
       case "intent":
         return this.hooks.intent(String(m.kind), (m.data || {}) as Record<string, unknown>, this);
       case "close":
@@ -371,6 +432,8 @@ export class AppPane {
       const value = JSON.parse((ev as MessageEvent).data);
       if (value && value.ag === "instance") {
         this.attached = value.attached || [];
+        this.lastStates = "";
+        this.agentsChanged();
         this.drawHead();
       }
       this.push("message", { value });
@@ -394,11 +457,46 @@ export class AppPane {
     return null;
   }
 
+  /** The agents attached to it, as it was last told. */
+  agents(): string[] {
+    return [...this.attached];
+  }
+
+  /** A channel a panel names, if it is one of its attached agents' (or a codex agent's thread its channel became). */
+  private mine(channel: unknown): string {
+    const ch = String(channel || "");
+    if (this.attached.includes(ch)) return ch;
+    const now = this.attached.find((c) => this.hooks.agentState(this.instance.gatherer, c)?.channel === ch);
+    if (now) return ch;
+    throw new Error(`${ch}: not an agent attached to this ${this.app.label}`);
+  }
+
+  /** Its agents' states, as the page has them now (the SDK's agents.state). */
+  private states(): Record<string, AgentState> {
+    const out: Record<string, AgentState> = {};
+    for (const c of this.attached) {
+      const s = this.hooks.agentState(this.instance.gatherer, c);
+      if (s) out[c] = s;
+    }
+    return out;
+  }
+  private lastStates = "";
+  /** The page's actors changed: its attached agents' states told to the panel, if they changed. */
+  agentsChanged(): void {
+    const now = this.states();
+    const sig = JSON.stringify(now);
+    if (sig === this.lastStates) return;
+    this.lastStates = sig;
+    this.push("states", { value: now });
+  }
+
   /** Its agents, as the host has them now: read again, drawn, and given (the page opens the first below it). */
   async refresh(): Promise<string[]> {
     const got = await get<Listed>(`/api/apps?gatherer=${encodeURIComponent(this.instance.gatherer)}`).catch(() => null);
     if (got) {
       this.attached = got.attached[this.instance.id] || [];
+      this.lastStates = "";
+      this.agentsChanged();
       this.drawHead();
     }
     return [...this.attached];

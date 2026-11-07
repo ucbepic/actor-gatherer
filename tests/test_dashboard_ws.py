@@ -130,7 +130,7 @@ class StreamsOverOneSocketTest(HomeBase):
         self.assertTrue(until(lambda: len(self.httpd.hub.watches) == 1))
         h = self.httpd.app_host                             # an app's panel's stream: the Preview's (one ag comes with)
         h._write_fn = insert_here
-        self.addCleanup(h.flush)
+        self.hosts.append(h)
         i = h.open("preview", "g", self.work)
         s.say({"open": "2", "url": f"/api/apps/stream?app=preview&gatherer=g&instance={i.id}"})
         self.assertIsNotNone(s.until("2", "!open"))

@@ -4,7 +4,7 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
-		<title>DocWriter preview</title>
+		<title>DocWriter</title>
 		<script>
 			(function () {
 				var bg = {"light":"#ffffff","dark":"#0f0f0f","solarized-light":"#fdf6e3","solarized-dark":"#002b36","monokai":"#272822"}, t = new URLSearchParams(location.search).get("theme");
@@ -13,14 +13,19 @@
 				document.documentElement.style.colorScheme = /dark|monokai/.test(t) ? "dark" : "light";
 			})();
 		</script>
+		<script src="/_ag/app.js"></script>
 		<script>
-			// Where this DocWriter is served, /docwriter/w/<key>: every request of the page goes under it (vite.config.mjs)
-			globalThis.__dwBase = (location.pathname.match(/^.*?\/docwriter\/w\/[^/]+/) || [""])[0];
+			// Where this DocWriter's requests go (vite.config.mjs): its backend, under /api/w/<gatherer>/<instance> on the
+			// app's origin -- named by the query the dashboard opens its panel with, or by its own path (its preview page)
+			(function () {
+				var m = location.pathname.match(/^\/api\/w\/[^/]+\/[0-9a-f]{16}/), q = new URLSearchParams(location.search);
+				globalThis.__dwBase = m ? m[0] : "/api/w/" + encodeURIComponent(q.get("gatherer") || "") + "/" + (q.get("instance") || "");
+			})();
 		</script>
-		<script type="module" crossorigin src="./assets/preview-CyVPdvW5.js"></script>
-		<link rel="modulepreload" crossorigin href="./assets/themes-DEsTdALw.js">
-		<link rel="stylesheet" crossorigin href="./assets/themes-Od4WgLo9.css">
-		<link rel="stylesheet" crossorigin href="./assets/preview-DU_9leKq.css">
+		<script type="module" crossorigin src="/assets/index-CZ3vTxDf.js"></script>
+		<link rel="modulepreload" crossorigin href="/assets/themes-Cfvgcxp9.js">
+		<link rel="stylesheet" crossorigin href="/assets/themes-fwms4W0H.css">
+		<link rel="stylesheet" crossorigin href="/assets/index-BEQGonwP.css">
 	</head>
 	<style>
 		html, body { margin: 0; padding: 0; height: 100%; }

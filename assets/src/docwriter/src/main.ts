@@ -17,10 +17,13 @@ import { serveTools } from './tools';
 import { makeBus, installLive } from './bus';
 import { useBus } from './yjs-doc';
 import App from './App.svelte';
-import { onTheme } from './actor';
+import { onTheme, wireActor } from './actor';
+import { connectAg } from './ag';
 import { selectedTheme } from '$lib/stores';
 import { themes, applyTheme } from '$lib/themes';
 
+await connectAg();                                // the dashboard around this frame (app_kit's SDK), first
+wireActor();
 await loadConfig();
 setRoot(config.root);
 (globalThis as { __dwWake?: boolean }).__dwWake = config.wake;   // a pause in typing wakes the agent (vite.config.mjs)

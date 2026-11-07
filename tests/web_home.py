@@ -118,6 +118,9 @@ def build(home: str) -> str:
 
 def serve_at(port: int) -> None:
     """A home built in a temporary folder, and the dashboard on it at `port` until stopped; the folder removed then."""
+    import faulthandler
+    import signal
+    faulthandler.register(signal.SIGUSR1, all_threads=True)   # `kill -USR1 <pid>`: every thread's stack, on stderr
     for name in ("ANTHROPIC_BASE_URL", "AG_ACTOR", "AG_DASHBOARD"):     # never this session's own
         os.environ.pop(name, None)
     # ag run from this checkout (the apps' host inserts through `ag home insert`), and the test apps found (tests/apps/)

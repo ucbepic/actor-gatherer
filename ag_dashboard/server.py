@@ -30,8 +30,8 @@ from typing import Optional
 
 import harness_kit
 
-from . import (actions, app_host, apps, avatars, branches, coordination, data, editor, folders, home, live, migrating,
-               page_build, saved, sessions, tool_gateway)
+from . import (actions, app_agents, app_host, apps, avatars, branches, coordination, data, editor, folders, home, live,
+               migrating, page_build, saved, sessions, tool_gateway)
 
 STATIC, INDEX = page_build.STATIC, page_build.INDEX   # frontend/'s build (vite.config.ts), built by page_build.py
 BUILD = page_build.COMMAND
@@ -182,6 +182,9 @@ class Server:
             a.served_at(f"http://127.0.0.1:{self.server_port}")
         tool_gateway.HOST, tool_gateway.ORIGIN = self.app_host, f"http://127.0.0.1:{self.server_port}"   # the apps'
                                                                        # tools, for every session it starts
+        if live_updates:                                              # an app's actors from before it was an app,
+            threading.Thread(target=app_agents.adopt_all, args=(self.sessions, self.app_host),   # attached to it
+                             name="ag-apps-adopt", daemon=True).start()
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once

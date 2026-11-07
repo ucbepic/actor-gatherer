@@ -5,9 +5,14 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
 		<title>DocWriter</title>
+		<script src="/_ag/app.js"></script>
 		<script>
-			// Where this DocWriter is served, /docwriter/w/<key>: every request of the page goes under it (vite.config.mjs)
-			globalThis.__dwBase = (location.pathname.match(/^.*?\/docwriter\/w\/[^/]+/) || [""])[0];
+			// Where this DocWriter's requests go (vite.config.mjs): its backend, under /api/w/<gatherer>/<instance> on the
+			// app's origin -- named by the query the dashboard opens its panel with, or by its own path (its preview page)
+			(function () {
+				var m = location.pathname.match(/^\/api\/w\/[^/]+\/[0-9a-f]{16}/), q = new URLSearchParams(location.search);
+				globalThis.__dwBase = m ? m[0] : "/api/w/" + encodeURIComponent(q.get("gatherer") || "") + "/" + (q.get("instance") || "");
+			})();
 		</script>
 	</head>
 	<style>

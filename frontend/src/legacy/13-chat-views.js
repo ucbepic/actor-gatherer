@@ -55,12 +55,13 @@
 const CHAT_VIEWS = new Map();
 const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
 state.chatViewId = (PANE && PANE_URL.get("view")) || (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "files"; } catch (e) { return "files"; } })();
-// A DocWriter's actor (dwKey) opens in DocWriter's view each time it is selected; another picked for it (its Terminal,
+// A Browser's actor (bwKey) opens in the Browser's view each time it is selected; another picked for it (its Terminal,
 // say) lasts while it stays selected, apart from the other actors' choice. A view with `when(info)` is offered only to
-// the actors it says (DocWriter's, to theirs).
-const KIND_VIEWS = { docwriter: "docwriter", browser: "browser" };
+// the actors it says (the Browser's, to theirs). An app's actor (19-app-actors.js) is shown as any actor is: its app's
+// panel is above the panes.
+const KIND_VIEWS = { browser: "browser" };
 const kindViewId = { ...KIND_VIEWS };              // the view each kind's actor is shown in, while selected
-const kindOf = (info) => dwKey(info) ? "docwriter" : bwKey(info) ? "browser" : null;
+const kindOf = (info) => bwKey(info) ? "browser" : null;
 const offeredTo = (v, info) => !!v && (!v.when || !!v.when(info));
 // The views offered to the selected actor, those for it alone (`when`) first.
 const offeredViews = () => [...CHAT_VIEWS.values()].filter((v) => offeredTo(v, selectedInfo()))

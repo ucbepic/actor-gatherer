@@ -21,7 +21,7 @@
   border-radius: 6px; font-size: 12.5px; color: var(--ink); white-space: nowrap; }
 .dw-menu .on button:hover, .dw-menu .on button:focus-visible { background: var(--wash); }
 .dw-menu .on button[disabled] { opacity: .5; }
-.dw-menu .badge { width: 16px; height: 16px; display: block; }
+.dw-menu .badge, .dw-menu .app-mark { width: 16px; height: 16px; display: block; }
 .dw-menu .err { color: var(--critical); overflow-wrap: anywhere; }
 .dw-menu .err:empty { display: none; }
-.chat .chat-frame.dw-frame { position: relative; overflow: hidden; padding: 0; }
+

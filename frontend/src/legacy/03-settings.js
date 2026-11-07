@@ -71,7 +71,11 @@ function streamTake(name, data, mine = () => true, sel = null) {
         await loadedSoon(loadChat());                // a session's state: its messages may have moved on too
         if (!state.selected && !PANE) {              // the first agent to appear: shown, and watched
           const first = got.gatherers.find((g) => g.agents.length);
-          if (first) { state.selected = [first.name, firstAgent(first).channel]; await loadAgent(); render(true); connect(); }
+          if (first) {
+            state.selected = [first.name, firstAgent(first).channel];
+            showActorsApp(...state.selected);        // an app's actor: its panel above (19-app-actors.js)
+            await loadAgent(); render(true); connect();
+          }
         }
       } else if (name === "chat") {                   // what Chat shows of the actor: drawn as it comes, nothing to load
         if (!sel || !isAt(state.selected, ...sel)) return;

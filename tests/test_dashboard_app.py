@@ -76,7 +76,7 @@ class RoutesTest(unittest.TestCase):
             self.assertTrue(doc, f"{methods} {path} has no docstring")
         paths = {p for _, p, _ in listed}
         for path in ("/api/home", "/api/stream", "/api/terminal", "/api/edit/stream", "/api/apps/stream",
-                     "/browser/w/{key}/stream", "/docwriter/w/{key}/stream", "/api/send", "/api/actors/{op:path}"):
+                     "/browser/w/{key}/stream", "/api/apps/start", "/api/send", "/api/actors/{op:path}"):
             self.assertIn(path, paths)
 
     def test_the_command_lists_them(self):
@@ -153,7 +153,7 @@ class StreamsTest(HomeBase):
         """The stream of an app's panel: the Preview's (an app that comes with ag), of this test's folder."""
         h = self.httpd.app_host
         h._write_fn = insert_here
-        self.addCleanup(h.flush)
+        self.hosts.append(h)
         return f"/api/apps/stream?app=preview&gatherer=g&instance={h.open('preview', 'g', self.work).id}"
 
     def test_an_app_s_stream_lets_go_of_its_subscription_once_its_page_goes(self):

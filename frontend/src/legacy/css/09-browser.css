@@ -188,10 +188,6 @@
 .bw-picks .pk button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; border-radius: 999px; }
 .bw-picks .pk button:hover { color: var(--ink); background: var(--wash); }
 .tx .bw-said { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
-.dw-slot { position: absolute; inset: 0; }
-/* its frames, never moved (a frame moved loads again): laid over the slot of the view shown, else hidden -- running */
-.dw-page { position: fixed; border: 0; display: block; background: var(--page); z-index: 5; }
-.dw-page.off { visibility: hidden; pointer-events: none; left: 0; top: 0; width: 1px; height: 1px; }
 .side-btns { display: flex; gap: 6px; }
 .ed { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .ed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }

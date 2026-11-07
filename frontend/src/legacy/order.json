@@ -39,7 +39,7 @@
     "18-editor-tree.js",
     "18-editor-open.js",
     "18-editor-view.js",
-    "19-docwriter.js",
+    "19-app-actors.js",
     "20-browser.js",
     "21-start.js"
   ]

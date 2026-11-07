@@ -20,6 +20,7 @@ each side POSTs JSON to the other:
               body (base64)} -> {status, headers,
               body (base64)}
     attached / detached  {instance, channel}
+    guard    {instance, path, caller} -> {refused}
     stop     {}
 
 A refusal is a 4xx with `{"error": "..."}`. Each side here: `launch` (the host starting an app, RemoteApp the app as
@@ -174,6 +175,9 @@ class RemoteApp(App):
     def detached(self, instance: Instance, channel: str) -> None:
         self._op("detached", {"instance": instance.to_dict(), "channel": channel})
 
+    def guard(self, instance: Instance, path: str, caller: Caller) -> Optional[str]:
+        return self._op("guard", {"instance": instance.to_dict(), "path": path, "caller": caller.to_dict()}).get("refused")
+
 
 def host_ops(host: Host, instance_of: Callable[[dict], Instance]) -> Dict[str, Callable[[dict], dict]]:
     """The calls an app in its own process makes of the host, answered by `host`: what a host serves at AG_APP_HOST.
@@ -281,6 +285,7 @@ def app_ops(app: App) -> Dict[str, Callable[[dict], Optional[dict]]]:
         "request": request,
         "attached": lambda b: app.attached(inst(b["instance"]), b["channel"]),
         "detached": lambda b: app.detached(inst(b["instance"]), b["channel"]),
+        "guard": lambda b: {"refused": app.guard(inst(b["instance"]), b["path"], Caller.from_dict(b.get("caller")))},
         "stop": lambda b: app.stop(),
     }
 

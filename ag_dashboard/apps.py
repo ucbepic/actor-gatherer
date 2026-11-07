@@ -1,4 +1,5 @@
-"""The dashboard's APPS: DocWriter (docwriter.py) and the Browser (browser.py). Each is a view of its own in the
+"""The dashboard's APPS still in the dashboard itself: the Browser (browser.py) -- DocWriter is an app of app_kit's now
+(ag_apps/docwriter/), and the Browser will be (app_kit/DESIGN.md step 8). Each is a view of its own in the
 dashboard whose agent is an ACTOR of the gatherer: a session whose `role` is {"<name>": key} (sessions.py), made
 from the app's button (its router's /api/<name>) or by the gatherer agent (coordination.py's `new`, as `ag actors new
 --<name>` asks).
@@ -31,7 +32,7 @@ What its actor was asked, without the app's own state block (<workspace_state>, 
 import importlib
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from . import browser, docwriter, mcp
+from . import browser, mcp
 
 
 class App:
@@ -78,30 +79,6 @@ class App:
         return importlib.import_module(f"{__package__}.api.{self.name}").router
 
 
-class DocWriter(App):
-    """docwriter.py: a writing app on a folder, its actor's edits proposals the author accepts or rejects."""
-
-    name, label, error = "docwriter", "DocWriter", docwriter.DocWriterError
-    max_body = docwriter.MAX_BODY                   # a document's state, a file dropped into its folder
-    page_writes = ("POST", "PUT", "PATCH", "DELETE")   # DocWriter's own /api routes
-    home_fields = {"docwriter": bool}
-
-    def start(self, started) -> "docwriter.DocWriters":
-        return docwriter.DocWriters(started)
-
-    def served_at(self, origin: str) -> None:
-        docwriter.ORIGIN = origin
-
-    def available(self, running) -> bool:
-        return docwriter.available()
-
-    def key_of(self, session: dict) -> Optional[str]:
-        return docwriter.key_of(session)
-
-    def launch_args(self, session: dict) -> List[str]:
-        return docwriter.launch_args(session)
-
-
 class Browser(App):
     """browser.py: a Chrome tab the user and its actor use together; a message to the actor says what the user did
     and picked in it."""
@@ -132,7 +109,7 @@ class Browser(App):
         return text, (b.sent if b is not None else None)
 
 
-APPS: List[App] = [DocWriter(), Browser()]
+APPS: List[App] = [Browser()]
 
 
 def named(name: str) -> Optional[App]:

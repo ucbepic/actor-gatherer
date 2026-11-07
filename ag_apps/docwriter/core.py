@@ -1,60 +1,42 @@
-"""DocWriter (github.com/docwriter-org/docwriter, MIT) in the dashboard: its page -- a writing app where the author
-and an agent edit the same draft, the agent's edits proposed beside the text until the author accepts them -- built
-against the dashboard (assets/src/docwriter -> vendor/docwriter/), and its agent an ACTOR of the gatherer: an ordinary
-session started from the dashboard (sessions.py), in the list, whose view DocWriter is (the page's "docwriter" chat view,
-beside its Terminal, Chat and History), that the page sends its requests to as messages. What DocWriter's own server did
-is done here, or in the page:
+"""DocWriter (github.com/docwriter-org/docwriter, MIT) as an app (app_kit/DESIGN.md step 8): its page -- a writing app
+where the author and an agent edit the same draft, the agent's edits proposed beside the text until the author accepts
+them -- built against this backend (assets/src/docwriter -> panel/), and what its own server did, done here or in the
+page. Moved from the dashboard (ag_dashboard/docwriter.py) as it was: what changed is how it reaches the rest.
 
-    each DocWriter        `DocWriters.create`: its actor's -- one each -- made with it: its KEY, the page served at
-                          /docwriter/w/<key>/ (every request of the page under it), its actor a session (sessions.py's
-                          `create`, its `role` {"docwriter": key}) started with DocWriter's instructions and its document
-                          tools (`launch_args`); its folder is the workspace. Its open tabs, and what its actor last saw,
-                          are its own (`kv`, scoped by its key); rules, settings and hooks are the folder's. Made from a
-                          gatherer's DocWriter button, or by the gatherer agent (coordination.py's `new`), which sends
-                          its actor a task as it does any actor's
+    each DocWriter        an instance of the app (backend.py's DocWriterApp): its KEY is the instance's id, its folder
+                          the workspace; its actor an agent attached to it (made with it: app_agents.py), given its
+                          tools, instructions and edit guard by the host. Its open tabs, and what its actor last saw,
+                          are its own (`kv`, scoped by its key); rules, settings and hooks are the folder's
     its documents        `Docs`: each open file one Yjs document (an XmlFragment of paragraphs, DocWriter's comment
                           threads beside it), kept by pycrdt unread and passed between the pages that have it open; its
-                          state kept in dashboard.db (`docwriter_docs`), so proposals and threads outlive the page. The
-                          page seeds a new document from its file, writes it back as the author has it (no proposed
-                          insertions), and folds in a change of the file on disk (`external`, sent to one page): the
-                          page's code knows a proposal from the text, this does not
+                          state kept in the app's own database (`docwriter_docs`), so proposals and threads outlive the
+                          page. The page seeds a new document from its file, writes it back as the author has it (no
+                          proposed insertions), and folds in a change of the file on disk (`external`, sent to one page)
     its routes            `api`: files, tabs, settings, hooks (`<folder>/.docwriter/hooks.json`, as DocWriter keeps
                           them), previews, SyncTeX (`synctex`), and the live notices (`live`: a built preview changed)
-    the agent's turn      the page's: it makes DocWriter's prompt and sends it here (`send`), typed into the actor's
-                          terminal or starting it (sessions.py's `send`), and follows the turn in the gatherer
-    the agent's tools     `Tools` + mcp.py: edit_doc, read_doc, write_doc, comment_doc, reply_to_comment, list_threads,
-                          an MCP server the actor reaches at /docwriter/w/<key>/mcp, each call passed to a page with
-                          the DocWriter open, which runs DocWriter's own code on its document and answers -- a call
-                          made while none has, waiting PAGE_WAIT for one: the dashboard's page opens the DocWriter of
-                          an actor at work (the page's `dwTell`), a moment after its turn starts. Claude Code
-                          is kept from editing an open document with its own tools by a PreToolUse hook
-                          (docwriter_guard.py, asking `guard`); codex is told to
-    what the author does  `record`: an event of the dashboard's in the actor's channel (`ag home insert`), as naming.py's
-                          name: a proposal accepted, rejected or dismissed (`proposal_resolved`), a comment, a reply,
-                          the agent's settings (`doc_settings`)
+    a page's stream       what concerns one page -- its documents' changes, the live notices -- told to the app's
+                          panels (Host.tell_panel) addressed to that page (`to`), which ignore the rest
+    the agent's turn      the page's: it builds DocWriter's prompt and sends it to the attached agent through the SDK
+                          (message_agents), and follows the turn there (transcript)
+    the agent's tools     the page's (DocWriter's own code, on its documents): the host relays each call to a panel
+    what the author does  `record`: the app's events in the agent's channel -- docwriter.proposal_resolved (accepted,
+                          rejected or dismissed), .comment, .reply, .doc_settings -- records, never in a context
 
-Needs pycrdt, as the Editor panel does (`AVAILABLE`)."""
+Needs pycrdt, as the dashboard's Editor does (`AVAILABLE`)."""
 import base64
 import json
 import mimetypes
 import os
-import queue
 import re
 import secrets
-import shlex
 import shutil
 import sqlite3
 import stat
 import subprocess
-import sys
 import tempfile
 import threading
 import time
-from typing import Dict, List, Optional, Tuple
-
-import harness_kit
-
-from . import home, mcp, naming, sessions
+from typing import Callable, Dict, List, Optional, Tuple
 
 try:
     from pycrdt import Doc
@@ -63,21 +45,15 @@ except ImportError:                                 # the page says what to inst
     Doc = None
     AVAILABLE = False
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-VENDOR = os.path.join(HERE, "vendor", "docwriter")
-GUARD = os.path.join(HERE, "docwriter_guard.py")
-INSTRUCTIONS = os.path.join(VENDOR, "instructions.md")   # DocWriter's system prompt, as build.mjs takes it out
-ORIGIN = "http://127.0.0.1:4200"   # where the actors reach the dashboard (its MCP server): set by server.py's `serve`
-MCP_NAME = "docwriter-doc"  # its MCP server's name: the tools' names, as the harness shows them, carry it
+DB_PATH = ""                # the app's own database (backend.py: in its data folder)
+CONFIG = ""                 # the home's config.toml (backend.py), for `[dashboard] docwriter_wake`
+TOOL_NAME = "docwriter_edit_doc"   # its edit tool, as agents are given it (the tool gateway's <app>_<tool>)
 KEY = re.compile(r"[0-9a-f]{16}")
 POLL = 0.5                  # seconds between looks at each open file, and each previewed one
 LINGER = 30.0               # seconds a document stays open after its last page goes
 PERSIST = 2.0               # seconds between writes of the documents changed to dashboard.db
-TOOL_WAIT = 120.0           # the most a tool call waits for a page to answer it
-PAGE_WAIT = 30.0            # the most a tool call waits for a page to open its DocWriter, none having it open
-TOOL_CHECK = 0.5            # how often a waiting tool call looks whether its page is there, and still there
-NAME_WAIT = 600.0           # how long a new actor's first call is waited for, to name it (its gatherer has it then)
 PREVIEW_KEEP = 3600.0       # seconds a previewed file is watched after it was last asked for
+PAGE_GONE = 30.0            # seconds a page not heard from is taken to be gone (it says it is there every 10)
 HOOK_TIMEOUT = 300          # seconds a hook's command may run
 HOOK_KEEP = 2000            # the last characters of a hook's output kept
 MAX_TEXT = 5_000_000        # the largest file read as text
@@ -86,14 +62,7 @@ SKIPPED = frozenset({".git", "node_modules", ".svelte-kit", "build", ".DS_Store"
 SOURCES = frozenset({"md", "markdown", "txt", "json", "yaml", "yml", "tex", "ltx", "sty", "cls", "bib"})
 BINARY = frozenset({"pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "tif", "tiff", "zip", "gz", "tar",
                     "docx", "xlsx", "pptx", "mp3", "mp4", "mov", "wav"})
-SCHEMA = """CREATE TABLE IF NOT EXISTS docwriter (
-    key         TEXT PRIMARY KEY,
-    gatherer    TEXT NOT NULL,
-    root        TEXT NOT NULL,
-    session_id  TEXT NOT NULL,
-    created_at  REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS docwriter_docs (
+SCHEMA = """CREATE TABLE IF NOT EXISTS docwriter_docs (
     path        TEXT PRIMARY KEY,
     state       BLOB NOT NULL,
     disk        TEXT,
@@ -122,8 +91,8 @@ def b64(raw: bytes) -> str:
 
 
 def _db() -> sqlite3.Connection:
-    os.makedirs(home.HOME, exist_ok=True)
-    conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
+    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=8, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     return conn
@@ -134,7 +103,7 @@ def wake() -> bool:
     `[dashboard] docwriter_wake` (default: not -- each wake is a message the actor shows and answers)."""
     try:
         import tomllib
-        with open(os.path.join(home.HOME, "config.toml"), "rb") as fh:
+        with open(CONFIG, "rb") as fh:
             dashboard = tomllib.load(fh).get("dashboard")
     except (OSError, ValueError):
         return False
@@ -266,19 +235,21 @@ class _Sink:
 
 
 class _Page:
-    """A DocWriter page's one stream (`DocWriters.join_page`): its documents' updates and changes on disk (`doc`, each
-    with its tab), the actor's tool calls for it to run (`call`), the live notices (`live`) -- one connection for all,
-    as a browser keeps only a few open to a host."""
+    """A DocWriter page (`DocWriters.join_page`): what concerns it -- its documents' updates and changes on disk (`doc`,
+    each with its tab), the live notices (`live`) -- told to the app's panels addressed to it (`tell`), which the
+    others ignore. `seen`: when it last said it is there (a page gone without saying so is let go: `DocWriters.sweep`)."""
 
-    def __init__(self, key: str, cid: str):
-        self.key, self.id, self.queue = key, cid, queue.Queue()
+    def __init__(self, key: str, cid: str, tell: Callable[[dict], None]):
+        self.key, self.id, self.tell = key, cid, tell
         self.rooms: Dict[str, "Room"] = {}         # tab -> its document, while the page has it open
+        self.seen = time.time()
 
     def put(self, item) -> None:
-        self.queue.put(item)
+        if item is not None:
+            self.tell({"to": self.id, "name": item[0], "value": item[1]})
 
     def sink(self, tab: str) -> _Sink:
-        return _Sink(self.id, lambda item: self.queue.put(("doc", {"tab": tab, "type": item[0], **item[1]})))
+        return _Sink(self.id, lambda item: self.put(("doc", {"tab": tab, "type": item[0], **item[1]})))
 
 
 class Room:
@@ -471,73 +442,6 @@ class Docs:
 
 # ---- the agent's tools, run in a page ---------------------------------------------------------------------------
 
-class Tools:
-    """The actor's tool calls passed to a page with its DocWriter open -- the one that opened its stream last -- and
-    the page's answers back (module doc). What the tools are, the pages say (`listed`); kept, for an actor that starts
-    before a page has said."""
-
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.streams: Dict[str, List[_Page]] = {}
-        self.waiting: Dict[str, list] = {}         # call id -> [Event, result]
-
-    def join(self, page: _Page) -> None:
-        with self.lock:
-            self.streams.setdefault(page.key, []).append(page)
-
-    def leave(self, page: _Page) -> None:
-        with self.lock:
-            if page in self.streams.get(page.key, []):
-                self.streams[page.key].remove(page)
-
-    def listed(self, tools) -> None:
-        if isinstance(tools, list) and tools:
-            kv_set("*", {"tools": json.dumps(tools)})
-
-    def tools(self) -> list:
-        return _kv_json("*", "tools", [])
-
-    def call(self, key: str, name: str, arguments: dict) -> dict:
-        cid, start = secrets.token_hex(8), time.time()
-        while True:                                  # none open yet: the dashboard's page opens it as the turn starts
-            with self.lock:
-                open_ = self.streams.get(key) or []
-                target = open_[-1] if open_ else None
-                if target is not None:
-                    self.waiting[cid] = [threading.Event(), None]
-            if target is not None or time.time() - start >= PAGE_WAIT:
-                break
-            time.sleep(TOOL_CHECK)
-        if target is None:
-            return mcp.result("DocWriter is not open in the dashboard, so the documents are not there to change: ask "
-                              "me to show this DocWriter (select its actor in the dashboard), then try again.", error=True)
-        target.put(("call", {"id": cid, "name": name, "arguments": arguments}))
-        done, there, end = self.waiting[cid][0], True, time.time() + TOOL_WAIT
-        while not done.wait(TOOL_CHECK) and time.time() < end:
-            with self.lock:                          # its page gone before it answered: not waited for any longer
-                there = target in self.streams.get(key, [])
-            if not there:
-                break
-        with self.lock:
-            got = self.waiting.pop(cid, [None, None])[1]
-        if isinstance(got, dict):
-            return got
-        if not there:
-            return mcp.result(f"DocWriter's page closed before it answered {name}, so it may or may not have been done: "
-                              f"read_doc to see the document now, then try again. If DocWriter is not open, ask me to "
-                              f"show it.", error=True)
-        return mcp.result(f"DocWriter did not answer {name} in {int(TOOL_WAIT)} s: is its page still open?", error=True)
-
-    def answered(self, cid: str, result) -> None:
-        with self.lock:
-            w = self.waiting.get(cid)
-            if w is not None:
-                w[1] = result
-                w[0].set()
-
-
-# ---- previews and their notices ----------------------------------------------------------------------------------
-
 class Live:
     """DocWriter's /api/live, per folder: `preview_ready` {path} when a previewed file (a built PDF, say) changes --
     each file asked for at /api/preview watched PREVIEW_KEEP after -- or a hook built it."""
@@ -597,80 +501,16 @@ def _stat(path: str) -> Optional[tuple]:
         return None
 
 
-# ---- the actor ---------------------------------------------------------------------------------------------------
-
-def instructions(root: str) -> str:
-    """What the actor is told, as DocWriter's own agent is (its system prompt), and where it is."""
-    try:
-        with open(INSTRUCTIONS, encoding="utf-8") as fh:
-            prompt = fh.read()
-    except OSError:
-        prompt = ""
-    return (f"# DocWriter\n\nYou are the agent of DocWriter, a writing app open in the ag dashboard, where the author "
-            f"writes and reviews your work. The workspace is {root}: its files open in DocWriter as tabs. Change an open "
-            f"document only with the docwriter-doc tools (read_doc, edit_doc, write_doc, comment_doc, reply_to_comment, "
-            f"list_threads): your edits are proposed beside the text, and the file changes only when the author accepts "
-            f"them. Each message from DocWriter carries the workspace's state (<workspace_state>) and the author's "
-            f"request.\n\n{prompt}").strip()
-
-
-def available() -> bool:
-    """Whether a DocWriter can be made here: pycrdt, and its page built (vendor/docwriter/)."""
-    return AVAILABLE and os.path.isfile(os.path.join(VENDOR, "index.html"))
-
-
-def key_of(s: dict) -> Optional[str]:
-    """The key of the DocWriter whose actor the session is (its `role`, {"docwriter": key}), or None."""
-    try:
-        role = json.loads(s.get("role") or "null")
-    except ValueError:
-        return None
-    key = role.get("docwriter") if isinstance(role, dict) else None
-    return key if isinstance(key, str) and KEY.fullmatch(key) else None
-
-
-def launch_args(s: dict) -> List[str]:
-    """What a DocWriter actor's harness is started with besides its own options (sessions.py), as its harness takes them
-    (harness_kit's): DocWriter's document tools (the MCP server here: `mcp_args`), its instructions
-    (`instruction_args`), and a guard refusing the harness's own edit tools on an open document (`edit_guard_args`,
-    where it runs one: Claude Code's hook). [] for any other session."""
-    key = key_of(s)
-    if key is None:
-        return []
-    base = f"{ORIGIN}/docwriter/w/{key}"
-    h = harness_kit.get(s.get("harness") or harness_kit.DEFAULT)
-    tools = h.mcp_args(MCP_NAME, f"{base}/mcp") if h is not None else None
-    if tools is None:
-        return []                                    # a harness given no MCP server's tools here: none to write with
-    guard = f"{shlex.quote(sys.executable)} {shlex.quote(GUARD)} {shlex.quote(base + '/guard')} {shlex.quote(h.name)}"
-    return [*tools, *h.instruction_args(instructions(s.get("cwd") or "")), *h.edit_guard_args(guard)]
-
-
-def record(gatherer: str, channel: str, kind: str, payload: dict) -> None:
-    """What the author did in DocWriter, an event of the dashboard's in the actor's channel (`ag home insert`), in
-    the background: ag takes a moment, and the author's click does not wait on it."""
-    event = {"type": kind, "payload": {**payload, "by": "user", "via": "docwriter"}}
-
-    def put() -> None:
-        try:
-            subprocess.run([*sessions.ag_command(), "home", "insert", gatherer, "--properties",
-                            json.dumps({"channel": channel}), "--events", json.dumps([event])],
-                           env=sessions.agent_env(), capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
-        except (OSError, subprocess.SubprocessError, sessions.SessionError):
-            pass
-    threading.Thread(target=put, name="ag-docwriter-record", daemon=True).start()
-
-
 class DocWriters:
-    """Every DocWriter the dashboard serves (module doc)."""
+    """Every DocWriter the app serves (module doc): its instances, by key, as the host gives them (backend.py)."""
 
-    def __init__(self, started: sessions.Sessions):
-        self.started = started
+    def __init__(self, tell: Callable[[str, dict], None], record: Callable[[str, str, dict], None]):
+        self.tell, self._record = tell, record          # (key, message) to its panels; (key, type, payload) as events
         self.docs = Docs() if AVAILABLE else None
-        self.tools = Tools()
         self.live = Live()
         self.lock = threading.Lock()
         self.pages: Dict[Tuple[str, str], _Page] = {}
+        self.writers: Dict[str, dict] = {}              # key -> {root, gatherer, channel}: the instance, as opened
 
     def close(self) -> None:
         if self.docs is not None:
@@ -679,95 +519,38 @@ class DocWriters:
 
     # -- which DocWriter
 
-    def create(self, gatherer: str, cwd: str, harness: str = harness_kit.DEFAULT, model: Optional[str] = None) -> dict:
-        """A new DocWriter on `cwd`, its actor a new session of `harness` in `gatherer` (a new gatherer if none has the
-        name; its agent starts with its first message): its settings (`config`)."""
-        if not AVAILABLE:
-            raise DocWriterError("DocWriter needs pycrdt where the dashboard runs: pip install pycrdt, then restart it")
-        root = os.path.realpath(os.path.abspath(os.path.expanduser(cwd or "")))
-        if not os.path.isdir(root):
-            raise DocWriterError(f"no directory {cwd}")
+    def keep(self, key: str, root: str, gatherer: str, channel: str = "") -> None:
+        """An instance the host opened (or adopted): its folder, its gatherer, its agent's channel."""
         with self.lock:
-            key = secrets.token_hex(8)
-            s = self.started.create(gatherer, root, "auto", harness if harness in sessions.HARNESSES else harness_kit.DEFAULT,
-                                    model, role=json.dumps({"docwriter": key}))
-            conn = _db()
-            try:
-                conn.execute("INSERT INTO docwriter (key, gatherer, root, session_id, created_at) VALUES (?, ?, ?, ?, ?)",
-                             (key, gatherer, root, s["session_id"], time.time()))
-            finally:
-                conn.close()
-            return self.config(key)
+            self.writers[key] = {"key": key, "root": os.path.realpath(root), "gatherer": gatherer, "channel": channel}
 
-    def _session(self, sid: str, listed: Optional[dict] = None) -> Optional[dict]:
-        """Its actor's session, under the id it has now (codex's renamed to its thread's)."""
-        listed = listed if listed is not None else {s["session_id"]: s for s in self.started.list()}
-        if sid in listed:
-            return listed[sid]
-        return next((s for s in listed.values() if s.get("started_as") == sid), None)
+    def attach(self, key: str, channel: str) -> None:
+        with self.lock:
+            if key in self.writers and not self.writers[key]["channel"]:
+                self.writers[key]["channel"] = channel
 
     def row(self, key: str) -> dict:
         if not KEY.fullmatch(key or ""):
             raise DocWriterError("no such DocWriter", 404)
-        conn = _db()
-        try:
-            r = conn.execute("SELECT * FROM docwriter WHERE key = ?", (key,)).fetchone()
-        finally:
-            conn.close()
+        with self.lock:
+            r = self.writers.get(key)
         if r is None:
             raise DocWriterError("no such DocWriter", 404)
         return dict(r)
 
     def config(self, key: str) -> dict:
         r = self.row(key)
-        s = self._session(r["session_id"])
-        out = {"key": key, "root": r["root"], "gatherer": r["gatherer"], "channel": s["session_id"] if s else r["session_id"],
-               "harness": (s or {}).get("harness") or harness_kit.DEFAULT, "name": "DocWriter", "wake": wake()}
-        if s is None:
-            out["error"] = "This DocWriter's actor is gone: close DocWriter and open it again for a new one."
+        out = {"key": key, "root": r["root"], "gatherer": r["gatherer"], "channel": r["channel"], "harness": "",
+               "name": "DocWriter", "wake": wake()}
+        if not r["channel"]:
+            out["error"] = "No actor works with this DocWriter: attach one (its head's agents), or start a new DocWriter."
         return out
-
-    def send(self, key: str, text: str) -> dict:
-        """DocWriter's prompt to its actor: typed into its terminal, or starting it with it."""
-        r = self.row(key)
-        s = self._session(r["session_id"])
-        if s is None:
-            raise DocWriterError("This DocWriter's actor is gone: close DocWriter and open it again.", 409)
-        try:
-            sent = self.started.send(s["session_id"], text)
-        except sessions.SessionError as exc:
-            raise DocWriterError(str(exc), 409) from None
-        self.name_actor(key)
-        return sent
-
-    def name_actor(self, key: str, name: Optional[str] = None) -> None:
-        """Its actor named, once -- `name`, else "DocWriter · <folder>" -- as its first message is sent (`_name`)."""
-        if kv_get(key, ["named"])["named"]:
-            return
-        kv_set(key, {"named": "1"})
-        r = self.row(key)
-        threading.Thread(target=self._name, args=(r["gatherer"], r["session_id"], r["root"], name),
-                         name="ag-docwriter-name", daemon=True).start()
-
-    def _name(self, gatherer: str, sid: str, root: str, name: Optional[str] = None) -> None:
-        """Its actor named `name`, else "DocWriter · <folder>" -- else the list shows it by its first message,
-        DocWriter's prompt -- once its gatherer has it (its first call): a name is an event there (naming.py)."""
-        end = time.time() + NAME_WAIT
-        now = (self._session(sid) or {}).get("session_id") or sid
-        while time.time() < end and not sessions._has_calls(gatherer, now):
-            time.sleep(2)
-            now = (self._session(sid) or {}).get("session_id") or sid      # codex's: renamed to its thread
-        try:
-            naming.record(gatherer, now, name or f"DocWriter · {os.path.basename(root) or root}")
-        except naming.NamingError:
-            pass
 
     def record(self, key: str, kind: str, payload) -> None:
         if kind not in ("proposal_resolved", "comment", "reply", "doc_settings") or not isinstance(payload, dict):
             raise DocWriterError("not an event DocWriter records")
-        r = self.row(key)
-        s = self._session(r["session_id"])
-        record(r["gatherer"], s["session_id"] if s else r["session_id"], kind, payload)
+        self.row(key)
+        self._record(key, kind, {**payload, "by": "user", "via": "docwriter"})
 
     def guard(self, key: str, path: str) -> Optional[str]:
         """Why the actor may not change `path` with its own tools -- it is open in DocWriter, where the author
@@ -782,7 +565,7 @@ class DocWriters:
         if tab not in self._tabs(key)["order"]:
             return None
         return (f"{tab} is open in DocWriter, where the author reviews each change: propose this one with "
-                f"mcp__{MCP_NAME}__edit_doc (or write_doc for the whole file) instead. The file changes when the "
+                f"{TOOL_NAME} (or docwriter_write_doc for the whole file) instead. The file changes when the "
                 f"author accepts it.")
 
     # -- the page's streams and what it keeps
@@ -793,36 +576,61 @@ class DocWriters:
         root = self.row(key)["root"]
         return inside(root, tab_id(root, tab))
 
-    def join_page(self, key: str, cid: str):
-        """A page's one stream (`_Page`): (the page, what to call once it goes -- its documents left, its tool calls and
-        notices no longer sent it). A page coming back under the same id takes its old stream's place."""
+    def join_page(self, key: str, cid: str) -> _Page:
+        """A page there (`_Page`), told what concerns it from now on; one coming back under the same id takes its old
+        place (its documents joined again: yjs-doc.ts). Said again every few seconds (`alive`): one not heard from in
+        PAGE_GONE is let go (`sweep`) -- its documents left, its notices no longer sent."""
         root = self.row(key)["root"]
         if not cid:
             raise DocWriterError("no connection id")
-        page = _Page(key, cid)
+        page = _Page(key, cid, lambda m: self.tell(key, m))
         with self.lock:
             old = self.pages.pop((key, cid), None)
             self.pages[(key, cid)] = page
         if old is not None:
-            old.put(None)
-        self.tools.join(page)
+            self._let_go(old, root)
         self.live.join(root, page)
+        return page
 
-        def leave() -> None:
-            with self.lock:
-                if self.pages.get((key, cid)) is page:
-                    del self.pages[(key, cid)]
-            self.tools.leave(page)
-            self.live.leave(root, page)
-            for room in list(page.rooms.values()):
-                room.leave(cid)
-        return page, leave
+    def alive(self, key: str, cid: str) -> bool:
+        """The page said it is still there: False if it was let go meanwhile (it joins again)."""
+        with self.lock:
+            page = self.pages.get((key, cid))
+        if page is None:
+            return False
+        page.seen = time.time()
+        return True
+
+    def leave_page(self, key: str, cid: str) -> None:
+        with self.lock:
+            page = self.pages.pop((key, cid), None)
+        if page is not None:
+            self._let_go(page, self.row(key)["root"])
+
+    def _let_go(self, page: _Page, root: str) -> None:
+        self.live.leave(root, page)
+        for room in list(page.rooms.values()):
+            room.leave(page.id)
+
+    def sweep(self) -> None:
+        """Pages not heard from in PAGE_GONE let go: closed without saying so (a tab closed, the dashboard's page
+        reloaded)."""
+        now = time.time()
+        with self.lock:
+            gone = [(k, p) for k, p in self.pages.items() if now - p.seen > PAGE_GONE]
+            for k, _ in gone:
+                del self.pages[k]
+        for (key, _), page in gone:
+            try:
+                self._let_go(page, self.row(key)["root"])
+            except DocWriterError:
+                pass
 
     def _page(self, key: str, cid: str) -> _Page:
         with self.lock:
             page = self.pages.get((key, cid))
         if page is None:
-            raise DocWriterError("no stream of this page open: open it first", 409)
+            raise DocWriterError("this page has not joined: join first", 409)
         return page
 
     def join_doc(self, key: str, cid: str, tab: str) -> dict:
@@ -1214,19 +1022,3 @@ def _synctex(args: List[str], root: str) -> str:
 
 
 # ---- the page's own files ------------------------------------------------------------------------------------------
-
-STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
-                ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json",
-                ".svg": "image/svg+xml", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
-                ".ftl": "text/plain; charset=utf-8", ".bcmap": "application/octet-stream", ".pfb": "application/octet-stream",
-                ".png": "image/png", ".gif": "image/gif", ".md": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
-
-
-def asset(rel: str) -> Optional[Tuple[bytes, str]]:
-    """A file of the built page (vendor/docwriter/), by its path there: "" its page, "preview" its preview's."""
-    rel = {"": "index.html", "preview": "preview.html"}.get(rel, rel)
-    full = os.path.normpath(os.path.join(VENDOR, rel))
-    if not full.startswith(VENDOR + os.sep) or not os.path.isfile(full):
-        return None
-    with open(full, "rb") as fh:
-        return fh.read(), STATIC_TYPES.get(os.path.splitext(full)[1].lower(), "application/octet-stream")

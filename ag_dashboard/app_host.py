@@ -30,6 +30,7 @@ import importlib.util
 import json
 import os
 import queue
+import re
 import secrets
 import sqlite3
 import subprocess
@@ -228,6 +229,49 @@ class AppHost:
         self._record(made, "app_opened", {"instance": made.to_dict(), "by": by})
         self._ring(made)
         return made
+
+    def adopt(self, name: str, gatherer: str, instance_id: str, folder: Optional[str], channel: str) -> Instance:
+        """An instance the app had before it was an app here -- its actor's stored role, {"<app>": key} -- kept as one
+        whose id is that key (its backend finds its own data by it: `open`'s args say `adopted`), the actor attached.
+        Once: the instance open already, only the attachment is made, if it is not."""
+        self._load(gatherer)
+        with self.lock:
+            i = self.instances.get(instance_id)
+        if i is None:
+            if not re.fullmatch(r"[0-9a-f]{16}", instance_id or ""):
+                raise AppError(f"{instance_id!r}: not an instance's id")
+            m = self.hosted(name).manifest
+            made = Instance(id=instance_id, app=name, gatherer=gatherer,
+                            folder=os.path.realpath(folder) if folder else None)
+            if m.backend.python or m.backend.command:
+                got = self.backend(name).open(made, {"adopted": True})
+                made = Instance(id=made.id, app=name, gatherer=gatherer, folder=made.folder, title=got.title,
+                                data=dict(got.data))
+            with self.lock:
+                self.instances[made.id] = made
+                self.attached.setdefault(made.id, set())
+            self._record(made, "app_opened", {"instance": made.to_dict(), "by": "adopted"})
+            i = made
+        elif i.app != name or i.gatherer != gatherer:
+            raise AppError(f"{instance_id}: an instance of {i.app} in {i.gatherer}", 409)
+        if channel:
+            self.attach(gatherer, i.id, channel, by="adopted")
+        return i
+
+    def guard(self, gatherer: str, channel: str, path: str) -> Optional[str]:
+        """Why the agent must not change `path` with its harness's own edit tools: the first refusal of an app it is
+        attached to whose manifest asks `edit_guard` (App.guard); None: it may."""
+        for i in self.attached_to(gatherer, channel):
+            h = self.hosted(i.app)
+            if not h.manifest.capabilities.edit_guard:
+                continue
+            try:
+                said = self.backend(i.app).guard(i, path, Caller(channel=channel, gatherer=gatherer))
+            except Exception:  # noqa: BLE001 - an app that fails to say lets the edit be
+                said = None
+            if said:
+                return str(said)
+        return None
 
     def close_instance(self, gatherer: str, instance_id: str, by: str = "user") -> None:
         i = self.instance(gatherer, instance_id)

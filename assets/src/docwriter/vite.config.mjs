@@ -1,6 +1,6 @@
-// Builds DocWriter's page (upstream/, its git submodule) into ag_dashboard/vendor/docwriter/, the parts of it
+// Builds DocWriter's page (upstream/, its git submodule) into the DocWriter app's panel (ag_apps/docwriter/panel/), the parts of it
 // that talk to DocWriter's own server swapped for src/'s, which talk to the dashboard's: the aliases below. The
-// page is served at /docwriter/ (server.py), so it is built with relative paths.
+// page is served at the app's origin's root, so it is built with absolute paths (its preview page is served deeper).
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig } from "vite";
@@ -11,14 +11,15 @@ const upstream = path.join(here, "upstream", "src");
 const lib = path.join(upstream, "lib");
 
 // DocWriter's page asks its server at absolute paths ('/api/...', '/preview?...', '/pdfjs/...'); here each DocWriter
-// is served under its own base (/docwriter/w/<key>: its folder, its actor), so those are made relative to it, as the
-// page has it (globalThis.__dwBase, set by index.html and preview.html). Only in code: a template literal anywhere, a
-// quoted string in a <script> (a quoted one in markup is an attribute's HTML).
-const ABSOLUTE = /(api\/|preview\?|pdfjs\/)/.source;
+// is an instance of the app, its requests to the app's backend under /api/w/<gatherer>/<instance> on the app's origin
+// (__dwBase, set by index.html), and pdf.js the dashboard's shared copy at /_ag/lib/pdfjs/: rewritten so in the code
+// of upstream's that the page runs.
+const ABSOLUTE = /(api\/|preview\?)/.source;
 function rebase(code) {
   return code
     .replace(new RegExp("`/" + ABSOLUTE, "g"), "`${globalThis.__dwBase}/$1")
-    .replace(new RegExp("(['\"])/" + ABSOLUTE, "g"), "globalThis.__dwBase + $1/$2");
+    .replace(new RegExp("(['\"])/" + ABSOLUTE, "g"), "globalThis.__dwBase + $1/$2")
+    .replace(/(['"`])\/pdfjs\//g, "$1/_ag/lib/pdfjs/");   // the shared pdf.js, on the panel's own origin
 }
 // DocWriter's server modules the page runs (its document tools, a critique pass's message): the Node modules and
 // server state they import, stood in for by src/server/'s.
@@ -87,14 +88,18 @@ const rebased = {
     if (!id.startsWith(upstream) || id.includes("/lib/server/") || !/\.(ts|svelte)$/.test(id)) return null;
     if (id.endsWith(".ts")) return { code: rebase(code), map: null };
     return { map: null, code: code.replace(/(<script\b[^>]*>)([\s\S]*?)(<\/script>)/g, (_, open, body, close) => open + rebase(body) + close)
-      .replace(new RegExp("`/" + ABSOLUTE, "g"), "`${globalThis.__dwBase}/$1") };
+      .replace(new RegExp("`/" + ABSOLUTE, "g"), "`${globalThis.__dwBase}/$1").replace(/(['"`])\/pdfjs\//g, "$1/_ag/lib/pdfjs/") };
   },
 };
-export const OUT = path.resolve(here, "../../../ag_dashboard/vendor/docwriter");
+// the app's panel (ag_apps/docwriter/), served on its own origin; pdf.js is the dashboard's shared copy, which every
+// app's panel loads from its own origin at /_ag/lib/pdfjs/ (ag_dashboard/libs.py)
+export const OUT = path.resolve(here, "../../../ag_apps/docwriter/panel");
+export const APP = path.resolve(here, "../../../ag_apps/docwriter");
+export const PDFJS_OUT = path.resolve(here, "../../../ag_dashboard/vendor/pdfjs");
 
 export default defineConfig({
   root: here,
-  base: "./",
+  base: "/",                                          // the panel at its origin's root; its preview page under /api/w/...
   logLevel: "warn",
   plugins: [earlyTheme, serverStubs, patched, rebased, svelte({
     preprocess: vitePreprocess({ script: true }),

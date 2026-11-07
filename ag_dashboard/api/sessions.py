@@ -140,7 +140,8 @@ def actors_op(crew: coordination.Coordination, op: str, body: dict):
     if op == "new":
         return crew.new(me, s("text"), opt("cwd"), opt("harness"), opt("model"), opt("like"), opt("name"),
                         branch=bool(body.get("branch")), approve=bool(body.get("approve")), folder=opt("folder"),
-                        **{a.name: bool(body.get(a.name)) for a in apps.APPS})
+                        **{a.name: bool(body.get(a.name)) for a in apps.APPS},
+                        **{n: True for n in coordination._starters() if body.get(n) is True})
     if op == "when":
         return crew.when(me, s("ref"), s("note"))
     if op == "watches":
@@ -168,7 +169,7 @@ def actors(srv: Parts, op: str, body: Body) -> Response:
     error's text for the command to print (400).
 
     list {all?}, show {ref}, who {path}, send {ref, text}, new {text, cwd?, harness?, model?, like?, name?, folder?,
-    <app>? (apps.py: docwriter?, browser?), branch?, approve?}, when {ref, note?}, watches, unwatch {watch},
+    <app>? (apps.py's: browser?; an app of app_kit's that starts an agent: docwriter?), branch?, approve?}, when {ref, note?}, watches, unwatch {watch},
     save {ref, folder?, unfiled?}, unsave {ref}, folders, folder {do: new | rename | move | delete, name, to?},
     move {refs, folder} (folders: by path, "top" or none for the gatherer's top)."""
     return answer(actors_op(srv.crew, op, body))

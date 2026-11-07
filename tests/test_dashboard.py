@@ -41,6 +41,7 @@ class HomeBase(unittest.TestCase):
         paths.AG_HOME = os.path.join(self.tmp.name, "ag")
         paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
         self.saved_home, dashboard_home.HOME = dashboard_home.HOME, paths.AG_HOME   # the dashboard reads the same home
+        self.hosts = []                                   # apps' hosts a test makes: flushed in tearDown
         os.makedirs(os.path.join(paths.TRACE_DIR, "g"))
         with open(os.path.join(paths.TRACE_DIR, "g", "gatherer.toml"), "w") as fh:
             fh.write('policy = "proactive_context_manager"\n')
@@ -65,6 +66,8 @@ class HomeBase(unittest.TestCase):
         items.insert("g", PREAMBLE[0], channel_id="c2")
 
     def tearDown(self):
+        for h in getattr(self, "hosts", []):              # apps' hosts (app_host.py): what they were handed, written
+            h.flush()                                     # while the home is still the test's, not after
         paths.TRACE_DIR, paths.AG_HOME = self.saved
         dashboard_home.HOME = self.saved_home
         self.tmp.cleanup()

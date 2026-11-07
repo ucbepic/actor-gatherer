@@ -14,7 +14,7 @@ import os
 from typing import Optional, Tuple
 
 VENDOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
-PDFJS = os.path.join(VENDOR, "docwriter", "pdfjs")
+PDFJS = os.path.join(VENDOR, "pdfjs")      # pdf.js's viewer, as DocWriter's build puts it here (assets/src/docwriter)
 LIBS = {"pdfjs": PDFJS, "marked.min.js": os.path.join(VENDOR, "marked.min.js"),
         "purify.min.js": os.path.join(VENDOR, "purify.min.js")}
 #: What a file is served as, where Python's mimetypes says otherwise or nothing (pdf.js's modules, fonts and maps).

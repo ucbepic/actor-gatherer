@@ -1,6 +1,6 @@
 # Apps beside agents: plan
 
-Status: being built, from 2026-11-06. Steps 1 (`app_kit/`), 2 (the host), 3 (the tool gateway), 4 (app panels) and 5 (Preview) are built. This file is the package's design, as
+Status: being built, from 2026-11-06. Steps 1 (`app_kit/`), 2 (the host), 3 (the tool gateway), 4 (app panels), 5 (Preview) and 8's DocWriter are built. This file is the package's design, as
 `harness_kit/DESIGN.md` is that package's.
 
 ## Goal
@@ -440,6 +440,30 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      (`message_agents` capability), the prompt it builds as it builds it.
    - The desktop app's native view becomes the capability: the panel says where its screen is, the page tells the
      desktop app.
+
+   **DocWriter: built** (2026-11-07, its own PR). `ag_apps/docwriter/`: `core.py` is the dashboard's `docwriter.py`
+   moved as it was (documents, tabs, files, hooks, previews, SyncTeX), `backend.py` the App over it, `panel/` its page
+   built from upstream against the panel SDK (assets/src/docwriter, `npm run build`, which also writes `tools.json`
+   and `instructions.md` and the dashboard's shared pdf.js at `ag_dashboard/vendor/pdfjs/`). The dashboard names it
+   nowhere: its `docwriter.py`, `api/docwriter.py`, `vendor/docwriter/` and the page's DocWriter view are gone. What
+   the contract gained for it, each general:
+   - manifest: `offer = "attached"` (its tools and instructions only for an agent attached to one: its instructions
+     as the agent's own, `instruction_args`, as before), `[agent] start` (the menu starts one with a new actor:
+     app_agents.py, `/api/apps/start`, and `ag actors new --docwriter`), `tools_file` (tools a build writes), `mark`
+     (the badge on its actor's avatar, served at `/apps/mark/<name>.svg`), `[asked]` (what the list shows of a
+     message the app's page wrote); capabilities `message_agents` (send, answer a question, Esc), `transcript` (the
+     agent's turn as Transcript has it), `edit_guard` (App.guard: the harness's hook, `ag_dashboard/app_guard.py`, asks
+     `/api/apps/guard`)
+   - the SDK: `agents.state` / `onState`, `send`, `answer`, `interrupt`, `transcript`
+   - a panel's request may name its instance in its path (`/api/w/<gatherer>/<instance>/...`), for URLs it can't add a
+     query to (its preview page, an image)
+   - the page holds a panel out of sight while an attached agent is at work, for an app whose panel answers its tools
+     (as DocWriter's frame was), and selecting an app's actor opens its app's panel above it
+   - adoption: an actor whose stored role is `{"<app>": key}` of an app the host now finds is attached to that app's
+     instance of that key (app_host.py's `adopt`, at the dashboard's start); the app copies what it kept in
+     dashboard.db once (DocWriter: `docwriter_docs`, `docwriter_kv`, left in place)
+   Checked live: a Claude Code (Haiku) actor started with a DocWriter had its six tools; `docwriter_read_doc` was
+   answered by the panel; its own Edit of a document open in DocWriter was refused with DocWriter's reason.
 9. **Skills & memory, and Sources.** History's actions move to Skills & memory. Sources becomes an app once it is
    merged.
 10. **Apps from outside.** `ag apps install`, the permissions shown at install, and the store's manifest format.

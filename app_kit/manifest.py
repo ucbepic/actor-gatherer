@@ -15,6 +15,7 @@ A manifest that says something the host doesn't know is refused, not read past: 
 user before it is granted, or a key in the wrong place, is a ManifestError naming where it is. Standard library and
 ag.ag_interface only."""
 
+import json
 import os
 import re
 import tomllib
@@ -38,6 +39,10 @@ INSTANCE_ARG = "instance"
 #: How many instances of an app there are: one per gatherer, one per folder, one per git checkout, one per git
 #: repository (its worktrees share it), or any number.
 INSTANCES = ("one", "per-folder", "per-checkout", "per-repository", "many")
+#: Which agents are given an app's tools and instructions: every agent of a gatherer it is on, or only those attached
+#: to an instance of it when they start. An "attached" app's instructions go in the agent's own instructions (the
+#: harness's `instruction_args`), as an app's that came with its own agent's did; an "always" app's in its MCP server's.
+OFFERS = ("always", "attached")
 #: Who answers a tool's calls: the app's backend, or its open panel (the call waits for one to be open).
 HANDLED_BY = ("backend", "panel")
 #: The properties the host puts on every app event itself, which an app's event type does not declare: the app's name,
@@ -57,7 +62,6 @@ HOST_RECORDS = tuple(t.name for t in HOST_TYPES)
 INTENTS = {
     "open-file": "path, line?, row_id?: a file to show",
     "open-url": "url: a web page to show",
-    "show-activity": "channel, turn: what an agent did in a turn",
     "explain-answer": "channel, turn: where an agent's answer came from",
     "use-history": "channel, rows: events of an agent's history picked by the user",
     "run": "path: run (build, preview) the project of this file or folder, and show what it makes",
@@ -66,6 +70,10 @@ INTENTS = {
 #: What an app may ask of the host beyond its own events, tools and panel; each shown to the user before it is granted.
 CAPABILITIES = {
     "native_view": "a native web view over its panel, in the desktop app",
+    "message_agents": "sending messages to the agents attached to it, answering their questions and stopping their "
+                      "turns, as the user",
+    "transcript": "reading what the agents attached to it say and do (their transcript, as the dashboard shows it)",
+    "edit_guard": "refusing its agents' own edit tools on files it says it has open",
     "reads": "these event types of the gatherer besides its own: its agents' (tool_call, tool_output, ...)",
     "files": "reading files in its agents' folders",
     "commands": "running commands",
@@ -143,6 +151,9 @@ class Capabilities:
     reads: Tuple[str, ...] = ()
     files: bool = False
     commands: bool = False
+    message_agents: bool = False
+    transcript: bool = False
+    edit_guard: bool = False
 
     def asked(self) -> List[str]:
         """What it asks for, as the user is shown it before granting it."""
@@ -153,9 +164,28 @@ class Capabilities:
             said.append(f"reading these events of the gatherer: {', '.join(self.reads)}")
         if self.files:
             said.append(CAPABILITIES["files"])
-        if self.commands:
-            said.append(CAPABILITIES["commands"])
+        for k in ("commands", "message_agents", "transcript", "edit_guard"):
+            if getattr(self, k):
+                said.append(CAPABILITIES[k])
         return said
+
+
+@dataclass(frozen=True)
+class Asked:
+    """`[asked]`: what an agent the app started was asked, as a list of actors shows it, when the app writes its
+    messages (DocWriter's prompt, its document's state around the user's words): in a message holding `when`, the
+    first group of `pattern` (a regular expression), else `otherwise`."""
+    when: str = ""
+    pattern: str = ""
+    otherwise: str = ""
+
+
+@dataclass(frozen=True)
+class Agent:
+    """`[agent]`: whether opening the app from a gatherer's menu starts a new agent attached to the new instance (not
+    the agent in focus attached), and the name it is given ({folder}: the instance's folder's name; {app}: its label)."""
+    start: bool = False
+    name: str = "{app} · {folder}"
 
 
 @dataclass(frozen=True)
@@ -166,7 +196,11 @@ class Manifest:
     version: str
     description: str = ""
     instances: str = "one"
+    offer: str = "always"
     instructions: str = ""
+    agent: "Agent" = field(default_factory=lambda: Agent())
+    asked: "Asked" = field(default_factory=lambda: Asked())
+    mark: Optional[str] = None                   # its mark (an SVG in its folder): an agent it started is badged so
     backend: Backend = field(default_factory=Backend)
     panel: Optional[str] = None
     tools: Tuple[Tool, ...] = ()
@@ -206,7 +240,10 @@ class Manifest:
         """The manifest as JSON (the host's /api/apps, the remote protocol)."""
         return {
             "name": self.name, "label": self.label, "version": self.version, "description": self.description,
-            "instances": self.instances, "instructions": self.instructions,
+            "instances": self.instances, "offer": self.offer, "instructions": self.instructions,
+            "agent": {"start": self.agent.start, "name": self.agent.name},
+            "asked": {"when": self.asked.when, "pattern": self.asked.pattern, "otherwise": self.asked.otherwise},
+            "mark": bool(self.mark),
             "backend": {"python": self.backend.python, "command": list(self.backend.command)},
             "panel": self.panel,
             "tools": [{"name": t.name, "description": t.description, "input_schema": t.input_schema,
@@ -217,7 +254,10 @@ class Manifest:
             "pollers": [{"name": p.name, "class": p.cls, "file": p.file, "args": p.args} for p in self.pollers],
             "handles": [{"intent": h.intent, "types": list(h.types)} for h in self.handles],
             "capabilities": {"native_view": self.capabilities.native_view, "reads": list(self.capabilities.reads),
-                             "files": self.capabilities.files, "commands": self.capabilities.commands},
+                             "files": self.capabilities.files, "commands": self.capabilities.commands,
+                             "message_agents": self.capabilities.message_agents,
+                             "transcript": self.capabilities.transcript,
+                             "edit_guard": self.capabilities.edit_guard},
         }
 
 
@@ -255,9 +295,9 @@ def load(folder: str) -> Manifest:
 def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE) -> Manifest:
     """The manifest the TOML's `data` says. With `folder`, the files it names are read from there and must exist."""
     r = _Reader(where)
-    _known(r, data, "", ("name", "label", "version", "description", "instances", "instructions",
-                         "instructions_file", "backend", "panel", "tools", "events", "pollers", "handles",
-                         "capabilities"))
+    _known(r, data, "", ("name", "label", "version", "description", "instances", "offer", "instructions",
+                         "instructions_file", "agent", "asked", "mark", "backend", "panel", "tools", "tools_file",
+                         "events", "pollers", "handles", "capabilities"))
     name = r.string(data, "name")
     if not NAME.match(name):
         r.fail("name", f"{name!r}: lowercase letters, digits and _, starting with a letter, at most 24")
@@ -265,6 +305,26 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
     if instances not in INSTANCES:
         r.fail("instances", f"{instances!r}: one of {', '.join(INSTANCES)}")
 
+    offer = r.string(data, "offer", "always")
+    if offer not in OFFERS:
+        r.fail("offer", f"{offer!r}: one of {', '.join(OFFERS)}")
+    agent_d = data.get("agent", {})
+    _known(r, agent_d, "agent.", ("start", "name"))
+    agent = Agent(start=r.flag(agent_d, "start", "agent."), name=r.string(agent_d, "name", "{app} · {folder}", "agent."))
+    asked_d = data.get("asked", {})
+    _known(r, asked_d, "asked.", ("when", "pattern", "otherwise"))
+    asked = Asked(when=r.string(asked_d, "when", "", "asked."), pattern=r.string(asked_d, "pattern", "", "asked."),
+                  otherwise=r.string(asked_d, "otherwise", "", "asked."))
+    if asked.pattern:
+        try:
+            re.compile(asked.pattern)
+        except re.error as exc:
+            r.fail("asked.pattern", f"not a regular expression: {exc}")
+    mark = r.string(data, "mark", "") or None
+    if mark and folder is not None:
+        _inside(r, folder, mark, "mark")
+        if not os.path.isfile(os.path.join(folder, mark)):
+            r.fail("mark", f"{mark}: no such file")
     instructions = r.string(data, "instructions", "")
     ifile = r.string(data, "instructions_file", "")
     if instructions and ifile:
@@ -274,7 +334,17 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
 
     backend = _backend(r, data.get("backend", {}))
     panel = _panel(r, data.get("panel"), folder)
-    tools = tuple(_tool(r, name, i, t) for i, t in enumerate(r.tables(data, "tools")))
+    listed = list(r.tables(data, "tools"))
+    tfile = r.string(data, "tools_file", "")
+    if tfile and folder is not None:                 # tools written by a build: a JSON list of [[tools]]' tables
+        try:
+            got = json.loads(_read_text(r, folder, tfile, "tools_file"))
+        except ValueError as exc:
+            r.fail("tools_file", f"{tfile}: not JSON ({exc})")
+        if not isinstance(got, list) or not all(isinstance(t, dict) for t in got):
+            r.fail("tools_file", f"{tfile}: a JSON list of tools, each {{name, description, input_schema, handled_by}}")
+        listed += got
+    tools = tuple(_tool(r, name, i, t) for i, t in enumerate(listed))
     seen = set()
     for i, t in enumerate(tools):
         if t.name in seen:
@@ -294,7 +364,8 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
     if handles and panel is None:
         r.fail("handles", "an app handles intents in its panel, and it has no [panel]")
     return Manifest(name=name, label=r.string(data, "label", name), version=r.string(data, "version", "0"),
-                    description=r.string(data, "description", ""), instances=instances, instructions=instructions,
+                    description=r.string(data, "description", ""), instances=instances, offer=offer,
+                    instructions=instructions, agent=agent, asked=asked, mark=mark,
                     backend=backend, panel=panel, tools=tools, events=events, pollers=pollers, handles=handles,
                     capabilities=_capabilities(r, data.get("capabilities", {})), folder=folder)
 
@@ -478,4 +549,7 @@ def _capabilities(r: _Reader, d: Any) -> Capabilities:
     _known(r, d, "capabilities.", tuple(CAPABILITIES))
     reads = r.strings(d, "reads", at="capabilities.")
     return Capabilities(native_view=r.flag(d, "native_view", "capabilities."), reads=reads,
-                        files=r.flag(d, "files", "capabilities."), commands=r.flag(d, "commands", "capabilities."))
+                        files=r.flag(d, "files", "capabilities."), commands=r.flag(d, "commands", "capabilities."),
+                        message_agents=r.flag(d, "message_agents", "capabilities."),
+                        transcript=r.flag(d, "transcript", "capabilities."),
+                        edit_guard=r.flag(d, "edit_guard", "capabilities."))

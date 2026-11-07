@@ -1,7 +1,7 @@
 // DocWriter's /api/render, with the actor as its agent: the request -- what the author asked, or a wake-up, a
 // critique pass -- made into DocWriter's per-turn prompt (as upstream's routes/api/render/+server.ts builds it,
 // buildMultiTabPrompt and its parts, from this page's documents), sent to the actor as a message (the dashboard
-// types it into its terminal, or starts it with it: ${base}/send), and the actor's turn, as ag records it in the
+// types it into its terminal, or starts it with it: the SDK's agents.send), and the actor's turn, as ag records it in the
 // gatherer (the dashboard's /api/transcript), streamed back as the events DocWriter's page reads -- its words,
 // thinking, tool calls and results, a question it asks -- until the turn is over (actor.ts: the dashboard's status
 // of it). The hooks DocWriter runs on its agent's turns run here too: PostToolUse after each matching call's result,
@@ -21,13 +21,14 @@ import { getYDocForTab, whenYDocReadyForTab } from './yjs-doc';
 import { base } from './base';
 import { config, meta, tabs, noteTabs } from './state';
 import { current, onActor } from './actor';
+import { ag, agent } from './ag';
 
 const json = { 'Content-Type': 'application/json' };
 const PROMPT_DIFF_CAP_CHARS = 8_000;
 const QUIET_MS = 20_000;            // a turn whose actor has been idle this long, with nothing new, is over
 const POLL_MS = 1_500;              // the most between two looks at the gatherer, the page's notice aside
 const SILENT_MS = 20_000;           // no word of the message in the gatherer this long: the actor may be held up
-const DOC_TOOLS = /(?:^|__|\.)(edit_doc|read_doc|write_doc|comment_doc|reply_to_comment|list_threads)$/;
+const DOC_TOOLS = /(?:^|__|\.|docwriter_)(edit_doc|read_doc|write_doc|comment_doc|reply_to_comment|list_threads)$/;
 
 async function getJSON(url: string): Promise<any> {
 	const res = await fetch(url);
@@ -244,10 +245,10 @@ function fileOf(input: unknown): string | undefined {
 }
 
 /** The actor's channel now: a codex actor's is renamed to its thread's after its first call (the dashboard page says). */
-const channel = (): string => current()?.channel ?? config.channel;
+const channel = (): string => current()?.channel ?? agent() ?? config.channel;
 
 async function newestRow(): Promise<number> {
-	const t = await getJSON(`/api/transcript?${new URLSearchParams({ gatherer: config.gatherer, channel: channel() })}`).catch(() => null);
+	const t = await ag().agents.transcript(agent()).catch(() => null);
 	return Math.max(0, ...((t?.items ?? []) as Item[]).map((i) => i.row_id ?? 0));
 }
 
@@ -291,7 +292,7 @@ async function follow(after: number, emit: Emit, signal: AbortSignal, planMode: 
 			if (a && (a.status === 'running' || a.status === 'asking')) seenRunning = true;
 			let items: Item[] = [];
 			try {
-				items = (await getJSON(`/api/transcript?${new URLSearchParams({ gatherer: config.gatherer, channel: channel(), after: String(cursor) })}`)).items ?? [];
+				items = (await ag().agents.transcript(agent(), { after: cursor })).items ?? [];
 			} catch { continue; }
 			let endsWithReply = false;
 			for (const item of items) {
@@ -348,8 +349,7 @@ async function follow(after: number, emit: Emit, signal: AbortSignal, planMode: 
 
 /** The actor's turn stopped (Esc in its terminal), as Chat's own Esc does. */
 async function interrupt(): Promise<void> {
-	const sid = current()?.session?.session_id ?? channel();
-	await fetch('/api/terminal/input', { method: 'POST', headers: json, body: JSON.stringify({ session_id: sid, data: '\u001b' }) }).catch(() => {});
+	await ag().agents.interrupt(agent()).catch(() => {});
 }
 
 // ---- The route ------------------------------------------------------------------------------------------------
@@ -383,9 +383,8 @@ export async function render(body: any, signal: AbortSignal | null | undefined):
 					emit('sdk_notification', { text: 'Images are not sent to the actor: only the words of the message.', priority: 'high' });
 				}
 				const after = await newestRow();
-				const sent = await fetch(`${base}/send`, { method: 'POST', headers: json,
-					body: JSON.stringify({ text: prompt + (body.planMode ? PLAN_MODE : '') }) });
-				if (!sent.ok) throw new Error((await sent.json().catch(() => null))?.error ?? `HTTP ${sent.status}`);
+				if (!agent()) throw new Error('No actor works with this DocWriter: attach one (its head\'s agents).');
+				await ag().agents.send(agent(), prompt + (body.planMode ? PLAN_MODE : ''));
 				await kvSet(snapshots);
 				emit('session', { sessionId: channel() });
 				await follow(after, emit, aborted.signal, !!body.planMode);
@@ -422,7 +421,10 @@ export async function answerQuestion(body: { id?: string; answers?: Record<strin
 		const options = labels.map((l) => (q.options ?? []).findIndex((o) => o.label === l)).filter((i) => i >= 0);
 		return options.length === labels.length ? { options, text: null } : { options: [], text: said };
 	});
-	const res = await fetch('/api/answer', { method: 'POST', headers: json,
-		body: JSON.stringify({ session_id: a?.session?.session_id ?? channel(), call: ask.call, choice: { answers } }) });
-	return new Response(JSON.stringify(res.ok ? { ok: true } : await res.json().catch(() => ({ error: `HTTP ${res.status}` }))), { status: res.status });
+	try {
+		await ag().agents.answer(agent(), ask.call, { answers });
+		return new Response(JSON.stringify({ ok: true }), { status: 200 });
+	} catch (e) {
+		return new Response(JSON.stringify({ error: (e as Error)?.message ?? String(e) }), { status: 409 });
+	}
 }

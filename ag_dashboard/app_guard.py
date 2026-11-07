@@ -1,10 +1,11 @@
-"""The guard a DocWriter actor's harness runs before each of its own file edits (docwriter.py's `launch_args`, harness_kit's
-`edit_guard_args`: Claude Code's PreToolUse hook): an edit of a file open in DocWriter refused -- with why, and what to
-use instead (DocWriter's edit_doc, which proposes the change for the author to accept). It asks the dashboard (`guard`,
-at the URL it is run with); a dashboard it cannot reach, or any trouble, lets the edit go. What the harness gives it,
-and how it refuses, are the harness's (harness_kit's `guard_path`, `guard_refusal`). Run as a script:
+"""The guard an agent's harness runs before each of its own file edits, when the agent is attached to an app that asks
+`edit_guard` (tool_gateway.py's `launch_args`, harness_kit's `edit_guard_args`: Claude Code's PreToolUse hook): an edit
+of a file such an app has open refused -- with why, and what to use instead (DocWriter's edit_doc, say, which proposes
+the change for the author to accept). It asks the dashboard (/api/apps/guard, at the URL it is run with, which asks
+the apps: app_host.py's `guard`); a dashboard it cannot reach, or any trouble, lets the edit go. What the harness
+gives it, and how it refuses, are the harness's (harness_kit's `guard_path`, `guard_refusal`). Run as a script:
 
-    python docwriter_guard.py http://127.0.0.1:4200/docwriter/w/<key>/guard <harness>     (the hook's input on stdin)
+    python app_guard.py "http://127.0.0.1:4200/api/apps/guard?gatherer=<g>&channel=<c>" <harness>   (the hook's input on stdin)
 """
 import json
 import os

@@ -70,6 +70,8 @@ const agNext = Object.freeze({
     named: apps.named,
     open: apps.open,
     instanceOf: apps.instanceOf,
+    attachedTo: apps.attachedTo,
+    start: apps.start,
     handler: apps.handler,
     pane: (app: apps.AppInfo, instance: apps.Instance, hooks: apps.PaneHooks) => new apps.AppPane(app, instance, hooks),
   }),

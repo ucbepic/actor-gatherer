@@ -11,7 +11,7 @@ codex_home/
 node_modules/
 build/
 # pdf.js's own build/, part of DocWriter's built page (assets/src/docwriter): kept
-!ag_dashboard/vendor/docwriter/pdfjs/build/
+!ag_dashboard/vendor/pdfjs/build/
 dist/
 site/
 # the dashboard's built front end (frontend/, ag_dashboard/DESIGN.md): made by `pnpm -C frontend build`, shipped in the package
