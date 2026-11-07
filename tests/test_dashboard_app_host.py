@@ -333,6 +333,18 @@ class LiveTest(HostBase):
         with self.assertRaises(AppError):
             self.host.subscribe("notes", i, ["tool_call"])
 
+    def test_a_panel_s_backend_messages_reach_one_stream_of_it(self):
+        """A panel follows its events in a stream per subscription, and its backend's messages (a tool call among them)
+        in one stream only: a tool call reaches it once."""
+        i = self.host.open("notes", "g", self.folder)
+        events, leave = self.host.subscribe("notes", i, ["notes.added"], messages=False)
+        self.addCleanup(leave)
+        told, leave2 = self.host.subscribe("notes", i, [], messages=True)
+        self.addCleanup(leave2)
+        self.host.tell(i, {"said": "hi"})
+        self.assertEqual(told.queue.get(timeout=5), ("message", {"said": "hi"}))
+        self.assertTrue(events.queue.empty())
+
 
 class GatewayBase(HostBase):
     def setUp(self):
@@ -556,6 +568,10 @@ class ServedTest(HostBase):
         self.assertEqual(self.ask("POST", q, {}, host=host)[0], 403)                 # a write from no origin
         self.assertEqual(self.ask("POST", q, {}, host=host, origin=f"http://other.localhost:{self.port}")[0], 403)
         self.assertEqual(self.ask("POST", q, {}, host=host, origin=f"http://notes.localhost:{self.port}")[0], 200)
+        status, headers, raw = self.ask("GET", "/_ag/app.js", host=host)                 # the panels' SDK, on its origin
+        self.assertEqual(status, 200)
+        self.assertIn("AgApp", raw.decode())
+        self.assertIn("javascript", headers["content-type"])
         status, _, raw = self.ask("POST", "/api/apps/open", {"app": "notes", "gatherer": "g"}, host=host)
         self.assertEqual((status, raw), (403, b"only the app's own panel may do that"))     # the app's /api, not ours
 

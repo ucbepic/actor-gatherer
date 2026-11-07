@@ -19,4 +19,5 @@ else {
   watchTop(document.getElementById("pane-head"), "here");
 }
 refresh(true).then(connect).then(() => { if (PANE) paneReady(); }).then(loadOwnViews);
+if (!PANE && !SNAPSHOT) window.agNext.apps.load().then(() => restoreAppPanes()).then(() => { if (state.home) renderAgents(); });
 if (!SNAPSHOT) setInterval(() => { if (!state.paused) render(); }, AGO_MS);

@@ -75,8 +75,8 @@ class _Sub:
     """A panel's following of an instance's events: what it reads, from which row on, and its queue of
     (name, value) for the stream (`api/apps.py`)."""
 
-    def __init__(self, app: str, instance: Instance, types: Tuple[str, ...], after: int):
-        self.app, self.instance, self.types, self.after = app, instance, types, after
+    def __init__(self, app: str, instance: Instance, types: Tuple[str, ...], after: int, messages: bool = True):
+        self.app, self.instance, self.types, self.after, self.messages = app, instance, types, after, messages
         self.queue: "queue.Queue" = queue.Queue()
         self.rung = True
 
@@ -373,7 +373,7 @@ class AppHost:
         `tool_wait` for its answer."""
         label = self.hosted(name).manifest.label
         end = time.time() + self.page_wait
-        while not any(s.instance.id == instance.id for s in list(self.subs)):
+        while not any(s.instance.id == instance.id and s.messages for s in list(self.subs)):
             if time.time() >= end:
                 return ToolResult.error(f"{tool}: {label}'s panel answers it, and none is open: ask the user to "
                                         f"open {label}")
@@ -408,14 +408,16 @@ class AppHost:
 
     # -- live
 
-    def subscribe(self, name: str, instance: Instance, types: Sequence[str], after: int = 0) -> Tuple[_Sub, Callable]:
-        """A panel following the instance: each new event of `types` as ("event", row), each message its backend
-        sends its panels as ("message", value), on the subscription's queue; and how to stop."""
+    def subscribe(self, name: str, instance: Instance, types: Sequence[str], after: int = 0,
+                  messages: bool = True) -> Tuple[_Sub, Callable]:
+        """A panel following the instance: each new event of `types` as ("event", row) and -- with `messages`: one
+        stream of a panel's has them, so a tool call reaches it once -- each message its backend sends its panels as
+        ("message", value), on the subscription's queue; and how to stop."""
         m = self.hosted(name).manifest
         refused = [t for t in types if not m.may_read(t)]
         if refused:
             raise AppError(f"{', '.join(refused)}: not event types {name} may read", 403)
-        sub = _Sub(name, instance, tuple(types), after)
+        sub = _Sub(name, instance, tuple(types), after, messages)
         with self.lock:
             self.subs.append(sub)
         self._rung.put(instance.gatherer)
@@ -428,7 +430,7 @@ class AppHost:
 
     def tell(self, instance: Instance, message: Any) -> None:
         with self.lock:
-            subs = [s for s in self.subs if s.instance.id == instance.id]
+            subs = [s for s in self.subs if s.instance.id == instance.id and s.messages]
         for s in subs:
             s.queue.put(("message", message))
 

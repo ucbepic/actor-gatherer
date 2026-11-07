@@ -18,6 +18,7 @@ import {
 } from "./core/ui/highlight";
 import { escapeHtml } from "./core/ui/html";
 import { markdown, unplanned } from "./core/ui/md";
+import * as apps from "./features/apps/host";
 import { drawTurns } from "./features/chat/mount";
 import { cidsOf } from "./features/chat/view";
 import { useTurns } from "./features/chat/store";
@@ -61,6 +62,17 @@ const agNext = Object.freeze({
    * node, which it puts in its view; what they call of the page, its host (features/chat/types.ts). The setting "Chat's
    * earlier turns" picked (02-data.js): every turn as it has them, the clicks against it dropped. */
   chat: Object.freeze({ draw: drawTurns, clearFlips: () => useTurns.getState().clearFlips(), cidsOf }),
+  /** The apps (features/apps/host.ts): those found, an instance opened, and an app's pane -- its head, its frame and the
+   * bridge to its panel -- which the old page keeps among its panes (src/legacy/07-panes.js's addAppPane). */
+  apps: Object.freeze({
+    load: apps.load,
+    found: apps.found,
+    named: apps.named,
+    open: apps.open,
+    instanceOf: apps.instanceOf,
+    handler: apps.handler,
+    pane: (app: apps.AppInfo, instance: apps.Instance, hooks: apps.PaneHooks) => new apps.AppPane(app, instance, hooks),
+  }),
 });
 
 declare global {

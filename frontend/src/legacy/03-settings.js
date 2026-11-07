@@ -43,7 +43,7 @@ function connect() {
   if (PANE) { state.stream = PANE.stream; paneUrl(); PANE.shows(window, state.selected); return; }
   if (state.stream) { state.stream.close(); state.stream = null; }
   if (SNAPSHOT || state.paused) return;
-  const sel = state.selected, also = panes.others.filter((p) => !isShell(p.c));   // a shell: nothing to stream but its terminal
+  const sel = state.selected, also = actorPanes().filter((p) => !isShell(p.c));   // a shell: nothing to stream but its terminal
   const q = [...(sel && !isShell(sel[1]) ? [`gatherer=${encodeURIComponent(sel[0])}`, `channel=${encodeURIComponent(sel[1])}`] : []),
     ...(also.length ? [`also=${encodeURIComponent(JSON.stringify(also.map((p) => [p.g, p.c])))}`] : [])];
   const es = window.agNext.stream("/api/stream" + (q.length ? "?" + q.join("&") : ""));

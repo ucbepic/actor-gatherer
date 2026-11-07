@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 14px 16px; font: 14px/1.45 system-ui, sans-serif; background: var(--surface, Canvas); color: var(--ink, CanvasText); }
+  h1 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--muted, GrayText); }
+  ul { list-style: none; padding: 0; margin: 0 0 12px; }
+  li { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  li:hover { background: var(--wash, rgba(0,0,0,.04)); }
+  li.picked { background: var(--selected, rgba(42,120,214,.1)); }
+  li small { color: var(--muted, GrayText); margin-left: 6px; }
+  form { display: flex; gap: 6px; }
+  input { flex: 1; font: inherit; padding: 5px 8px; border: 1px solid var(--ring, #ccc); border-radius: 6px; background: transparent; color: inherit; }
+  button { font: inherit; padding: 5px 10px; border: 1px solid var(--ring, #ccc); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 14px 0 0; font-size: 12px; color: var(--muted, GrayText); }
+  dd { margin: 0; color: var(--ink-2, inherit); }
+</style>
+</head>
+<body>
+<h1>Notes</h1>
+<ul id="notes"></ul>
+<form id="add"><input id="text" placeholder="A note" autocomplete="off"><button>Add</button></form>
+<dl>
+  <dt>agents</dt><dd id="agents">none</dd>
+  <dt>in focus</dt><dd id="focus">none</dd>
+  <dt>theme</dt><dd id="theme"></dd>
+  <dt>backend</dt><dd id="said"></dd>
+  <dt>intent</dt><dd id="intent"></dd>
+</dl>
+<script src="/_ag/app.js"></script>
+<script>
+(async () => {
+  const ag = await AgApp.connect();
+  window.notes = ag;                                       // the browser tests drive it as the panel would
+  const $ = (id) => document.getElementById(id);
+  let picked = null;
+  const draw = (row) => {
+    const li = document.createElement("li");
+    li.textContent = row.payload.text;
+    const by = document.createElement("small");
+    by.textContent = row.properties.by === "user" ? "you" : "an agent";
+    li.append(by);
+    li.addEventListener("click", () => {
+      for (const x of document.querySelectorAll("li")) x.classList.remove("picked");
+      li.classList.add("picked");
+      picked = row.payload.text;
+    });
+    $("notes").append(li);
+  };
+  ag.events.subscribe(["notes.added"], draw);
+  ag.tools.handle("picked", () => picked ? `the user picked: ${picked}` : "the user has picked no note");
+  $("add").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const text = $("text").value.trim();
+    if (!text) return;
+    $("text").value = "";
+    await ag.events.insert([{ type: "notes.added", payload: { text }, properties: { by: "user" } }]);
+    for (const channel of ag.agents.attached)            // what the user did, told to each agent working with it
+      await ag.events.insert([ag.context("Notes", "the user", `added a note: ${text}`)], { channel });
+  });
+  const agents = (list) => { $("agents").textContent = list.length ? list.join(", ") : "none"; };
+  agents(ag.agents.attached); ag.agents.onChange(agents);
+  const focus = (s) => { $("focus").textContent = s ? s.channel : "none"; };
+  focus(ag.selection.current); ag.selection.on(focus);
+  const theme = (t) => { $("theme").textContent = t ? t.mode : ""; };
+  theme(ag.theme.current); ag.theme.on(theme);
+  ag.onMessage((m) => { $("said").textContent = m && m.said ? m.said : JSON.stringify(m); });
+  ag.intents.on("open-file", (d) => { $("intent").textContent = `open-file ${d.path}`; });
+  document.body.dataset.ready = "1";
+})();
+</script>
+</body>
+</html>

@@ -54,4 +54,5 @@ include = ["ag*", "harness_kit*", "app_kit*"]
 # dashboard's page and its actors' avatars and what they say
 ag = ["cli/harnesses.toml", "integrations/**/*.ts"]
 harness_kit = ["marks/*.svg"]
+app_kit = ["js/*.js", "DESIGN.md"]
 ag_dashboard = ["static/*", "static/assets/*", "gatherer_agent.md", "vendor/*", "examples/*.js", "avatars/*/*.svg", "avatars/hello.toml"]

@@ -1,0 +1,35 @@
+# A notepad that agents and the user share: the test app for app_kit's contract (app_kit/DESIGN.md). It uses every part
+# of it -- a backend in the host's process, a tool the backend answers and one its panel answers, its own event type,
+# a message to its agents, an intent it takes -- so the browser tests (frontend/e2e/apps.spec.ts) can drive each.
+name = "notes"
+label = "Notes"
+version = "1"
+description = "a notepad you and your agents share"
+instances = "per-folder"
+instructions = """Notes is a notepad the user sees beside your conversation. notes_add keeps a note there (the user sees
+it at once); notes_picked says which note the user has picked in it."""
+
+[backend]
+python = "backend:NotesApp"
+
+[panel]
+entry = "panel/index.html"
+
+[[tools]]
+name = "add"
+description = "Keep a note in the user's notepad."
+input_schema = { type = "object", properties = { text = { type = "string", description = "the note" } }, required = ["text"] }
+
+[[tools]]
+name = "picked"
+description = "The note the user has picked in the notepad, if any."
+handled_by = "panel"
+
+[[events]]
+name = "notes.added"
+properties = ["by"]
+description = "A note kept: {text}; `by` the agent's channel, or user."
+
+[[handles]]
+intent = "open-file"
+types = ["text/markdown"]

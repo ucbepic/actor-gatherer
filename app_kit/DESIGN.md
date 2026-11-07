@@ -1,6 +1,6 @@
 # Apps beside agents: plan
 
-Status: being built, from 2026-11-06. Steps 1 (`app_kit/`), 2 (the host) and 3 (the tool gateway) are built. This file is the package's design, as
+Status: being built, from 2026-11-06. Steps 1 (`app_kit/`), 2 (the host), 3 (the tool gateway) and 4 (app panels) are built. This file is the package's design, as
 `harness_kit/DESIGN.md` is that package's.
 
 ## Goal
@@ -373,11 +373,23 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      `finding`, so ag and the dashboard find the same apps). A gatherer runs one when its `gatherer.toml` names it
      in `pollers`, or names its app in `apps`; ag builds and checks it as any poller.
    - The Browser's and DocWriter's own endpoints stay until step 8; their actors are given those, not the gateway.
-4. **The layout and app panels** (front end).
-   - The layout tree, with agent panes as its leaves.
-   - `AppPanel` with the SDK's host side.
-   - Intents and selection.
-   - A test app in `tests/` that uses every part of the SDK.
+4. **App panels** (front end). Built, one change from the plan: app panes join the page's panes as they are (one
+   more kind beside the actors', `07-panes.js`), and the layout tree waits; rebuilding the panes as a tree now would
+   rewrite them under every other change to the page.
+   - The SDK, `app_kit/js/app.js`, served on every app's origin at `/_ag/app.js`: events (read, subscribe, insert),
+     tools (answer, call), agents, intents, the selection, the theme (its colours set on the panel's `:root`), the
+     backend's messages, its own `/api/`; Esc and ⌘/Ctrl keys it leaves unhandled go on to the page.
+   - The page's side, `frontend/src/features/apps/host.ts`: an app's pane (its head: the app, its instance, the agents
+     attached -- a menu attaches and detaches them -- and ×) and the bridge to its frame, which checks every message's
+     source and origin. A panel has one stream for its backend's messages, a tool call among them, and one per
+     subscription; an intent for a panel not yet connected waits for it.
+   - Apps are opened from a gatherer's "+ ⋯" menu, beside the pane in focus, the actor in focus attached. An app's
+     pane is kept with the page's panes and opened again on a reload, if its instance is still open.
+   - Intents: a panel's `intents.open` opens the app that takes it (for `open-file`, by the file's media type), in
+     the instance for the file's folder, and tells its panel. The agent views raising them comes with step 6.
+   - The selection: the actor in the actor's pane in focus last, told to every panel as it changes.
+   - The test app, Notes (`tests/apps/notes/`), uses each part, and `frontend/e2e/apps.spec.ts` drives it; the e2e
+     dashboard finds it (`AG_APPS_PATH`) and inserts through this checkout's `ag` (`AG_COMMAND`).
 5. **Preview, the first real app.** It is the smallest:
    - its CLI becomes tools;
    - its SQLite table becomes events (`preview.set`, `preview.ran`);

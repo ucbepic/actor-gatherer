@@ -21,7 +21,8 @@ For agents (tool_gateway.py): POST /mcp/<actor>, the apps' MCP server; POST /api
 For an app in its own process (app_kit's remote.py), with its token: POST /apps/host/<name>/<op>.
 
 On an app's own origin, http://<name>.localhost:<port> (app_host's `origin`), which a page of the dashboard frames:
-GET its panel's files (`/` is its entry), and /api/<path>?gatherer&instance (any method) its backend's `request`. A
+GET its panel's files (`/` is its entry) and the panels' SDK (/_ag/app.js), and /api/<path>?gatherer&instance (any
+method) its backend's `request`. A
 write there only from that origin. No other route of the dashboard answers there, its WebSocket included."""
 
 import hmac
@@ -36,6 +37,7 @@ from fastapi import APIRouter, Depends, Request
 from starlette.datastructures import Headers
 from starlette.responses import Response
 
+import app_kit
 from app_kit import AppError, Caller, remote
 
 from .. import app_host, mcp, tool_gateway
@@ -43,6 +45,8 @@ from .common import Body, Errors, Parts, answer, failure, local_only, not_found,
 
 router = APIRouter(route_class=Errors)
 ORIGIN_HOST = re.compile(r"^([a-z][a-z0-9-]{0,23})\.localhost(?::\d+)?$")
+SDK_PATH = "/_ag/app.js"                         # the panels' SDK (app_kit/js/app.js), on every app's origin
+SDK = os.path.join(os.path.dirname(os.path.abspath(app_kit.__file__)), "js", "app.js")
 
 
 def _failed(exc: AppError) -> Response:
@@ -214,12 +218,13 @@ def apps_agent_call(srv: Parts, body: Body) -> Response:
 
 @router.get("/api/apps/stream", dependencies=[Depends(local_only)])
 def apps_stream(srv: Parts, app: str = "", gatherer: str = "", instance: str = "", types: str = "",
-                after: int = 0) -> Response:
-    """Server-sent events, until the page goes: `event` (a new row of TYPES the app may read, after AFTER) and
-    `message` (what its backend tells its panels)."""
+                after: int = 0, messages: int = 1) -> Response:
+    """Server-sent events, until the page goes: `event` (a new row of TYPES the app may read, after AFTER) and --
+    unless MESSAGES is 0 -- `message` (what its backend tells its panels: one stream of a panel's takes them)."""
     try:
         h = _host(srv)
-        sub, leave = h.subscribe(app, h.instance(gatherer, instance, app), [t for t in types.split(",") if t], after)
+        sub, leave = h.subscribe(app, h.instance(gatherer, instance, app), [t for t in types.split(",") if t], after,
+                                 bool(messages))
     except AppError as exc:
         return _failed(exc)
     return queue_events(sub.queue, leave)
@@ -293,7 +298,7 @@ class Origins:
             return await Response(r.body, r.status, headers={**r.headers, **_framed(srv)})(scope, receive, send)
         if method != "GET":
             return await send_plain(405, b"its panel's files are read only", scope, receive, send)
-        found = _panel_file(hosted.manifest, path)
+        found = SDK if path == SDK_PATH else _panel_file(hosted.manifest, path)
         if found is None:
             return await send_plain(404, b"not found", scope, receive, send)
         kind = mimetypes.guess_type(found)[0] or "application/octet-stream"

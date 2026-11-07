@@ -1,0 +1,108 @@
+/* An app's pane (host.ts): its head in the page's top row, as an actor's pane's is, then its panel's frame. */
+.app-pane > .app-top {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--top-h, 0px);
+  box-sizing: border-box;
+  background: var(--surface);
+  border-bottom: 1px solid var(--ring);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.app-pane.focused > .app-top {
+  background: color-mix(in srgb, var(--ink) 9%, var(--surface));
+  color: var(--ink);
+}
+.app-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  padding: 6px 10px 6px 16px;
+}
+.app-pane > .app-frame {
+  flex: 1 1 auto;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--surface);
+}
+.app-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-who b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.app-where {
+  margin-left: 8px;
+  color: var(--muted);
+}
+.app-agents,
+.app-close {
+  flex: none;
+  border: 1px solid var(--ring);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  font: inherit;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.app-close {
+  border-color: transparent;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+.app-agents:hover,
+.app-close:hover {
+  background: var(--wash);
+}
+.app-menu {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 36px;
+  z-index: 20;
+  min-width: 200px;
+  max-height: 320px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+.app-menu-item {
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.app-menu-item:hover {
+  background: var(--wash);
+}
+.app-menu-item.on {
+  font-weight: 600;
+}
+.app-menu-none {
+  padding: 6px 10px;
+  color: var(--muted);
+}

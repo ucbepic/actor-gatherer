@@ -939,6 +939,7 @@ async function select(g, c) {
   state.agentVersion = (state.agentVersion || 0) + 1;
   markSeen();
   savePanes();
+  if (!PANE) appsSelected();
   if (SNAPSHOT || state.paused) { await refresh(true); chatToEnd(); return; }
   connect();
   const main = document.getElementById("main");
