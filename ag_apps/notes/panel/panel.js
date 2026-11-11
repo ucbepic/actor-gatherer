@@ -17,7 +17,10 @@ every open one by how it stands, the Logbook those ended; on a page the ended on
 they were, until the reader shows them.
 
 Several lines can be picked at once (whole lines, as Notion's block selection): deleted, copied, cut, indented, moved,
-turned into another type or sent to an agent together, as one message naming each of them. */
+turned into another type or sent to an agent together, as one message naming each of them.
+
+⌘Z takes back the reader's own changes to the page open, one at a time, and ⌘⇧Z does them again (see "undo"): never the
+browser's own undo, which knows nothing of the ops. */
 (async function () {
   "use strict";
   const ag = await AgApp.connect();
@@ -111,7 +114,12 @@ turned into another type or sent to an agent together, as one message naming eac
   // ---------------------------------------------------------------- the notebook, as this panel has it
   let book = { version: 0, pages: [] };
   const pages = new Map();
-  const reindex = () => { pages.clear(); for (const p of book.pages) { p.blocks = p.blocks || []; pages.set(p.id, p); } };
+  const known = new Map();                               // block id -> its words as last applied or typed (an undo's "before")
+  const reindex = () => {
+    pages.clear();
+    known.clear();
+    for (const p of book.pages) { p.blocks = p.blocks || []; pages.set(p.id, p); for (const b of p.blocks) known.set(b.id, b.text); }
+  };
   const live = () => book.pages.filter((p) => !p.deleted);
   const kidsOf = (id) => live().filter((p) => (p.parent || null) === id);
   function below(id) {                                   // a page's subpages, theirs, ...
@@ -202,6 +210,7 @@ turned into another type or sent to an agent together, as one message naming eac
         const b = p.blocks.find((x) => x.id === op.block.id);
         if (b) Object.assign(b, op.block);
         else p.blocks.splice(placeAt(p.blocks, op.after), 0, { type: "text", text: "", checked: false, indent: 0, ...op.block });
+        if (!b || "text" in op.block) known.set(op.block.id, op.block.text || "");
         return;
       }
       case "block.move": {
@@ -212,7 +221,7 @@ turned into another type or sent to an agent together, as one message naming eac
         p.blocks.splice(placeAt(p.blocks, op.after), 0, b);
         return;
       }
-      case "block.delete": if (p) p.blocks = p.blocks.filter((x) => x.id !== op.block); return;
+      case "block.delete": if (p) p.blocks = p.blocks.filter((x) => x.id !== op.block); known.delete(op.block); return;
       case "thread.add": {
         const b = p && p.blocks.find((x) => x.id === op.block);
         if (!b) return;
@@ -228,14 +237,17 @@ turned into another type or sent to an agent together, as one message naming eac
   const dirty = new Map();                              // block id -> {page, text, timer}: typed, not yet queued
   let titleDirty = null, sending = false, savedTimer = 0, status = "saved";
   let sideSoon = 0;
-  function change(ops) {                                // applied here, and sent after what was typed before it
-    flushTyped();
-    for (const op of ops) apply(op);
+  function change(ops, undoable = true) {               // applied here, and sent after what was typed before it; a step
+    flushTyped();                                       // ⌘Z takes back, unless it can't be (a line sent to an agent)
+    const step = undoable && !replaying ? stepOf(ops) : null;
+    for (const op of ops) { if (step) takeBackOf(step, op); apply(op); }
     queue.push(...ops);
     pump();
+    if (step) keep(step);
     if (!sideSoon) sideSoon = requestAnimationFrame(() => { sideSoon = 0; drawSide(); });   // its to-dos counted again
   }
   function typed(page, id, text) {
+    wordsTyped(page, id, text);
     const d = dirty.get(id);
     if (d) clearTimeout(d.timer);
     dirty.set(id, { page, text, timer: setTimeout(() => sendTyped(id), 450) });
@@ -253,6 +265,154 @@ turned into another type or sent to an agent together, as one message naming eac
   function flushTyped() {
     for (const id of [...dirty.keys()]) sendTyped(id);
     if (titleDirty) { clearTimeout(titleDirty.timer); queue.push({ op: "page.set", page: titleDirty.page, title: titleDirty.title }); titleDirty = null; }
+  }
+
+  // ---------------------------------------------------------------- undo
+  // ⌘Z takes back the reader's last change to the page open, ⌘⇧Z does it again -- never the browser's own undo, which
+  // knows nothing of the lines' ops (after a line was moved, it took letters out of another). A step is a change() to the
+  // page's lines (moved, split, joined, pasted, cut, indented, ticked, turned into another type...) or to its title or
+  // icon, or a run of typing in one line or the title (until a pause, or another line). It holds the ops that do it and
+  // those that take it back, worked out from the page as it was just before. If a line it touched has changed since (an
+  // agent's change, another window's), the step is left as it is, and the reader told: nobody else's words are undone.
+  // Not steps: a line sent to an agent, or canceled (its message can't be taken back), conversations, pages made, binned
+  // or restored. One history per page, for as long as the panel is open.
+  const PAUSE = 1000;                                      // a run of typing ends after this long without a key
+  const LINE = ["type", "text", "checked", "indent"];      // what tells whether a line changed since
+  const BLANK = { type: "text", text: "", checked: false, indent: 0, to: "", sent: "", extra: "", group: "", work: false, ended: "", ended_at: "" };
+  const histories = new Map();                             // page id -> {done: [step], undone: [step]}
+  let run = null, replaying = false;                       // run: the step keys typed are adding to {step, key, page, at}
+  const historyOf = (id) => { if (!histories.has(id)) histories.set(id, { done: [], undone: [] }); return histories.get(id); };
+  const blockId = (op) => (typeof op.block === "string" ? op.block : op.block.id);
+  const copied = (x) => JSON.parse(JSON.stringify(x));
+  // how lines (and "@page": the title and icon) stand now, to be told apart from how a step left them
+  function standing(p, ids) {
+    const m = new Map();
+    for (const id of ids) {
+      if (id === "@page") { m.set(id, JSON.stringify([p.title || "", p.icon || ""])); continue; }
+      const b = p.blocks.find((x) => x.id === id);
+      m.set(id, b ? JSON.stringify(LINE.map((k) => (k === "text" ? known.get(id) ?? b.text : b[k] ?? BLANK[k]))) : "gone");
+    }
+    return m;
+  }
+  function caretNow() {                                    // where the reader is typing: a line (or "@title"), and where in it
+    const a = document.activeElement, tx = a === title ? title : a && box.contains(a) && a.closest(".tx");
+    if (!tx) return null;
+    const c = caretIn(tx);
+    return { id: tx === title ? "@title" : tx.closest(".blk").dataset.id, at: c ? c.start : null };
+  }
+  function record(h, step) {
+    h.done.push(step);
+    h.undone.length = 0;
+    if (h.done.length > 500) h.done.shift();
+  }
+  // -- a change(): its step begun, each op's way back worked out before it is applied, and the step kept
+  function stepOf(ops) {
+    const p = page(), mine = (op) => op.page === current && (op.op.startsWith("block.") || op.op === "page.set");
+    if (!p || p.deleted || !ops.some(mine)) return null;
+    const ids = [...new Set(ops.filter(mine).map((op) => (op.op === "page.set" ? "@page" : blockId(op))))];
+    return { page: p.id, ids, fwd: [], back: [], before: standing(p, ids), pick: picked.size ? [...picked] : null, caret: caretNow() };
+  }
+  function takeBackOf(step, op) {
+    const p = pages.get(step.page);
+    if (!p || op.page !== step.page) return;
+    let back = null;
+    if (op.op === "page.set") {
+      back = { op: "page.set", page: p.id };
+      for (const k of ["title", "icon", "parent"]) if (k in op) back[k] = k === "parent" ? p.parent || null : p[k] || "";
+      if (Object.keys(back).every((k) => k === "op" || k === "page" || back[k] === (op[k] ?? back[k]))) return;
+    } else if (["block.put", "block.delete", "block.move"].includes(op.op)) {
+      const i = p.blocks.findIndex((x) => x.id === blockId(op)), b = p.blocks[i], prev = i > 0 ? p.blocks[i - 1].id : "";
+      if (op.op === "block.put" && !b) back = { op: "block.delete", page: p.id, block: op.block.id };
+      else if (!b) return;
+      else if (op.op === "block.put") {
+        const was = { id: b.id };
+        for (const k of Object.keys(op.block)) if (k !== "id") was[k] = copied(k === "text" ? known.get(b.id) ?? b.text : b[k] ?? BLANK[k] ?? "");
+        if (Object.keys(was).every((k) => JSON.stringify(was[k]) === JSON.stringify(op.block[k]))) return;   // (as it was)
+        back = { op: "block.put", page: p.id, block: was };
+      } else if (op.op === "block.delete") back = { op: "block.put", page: p.id, block: copied({ ...b, text: known.get(b.id) ?? b.text }), after: prev };
+      else if (op.after === prev) return;
+      else back = { op: "block.move", page: p.id, block: b.id, after: prev };
+    } else return;
+    step.fwd.push(copied(op));
+    step.back.unshift(back);
+  }
+  function keep(step) {
+    run = null;                                            // a run of typing ends at any other change
+    const p = pages.get(step.page);
+    if (!p || !step.back.length) return;
+    step.after = standing(p, step.ids);
+    record(historyOf(step.page), step);
+    requestAnimationFrame(() => { step.caretAfter = caretNow(); step.pickAfter = picked.size ? [...picked] : null; });
+  }
+  // -- typing: each key's change to a line's words (or the title) added to the run it belongs to
+  function inRun(p, key, back) {                           // (before the words change: how they stood is the step's "before")
+    const h = historyOf(p.id), at = Date.now();
+    if (!(run && run.key === key && run.page === p.id && at - run.at <= PAUSE && h.done[h.done.length - 1] === run.step)) {
+      const step = { page: p.id, ids: [key], fwd: [], back: [back], before: standing(p, [key]), pick: null, caret: null, words: true };
+      record(h, step);
+      run = { step, key, page: p.id };
+    }
+    run.at = at;
+    return run.step;
+  }
+  function wordsTyped(pid, id, text) {
+    const p = pages.get(pid), was = known.has(id) ? known.get(id) : text;
+    if (!replaying && p && !p.deleted && pid === current && was !== text) {
+      const step = inRun(p, id, { op: "block.put", page: pid, block: { id, text: was } });
+      known.set(id, text);
+      step.fwd = [{ op: "block.put", page: pid, block: { id, text } }];
+      step.after = standing(p, [id]);
+    } else known.set(id, text);
+  }
+  function titleTyped(p, was) {                            // (after the title changed, from `was`)
+    if (replaying || p.deleted || p.id !== current || was === (p.title || "")) return;
+    const now = p.title;
+    p.title = was;
+    const step = inRun(p, "@page", { op: "page.set", page: p.id, title: was });
+    p.title = now;
+    step.fwd = [{ op: "page.set", page: p.id, title: now }];
+    step.after = standing(p, ["@page"]);
+  }
+  // -- ⌘Z, ⌘⇧Z
+  function undoStep(again = false) {
+    const p = page();
+    if (!p || p.deleted || SPECIAL.includes(current)) return;
+    flushTyped();
+    run = null;
+    const h = historyOf(p.id), step = (again ? h.undone : h.done).pop();
+    if (!step) return;
+    const now = standing(p, step.ids), want = again ? step.before : step.after;
+    if (step.ids.some((id) => now.get(id) !== want.get(id))) {
+      say(again ? "Not redone: those lines have changed since" : "Not undone: those lines have changed since", true);
+      return;
+    }
+    const a = document.activeElement;                      // drawn afresh: no line kept back as being typed in
+    if (a && (a === title || box.contains(a))) box.focus({ preventScroll: true });
+    replaying = true;
+    try { change(copied(again ? step.fwd : step.back)); } finally { replaying = false; }
+    (again ? h.done : h.undone).push(step);
+    unpick();
+    drawSide();
+    drawPage();
+    placeAfter(step, again);
+  }
+  function placeAfter(step, again) {                       // the reader back where the step was: its lines picked, or the caret
+    const pick = (again ? step.pickAfter : step.pick || []) || [], ids = pick.filter((id) => blockOf(id));
+    if (ids.length) { pickRange(ids[0], ids[ids.length - 1]); return holdKeys(); }
+    if (step.words) {                                     // where the words changed, at the end of what is there now
+      const op = again ? step.fwd[0] : step.back[0], other = again ? step.back[0] : step.fwd[0];
+      const plain = (o) => (o.op === "page.set" ? o.title || "" : (blockOf(o.block.id) || {}).type === "code" ? o.block.text : plainOf(o.block.text || ""));
+      const s = plain(op), t = plain(other);
+      let same = 0;
+      while (same < s.length && same < t.length && s[s.length - 1 - same] === t[t.length - 1 - same]) same++;
+      if (op.op === "page.set") { title.focus(); return setCaret(title, Math.min(s.length - same, title.textContent.length)); }
+      return focusBlock(op.block.id, Math.max(0, s.length - same));
+    }
+    const c = again ? step.caretAfter : step.caret;
+    if (c && c.id === "@title") { title.focus(); return setCaret(title, Math.min(c.at ?? title.textContent.length, title.textContent.length)); }
+    if (c && blockOf(c.id)) return focusBlock(c.id, c.at ?? "end");
+    const near = step.ids.find((id) => blockOf(id));
+    if (near) focusBlock(near, "end");
   }
   async function pump(keepalive = false) {
     if (sending) return;
@@ -335,7 +495,7 @@ turned into another type or sent to an agent together, as one message naming eac
     book = got;
     reindex();
     for (const op of queue) apply(op);                   // what this window has not sent yet stays as it has it
-    for (const [id, d] of dirty) { const p = pages.get(d.page); const b = p && p.blocks.find((x) => x.id === id); if (b) b.text = d.text; }
+    for (const [id, d] of dirty) { const p = pages.get(d.page); const b = p && p.blocks.find((x) => x.id === id); if (b) { b.text = d.text; known.set(id, d.text); } }
     if (titleDirty && pages.get(titleDirty.page)) pages.get(titleDirty.page).title = titleDirty.title;
     if (current && !pages.has(current)) current = null;
     drawSide();
@@ -718,6 +878,16 @@ turned into another type or sent to an agent together, as one message naming eac
     const t = tx.getBoundingClientRect(), lh = parseFloat(getComputedStyle(tx).lineHeight) || 22;
     return last ? t.bottom - r.bottom < lh * 0.9 : r.top - t.top < lh * 0.9;
   }
+  function focusOnEdge(tx, last) {                        // the selection's moving end on the first (or last) row of the block
+    const s = getSelection();
+    if (!s.rangeCount || !s.focusNode) return true;
+    const r = document.createRange();
+    r.setStart(s.focusNode, s.focusOffset);
+    const at = r.getClientRects()[0] || r.getBoundingClientRect();
+    if (!at || (!at.top && !at.bottom)) return true;
+    const t = tx.getBoundingClientRect(), lh = parseFloat(getComputedStyle(tx).lineHeight) || 22;
+    return last ? t.bottom - at.bottom < lh * 0.9 : at.top - t.top < lh * 0.9;
+  }
   function focusBlock(id, where = "end") {
     const n = rowOf(id);
     if (!n) return;
@@ -735,7 +905,6 @@ turned into another type or sent to an agent together, as one message naming eac
   box.addEventListener("input", (ev) => {
     const tx = ev.target.closest && ev.target.closest(".tx");
     if (!tx) return;
-    if (undo) undo.armed = false;                          // typed since: ⌘Z is the line's own again
     const n = tx.closest(".blk"), b = blockOf(n.dataset.id);
     if (!b) return;
     if (tx.innerHTML === "<br>") tx.innerHTML = "";
@@ -821,17 +990,23 @@ turned into another type or sent to an agent together, as one message naming eac
     const mod = ev.metaKey || ev.ctrlKey, k = ev.key;
     if (k === "Escape" && !mod && !ev.shiftKey) { ev.preventDefault(); pickRange(b.id, b.id); return holdKeys(); }   // the line picked
     if (ev.shiftKey && !mod && !ev.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
-      const c = caretIn(tx), up = k === "ArrowUp";          // its text selected to an end already: the lines from here
-      if (c && (up ? c.start === 0 : c.end === tx.textContent.length)) {
+      const c = caretIn(tx), up = k === "ArrowUp", t = tx.textContent;   // its text selected to an end already: the lines
+      if (c && !(up ? t.slice(0, c.start) : t.slice(c.end)).replace(/​/g, "")) {   // from here
         ev.preventDefault();
         const to = p.blocks[i + (up ? -1 : 1)];
         pickRange(b.id, to ? to.id : b.id);
         return holdKeys();
       }
+      if (c && focusOnEdge(tx, !up)) {                     // on its first (last) row: to that end of the line -- not, as the
+        ev.preventDefault();                               // browser would, out of it into the next line's words
+        const z = pointAt(tx, up ? 0 : t.length);
+        getSelection().extend(z.node, z.offset);
+        return;
+      }
     }
     if (mod && !ev.altKey) {
       const low = k.toLowerCase();
-      if (!ev.shiftKey && low === "z" && undo && undo.armed) { ev.preventDefault(); return takeBack(); }
+      if (low === "z") { ev.preventDefault(); return undoStep(ev.shiftKey); }   // the page's undo, not the browser's
       if (!ev.shiftKey && low === "a") {                    // ⌘A: the line's text, then (all of it selected) every line
         const c = caretIn(tx);
         if (c && c.start === 0 && c.end === tx.textContent.length) { ev.preventDefault(); pickAll(); return holdKeys(); }
@@ -1401,7 +1576,7 @@ turned into another type or sent to an agent together, as one message naming eac
       pop.append(el("div", { class: "sep" }),
         ...(UNSENT.includes(b.type) ? [] : b.to ? [
           item({ glyph: SVG.at, sm: true, label: "Open its Chat" }, () => ag.actors.show(b.to).catch((e) => say(e.message, true))),
-          item({ glyph: SVG.x, sm: true, label: "Forget who it went to", note: "Still a work item" }, () => { change([{ op: "block.put", page: current, block: { id: b.id, to: "", work: true } }]); drawPage(); }),
+          item({ glyph: SVG.x, sm: true, label: "Forget who it went to", note: "Still a work item" }, () => { change([{ op: "block.put", page: current, block: { id: b.id, to: "", work: true } }], false); drawPage(); }),
         ] : [item({ glyph: SVG.at, sm: true, label: "Send to an agent…" }, () => openPicker(b.id, n.getBoundingClientRect())),
           b.work ? item({ glyph: SVG.x, sm: true, label: "Not a work item" }, () => markWork([b], false))
             : item({ glyph: SVG.work, sm: true, label: "Mark as a work item", note: "Tracked on the Work page" }, () => markWork([b], true))]),
@@ -1427,13 +1602,14 @@ turned into another type or sent to an agent together, as one message naming eac
   // ---------------------------------------------------------------- lines picked: several at once
   // Whole lines (Notion's block selection), always a run of the page's, `anchor` to `head`: picked by a drag from one
   // line's words into others (back into its own, its text selected again), a box dragged from beside the lines,
-  // Shift+click, Esc in a line (then Shift+↑↓ more or fewer), Shift+↑↓ past a line's end, or ⌘A twice. While lines are
+  // Shift+click, Esc in a line (then Shift+↑↓ more or fewer), Shift+↑↓ past a line's end, ⌘A twice, or words selected
+  // from one line into another. While lines are
   // picked the keys are the page's (the blocks' box has them, no caret): ⌫ deletes them (Undo brings them back), ⌘C ⌘X
   // copy and cut them (as markdown, and as themselves for these notes), ⌘V puts lines after them, Tab and ⇧Tab indent
   // them, ⌘D duplicates them, ⌘↵ ticks their to-dos, ⌘⇧↑↓ moves them, ↵ goes back to typing; their grip drags them all,
   // and its menu (or the bar over them) turns them into a type, or sends them to an agent as one message. A click
   // anywhere else, or Esc, puts them down.
-  let undo = null;                                         // {run, armed}: lines just deleted, to bring back
+  let undo = null;                                         // {pid, step}: lines just deleted, the toast's Undo
   box.tabIndex = -1;
   const order = () => { const p = shown(); return p ? p.blocks.map((b) => b.id) : []; };   // (the lines shown: none folded away)
   const pickedBlocks = () => { const p = page(); return p ? p.blocks.filter((b) => picked.has(b.id)) : []; };
@@ -1515,24 +1691,13 @@ turned into another type or sent to an agent together, as one message naming eac
     drawPage();
     const near = fresh || (before ? blockOf(before) : page().blocks[0]);
     if (near) focusBlock(near.id, before ? "end" : "start");
-    const pid = p.id;
-    undoable(`${gone.length === 1 ? "A line" : `${gone.length} lines`} deleted`, () => {
-      if (current !== pid) openPage(pid);
-      const q = page();
-      if (!q || q.deleted) return;
-      const back = [];
-      if (fresh && q.blocks.length === 1 && q.blocks[0].id === fresh.id && !plainOf(q.blocks[0].text)) back.push({ op: "block.delete", page: pid, block: fresh.id });
-      let after = before && q.blocks.some((b) => b.id === before) ? before : "";
-      for (const b of gone) { back.push({ op: "block.put", page: pid, block: b, after }); after = b.id; }
-      change(back);
-      drawPage();
-      pickRange(gone[0].id, gone[gone.length - 1].id);
-      holdKeys();
-    });
+    const h = historyOf(p.id);
+    undoable(`${gone.length === 1 ? "A line" : `${gone.length} lines`} deleted`, p.id, h.done[h.done.length - 1]);
   }
-  function undoable(text, run) {
+  // a toast with Undo, for as long as its step is still the page's last
+  function undoable(text, pid, step) {
     const w = $("who");
-    undo = { run, armed: true };
+    undo = { pid, step };
     w.classList.remove("bad");
     w.replaceChildren(el("span", { text }), el("button", { type: "button", class: "undo", text: "Undo", onclick: () => takeBack() }));
     w.style.opacity = "1";
@@ -1543,7 +1708,11 @@ turned into another type or sent to an agent together, as one message naming eac
     const u = undo;
     undo = null;
     $("who").style.opacity = "0";
-    if (u) u.run();
+    if (!u) return;
+    const h = historyOf(u.pid);
+    if (h.done[h.done.length - 1] !== u.step) return;
+    if (current !== u.pid) openPage(u.pid);
+    undoStep();
   }
   function indentLines(by) {
     const ops = pickedBlocks().filter((b) => INDENTED.includes(b.type)).map((b) => [b, Math.max(0, Math.min(MAX_INDENT, (b.indent || 0) + by))])
@@ -1655,7 +1824,7 @@ turned into another type or sent to an agent together, as one message naming eac
   document.addEventListener("keydown", (ev) => {
     if (ev.defaultPrevented || ev.isComposing || inField(ev.target)) return;
     const mod = ev.metaKey || ev.ctrlKey, k = ev.key, low = k.toLowerCase();
-    if (mod && !ev.shiftKey && low === "z" && undo) { ev.preventDefault(); return takeBack(); }
+    if (mod && !ev.altKey && low === "z") { ev.preventDefault(); return undoStep(ev.shiftKey); }
     if (!picked.size || menu) return;
     const p = page(), ro = !p || !!p.deleted, all = order();
     if (k === "Escape") { ev.preventDefault(); return unpick(); }
@@ -1785,20 +1954,49 @@ turned into another type or sent to an agent together, as one message naming eac
   }
   document.addEventListener("pointerup", endPick);
   document.addEventListener("pointercancel", endPick);
+  // Words selected from one line into another, however the browser came to select them (its own Shift+↓ out of a line,
+  // a drag from beside the lines): those lines picked, whole -- words across lines can't be cut, typed over or indented.
+  // Looked at once the mouse is let go, not while it drags.
+  let held = false;
+  document.addEventListener("pointerdown", () => { held = true; }, true);
+  function lineOf(node, offset) {
+    if (node === box) return box.children[Math.min(offset, box.children.length - 1)] || null;
+    const e = node && (node.nodeType === 1 ? node : node.parentElement), r = e && e.closest(".blk");
+    return r && r.parentElement === box ? r : null;
+  }
+  function crossPick() {
+    if (held || sweep || band) return;
+    const s = getSelection();
+    if (!s.rangeCount || s.isCollapsed) return;
+    const a = lineOf(s.anchorNode, s.anchorOffset), z = lineOf(s.focusNode, s.focusOffset);
+    if (!a || !z || a === z) return;
+    pickRange(a.dataset.id, z.dataset.id);
+    holdKeys();
+  }
+  document.addEventListener("selectionchange", crossPick);
+  document.addEventListener("pointerup", () => { held = false; crossPick(); });
+  document.addEventListener("pointercancel", () => { held = false; });
+  window.addEventListener("blur", () => { held = false; });
 
   // ---------------------------------------------------------------- the title, the icon, and below the blocks
   const title = $("title");
   title.addEventListener("input", () => {
     const p = page();
     if (!p) return;
+    const was = p.title || "";
     p.title = title.textContent.replace(/\s+/g, " ").trimStart();
+    titleTyped(p, was);
     if (titleDirty) clearTimeout(titleDirty.timer);
     titleDirty = { page: p.id, title: p.title, timer: setTimeout(() => { flushTyped(); pump(); }, 450) };
     saved("saving");
     drawSide();
     drawCrumbs(p);
   });
+  for (const t of [box, title]) t.addEventListener("beforeinput", (ev) => {   // Undo and Redo from the browser's Edit menu
+    if (ev.inputType === "historyUndo" || ev.inputType === "historyRedo") { ev.preventDefault(); undoStep(ev.inputType === "historyRedo"); }
+  });
   title.addEventListener("keydown", (ev) => {
+    if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === "z") { ev.preventDefault(); return undoStep(ev.shiftKey); }
     if (ev.key !== "Enter" && !(ev.key === "ArrowDown" && onLine(title, true))) return;
     ev.preventDefault();
     const p = page();
@@ -2002,7 +2200,7 @@ turned into another type or sent to an agent together, as one message naming eac
       if (!tell.has(k)) tell.set(k, { to: b.to, p, them: [] });
       tell.get(k).them.push(b);
     }
-    change(endOps(bs, "canceled"));
+    change(endOps(bs, "canceled"), false);                 // (its agent told to stop: not to be undone)
     redraw();
     for (const { to, p, them } of tell.values()) {
       const many = them.length > 1, it = many ? "them" : "it";
@@ -2092,7 +2290,7 @@ turned into another type or sent to an agent together, as one message naming eac
     try {
       const got = who.harness ? await ag.actors.start({ harness: who.harness, folder: who.folder, text })
         : await ag.actors.send(who.channel, text);
-      change([{ op: "block.put", page: p.id, block: { id, to: got.channel, sent: now(), extra: esc(extra).replace(/\n/g, "<br>"), group: "", work: true, ended: "" } }]);
+      change([{ op: "block.put", page: p.id, block: { id, to: got.channel, sent: now(), extra: esc(extra).replace(/\n/g, "<br>"), group: "", work: true, ended: "" } }], false);
       say(`Sent to ${nameOf(actorOf(got.channel), who.channel || got.channel)}${who.harness ? ", a new actor" : ""}`);
     } catch (e) {
       say(`Not sent: ${e.message}`, true);
@@ -2122,7 +2320,7 @@ turned into another type or sent to an agent together, as one message naming eac
       const got = who.harness ? await ag.actors.start({ harness: who.harness, folder: who.folder, text })
         : await ag.actors.send(who.channel, text);
       const at = now(), more = esc(extra).replace(/\n/g, "<br>"), group = rid();
-      change(bs.map((b) => ({ op: "block.put", page: p.id, block: { id: b.id, to: got.channel, sent: at, extra: more, group, work: true, ended: "" } })));
+      change(bs.map((b) => ({ op: "block.put", page: p.id, block: { id: b.id, to: got.channel, sent: at, extra: more, group, work: true, ended: "" } })), false);
       unpick();
       say(`Sent ${bs.length} lines to ${nameOf(actorOf(got.channel), who.channel || got.channel)}${who.harness ? ", a new actor" : ""}`);
     } catch (e) {

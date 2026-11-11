@@ -119,6 +119,58 @@ test("Shift+click and Esc with Shift+arrows pick a run, which Tab indents, ⌘�
   await binPage(panel, "Run");
 });
 
+test("Shift+↑↓ from inside a line select to its end first, then pick lines; words selected across lines pick them", async ({
+  page,
+}) => {
+  await open(page);
+  const { panel } = await openNotes(page);
+  await newPage(page, panel, "Shift");
+  await type(page, "- alpha", "bravo", "charlie", "delta");
+  const caret = (text: string, at: number) =>
+    row(panel, text)
+      .locator(".tx")
+      .evaluate((tx, n) => {
+        (tx as HTMLElement).focus();
+        const r = document.createRange();
+        r.setStart(tx.firstChild!, n);
+        getSelection()!.removeAllRanges();
+        getSelection()!.addRange(r);
+      }, at);
+  const selected = () => panel.locator("body").evaluate(() => getSelection()!.toString());
+
+  // from inside "charlie": its start first (the browser would carry the words up into "bravo"), then the lines
+  await caret("charlie", 3);
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(selected).toBe("cha");
+  await expect(panel.locator("#blocks > .blk.picked")).toHaveCount(0);
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(() => pickedLines(panel)).toEqual(["bravo", "charlie"]);
+  await expect(panel.locator("#blocks")).toBeFocused();
+  await page.keyboard.press("Tab");
+  for (const t of ["bravo", "charlie"]) await expect(row(panel, t)).toHaveAttribute("style", /--ind: ?1/);
+  await page.keyboard.press("Escape");
+
+  await caret("bravo", 2); // and down: its end first
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect.poll(selected).toBe("avo");
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect.poll(() => pickedLines(panel)).toEqual(["bravo", "charlie"]);
+  await page.keyboard.press("Escape");
+
+  // words selected from one line into another, however the browser got there: those lines, picked whole
+  await panel.locator("body").evaluate(() => {
+    const tx = [...document.querySelectorAll("#blocks > .blk .tx")];
+    const a = tx.find((t) => t.textContent === "alpha")!,
+      z = tx.find((t) => t.textContent === "charlie")!;
+    getSelection()!.setBaseAndExtent(a.firstChild!, 2, z.firstChild!, 4);
+  });
+  await expect.poll(() => pickedLines(panel)).toEqual(["alpha", "bravo", "charlie"]);
+  await expect.poll(selected).toBe("");
+  await page.keyboard.press("Backspace");
+  await expect.poll(() => lines(panel)).toEqual(["delta"]);
+  await binPage(panel, "Shift");
+});
+
 test("⌘A twice picks every line; copied, they are markdown, and paste back as the lines they were", async ({
   page,
 }) => {
