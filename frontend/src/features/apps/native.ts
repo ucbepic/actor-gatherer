@@ -30,11 +30,15 @@ export const desktop = (): Desktop | null => {
 export const nativePanes = new Set<AppPane>();
 const GRID = 5;
 let nativeTold = "";
-let nativeLoop = 0;
+let nativeLoop = 0; // the frame the next look is asked for: one at a time
 export function nativeSoon(): void {
   if (!nativeLoop && desktop()) nativeLoop = requestAnimationFrame(nativeFrame);
 }
 function nativeFrame(): void {
+  // a look not in a frame (the interval's) takes the place of the frame's: each look asks for the next, so one left
+  // waiting would be a second loop of looks every frame -- the interval's every 250 ms added one, all kept until the
+  // panes were gone, hundreds of looks a frame after a minute
+  if (nativeLoop) cancelAnimationFrame(nativeLoop);
   nativeLoop = 0;
   const d = desktop();
   if (!d) return;
