@@ -132,6 +132,7 @@ export class Pages {
     private log: Log,
     private still: (target: string, url: string | null) => void, // a page's still picture to the dashboard, or none
     private places: Places,
+    private zoom: () => number = () => 1, // the dashboard page's zoom (⌘+ / ⌘−): its pixels to the window's
   ) {
     Pages.current = this;
   }
@@ -381,16 +382,20 @@ export class Pages {
   }
 
   /** Each pane's page over it, the others hidden -- or, while something of the dashboard's covers the pane, a still
-   * picture of the page in its place (the page hidden once the picture is there). `stages`: where the panes are now. */
+   * picture of the page in its place (the page hidden once the picture is there). `stages`: where the panes are now, in
+   * the dashboard page's pixels -- the window's are those times the page's zoom, as it is when they are placed. */
   place(stages?: Stage[]): void {
     if (stages) this.stages = stages;
+    const z = this.zoom();
+    const zoom = Number.isFinite(z) && z > 0 ? z : 1;
     const shown = new Set<string>();
     let shielded: Electron.Rectangle | null = null;
     for (const s of this.stages) {
       const p = this.pages.get(s.target);
       if (!p || shown.has(s.target) || (s.app !== undefined && s.app !== p.app)) continue;   // (only an app's own panel)
       shown.add(s.target);
-      const bounds = { x: Math.round(s.x), y: Math.round(s.y), width: Math.max(1, Math.round(s.w)), height: Math.max(1, Math.round(s.h)) };
+      const x = Math.round(s.x * zoom), y = Math.round(s.y * zoom); // (edges rounded, so a pane's are its page's)
+      const bounds = { x, y, width: Math.max(1, Math.round((s.x + s.w) * zoom) - x), height: Math.max(1, Math.round((s.y + s.h) * zoom) - y) };
       p.size = this.lastSize = { width: bounds.width, height: bounds.height };
       p.view.setBounds(bounds);
       if (s.covered && !p.bare) {

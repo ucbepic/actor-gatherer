@@ -146,7 +146,7 @@ function open(): void {
     pagePreload: path.join(HERE, "page-preload.cjs"),
     downloads: path.join(home, "dashboard", "downloads"), // (ag's own Chrome's: ag_apps/browser/core.py's downloads_dir)
     permissions: path.join(app.getPath("userData"), "permissions.json"),
-  });
+  }, () => (w.isDestroyed() ? 1 : w.webContents.getZoomFactor()));
   // Closing the window is not quitting (desktop/DESIGN.md): on a Mac it is hidden, its Browsers' pages kept open (the
   // agent may be using them), until Cmd+Q; its Dock icon shows it again.
   w.on("close", (event) => {
@@ -164,7 +164,8 @@ function open(): void {
   void show(w);
 }
 
-// Where the main window's Browser panes are, from its preload: each pane's page placed over it.
+// Where the main window's Browser panes are, from its preload: each pane's page placed over it (scaled by the page's zoom:
+// the page tells them in its own pixels).
 ipcMain.on("ag:stages", (event, stages: Stage[]) => {
   if (win && event.sender === win.webContents) pages?.place(stages);
 });
