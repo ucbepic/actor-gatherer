@@ -234,6 +234,11 @@ class Policy(ABC):
         the shared tables. Idempotent; the manager calls it whenever it
         creates or first opens a gatherer. Default: nothing."""
 
+    def append(self, conn, db: str, offset: int) -> None:
+        """Another gatherer's database appended to this one (`ag home merge`): attached to `conn` (sqlite3) as `db`,
+        its events already copied with their row ids moved by `offset` -- what the policy keeps in its own tables of
+        them copied too, their row ids moved the same way, in `conn`'s transaction. Default: nothing."""
+
     @abstractmethod
     def read(self, store, read: Read) -> Context:
         """The context to send in response to `read`, from the gatherer's

@@ -295,6 +295,10 @@ class ProactiveContextManager(Policy):
         finally:
             self.config = saved
 
+    def append(self, conn, db: str, offset: int) -> None:
+        """Another gatherer's tables appended (Policy.append; tables.append)."""
+        tables.append(conn, db, offset)
+
     def read(self, conn, read: Read) -> Context:
         """The context for the channel's next model call: the sectioned
         context, with the stream messages of the verbatim part shown where

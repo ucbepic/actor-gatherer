@@ -399,6 +399,42 @@ def cmd_migrate(h, gatherers, vacuum: bool, now: bool = False) -> int:
         return 1 if failed else 0
 
 
+def cmd_merge(dry_run: bool) -> int:
+    """Every gatherer's database made one, the home's (store/merge.py); with `dry_run`, what that would do."""
+    from ..store import merge
+    try:
+        p = merge.plan()
+        line = lambda g: f"{g}: {p['events'][g]} events, {p['conversations'][g]} conversations, {p['sizes'][g] // 1024} KB"  # noqa: E731
+        print(f"copied whole (the largest; its row ids kept): {line(p['target'])}")
+        for g in p["others"]:
+            print(f"appended: {line(g)}")
+        print(f"into {paths.home_db()}; each gatherer's own file is left as it is")
+        h = home()
+
+        def policy(g):
+            try:
+                return h.gatherer(g, create=False).policy
+            except ConfigError:                     # no config of its own: made by hand, the default's
+                return None
+        policies = {g: policy(g) for g in [p["target"], *p["others"]]}
+        if len({name for name in policies.values() if name}) > 1:
+            raise merge.MergeError("the gatherers keep different policies, and the home's one database has one: "
+                                   + ", ".join(f"{g}: {name}" for g, name in policies.items()))
+        if dry_run:
+            using = merge.busy()
+            print(("in use now, to stop first: " + "; ".join(using)) if using else "nothing uses the home now")
+            return 0
+        got = merge.merge(append=lambda g, conn, db, offset: h.manager(g).policy.append(conn, db, offset),
+                          say=lambda text: print(text, flush=True))
+    except merge.MergeError as exc:
+        print(f"ag home merge: {exc}", file=sys.stderr)
+        return 1
+    skipped = sum(got["skipped"].values())
+    print(f"merged: {sum(got['copied'].values())} events; {got['grouped']} conversations put in their gatherer's group"
+          + (f"; {skipped} events already there, from another gatherer, left out" if skipped else ""))
+    return 0
+
+
 def logged_error(root: str, purpose: str) -> str:
     """The error this process's last call for `purpose` logged (CallLog names each record after the
     process and the purpose), or "" when it logged none."""
@@ -463,6 +499,8 @@ def main(argv=None) -> int:
     mi.add_argument("gatherer", nargs="*")
     mi.add_argument("--no-vacuum", action="store_true", help="keep the space freed in the file (ag fills it first)")
     mi.add_argument("--now", action="store_true", help="move the read log without waiting for an older ag to stop")
+    me = sub.add_parser("merge", help="put every gatherer's database into one, the home's")
+    me.add_argument("--dry-run", action="store_true", help="say what it would do, and what uses the home now")
     co = sub.add_parser("complete")
     co.add_argument("--purpose", default="ask", help="the call's name in the call log")
     co.add_argument("--system", default="", help="the system message")
@@ -482,6 +520,8 @@ def main(argv=None) -> int:
             return cmd_gatherers(h)
         if a.cmd == "migrate":
             return cmd_migrate(h, a.gatherer, not a.no_vacuum, a.now)
+        if a.cmd == "merge":
+            return cmd_merge(a.dry_run)
         if a.cmd == "contract":
             print(json.dumps(contract(h, a.gatherer, a.policy, a.poller, a.no_pollers)))
             return 0

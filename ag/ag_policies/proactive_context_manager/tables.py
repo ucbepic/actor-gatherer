@@ -359,3 +359,41 @@ def boundary_verdict(conn, row_id: int) -> Optional[dict]:
         return None
     return {"new_task": None if row[0] is None else bool(row[0]), "why": row[1],
             "asked_at": row[2], "decided_at": row[3]}
+
+
+# ---------------------------------------------------------------- another gatherer's, appended (`ag home merge`)
+
+#: The tables a channel goes on from, each with its columns that name rows. `_builds` apart: its ids are new where it is
+#: appended, and `cleaned_messages` names them.
+APPENDED = {"tasks": ("first_row", "last_row"), "_boundaries": ("row_id",), "cleaned_messages": ("row_id",)}
+BUILD_ROWS = ("through_row", "open_from_row", "parallel_mark")
+
+
+def append(conn, db: str, offset: int) -> None:
+    """Another gatherer's tables, attached as `db`, copied into `conn`'s (Policy.append): every channel's tasks, builds
+    (new ids), cleaned messages and boundary checks, their row ids moved by `offset` -- not the no-channel pool's, whose
+    every channel would take it up."""
+    def tables(schema):
+        return {r[0] for r in conn.execute(f"SELECT name FROM {schema}.sqlite_master WHERE type = 'table'")}
+
+    def columns(table, schema):
+        return [r[1] for r in conn.execute(f"PRAGMA {schema}.table_info({table})")]
+
+    here, there = tables("main"), tables(db)
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS build_map (old INTEGER PRIMARY KEY, new INTEGER)")
+    conn.execute("DELETE FROM build_map")
+    if "_builds" in here and "_builds" in there:
+        cols = [c for c in columns("_builds", db) if c in columns("_builds", "main") and c != "build_id"]
+        for row in conn.execute(f"SELECT build_id, {', '.join(cols)} FROM {db}._builds WHERE channel_key != '' "
+                                "ORDER BY build_id").fetchall():
+            values = [v + offset if c in BUILD_ROWS and isinstance(v, int) else v for c, v in zip(cols, row[1:])]
+            cur = conn.execute(f"INSERT INTO _builds ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", values)
+            conn.execute("INSERT INTO build_map VALUES (?, ?)", (row[0], cur.lastrowid))
+    for table, rows in APPENDED.items():
+        if table not in here or table not in there:
+            continue
+        cols = [c for c in columns(table, db) if c in columns(table, "main")]
+        values = [f"{c} + {int(offset)}" if c in rows else
+                  ("(SELECT new FROM temp.build_map WHERE old = s.build_id)" if c == "build_id" else c) for c in cols]
+        pool = " WHERE s.channel_key != ''" if "channel_key" in cols else ""
+        conn.execute(f"INSERT OR IGNORE INTO {table} ({', '.join(cols)}) SELECT {', '.join(values)} FROM {db}.{table} s{pool}")
