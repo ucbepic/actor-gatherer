@@ -21,6 +21,7 @@ what reads harnesses (ag's integrations, the dashboard) reads it through this pa
     pi.py, opencode.py  Pi and OpenCode, by name and look alone (Named): their rules are in their TypeScript adaptors
     marks/       each harness's mark, an SVG: <name>.svg
     shell.py     what a shell command reads and writes, read from its words: shared by every harness
+    processes.py whether a process runs, on every OS (`running`): for ag's integrations and the dashboard alike
     screen.py    a terminal's screen read back from what was printed to it (Screen): what each harness's `box` reads
                  to tell whether its message box, empty, has the keys
 """

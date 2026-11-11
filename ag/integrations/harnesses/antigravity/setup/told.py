@@ -18,6 +18,8 @@ reads them (ag_orchestrator/told.py, which has its own copy of `path`: the two s
 import os
 from typing import Optional
 
+from harness_kit.processes import running
+
 
 KINDS = ("txt", "cwd")                  # its instructions, its directory
 
@@ -53,12 +55,8 @@ def tidy(home: str) -> None:
         run, _, kind = name.partition(".")
         if kind not in KINDS or not run.isdigit():
             continue
-        try:
-            os.kill(int(run), 0)
-        except ProcessLookupError:
+        if not running(int(run)):                      # another user's process counts as still there
             try:
                 os.remove(os.path.join(folder, name))
             except OSError:
                 pass
-        except OSError:
-            pass                                       # another user's process: still there

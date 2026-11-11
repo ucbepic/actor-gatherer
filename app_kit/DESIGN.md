@@ -656,7 +656,10 @@ on its "+ ⋯" menu entry too.
 - **Each line's own status:** the line an actor is on now is the one its latest message names (`asked_of`); only it
   shows the actor working, or its question. A line the actor reported on since the user last wrote about it (or a
   ticked to-do) is Done, whatever the actor does next; another line sent to a busy actor waits ("After …"), else it
-  shows Sent. Whether the line itself is ticked or struck through is the agent's to do, with its tools. A message sent mid-turn becomes the
+  shows Sent. Only the user ends a line's work (accepts or cancels it), and that changes no line: the page stays as
+  written, the line's chip saying how its work ended. A to-do is ticked only by the user, which also ends its work as
+  done, and then it is struck through and folded away (the user, 2026-11-11: "don't mark anything done at all
+  automatically"). A message sent mid-turn becomes the
   latest one, so with two lines in one turn, the line it is on is the last one given it.
 - **The block after:** one status line under it: how that actor stands now (working, needs you, done), its latest
   report (or what it asks), and a button that opens the conversation. The conversation is never on the page (the user,

@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -28,7 +29,8 @@ class Base(unittest.TestCase):
         self.static = os.path.join(root, "ag_dashboard", "static")
         self.index = os.path.join(self.static, "index.html")
         self.bin = os.path.join(root, "bin")
-        for d in (os.path.join(self.front, "src"), self.bin):
+        self.fakes = os.path.join(root, "fakes")
+        for d in (os.path.join(self.front, "src"), self.bin, self.fakes):
             os.makedirs(d)
         self.write(os.path.join(self.front, "package.json"), json.dumps({"packageManager": "pnpm@12.16.1+sha512.ab"}))
         self.write(os.path.join(self.front, "src", "main.ts"), "")
@@ -45,9 +47,16 @@ class Base(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
 
-    def tool(self, name, script):
+    def tool(self, name, body=""):
+        """A stand-in for a program, on the test's PATH. `body` is Python, with `args` its arguments, the same on every
+        OS; what starts it is the OS's own: a .cmd on Windows, a shell script elsewhere."""
+        fake = os.path.join(self.fakes, name + ".py")
+        self.write(fake, "import os, sys\nargs = sys.argv[1:]\n" + body + "\n")
+        if os.name == "nt":
+            self.write(os.path.join(self.bin, name + ".cmd"), f'@"{sys.executable}" "{fake}" %*\n')
+            return
         path = os.path.join(self.bin, name)
-        self.write(path, "#!/bin/sh\n" + script + "\n")
+        self.write(path, f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n')
         os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
 
     def built_at(self, when):
@@ -90,31 +99,31 @@ class PnpmTest(Base):
 
     def test_a_node_too_old(self):
         for version in ("v18.20.0", "v20.18.3", "v21.7.0", "v22.11.0"):
-            self.tool("node", f"echo {version}")
-            self.tool("corepack", "exit 0")
+            self.tool("node", f"print({version!r})")
+            self.tool("corepack")
             with self.assertRaises(page_build.BuildError, msg=version) as got:
                 page_build.pnpm()
             self.assertIn(version, str(got.exception))
 
     def test_corepack_first(self):
-        self.tool("node", "echo v22.12.0")
+        self.tool("node", 'print("v22.12.0")')
         for name in ("corepack", "pnpm", "npx"):
-            self.tool(name, "exit 0")
-        self.assertEqual(page_build.pnpm(), ["corepack", "pnpm"])
+            self.tool(name)
+        self.assertEqual(page_build.pnpm(), [shutil.which("corepack"), "pnpm"])
 
     def test_a_pnpm_of_ones_own(self):
-        self.tool("node", "echo v20.19.1")
+        self.tool("node", 'print("v20.19.1")')
         for name in ("pnpm", "npx"):
-            self.tool(name, "exit 0")
-        self.assertEqual(page_build.pnpm(), ["pnpm"])
+            self.tool(name)
+        self.assertEqual(page_build.pnpm(), [shutil.which("pnpm")])
 
     def test_npx_fetches_the_version_named(self):
-        self.tool("node", "echo v25.1.0")                  # Node 25 comes without corepack
-        self.tool("npx", "exit 0")
-        self.assertEqual(page_build.pnpm(), ["npx", "--yes", "pnpm@12.16.1"])
+        self.tool("node", 'print("v25.1.0")')                  # Node 25 comes without corepack
+        self.tool("npx")
+        self.assertEqual(page_build.pnpm(), [shutil.which("npx"), "--yes", "pnpm@12.16.1"])
 
     def test_node_alone(self):
-        self.tool("node", "echo v22.12.0")
+        self.tool("node", 'print("v22.12.0")')
         with self.assertRaises(page_build.BuildError) as got:
             page_build.pnpm()
         self.assertIn("corepack, pnpm or npx", str(got.exception))
@@ -123,34 +132,40 @@ class PnpmTest(Base):
 class BuildTest(Base):
     def setUp(self):
         super().setUp()
-        self.tool("node", "echo v22.12.0")
+        self.tool("node", 'print("v22.12.0")')
         self.log = os.path.join(self.tmp.name, "log")
 
     def corepack(self, then=""):
-        self.tool("corepack", f'echo "$PWD $* $COREPACK_ENABLE_DOWNLOAD_PROMPT" >> {self.log}\n{then}')
+        self.tool("corepack", f'with open({self.log!r}, "a") as fh:\n'
+                              '    print(os.getcwd(), " ".join(args + [os.environ["COREPACK_ENABLE_DOWNLOAD_PROMPT"]]), '
+                              'sep="\\t", file=fh)\n' + then)
+
+    def builds(self):
+        return (f'if args[1] == "build":\n    os.makedirs({self.static!r}, exist_ok=True)\n'
+                f'    with open({self.index!r}, "w") as fh:\n        fh.write("built")')
 
     def test_installed_then_built(self):
-        self.corepack(f'[ "$2" = build ] && /bin/mkdir -p {self.static} && echo built > {self.index}\nexit 0')
+        self.corepack(self.builds())
         page_build.build(quiet=True)
         with open(self.log, encoding="utf-8") as fh:
             lines = fh.read().splitlines()
-        self.assertEqual([line.split(" ", 1)[1] for line in lines], ["pnpm install --frozen-lockfile 0", "pnpm build 0"])
-        self.assertEqual({os.path.realpath(line.split(" ", 1)[0]) for line in lines}, {os.path.realpath(self.front)})
+        self.assertEqual([line.split("\t")[1] for line in lines], ["pnpm install --frozen-lockfile 0", "pnpm build 0"])
+        self.assertEqual({os.path.realpath(line.split("\t")[0]) for line in lines}, {os.path.realpath(self.front)})
         self.assertIsNone(page_build.wrong())
 
     def test_a_failed_step_told_with_its_output(self):
-        self.corepack('echo "ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with frozen-lockfile"\nexit 3')
+        self.corepack('print("ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with frozen-lockfile")\nsys.exit(3)')
         with self.assertRaises(page_build.BuildError) as got:
             page_build.build(quiet=True)
         said = str(got.exception)
-        self.assertIn("corepack pnpm install --frozen-lockfile", said)
+        self.assertIn(shutil.which("corepack") + " pnpm install --frozen-lockfile", said)
         self.assertIn("exit 3", said)
         self.assertIn("ERR_PNPM_OUTDATED_LOCKFILE", said)
         with open(self.log, encoding="utf-8") as fh:
             self.assertEqual(len(fh.read().splitlines()), 1)   # no build after a failed install
 
     def test_ensure_builds_what_is_out_of_date(self):
-        self.corepack(f'[ "$2" = build ] && /bin/mkdir -p {self.static} && echo built > {self.index}\nexit 0')
+        self.corepack(self.builds())
         said = []
         page_build.ensure(said.append)
         self.assertEqual(said, ["the dashboard's page is not built: building it (the first time: frontend/'s "
@@ -160,7 +175,7 @@ class BuildTest(Base):
         self.assertEqual(len(said), 1)
 
     def test_ensure_tells_a_failed_build(self):
-        self.corepack("echo boom\nexit 1")
+        self.corepack('print("boom")\nsys.exit(1)')
         self.built_at(time.time() - 60)                    # built again (after a pull): quiet, its output told
         said = []
         page_build.ensure(said.append)

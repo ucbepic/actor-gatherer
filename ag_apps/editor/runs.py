@@ -20,13 +20,14 @@ import re
 import secrets
 import shlex
 import shutil
-import signal
 import subprocess
 import threading
 import time
 import urllib.error
 import urllib.request
 from typing import Callable, Dict, List, Optional, Tuple
+
+from harness_kit.processes import end_group
 
 from . import texlog
 
@@ -37,6 +38,20 @@ KEEP = 256_000              # the most bytes of a run's output kept: its last
 MAX_FILE = 100_000_000      # the largest file served
 URL = re.compile(r"https?://", re.I)
 NAMES = re.compile(r"\{(file|stem|name|dir)\}")
+
+
+def _shell() -> Optional[str]:
+    """The user's Unix shell, which a command is run through; None on a Windows with none (`SHELL` is set by Git
+    Bash and the like, and not by PowerShell): there, cmd.exe."""
+    given = os.environ.get("SHELL") or "/bin/sh"
+    return given if os.name != "nt" or os.path.exists(given) or os.path.exists(given + ".exe") else None
+
+
+def _word(text: str) -> str:
+    """`text` as one word of a command for the shell it is run through."""
+    return shlex.quote(text) if _shell() else subprocess.list2cmdline([text])
+
+
 #: What a guess runs a file of each kind with, and the kinds shown as they are.
 RUN_WITH = {".py": "python3 {file}", ".js": "node {file}", ".mjs": "node {file}", ".sh": "sh {file}",
             ".r": "Rscript {file}", ".rb": "ruby {file}", ".jl": "julia {file}"}
@@ -99,7 +114,7 @@ def expand(text: str, file: Optional[str], checkout: str, quote: bool = False) -
     if rel == ".." or rel.startswith(".." + os.sep):
         raise PreviewError(f"{file} is not in {checkout}")
     vals = {"file": rel, "stem": os.path.splitext(rel)[0], "name": os.path.basename(rel), "dir": os.path.dirname(rel) or "."}
-    return NAMES.sub(lambda m: shlex.quote(vals[m.group(1)]) if quote else vals[m.group(1)], text)
+    return NAMES.sub(lambda m: _word(vals[m.group(1)]) if quote else vals[m.group(1)], text)
 
 
 def inside(checkout: str, rel: str) -> Optional[str]:
@@ -145,7 +160,7 @@ def guess(file: Optional[str], checkout: str, folder: Optional[str] = None) -> d
 
 def _latex(main: str, checkout: str) -> dict:
     rel = os.path.relpath(main, checkout)
-    return {"command": LATEX + shlex.quote(rel), "show": os.path.splitext(rel)[0] + ".pdf"}
+    return {"command": LATEX + _word(rel), "show": os.path.splitext(rel)[0] + ".pdf"}
 
 
 def _tex_head(path: str) -> str:
@@ -294,12 +309,13 @@ class Runs:
             self._tell(r, "ended", r.view())
             return r
         env = {**self.env(), "AG_PREVIEW_FILE": file or "", "AG_PREVIEW_CHECKOUT": checkout, "BROWSER": "none"}
-        shell = os.environ.get("SHELL") or "/bin/sh"
+        shell = _shell()
+        run = {"args": [shell, "-c", cmd]} if shell else {"args": cmd, "shell": True}     # shell=True: cmd.exe /c
         try:
-            r.proc = subprocess.Popen([shell, "-c", cmd], cwd=checkout, env=env, stdin=subprocess.DEVNULL,
+            r.proc = subprocess.Popen(**run, cwd=checkout, env=env, stdin=subprocess.DEVNULL,
                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         except OSError as exc:
-            r.out += f"{shell}: {exc}\n".encode()
+            r.out += f"{shell or 'cmd.exe'}: {exc}\n".encode()
             r.state, r.ended = "failed", time.time()
             r.over.set()
             self._tell(r, "run", r.view())
@@ -375,9 +391,9 @@ class Runs:
         if p is None or r.over.is_set():
             return
         r.stopping = r.stopping or why
-        for sig, wait in ((signal.SIGTERM, STOP_WAIT), (signal.SIGKILL, 2.0)):
+        for force, wait in ((False, STOP_WAIT), (True, 2.0)):
             try:
-                os.killpg(p.pid, sig)
+                end_group(p.pid, force)
             except (ProcessLookupError, PermissionError):
                 pass
             if r.over.wait(wait):

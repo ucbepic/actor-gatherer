@@ -20,6 +20,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Sequence
 
+from harness_kit.processes import running
 from ag.cli.launch import REPO
 
 
@@ -45,13 +46,20 @@ def config_part(folder: str) -> str:
 
 
 def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return running(pid)
+
+
+def _detached(breakaway: bool = True) -> dict:
+    """Popen's options for a process that outlives the run that started it. POSIX: a session of its own.
+    Windows ignores start_new_session; there it gets no console (so closing the terminal, or Ctrl-C in it, does
+    not end it), a process group of its own and, with `breakaway`, leaves the job ag runs in: the launcher pip
+    installs as ag.exe puts its python in a job that is killed when ag.exe exits."""
+    if os.name == "nt":
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        if breakaway:
+            flags |= subprocess.CREATE_BREAKAWAY_FROM_JOB
+        return {"creationflags": flags}
+    return {"start_new_session": True}
 
 
 def _listening(port: int) -> bool:
@@ -137,8 +145,12 @@ class HookServers:
         env = {**os.environ, "AG_HOME": self.home,
                "PYTHONPATH": os.pathsep.join(p for p in (REPO, os.environ.get("PYTHONPATH")) if p)}
         with open(log, "ab") as out:
-            proc = subprocess.Popen(argv, cwd=REPO, env=env, stdin=subprocess.DEVNULL, stdout=out,
-                                    stderr=subprocess.STDOUT, start_new_session=True)
+            try:
+                proc = subprocess.Popen(argv, cwd=REPO, env=env, stdin=subprocess.DEVNULL, stdout=out,
+                                        stderr=subprocess.STDOUT, **_detached())
+            except PermissionError:          # Windows: a job that may not be left
+                proc = subprocess.Popen(argv, cwd=REPO, env=env, stdin=subprocess.DEVNULL, stdout=out,
+                                        stderr=subprocess.STDOUT, **_detached(breakaway=False))
         server = HookServer(port, proc.pid, upstream, setup, log_dir, options, trace_root)
         with open(os.path.join(self.directory, f"{port}.json"), "w", encoding="utf-8") as fh:
             json.dump(asdict(server), fh)
@@ -157,7 +169,7 @@ class HookServers:
     def stop(self, server: HookServer) -> None:
         try:
             os.kill(server.pid, signal.SIGTERM)
-        except ProcessLookupError:
+        except OSError:                      # gone already (on Windows a bare OSError, not ProcessLookupError)
             pass
         for _ in range(50):
             if not _alive(server.pid):

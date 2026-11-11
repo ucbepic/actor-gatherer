@@ -400,7 +400,8 @@ function railName(a) {
 }
 // A TASK in the rail (05-agent-list.js's TASKS): one tile where its first actor comes, as an actor's -- its actors'
 // faces grouped in the room of one avatar (two side by side, more in a square of four), its lead's state at its corner,
-// its name under it -- pressed, opened (openTask); hovered, its card.
+// its name under it, and its row's bookmark and × (taskSaveButton, taskCloseButton) left of its faces, where an actor's
+// are -- pressed, opened (openTask); hovered, its card.
 const railTasksDrawn = new Set();
 // the mark of an actor's or a task's apps in the rail: small, at its avatar's top right corner, outside it -- its first
 // app's, one of a kind (two Browsers, one mark), the status dot at the corner under it left clear
@@ -443,10 +444,12 @@ function railTask(g, t) {
   el("span", { class: "r-pic" }, el("span", { class: `logo r-group n${faces.length}` }, ...faces),
     lead || cls === "notified" ? el("i", { class: `rd ${cls}`, "aria-hidden": "true", style: `--spin-at: -${Date.now() % 1200}ms` }) : null,
     all.length ? railApps(apps) : null),
-  el("span", { class: "r-name", "aria-hidden": "true", text: name }));
+  el("span", { class: "r-name", "aria-hidden": "true", text: name }),
+  taskSaveButton(g, t), taskCloseButton(g, t));
   return first ? dropOnItem(dragItems(tile, g, () => taskItems(g, t.id)), g, first) : tile;   // dragged: all in it
 }
-// An app in no task, in the rail: its mark where an actor's face is, what it shows under it -- pressed, selected
+// An app in no task, in the rail: its mark where an actor's face is, what it shows under it, its × (closeApp) where an
+// actor's is -- pressed, selected
 function railApp(g, o) {
   const chosen = appSelected() === o.id, shown = !chosen && panes.apps.some((p) => !p.held && p.instance.id === o.id), k = appItem(o.id);
   const told = appStatusOf(g.name, o.id);
@@ -455,7 +458,9 @@ function railApp(g, o) {
     "aria-label": `${appTitle(o)}, an app, in ${titleOf(g)}${told ? `: ${told[1]}` : ""}`,
     ...(HOVERS.matches ? {} : { title: `${appTitle(o)} · ${titleOf(g)}` }), onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); } },
   el("span", { class: "r-pic" }, appFace(o), told ? el("i", { class: `rd ${told[0]}`, "aria-hidden": "true" }) : null),
-  el("span", { class: "r-name", "aria-hidden": "true", text: o.title || o.app.label }));
+  el("span", { class: "r-name", "aria-hidden": "true", text: o.title || o.app.label }),
+  SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}: the app closed`, "aria-label": `Close ${o.app.label}` },
+    () => closeApp(g.name, o), closeIcon()));
   return dropOnItem(dragItems(tile, g, () => [k]), g, k);
 }
 function railActor(g, a) {
@@ -598,7 +603,7 @@ function actorCard(g, a, shown = false) {
 // A task's card (05-agent-list.js's TASKS), live in the list and the rail: its name, its gatherer and what it holds, "+"
 // (an agent or an app added) and its pencil (it renamed, its name box under them while it is), then its items -- its actors, the lead first, as its row has them, each shown by a click
 // (⌘/Ctrl: beside the one shown); then its apps, each selected by a click (05-agent-list.js's selectApp) -- each with its
-// own × taking it out of the task (takeOut).
+// own close (closeApp: the app closed for good, as its row's × does) and a mark taking it out of the task (takeOut).
 function taskCard(g, t) {
   const rank = (a) => LEAD_RANK[groupOf(g, a)] ?? 9;
   const all = taskMembers(g, t.id).sort((x, y) => rank(x) - rank(y) || (y.last || 0) - (x.last || 0)), lead = taskLead(g, t.id), apps = taskApps(g, t.id);
@@ -628,6 +633,8 @@ function taskCard(g, t) {
       el("button", { class: "c-row", type: "button", title: `${o.app.label}: select it, its panel above the panes`,
         onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); } },
       appMarkOf(o), el("span", { class: "nm", text: o.name || o.app.label }), el("span", { class: "st", text: o.title || "" })),
+      SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}: the app closed, and out of the task`, "aria-label": `Close ${o.app.label}` },
+        () => closeApp(g.name, o), closeIcon()),
       el("button", { class: "act take-out", type: "button", title: `Take it out of the task: an app on its own again, the task's agents detached from it`,
         "aria-label": `Take ${o.app.label} out of the task`, onclick: (ev) => { ev.stopPropagation(); takeOut(g.name, appItem(o.id)); } },
       strokeIcon(ICONS.takeOut, 13))))),
@@ -636,14 +643,15 @@ function taskCard(g, t) {
   ].filter(Boolean);
 }
 // An app's card (an app in no task: its row, its tile in the rail), live: what it is and shows -- the user's name for it
-// over them -- its pencil (it renamed, its name box under it while it is), its notifications
+// over them -- its pencil (it renamed, its name box under it while it is) and its × (closeApp), its notifications
 function appCard(g, o) {
   return [
     el("div", { class: "c-who" }, appFace(o),
       el("div", { class: "tx" }, el("div", { class: "c-nm", text: appShown(o) }),
         el("div", { class: "c-sub", text: [titleOf(g), o.app.label, o.name ? o.title : null, o.folder].filter(Boolean).join(" · ") }))),
     SNAPSHOT ? null : el("div", { class: "c-acts" },
-      cardAct("rename", `${o.name ? "Rename" : "Name"} ${o.app.label}`, strokeIcon(ICONS.pencil, 13), () => editInCard({ g: g.name, item: appItem(o.id) }))),
+      cardAct("rename", `${o.name ? "Rename" : "Name"} ${o.app.label}`, strokeIcon(ICONS.pencil, 13), () => editInCard({ g: g.name, item: appItem(o.id) })),
+      cardAct("close", `Close ${o.app.label}: the app closed`, closeIcon(), () => { cardHide(); closeApp(g.name, o); })),
     SNAPSHOT ? null : cardEditBox(g.name),
     noticeList(g, o) || el("div", { class: "c-st", text: "No notifications" }),
     el("div", { class: "c-hint", text: "Click to show its panel · drag it onto an actor or a task to put it there · double-click its name in the list or its panel to rename it" }),
