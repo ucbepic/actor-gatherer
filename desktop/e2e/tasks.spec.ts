@@ -84,6 +84,52 @@ const pagesOf = (app: ElectronApplication) =>
     }),
   );
 
+/** The shown native page at `url`: its own size (innerWidth x innerHeight) and its view's. */
+const sizeOf = (app: ElectronApplication, url: string) =>
+  app.evaluate(async ({ BrowserWindow }, url) => {
+    for (const v of BrowserWindow.getAllWindows()[0].contentView.children) {
+      const wc = (v as Electron.WebContentsView).webContents;
+      if (!v.getVisible() || !wc || wc.getURL() !== url) continue;
+      const [w, h] = (await wc.executeJavaScript("[innerWidth, innerHeight]")) as number[];
+      return { page: { width: w, height: h }, view: v.getBounds() };
+    }
+    return null;
+  }, url);
+type Box = { width: number; height: number };
+/** That page shown, its view as `wanted` (by default, any), laid out at its view's size: drawn over its whole pane, no
+ * more, no less. */
+async function fits(app: ElectronApplication, url: string, what: string, wanted = (_: Box) => true): Promise<Box> {
+  let last: Awaited<ReturnType<typeof sizeOf>> = null;
+  await until(async () => {
+    last = await sizeOf(app, url);
+    return !!last && wanted(last.view) && last.page.width === last.view.width && last.page.height === last.view.height;
+  }, 10_000).catch(() => {
+    throw new Error(`${what}: the page is ${JSON.stringify(last?.page)}, its view ${JSON.stringify(last?.view)}`);
+  });
+  return last!.view;
+}
+/** The app's window made `by` px narrower (its size is kept for the next run: made wider again after). */
+const narrower = (app: ElectronApplication, by: number) =>
+  app.evaluate(({ BrowserWindow }, by) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    const [cw, ch] = w.getContentSize();
+    w.setContentSize(cw - by, ch);
+  }, by);
+/** The app, its window in front (one behind others gets no new sizes until it is in front: Chromium's occlusion). */
+async function launchInFront(): Promise<{ app: ElectronApplication; page: Page }> {
+  const app = await electron.launch({ args: [DESKTOP, "--home", home, "--port", String(port)], env: env() });
+  if (process.env.AG_E2E_DEBUG) app.process().stdout?.on("data", (d) => process.stdout.write(`[app] ${d}`));
+  const page = await app.firstWindow();
+  await page.waitForURL(`http://127.0.0.1:${port}/`, { timeout: 60_000 });
+  await app.evaluate(({ app: a, BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    w.show();
+    a.focus({ steal: true });
+    w.focus();
+  });
+  return { app, page };
+}
+
 test.beforeAll(async () => {
   scratch = mkdtempSync("/tmp/agm-");
   home = path.join(scratch, "home");
@@ -228,6 +274,81 @@ test("its pages shown again after the page is reloaded, and after the dashboard 
     await expect(panels).toHaveCount(2);
     await until(both, 30_000).catch(async (e) => { console.log("after restart:", JSON.stringify(await pagesOf(app))); throw e; });
   } finally {
+    await app.close();
+  }
+});
+
+// An actor's Browser shown again at another size than its pane had when it was hidden (here the window made narrower
+// while another actor showed; as often the chat minimized or shown under it in another task), its actor's row clicked
+// in the list -- its hover card over the pane as it comes back, so the app pictures the page meanwhile: the page then
+// follows its pane's resizes, the chat minimized and shown again under it. (Chrome put back the hidden page's emulation
+// once the picture was made, after the page showed: browsers.ts's `reemulate`.)
+test("a Browser shown again at another size keeps up with its pane: the chat minimized and shown under it", async () => {
+  const { app, page } = await launchInFront();
+  const url = `${site}one`;
+  let narrowed = false;
+  try {
+    const row = (c: string) => rowOf(page, c);
+    const panels = page.locator("#top-row .app-pane[data-app=browser]");
+    await (await row(otherAgent)).click();
+    await expect(panels).toHaveCount(1);
+    expect((await ask(`/api/w/g/${keys[2]}/nav`, { url }, "browser")).done).toBe(url);
+    const first = await fits(app, url, "shown");
+    await (await row(agent)).click();
+    await expect(panels).toHaveCount(2);
+    await narrower(app, 200);
+    narrowed = true;
+    await (await row(otherAgent)).click();
+    await expect(panels).toHaveCount(1);
+    const again = await fits(app, url, "shown again, narrower", (v) => v.width < first.width);
+    await page.locator('button[aria-label="Minimize the chat"]').first().click();
+    await fits(app, url, "the chat minimized", (v) => v.height > again.height + 100);
+    await page.locator("button.mini-back").first().click();
+    await fits(app, url, "the chat shown again", (v) => v.height === again.height);
+  } finally {
+    if (narrowed) await narrower(app, -200).catch(() => {});
+    await app.close();
+  }
+});
+
+// The same, with nothing but a card of the dashboard's over the pane as the Browser comes back at its new size, gone
+// while the app is still picturing the page: the page then follows its pane's resizes.
+test("a Browser shown while its still picture is being taken keeps up with its pane: the chat minimized under it", async () => {
+  const { app, page } = await launchInFront();
+  const url = `${site}two`;
+  let narrowed = false;
+  try {
+    const row = (c: string) => rowOf(page, c);
+    const panels = page.locator("#top-row .app-pane[data-app=browser]");
+    await (await row(otherAgent)).click();
+    await expect(panels).toHaveCount(1);
+    expect((await ask(`/api/w/g/${keys[2]}/nav`, { url }, "browser")).done).toBe(url);
+    await fits(app, url, "shown");
+    const pane = (await panels.first().boundingBox())!;
+    await (await row(agent)).click();
+    await expect(panels).toHaveCount(2);
+    await narrower(app, 200);
+    narrowed = true;
+    // a card over where its pane comes back (its actor's own hover card kept away): the page's picture asked for
+    await page.evaluate((b) => {
+      const d = document.createElement("div");
+      d.id = "e2e-cover";
+      Object.assign(d.style, { position: "fixed", left: `${b.x}px`, top: `${b.y}px`, width: `${b.width}px`,
+        height: `${b.height}px`, zIndex: "99999", background: "rgba(128,128,128,0.2)" });
+      document.body.append(d);
+    }, pane);
+    await (await row(otherAgent)).click();
+    await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height + 150); // (off the list: no hover card)
+    await expect(panels).toHaveCount(1);
+    await until(async () => (await pagesOf(app)).some((p) => p.url === url && !p.visible), 5_000); // under its picture
+    await new Promise((r) => setTimeout(r, 300));
+    await page.evaluate(() => document.getElementById("e2e-cover")?.remove()); // the card gone: the page shown
+    const shown = await fits(app, url, "shown after the card went", (v) => v.width < pane.width);
+    await new Promise((r) => setTimeout(r, 3500)); // (its picture made by now: PICTURE_WAIT)
+    await page.locator('button[aria-label="Minimize the chat"]').first().click();
+    await fits(app, url, "the chat minimized", (v) => v.height > shown.height + 100);
+  } finally {
+    if (narrowed) await narrower(app, -200).catch(() => {});
     await app.close();
   }
 });
