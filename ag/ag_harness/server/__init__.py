@@ -461,8 +461,9 @@ class Server:
             return
         own = dict(zip(names, values))
         if not manager.latest(gatherer, own, 1, types=[GROUP]):
-            for e in self.events_of(manager, gatherer, [{"type": GROUP, "id": f"{GROUP}:first",
-                                                          "payload": {"group": gatherer}}], own):
+            # its id names the conversation: a read returns an id once, where it was first stored, whatever its channel
+            first = f"{GROUP}:{':'.join(str(v) for v in values)}:first"
+            for e in self.events_of(manager, gatherer, [{"type": GROUP, "id": first, "payload": {"group": gatherer}}], own):
                 manager.insert(gatherer, e)
         self.grouped_seen.add((gatherer, values))
 

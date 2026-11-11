@@ -192,6 +192,9 @@ class FirstGroupTest(test_server.HomeBase):
         self.put("b", "c2", test_server.DEV, test_server.user("q", 1))
         self.put("a", "c1", test_server.user("more", 2))
         self.assertEqual(self.groups(), [("c1", "a"), ("c2", "b")])
+        ids = [e for (e,) in sqlite3.connect(paths.home_db()).execute(
+            "SELECT e.event_id FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id WHERE t.name = 'group'")]
+        self.assertEqual(len(set(ids)), 2)              # one id each: a read returns an id once, whatever its channel
         self.assertEqual(next(t for _, c, t, _ in self.stored() if c == "c1"), "group")     # before its first event
 
     def test_never_over_a_record_it_has(self):
