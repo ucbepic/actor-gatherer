@@ -652,7 +652,7 @@ on its "+ ⋯" menu entry too.
   actor on a harness the dashboard runs; a box in the picker takes instructions to add to the line. The message is the
   user's own, as Chat sends one: a note first, "(From my Notes, page "…", block <id>. …)" -- first, so what the list
   keeps of a message (cut at 600 characters) still names the line -- then the line's words and what was added. The
-  block keeps who it went to and with what (`to`, `sent`, `extra`).
+  block keeps who it went to and with what: a call per agent (`calls`: `to`, `sent`, `extra`, `group`, `dropped`).
 - **Each line's own status:** the line an actor is on now is the one its latest message names (`asked_of`); only it
   shows the actor working, or its question. A line the actor reported on since the user last wrote about it (or a
   ticked to-do) is Done, whatever the actor does next; another line sent to a busy actor waits ("After …"), else it
@@ -675,11 +675,26 @@ on its "+ ⋯" menu entry too.
   copied or cut (markdown, plus their own clipboard type so Notes pastes them back as they were), indented, moved,
   duplicated, ticked or turned into a type together. Sent to an agent, they go as ONE message: the note names every
   line, "blocks <id>, <id>, …", in the order the lines follow it as markdown, and asks for a report on each. `[asked]`'s
-  third group is then those ids, ", " between, and every one of them is a line the actor is on. Each line keeps `to`,
-  `sent` and `extra` as one sent alone, and a `group` id they share. They show ONCE, at the last of them (the user:
+  third group is then those ids, ", " between, and every one of them is a line the actor is on. Each line keeps a call
+  to it as one sent alone, with a `group` id their calls share. They show ONCE, at the last of them (the user:
   "the agent should only show once at the end of what was selected, not all the lines"): one status for them all
   (working or asking as the actor is, "1 of 2 done", Done once it reported on each) and one conversation -- the lines
   as sent, the user's replies (about them all, kept on the last), and a report on each, saying which line.
+- **Several agents on a line, and one taken off** (2026-11-11, the user: "allow removing agent assignment to a note,
+  and also adding another agent call for a line"): a line keeps a call per agent it went to, in the order sent
+  (`calls`; a notebook from before, its one `to`, is read as its one call). Its "+" (on hover, at the end of the line;
+  also the conversation's head and the line's menu) sends it to another agent, the picker leaving out those it is with;
+  the note then says so ("I sent this line to actor <id> too; this message is for you"). Each agent shows its own chip,
+  with how the line stands with it; the line as a whole (the Work page) stands as the most pressing of them -- asking,
+  working, to review, queued -- and is accepted or canceled as one. The conversation beside the page is a tab per
+  agent: the line as sent to it, the user's messages to it (each thread line names its `to`), its reports. "Remove
+  from this line" (the conversation, or the line's menu) marks its call `dropped`: its chip goes, its tab and what was
+  said stay, an agent still on the line or yet to take it up is told to leave it (a message, as Cancel's), and its
+  `notes_report` on the line is refused since. Sent to it again, the call is its own again. Taken off every agent, the
+  line is still a work item, sent to no one. The same words sent to two actors of one gatherer meet the context
+  policy's requests made in parallel: the second gets the first's message, framed "not addressed to you", in the
+  same user turn as its own. Haiku then took its own message for the other session's too and did nothing; the
+  default model did its part.
 - **What the contract gained, each general:**
   - capability `message_actors`: the SDK's `ag.actors.send` / `answer` / `start` / `show`, for any actor of the
     panel's gatherer ("gatherer": its gatherer agent, started if it has none), as Chat does them. `message_agents`

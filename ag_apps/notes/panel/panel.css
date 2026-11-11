@@ -195,6 +195,13 @@ body.dragging .pk-bar, body.sweeping .pk-bar, body.banding .pk-bar { opacity: .5
 .talk.answer { border: 1px solid color-mix(in srgb, #e89600 55%, transparent); color: color-mix(in srgb, #8a5200 85%, var(--ink)); padding: 0 9px; }
 .talk.answer:hover { background: color-mix(in srgb, #e89600 12%, transparent); }
 .blk.convo-on { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+/* on a sent line's hover: send it to another agent too (its own Assign/Ask button is hidden once it is sent) */
+.sent .add-agent { flex: none; display: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--muted); }
+.blk:hover > .sent .add-agent, .sent .add-agent:focus-visible { display: grid; }
+.sent .add-agent:hover { background: var(--wash); color: var(--ink); }
+body.dragging .sent .add-agent { display: none; }
+@media (hover: none) { .sent .add-agent { display: grid; } }
+.chip .face + .face { margin-left: -7px; box-shadow: 0 0 0 1.5px var(--surface, #fff); }   /* ended, with several agents: their avatars, one chip */
 .chip { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 2px; border-radius: 10px; font-size: 12px;
   background: var(--wash); color: var(--ink-2, var(--ink)); max-width: 100%; }
 .chip > span:not(.face) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -245,6 +252,20 @@ button.chip:hover { box-shadow: 0 0 0 1px var(--ring); }
 .cv-about:hover { text-decoration: underline; }
 .cv-chat { font-size: 12.5px; color: var(--md-link, var(--accent)); }
 .cv-chat:hover { text-decoration: underline; }
+/* a line sent to several agents: one tab each, how it stands with that one; + sends it to another; Remove takes it back */
+.cv-tabs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.cv-tab { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; height: 28px; padding: 0 6px 0 4px; border-radius: 7px;
+  font-size: 12.5px; color: var(--muted); }
+.cv-tab b { font-weight: 550; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-tab .pill { font-size: 11px; }
+.cv-tab:hover { background: var(--wash); color: var(--ink); }
+.cv-tab.on { background: var(--wash); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ring); }
+.cv-add { margin-left: auto; flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); }
+.cv-add:hover { background: var(--wash); color: var(--ink); }
+.cv-add + .cv-x { margin-left: 0; }
+.cv-links { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.cv-drop { font-size: 12.5px; color: var(--muted); }
+.cv-drop:hover { color: var(--critical, #c53030); text-decoration: underline; }
 .cv-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; }
 .msg { display: flex; gap: 7px; align-self: flex-start; max-width: 88%; }
 .msg.you { align-self: flex-end; }

@@ -36,8 +36,9 @@ report goes into that line's conversation, beside the page, not on the page: it 
 Your answer itself goes as always.
 
 A line sent to you is one of the user's work items, and only the user says when one is done: they review your report
-and accept it, or send it back with what is left (a reply). Never tick or end a work item yourself. A note saying the
-user canceled a line means: stop any work on it, and don't report on it."""
+and accept it, or send it back with what is left (a reply). Never tick or end a work item yourself. A line may go to
+other agents too: report on your part of it. A note saying the user canceled a line, or took it back from you, means:
+stop any work on it, and don't report on it."""
 
 [asked]
 when = 'my Notes, page "'

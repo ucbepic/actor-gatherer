@@ -23,27 +23,32 @@ The ops (each a dict, `op` its kind):
     page.delete   {page}            into the trash, with its subpages
     page.restore  {page}            out of it, with what went in with it
     page.purge    {page}            gone for good, with its subpages (a page in the trash only)
-    block.put     {page, block: {id, type?, text?, checked?, indent?, to?, sent?, extra?, group?, work?, ended?,
-                  ended_at?}, after?}   a new block
+    block.put     {page, block: {id, type?, text?, checked?, indent?, calls?, work?, ended?, ended_at?}, after?}
+                                    a new block
                                     (after the block `after`; "": first; none: last), or what is given of one there
                                     changed
     block.move    {page, block, after}
     block.delete  {page, block}      (its thread with it)
-    thread.add    {page, block, line: {id, by, text, at?, done?, results?}}   a line of the block's thread, at its end
+    thread.add    {page, block, line: {id, by, to?, text, at?, done?, results?}}   a line of the block's thread, at
+                                    its end
 
-A block sent to an agent (the panel sends it, as the user's message: an actor of the gatherer, or its gatherer agent)
-says so: `to`, the actor's channel, `sent`, when, and `extra`, what the user added to it when they sent it (their
-instructions beyond the line's words), if anything; `group`, when it went with other lines in one message, an id
-those lines share (a line sent alone again has none). What is said about it after -- the user's replies, sent to that
-agent too, and the agent's reports (the Notes app's notes_report) -- is the block's `thread`: lines, each `by` "user" or
-"agent:<its channel>", in the order written; an agent's report may say it finished (`done`) and name what it made
-(`results`: files, a branch, a PR). An `agents` block holds no text: the panel draws the gatherer's actors there, as
-they are now; a `work` block, the user's open work items.
+A block sent to agents (the panel sends it, as the user's message: to actors of the gatherer, or its gatherer agent)
+says so: its `calls`, one for each agent it went to, in the order sent -- `to`, the actor's channel, `sent`, when,
+`extra`, what the user added to it when they sent it (their instructions beyond the line's words), if anything;
+`group`, when it went with other lines in one message, an id those lines share (a line sent alone has none); and
+`dropped`, when the user took it back from that agent, if they did (the agent told to leave it: its reports on it are
+refused since; sent to it again, the call is that agent's again). What is said about it after -- the user's replies,
+each sent to one of its agents (the line's `to`), and the agents' reports (the Notes app's notes_report) -- is the
+block's `thread`: lines, each `by` "user" or "agent:<its channel>", in the order written; an agent's report may say it
+finished (`done`) and name what it made (`results`: files, a branch, a PR). An `agents` block holds no text: the panel
+draws the gatherer's actors there, as they are now; a `work` block, the user's open work items. (A notebook kept
+before a line could go to several agents said who one went to as the block's own `to`, `sent`, `extra` and `group`:
+read, it becomes the block's one call. A block.put giving `to` still sets the line's one call -- "" none.)
 
-WORK ITEMS: the lines the user tracks -- each sent to an agent (`to`), or marked as one (`work`, kept when it is sent,
-so a line sent to no one again is still one). The user alone says when one is over (`ended`, "done" or "canceled", and
-`ended_at`): a to-do work item is done as it is ticked. How one stands otherwise (sent, worked on, waiting for the user's
-review) is not kept: the panel reads it from its actor, as it is now.
+WORK ITEMS: the lines the user tracks -- each sent to an agent (a call not dropped), or marked as one (`work`, kept
+when it is sent, so a line taken back from every agent is still one). The user alone says when one is over (`ended`,
+"done" or "canceled", and `ended_at`): a to-do work item is done as it is ticked. How one stands otherwise (sent,
+worked on, waiting for the user's review) is not kept: the panel reads it from its actors, as they are now.
 
 A block an agent wrote from its own conversation with the user -- what it found, worked out or decided with them, not
 words the user told it to put down (the Notes app's notes_add and notes_change, `from_conversation`) -- names its
@@ -87,6 +92,7 @@ ENDED = ("done", "canceled")
 MAX_RESULTS = 8                   # what a report names it made
 MAX_RESULT = 300
 MAX_THREAD = 200                  # a block's thread keeps its last lines
+MAX_CALLS = 20                    # the agents a block went to
 MAX_LINE = 4_000
 _ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
 
@@ -99,9 +105,22 @@ def new_id() -> str:
     return "".join(secrets.choice(_ID_CHARS) for _ in range(8))
 
 
+def calls_of(b: dict) -> List[dict]:
+    """Who a block went to: its calls, one an agent, in the order sent -- those taken back too (`dropped`)."""
+    calls = b.get("calls")
+    if isinstance(calls, list):
+        return [c for c in calls if isinstance(c, dict) and c.get("to")]
+    return [{k: b[k] for k in ("to", "sent", "extra", "group") if b.get(k)}] if b.get("to") else []
+
+
+def on_it(b: dict) -> List[dict]:
+    """The agents a block is with now: its calls not taken back."""
+    return [c for c in calls_of(b) if not c.get("dropped")]
+
+
 def is_work(b: dict) -> bool:
     """A work item: a line sent to an agent, or marked as one."""
-    return b.get("type") not in UNSENT and bool(b.get("to") or b.get("work"))
+    return b.get("type") not in UNSENT and bool(on_it(b) or b.get("work"))
 
 
 def ended_of(b: dict) -> str:
@@ -374,6 +393,10 @@ class Notebook:
                     d = json.load(fh)
                 self.version = int(d.get("version") or 0)
                 self.pages = [p for p in d.get("pages") or [] if isinstance(p, dict) and ID.match(str(p.get("id")))]
+                for p in self.pages:
+                    for b in p.get("blocks") or []:
+                        if isinstance(b, dict) and "calls" not in b and "to" in b:
+                            _as_calls(b)
             except (OSError, ValueError, TypeError):
                 bad = f"{path}.unreadable-{int(time.time())}"         # kept aside, never written over
                 try:
@@ -481,19 +504,25 @@ class Notebook:
                 who = lambda by: ("the user" if by == "user"                       # noqa: E731
                                   else f"actor {by[6:]}{' (you)' if me and by[6:] == me else ''}")
                 flat = lambda h: " / ".join(inline_markdown(h, self.link_title).splitlines())        # noqa: E731
+                actor = lambda ch: f"actor {ch}{' (you)' if me and ch == me else ''}"         # noqa: E731
                 lines += ["", "The user's work items on this page (each: who it went to, whether the user has ended "
                               "it -- only the user says when one is done -- then what was said about it):"]
                 for b in sent:
-                    to, ended = b.get("to"), ended_of(b)
-                    lines.append(f"- [{b['id']}] " + (f"sent to actor {to}{' (you)' if me and to == me else ''}"
-                                                      if to else "sent to no one yet")
-                                 + (f", with: {flat(b['extra'])}" if b.get("extra") else "")
+                    calls, ended = calls_of(b), ended_of(b)
+                    went = [f"sent to {actor(c['to'])}" + (f", with: {flat(c['extra'])}" if c.get("extra") else "")
+                            for c in calls if not c.get("dropped")]
+                    back = [actor(c["to"]) for c in calls if c.get("dropped")]
+                    lines.append(f"- [{b['id']}] " + ("; also ".join(went) or "sent to no one now" if calls
+                                                      else "sent to no one yet")
+                                 + (f"; taken back from {', '.join(back)}" if back else "")
                                  + {"done": "; the user accepted it as done", "canceled": "; the user canceled it",
                                     "": ""}[ended])
+                    several = len(calls) > 1
                     for line in b.get("thread") or []:
                         made = f" (made: {', '.join(line['results'])})" if line.get("results") else ""
                         said = " (said it is done)" if line.get("done") and line["by"] != "user" else ""
-                        lines.append(f"    {who(line['by'])}: {flat(line['text'])}{said}{made}")
+                        to = f" (to {actor(line['to'])})" if several and line.get("to") else ""
+                        lines.append(f"    {who(line['by'])}{to}: {flat(line['text'])}{said}{made}")
             lines += sources_lines(page.get("blocks", []), me, self.link_title)
             subs = self.children(page["id"])
             if subs:
@@ -720,26 +749,22 @@ def _block(b: Any, was: Optional[dict], kind: str) -> dict:
     except (TypeError, ValueError):
         raise NotebookError(f"{kind}: a block's `indent` is a whole number") from None
     out = {"id": b["id"], "type": t, "text": text, "checked": bool(b.get("checked")) and t == "todo", "indent": indent}
-    to = b.get("to") or ""
-    if to and t not in UNSENT:
-        if not isinstance(to, str) or not CHANNEL.match(to):
-            raise NotebookError(f"{kind}: a block's `to` is the channel of the actor it was sent to")
-        out["to"], out["sent"] = to, _when(b.get("sent"), kind)
-        extra = b.get("extra")
-        if extra is not None and not isinstance(extra, str):
-            raise NotebookError(f"{kind}: a block's `extra` is what the user added to it, a string")
-        if extra and clean_html(extra[:MAX_LINE]):
-            out["extra"] = clean_html(extra[:MAX_LINE])
-        group = b.get("group") or ""
-        if group:
-            if not isinstance(group, str) or not ID.match(group):
-                raise NotebookError(f"{kind}: a block's `group` is the id the lines sent with it in one message share, "
-                                    f"6-24 of a-z and 0-9")
-            out["group"] = group
+    if "to" in b:                                         # (the line's one agent, as a notebook said it before)
+        b = _as_calls(dict(b))
+    calls = b.get("calls") or []
+    if not isinstance(calls, list):
+        raise NotebookError(f"{kind}: a block's `calls` is a list: {{to, sent, extra?, group?, dropped?}} an agent")
+    if calls and t not in UNSENT:
+        kept: Dict[str, dict] = {}
+        for c in calls:
+            c = _call(c, kind)
+            kept.pop(c["to"], None)                                 # (one call an agent: the last given)
+            kept[c["to"]] = c
+        out["calls"] = list(kept.values())[-MAX_CALLS:]
     if b.get("work") and t not in UNSENT:
         out["work"] = True
     ended = b.get("ended") or ""
-    if ended and (out.get("to") or out.get("work")):              # (a line no longer a work item: nothing to end)
+    if ended and is_work(out):                                      # (a line no longer a work item: nothing to end)
         if ended not in ENDED:
             raise NotebookError(f"{kind}: a block's `ended` is how the user ended it, {' or '.join(ENDED)}")
         out["ended"], out["ended_at"] = ended, _when(b.get("ended_at"), kind)
@@ -753,6 +778,38 @@ def _block(b: Any, was: Optional[dict], kind: str) -> dict:
         if not isinstance(source, str) or not CHANNEL.match(source):
             raise NotebookError(f"{kind}: a block's `source` is the channel of the agent that wrote it")
         out["source"], out["source_at"] = source, _when(b.get("source_at"), kind)
+    return out
+
+
+def _as_calls(b: dict) -> dict:
+    """A block that says who it went to as a notebook said it before (`to`, `sent`, `extra`, `group`: one agent), as
+    its calls -- that one, or none (`to` ""). Changed in place, and returned."""
+    old = {k: b.pop(k) for k in ("to", "sent", "extra", "group") if k in b}
+    b["calls"] = [{k: v for k, v in old.items() if v}] if old.get("to") else []
+    return b
+
+
+def _call(c: Any, kind: str) -> dict:
+    """A block's call as kept: {to, sent, extra?, group?, dropped?}."""
+    if not isinstance(c, dict):
+        raise NotebookError(f"{kind}: a call is {{to, sent, extra?, group?, dropped?}}: who the line went to, and when")
+    to = c.get("to")
+    if not isinstance(to, str) or not CHANNEL.match(to):
+        raise NotebookError(f"{kind}: a call's `to` is the channel of the actor the line was sent to")
+    out = {"to": to, "sent": _when(c.get("sent"), kind)}
+    extra = c.get("extra")
+    if extra is not None and not isinstance(extra, str):
+        raise NotebookError(f"{kind}: a call's `extra` is what the user added to the line, a string")
+    if extra and clean_html(extra[:MAX_LINE]):
+        out["extra"] = clean_html(extra[:MAX_LINE])
+    group = c.get("group") or ""
+    if group:
+        if not isinstance(group, str) or not ID.match(group):
+            raise NotebookError(f"{kind}: a call's `group` is the id the lines sent with it in one message share, "
+                                f"6-24 of a-z and 0-9")
+        out["group"] = group
+    if c.get("dropped"):
+        out["dropped"] = _when(c["dropped"], kind)
     return out
 
 
@@ -802,7 +859,8 @@ def _when(at: Any, kind: str) -> float:
 
 
 def _line(x: Any, kind: str) -> dict:
-    """A thread's line as kept: {id, by, text (clean, as a block's), at, done?, results?}."""
+    """A thread's line as kept: {id, by, to? (the user's: the agent it went to), text (clean, as a block's), at,
+    done?, results?}."""
     if not isinstance(x, dict) or not ID.match(str(x.get("id") or "")):
         raise NotebookError(f"{kind}: a thread's line is {{id, by, text, at?, done?}}, its id 6-24 of a-z and 0-9")
     if not isinstance(x.get("by"), str) or not BY.match(x["by"]):
@@ -810,6 +868,11 @@ def _line(x: Any, kind: str) -> dict:
     if not isinstance(x.get("text"), str) or not x["text"].strip():
         raise NotebookError(f"{kind}: a line's `text` says something")
     out = {"id": x["id"], "by": x["by"], "text": clean_html(x["text"][:MAX_LINE]), "at": _when(x.get("at"), kind)}
+    to = x.get("to")
+    if to:
+        if x["by"] != "user" or not isinstance(to, str) or not CHANNEL.match(to):
+            raise NotebookError(f"{kind}: a line's `to` is the channel of the agent the user sent it to")
+        out["to"] = to
     if x.get("done"):
         out["done"] = True
     made = x.get("results")

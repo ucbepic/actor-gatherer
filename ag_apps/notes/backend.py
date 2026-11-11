@@ -11,8 +11,9 @@ The tools (notes_read, notes_add, notes_change) read and write it as markdown; w
 panels with its channel, so the panel shows who changed what. Lines an agent writes from its own conversation with the
 user (`from_conversation`) name it as their source, and when (notebook.py), for the user to follow up on with it.
 notes_report is an agent's report on a block the user sent it: a line of the block's thread, by it -- whether it says it
-finished, and what it made. Only the user ends a work item (notebook.py): no tool ticks one, or says it is done. A line
-of a thread a panel adds is the user's, whatever it says."""
+finished, and what it made (refused from an agent the user took the line back from). Only the user ends a work item
+(notebook.py): no tool ticks one, or says it is done. A line of a thread a panel adds is the user's, whatever it
+says."""
 import json
 import os
 import threading
@@ -216,6 +217,11 @@ class NotesApp(App):
             raise nb.NotebookError(f"notes_report: no block {args.get('block')!r} in the notebook: `block` is the id "
                                    f"the message from the user's Notes named")
         page, block = found
+        mine = [c for c in nb.calls_of(block) if caller.channel and c["to"] == caller.channel]
+        if mine and all(c.get("dropped") for c in mine):
+            title = page.get("title") or "Untitled"
+            return ToolResult.text(f"Not reported: the user took the line on “{title}” back from you. Leave it, "
+                                   f"unless they send it to you again.")
         text = args.get("text")
         if not isinstance(text, str) or not text.strip():
             raise nb.NotebookError("notes_report: `text`, your report: one to three lines")
