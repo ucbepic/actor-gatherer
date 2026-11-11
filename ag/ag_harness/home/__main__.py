@@ -364,16 +364,27 @@ def _event_type(t) -> EventType:
                                                identifies=bool(p.get("identifies"))) for p in props))
 
 
+def _locked(fh) -> bool:
+    """`fh` locked for this process until it closes (Windows has no fcntl); False when another process holds it."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
 def cmd_migrate(h, gatherers, vacuum: bool, now: bool = False) -> int:
     """Each gatherer's file moved to the current layout (store/migrate.py): those named, else every one due. One run
     at a time in a home: another that finds it running leaves it to it."""
-    import fcntl
     from ..store import migrate
     h.ensure()
     with open(os.path.join(h.root, "migrate.lock"), "w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+        if not _locked(lock):
             print("another `ag home migrate` is running in this home", flush=True)
             return 0
         names = gatherers or [g for g in (sorted(os.listdir(paths.TRACE_DIR)) if os.path.isdir(paths.TRACE_DIR) else [])

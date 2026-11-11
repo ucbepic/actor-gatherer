@@ -37,8 +37,9 @@ FREE_SHARE = 0.10               # ... and the least share of it
 TRIES = 5                       # a transaction tried again while another writer holds the lock
 ROOM = 256 * 1024 * 1024        # the least free disk the move starts with: what it writes goes to the WAL first
 #: A process that reads the file and never opens it as ag does (schema.connect): a dashboard -- `ag` alone,
-#: `ag dashboard`, `python -m ag_dashboard`. An older one goes on reading a file moved to stays (the view).
-READER = re.compile(r"(-m ag_dashboard\b|/ag(\s+dashboard\b.*)?\s*$)")
+#: `ag dashboard`, `python -m ag_dashboard` (on Windows `...\Scripts\ag.exe`, quoted or not). An older one goes on
+#: reading a file moved to stays (the view).
+READER = re.compile(r'(-m ag_dashboard\b|[\\/]ag(\.exe)?"?(\s+dashboard\b.*)?\s*$)', re.I)
 
 
 def _connect_ro(path: str) -> Optional[sqlite3.Connection]:
@@ -112,8 +113,12 @@ def _retry(conn: sqlite3.Connection, write: Callable[[], None]) -> None:
 
 def _others(path: str) -> Optional[set]:
     """The processes besides this one and the one that started it (`ag`, which runs the harness once it has) that
-    have the file open: by lsof, else /proc; None when neither can tell."""
+    have the file open: by lsof, else /proc (on Windows, its Restart Manager); None when neither can tell."""
     files = [p for p in (path, path + "-wal", path + "-shm") if os.path.exists(p)]
+    if os.name == "nt":
+        from harness_kit.processes import using
+        found = using(files)
+        return None if found is None else found - {os.getpid(), os.getppid()}
     lsof = shutil.which("lsof") or next((p for p in ("/usr/sbin/lsof", "/usr/bin/lsof") if os.path.exists(p)), None)
     found: Optional[set] = None
     if lsof:
@@ -141,6 +146,9 @@ def _others(path: str) -> Optional[set]:
 
 def _process(pid: int) -> Optional[Tuple[float, str]]:
     """(when process `pid` started, in seconds since the epoch; its command line), or None when it has ended."""
+    if os.name == "nt":                                  # no ps
+        from harness_kit.processes import started_as
+        return started_as(pid)
     try:
         out = subprocess.run(["ps", "-o", "lstart=,command=", "-p", str(pid)], capture_output=True, text=True,
                              timeout=10, env={**os.environ, "LC_ALL": "C"}).stdout.strip()

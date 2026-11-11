@@ -57,6 +57,18 @@ From source, the dashboard builds its page the first time it starts, which needs
 22.12+. After a `git pull`, restart it, and it rebuilds the page if the page's source changed. `ag` alone needs no
 Node.
 
+### On Windows
+
+`ag` runs on Windows from PowerShell, cmd or Git Bash (tested on Windows 11, with Claude Code): `ag <harness>` runs
+the harness in your terminal and waits for it, its hook server keeps running between runs, and gatherers move to the
+current storage layout as they do on macOS and Linux. The dashboard runs too, with these parts still Unix only:
+
+- **Terminal view**: a session's terminal needs a Unix pseudo-terminal, so it is not available on Windows.
+- **Built-in browser**: it is not started on Windows.
+- **`ag dashboard restart`**: not yet tried on Windows.
+
+A preview's command runs through your `SHELL` when one is set (Git Bash sets it), else through `cmd.exe`.
+
 ### Set the Gatherer's LLM
 
 The Gatherer uses LLMs to manage the context of Actors, so you must set the model the

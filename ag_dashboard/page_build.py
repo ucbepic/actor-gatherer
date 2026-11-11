@@ -78,24 +78,26 @@ def _node_ok(text: str) -> bool:
 def pnpm() -> List[str]:
     """How pnpm is run here: Node's corepack (the version frontend/package.json names), a pnpm of one's own, else npx
     fetching that version."""
-    if not shutil.which("node"):
+    node = shutil.which("node")
+    if not node:
         raise NoTools(f"building the dashboard's page from source needs {NODE_SAID} (https://nodejs.org, or "
                          "`brew install node`), and none is on PATH. (`pip install actor-gatherer` installs ag with "
                          "its page built, no Node needed.)")
     try:
-        version = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=30).stdout
+        version = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=30).stdout
     except (OSError, subprocess.SubprocessError):
         version = ""
     if not _node_ok(version):
         raise NoTools(f"building the dashboard's page needs {NODE_SAID}; this one is {version.strip() or 'unknown'}")
+    # Each by its full path: on Windows these are .cmd files, which subprocess can't start by a bare name
     if shutil.which("corepack"):
-        return ["corepack", "pnpm"]
+        return [shutil.which("corepack"), "pnpm"]
     if shutil.which("pnpm"):
-        return ["pnpm"]
+        return [shutil.which("pnpm")]
     if shutil.which("npx"):
         with open(os.path.join(FRONT, "package.json"), encoding="utf-8") as fh:
             named = json.load(fh).get("packageManager") or "pnpm"
-        return ["npx", "--yes", named.split("+")[0]]
+        return [shutil.which("npx"), "--yes", named.split("+")[0]]
     raise NoTools("building the dashboard's page needs pnpm: Node's corepack, pnpm or npx, and none is on PATH")
 
 
