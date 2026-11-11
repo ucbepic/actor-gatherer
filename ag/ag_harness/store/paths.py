@@ -5,6 +5,11 @@ Every gatherer has a directory of its own in the context manager's home,
 `context.db` and its config `gatherer.toml`; its logs are under the home's
 `logs/`, in `logs/gatherers/<gatherer>/`. Callers name gatherers; only this
 module knows files.
+
+Once the home has ONE database for every gatherer, `context.db` in the home
+itself (`home_db`, made by `ag home merge`), every gatherer's database is that
+one (`merged`): a gatherer is then a group of its channels -- those whose
+latest `group` record names it -- and its directory keeps its config alone.
 """
 
 import os
@@ -34,9 +39,19 @@ def gatherer_dir(gatherer_id: str) -> str:
     return os.path.join(TRACE_DIR, gatherer_key(gatherer_id))
 
 
+def home_db() -> str:
+    """The home's one database, beside the gatherers' directories (`merged`)."""
+    return os.path.join(os.path.dirname(TRACE_DIR), "context.db")
+
+
+def merged() -> bool:
+    """Whether every gatherer's work is in the home's one database (`home_db`): once it exists, and from then on."""
+    return os.path.isfile(home_db())
+
+
 def db_path(gatherer_id: str) -> str:
-    """The database for `gatherer_id`."""
-    return os.path.join(gatherer_dir(gatherer_id), "context.db")
+    """The database for `gatherer_id`: the home's one database once there is one (`merged`), else its own."""
+    return home_db() if merged() else os.path.join(gatherer_dir(gatherer_id), "context.db")
 
 
 def log_dir() -> str:
