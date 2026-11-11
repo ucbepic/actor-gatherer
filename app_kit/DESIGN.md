@@ -691,6 +691,28 @@ on its "+ ⋯" menu entry too.
     app started. A third group names the item the message is about; panels are told it as the actor's `asked_of`.
     The words may be read by a lookahead, so the note can come first (Python and JavaScript share no named groups).
 
+**Pictures in Notes** (2026-11-11): a page can hold an image and a live Figma frame (the user: "design a diagram in
+figma and put it in my notes").
+- **Image blocks:** a picture pasted, dropped between lines, or picked from the `/` menu's Image is sent to the backend
+  (`POST image`) and kept once in `apps/notes/data/files/`, named by its contents' hash, for every gatherer's notebook
+  (a block copied to another notebook still finds it). The block keeps `file`, its size (`w`, `h`, read from the
+  file's own header: no Pillow) and `width`, a percent of the page, dragged from its sides. Its words are its caption.
+  Pictures are served under a `sandbox` Content-Security-Policy, so an SVG opened on its own runs nothing.
+- **Figma blocks:** a Figma link pasted alone on a line asks "the frame, live" or "a link"; the `/` menu's Figma asks
+  for one. The frame is Figma's own embed (Embed Kit 2.0: `embed.figma.com`, `embed-host=ag`) over a snapshot the
+  backend keeps (`snap`). The snapshot comes from Figma's REST API with the user's personal access token (kept in
+  `apps/notes/data/figma.json`, mode 600; the panel's "Add a Figma token"), fetched again only when Figma's
+  `lastModified` changed. Without a token, Figma's oEmbed gives a public file's cover. The panel asks for it as the page
+  shows the frame, at most every 10 minutes. It shows while the embed loads, offline, or when the reader picks it,
+  and it is what agents see. Whether the reader is signed in to Figma can't be seen from outside its embed, so the
+  embed says that itself. Figma's CDN refuses headless Chrome (403), so screenshots of the live frame need a normal
+  user agent.
+- **Agents:** `notes_read` returns the page's markdown, `![caption](image:<file>)` and `[Figma: name](url) -- caption`,
+  then the pictures themselves: at most 6, each under 3.7 MB, never an SVG. Each is preceded by its block's id.
+  `notes_add` / `notes_change` take `![caption](<a path>)`, read in from the agent's folder (not a URL), and a Figma
+  link alone on a line; the snapshot of a new frame is fetched after the call answers. A picture is sent to no one
+  (`UNSENT`): its caption is no line of work.
+
 Steps 6–8 change what the user sees the most. Each gets its Playwright tests before it moves and keeps them after,
 as the move to React did.
 
