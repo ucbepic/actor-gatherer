@@ -6,6 +6,15 @@ The panel's routes (its own origin, /api/...):
     GET  state                  the notebook: {version, pages}
     POST ops    {by, ops}       ops applied: {version}; told to the panels as {ops, by, version}
     POST parse  {markdown}      blocks made from pasted markdown, with new ids (nothing changed)
+    POST image  <the picture>   a picture kept (media.py): {file, w, h}, for an image block to show
+    GET  file/<file>            a picture kept
+    GET  figma                  whether the user gave a Figma token: {token, who}
+    POST figma/token {token}    the token kept (checked with Figma), or forgotten ("")
+    POST figma/snap {block}     a figma block's snapshot fetched again (when Figma changed it): {ok} or {error}
+
+Pictures (notebook.py, PICTURES) are kept in one folder for every gatherer's notebook. notes_read gives an agent the
+pictures of the page it reads with its words (MAX_SHOWN of them); notes_add and notes_change take `![caption](a file)`
+(read in from the agent's folder) and a Figma link alone on a line.
 
 The tools (notes_read, notes_add, notes_change) read and write it as markdown; what an agent changes is told to the
 panels with its channel, so the panel shows who changed what. Lines an agent writes from its own conversation with the
@@ -14,22 +23,38 @@ notes_report is an agent's report on a block the user sent it: a line of the blo
 finished, and what it made (refused from an agent the user took the line back from). Only the user ends a work item
 (notebook.py): no tool ticks one, or says it is done. A line of a thread a panel adds is the user's, whatever it
 says."""
+import base64
 import json
 import os
 import threading
 import time
 import urllib.parse
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from app_kit import App, AppError, Caller, Instance, Response, ToolResult
 
+from . import media
 from . import notebook as nb
+
+#: the pictures notes_read gives with a page, and how large each may be (what a model takes)
+MAX_SHOWN = 6
+MAX_SHOWN_BYTES = 3_700_000
+#: how a picture is served: as itself, never a page that runs (an SVG opened on its own)
+PICTURE_HEADERS = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"}
 
 
 class NotesApp(App):
     def __init__(self):
         self._books: Dict[str, nb.Notebook] = {}
         self._lock = threading.Lock()
+        self.files: Optional[media.Files] = None
+        self.figma: Optional[media.Figma] = None
+        self._snapping: set = set()
+
+    def start(self, host) -> None:
+        super().start(host)
+        self.files = media.Files(os.path.join(host.folder(), "files"))
+        self.figma = media.Figma(host.folder())
 
     # -- the notebooks
 
@@ -42,14 +67,16 @@ class NotesApp(App):
                 got = self._books[gatherer] = nb.Notebook(os.path.join(self.host.folder(), f"{name}.json"))
             return got
 
-    def change(self, instance: Instance, ops: list, by: str, agent: Optional[str] = None) -> int:
-        """`ops` applied to the instance's notebook and told to its panels, in the order applied."""
+    def change(self, instance: Instance, ops: list, by: str, agent: Optional[str] = None, quiet: bool = False) -> int:
+        """`ops` applied to the instance's notebook and told to its panels, in the order applied (`quiet`: not shown
+        as a change someone made -- a snapshot fetched again)."""
         book = self.book(instance.gatherer)
         with book.lock:                                       # told in order: no other change between
             version, done = book.apply(ops)
             if done:
                 self.host.tell_panel(instance, {"ops": done, "by": by, "version": version,
-                                                **({"agent": agent} if agent else {})})
+                                                **({"agent": agent} if agent else {}),
+                                                **({"quiet": True} if quiet else {})})
         return version
 
     # -- the instance
@@ -65,15 +92,30 @@ class NotesApp(App):
         try:
             if path == "state" and method == "GET":
                 return Response.json(self.book(instance.gatherer).state())
-            if path in ("ops", "parse") and method == "POST":
+            if path == "image" and method == "POST":
+                return Response.json(self.files.keep(body or b""))
+            if path.startswith("file/") and method == "GET":
+                found = self.files.path(path[5:])
+                if found is None:
+                    return Response(404, b"no such picture")
+                return Response.file_at(found, media.KINDS[found.rsplit(".", 1)[1]], headers=PICTURE_HEADERS)
+            if path == "figma" and method == "GET":
+                return Response.json({"token": bool(self.figma.token()), "who": self.figma.who()})
+            if path in ("ops", "parse", "figma/token", "figma/snap") and method == "POST":
                 ask = json.loads(body or b"{}")
                 if not isinstance(ask, dict):
                     raise ValueError
                 if path == "parse":
-                    blocks = nb.blocks_from_markdown(str(ask.get("markdown") or ""))
+                    blocks = self._pictures_in(nb.blocks_from_markdown(str(ask.get("markdown") or "")), None)
                     return Response.json({"blocks": [{**b, "id": nb.new_id()} for b in blocks]})
+                if path == "figma/token":
+                    return Response.json(self.figma.set_token(str(ask.get("token") or "")))
+                if path == "figma/snap":
+                    return Response.json(self.snap(instance, str(ask.get("block") or "")))
                 by = str(ask.get("by") or "user")[:40]
                 return Response.json({"version": self.change(instance, _users(ask.get("ops")), by)})
+        except media.MediaError as exc:
+            return Response.json({"error": str(exc)}, 400)
         except nb.NotebookError as exc:
             return Response.json({"error": str(exc)}, 400)
         except ValueError:
@@ -88,16 +130,135 @@ class NotesApp(App):
             if tool == "read":
                 if not args.get("page"):
                     return ToolResult.text(book.outline())
-                return ToolResult.text(book.markdown(self._page(book, args.get("page")), caller.channel))
+                page = self._page(book, args.get("page"))
+                return ToolResult([{"type": "text", "text": book.markdown(page, caller.channel)},
+                                   *self._shown(page)])
             if tool == "add":
                 return self._add(instance, book, args, caller)
             if tool == "change":
                 return self._change(instance, book, args, caller)
             if tool == "report":
                 return self._report(instance, book, args, caller)
-        except nb.NotebookError as exc:
+        except (nb.NotebookError, media.MediaError) as exc:
             return ToolResult.error(str(exc))
         raise AppError(f"{tool}: not a tool of Notes")
+
+    # -- pictures
+
+    def _shown(self, page: dict) -> List[dict]:
+        """The page's pictures, as an agent is given them with its words: each its block's id and caption, then the
+        picture -- at most MAX_SHOWN, each small enough for a model to take (an SVG is not one it takes)."""
+        out: List[dict] = []
+        n = 0
+        for b in page.get("blocks", []):
+            name = b.get("file") if b["type"] == "image" else b.get("snap") if b["type"] == "figma" else None
+            if not name:
+                continue
+            said = nb.inline_markdown(b.get("text", "")) or b.get("title") or ""
+            head = f"[{b['id']}] " + ("the Figma frame's snapshot" if b["type"] == "figma" else "the picture") + (
+                f": {said}" if said else "")
+            path = self.files.path(name)
+            if n >= MAX_SHOWN:
+                out.append({"type": "text", "text": f"{head} (not given: {MAX_SHOWN} pictures given already)"})
+                continue
+            if path is None or name.endswith(".svg"):
+                out.append({"type": "text", "text": f"{head} (not given: " + (
+                    "an SVG, which can't be shown to you" if path else "its file is missing") + ")"})
+                continue
+            size = os.path.getsize(path)
+            if size > MAX_SHOWN_BYTES:
+                out.append({"type": "text", "text": f"{head} (not given: {size / 1e6:.1f} MB is too large)"})
+                continue
+            with open(path, "rb") as fh:
+                data = fh.read()
+            out += [{"type": "text", "text": head},
+                    {"type": "image", "data": base64.b64encode(data).decode("ascii"),
+                     "mimeType": media.KINDS[name.rsplit(".", 1)[1]]}]
+            n += 1
+        return out
+
+    def _pictures_in(self, blocks: List[dict], caller: Optional[Caller]) -> List[dict]:
+        """Blocks from markdown, each image's `src` read in as a picture kept (its `file`): one already kept
+        (`image:<file>`); for an agent (`caller`), a file on this machine -- a path from its folder. Else, for the
+        panel's paste, the line kept as text; for an agent, MediaError."""
+        out = []
+        for b in blocks:
+            if b["type"] == "figma" and not b.get("title"):
+                b = {**b, "title": media.figma_title(b["url"])}
+            if b["type"] != "image" or "src" not in b:
+                out.append(b)
+                continue
+            src = b.pop("src")
+            try:
+                out.append({**b, **self._picture(src, caller)})
+            except media.MediaError:
+                if caller is not None:
+                    raise
+                out.append({"type": "text", "text": nb.inline_html(f"![{nb.inline_markdown(b['text'])}]({src})"),
+                            "checked": False, "indent": 0})
+        return out
+
+    def _picture(self, src: str, caller: Optional[Caller]) -> dict:
+        if src.startswith("image:"):
+            name = src[6:]
+            path = self.files.path(name)
+            if path is None:
+                raise media.MediaError(f"no picture {name!r} in the notes: `image:` names one notes_read showed")
+            with open(path, "rb") as fh:
+                return self.files.keep(fh.read())
+        if caller is None:
+            raise media.MediaError("only an agent's file is read in")
+        if src.startswith(("http:", "https:")):
+            raise media.MediaError(f"{src}: a picture on the web isn't fetched -- download it to a file first, then "
+                                   f"![caption](<its path>)")
+        path = src[5:] if src.startswith("file:") else src
+        path = os.path.expanduser(urllib.parse.unquote(path) if src.startswith("file:") else path)
+        if not os.path.isabs(path):
+            path = os.path.join(caller.folder or os.getcwd(), path)
+        if not os.path.isfile(path):
+            raise media.MediaError(f"no file {path} to show: ![caption](<a picture's path>), absolute or from "
+                                   f"your folder")
+        if os.path.getsize(path) > media.MAX_IMAGE:
+            raise media.MediaError(f"{path} is too large for a picture in the notes")
+        with open(path, "rb") as fh:
+            return self.files.keep(fh.read())
+
+    def snap(self, instance: Instance, bid: str) -> dict:
+        """A figma block's snapshot fetched again -- only if Figma changed the file since -- and its name in Figma: the
+        block changed (quietly), and {ok}; or {error}, why not (no change made)."""
+        book = self.book(instance.gatherer)
+        found = book.block(bid)
+        if found is None or found[1]["type"] != "figma":
+            return {"error": "no such Figma frame in the notes"}
+        page, b = found
+        with self._lock:
+            if bid in self._snapping:
+                return {"ok": True, "busy": True}
+            self._snapping.add(bid)
+        try:
+            got = self.figma.snapshot(b["url"], b.get("snap_mod", "") if b.get("snap") else "")
+            put: Dict[str, object] = {"id": bid}
+            if got.get("title"):
+                put["title"] = got["title"]
+            if "data" in got:
+                kept = self.files.keep(got["data"])
+                put.update(snap=kept["file"], snap_mod=got.get("mod") or "", **{k: kept[k] for k in ("w", "h")
+                                                                                if k in kept})
+            if put.get("snap") or b.get("snap"):
+                put["snap_at"] = round(time.time(), 3)
+            self.change(instance, [{"op": "block.put", "page": page["id"], "block": put}], "figma", quiet=True)
+            return {"ok": True}
+        except media.MediaError as exc:
+            return {"error": str(exc)}
+        finally:
+            with self._lock:
+                self._snapping.discard(bid)
+
+    def _snap_soon(self, instance: Instance, ids: List[str]) -> None:
+        """Snapshots of new figma blocks fetched, after the tool call has answered."""
+        if ids:
+            threading.Thread(target=lambda: [self.snap(instance, i) for i in ids], name="notes-figma",
+                             daemon=True).start()
 
     def _page(self, book: nb.Notebook, name) -> dict:
         page = book.page(name) if isinstance(name, str) else None
@@ -124,7 +285,8 @@ class NotesApp(App):
         if md is not None and not isinstance(md, str):
             raise nb.NotebookError("notes_add: `markdown` is text")
         src = self._source(args, caller)
-        blocks = [{**b, "id": nb.new_id(), **src} for b in nb.blocks_from_markdown(book.page_links(md or ""))]
+        blocks = [{**b, "id": nb.new_id(), **src}
+                  for b in self._pictures_in(nb.blocks_from_markdown(book.page_links(md or "")), caller)]
         name, title = args.get("page"), args.get("title")
         if name:
             page = self._page(book, name)
@@ -142,6 +304,7 @@ class NotesApp(App):
                                                                                    if prev is not None else {})})
                 prev = b["id"]
             self.change(instance, ops, self._by(caller), caller.channel)
+            self._snap_soon(instance, [b["id"] for b in blocks if b["type"] == "figma"])
             return ToolResult.text(book.markdown(book.page(page["id"])))
         if not isinstance(title, str) or not title.strip():
             raise nb.NotebookError("notes_add: which page -- `page`, one there (its id or title), or `title` for a "
@@ -154,6 +317,7 @@ class NotesApp(App):
                                                            "parent": parent},
                                 "blocks": blocks or [{"id": nb.new_id(), "type": "text", "text": ""}]}],
                     self._by(caller), caller.channel)
+        self._snap_soon(instance, [b["id"] for b in blocks if b["type"] == "figma"])
         return ToolResult.text(book.markdown(book.page(pid)))
 
     def _change(self, instance, book, args, caller) -> ToolResult:
@@ -183,7 +347,7 @@ class NotesApp(App):
             ops = [{"op": "block.delete", "page": page["id"], "block": bid}]
         elif isinstance(md, str):
             src = self._source(args, caller)
-            made = [{**b, **src} for b in nb.blocks_from_markdown(book.page_links(md))]
+            made = [{**b, **src} for b in self._pictures_in(nb.blocks_from_markdown(book.page_links(md)), caller)]
             if not made:
                 ops = [{"op": "block.delete", "page": page["id"], "block": bid}]
             else:
@@ -207,6 +371,8 @@ class NotesApp(App):
             raise nb.NotebookError("notes_change: for a block, `markdown` (what it becomes), `checked` (a to-do "
                                    "ticked or not), or `delete`")
         self.change(instance, ops, by, caller.channel)
+        self._snap_soon(instance, [op["block"]["id"] for op in ops if op["op"] == "block.put"
+                                   and op["block"].get("type") == "figma" and not op["block"].get("snap")])
         return ToolResult.text(book.markdown(book.page(page["id"])))
 
     def _report(self, instance, book, args, caller) -> ToolResult:

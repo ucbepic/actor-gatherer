@@ -60,6 +60,14 @@ A LINK TO A PAGE: an `a` whose href is `page:<the page's id>` (markdown: `[its t
 page's title when it was linked; the panel and the markdown agents read show the title the page has now, and the id
 stays the same however the page is renamed or moved.
 
+PICTURES: an `image` block shows a picture kept in the app's files (media.py), `file` its name there (its contents'
+hash and its kind), `w` and `h` its size in pixels, `width` how wide it is drawn (a percent of the page's width; none:
+as wide as it is, up to the page's); a `figma` block shows a frame or board of Figma live, `url` its link, `title` its
+name in Figma, and `snap` (`w`, `h`, `snap_at`, `snap_mod`: Figma's last change to it) a picture of it kept from when it
+was last fetched, shown when Figma can't show it and given to agents. The words of either (`text`) are its caption.
+Markdown: `![caption](image:<file>)`, and `[Figma: title](url) -- caption`; an agent's `![caption](<a file>)` is the
+backend's to read in (blocks_from_markdown leaves it as `src`).
+
 An op naming a page or block that is not there (another window deleted it) is skipped, not refused: the panel and the
 agents change the notebook at once, and the one later never undoes the other. Standard library only."""
 
@@ -73,7 +81,16 @@ import time
 from html.parser import HTMLParser
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-TYPES = ("text", "h1", "h2", "h3", "todo", "bullet", "number", "quote", "code", "divider", "agents", "work")
+TYPES = ("text", "h1", "h2", "h3", "todo", "bullet", "number", "quote", "code", "divider", "agents", "work", "image",
+         "figma")
+#: the blocks that show a picture, their words its caption
+MEDIA = ("image", "figma")
+#: a picture kept in the app's files (media.py): its contents' hash, and its kind
+FILE = re.compile(r"^[a-f0-9]{16}\.(?:png|jpg|gif|webp|svg)$")
+#: a link to a file of Figma's -- a design, a FigJam board, a prototype, slides -- that its embed shows
+FIGMA_URL = re.compile(r"^https://(?:www\.)?figma\.com/(?:design|file|board|proto|slides|deck)/[A-Za-z0-9]{6,64}"
+                       r"(?:[/?#][^\s<>\"']*)?$")
+MAX_SIDE = 100_000
 #: the blocks that may be set in (the rest are always at the left edge)
 INDENTED = ("text", "todo", "bullet", "number", "quote")
 MAX_INDENT = 6
@@ -85,8 +102,8 @@ PAGE_HREF = re.compile(r"^page:[a-z0-9]{6,24}$")
 CHANNEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
 #: who wrote a thread's line: the user, or an agent (its channel)
 BY = re.compile(r"^(user|agent:[A-Za-z0-9][A-Za-z0-9._:-]{0,99})$")
-#: the blocks that are sent to no one (nothing in them to send)
-UNSENT = ("divider", "agents", "work")
+#: the blocks that are sent to no one (nothing in them to send; a picture's caption is not a line of work)
+UNSENT = ("divider", "agents", "work", "image", "figma")
 #: how the user ended a work item
 ENDED = ("done", "canceled")
 MAX_RESULTS = 8                   # what a report names it made
@@ -295,9 +312,30 @@ _LINE_RULES = (
 )
 
 
+_IMAGE_LINE = re.compile(r"^!\[([^\]]*)\]\(\s*<?([^()<>\s][^()<>]*?)>?\s*\)$")
+_FIGMA_LINE = re.compile(r"^(?:\[([^\]]*)\]\(\s*<?(https://[^)\s>]+)>?\s*\)|<?(https://[^\s>]+)>?)"
+                         r"(?:\s+(?:--|—|–|-)\s+(.*))?$")
+
+
+def _media_line(body: str) -> Optional[dict]:
+    """A line that is a picture: `![caption](where)` an image (`src` where it is, for the backend to read in), a link to
+    Figma alone on the line (or `[Figma: title](url) -- caption`) a frame of it."""
+    m = _IMAGE_LINE.match(body)
+    if m:
+        return {"type": "image", "text": inline_html(m.group(1)), "src": m.group(2).strip()}
+    m = _FIGMA_LINE.match(body)
+    if m and FIGMA_URL.match(m.group(2) or m.group(3) or ""):
+        url = html.unescape(m.group(2) or m.group(3))
+        words = (m.group(1) or "").strip()
+        title = re.sub(r"^figma:\s*", "", words, flags=re.I) if words and words != url else ""
+        return {"type": "figma", "text": inline_html(m.group(4) or ""), "url": url, "title": _title(title)}
+    return None
+
+
 def blocks_from_markdown(text: str) -> List[dict]:
     """Markdown as blocks, one a line (a fenced code block one block): `# ` headings, `- [ ] ` to-dos, `- ` and `1. `
-    lists, `> ` quotes, `---` dividers, the rest text; two spaces (or a tab) in, a level in. Blank lines go."""
+    lists, `> ` quotes, `---` dividers, `![caption](where)` a picture, a Figma link alone a frame of it, the rest
+    text; two spaces (or a tab) in, a level in. Blank lines go."""
     lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     out: List[dict] = []
     i = 0
@@ -321,6 +359,10 @@ def blocks_from_markdown(text: str) -> List[dict]:
             continue
         spaces = len(line.expandtabs(2)) - len(line.expandtabs(2).lstrip())
         body = line.strip()
+        media = _media_line(body)
+        if media:
+            out.append({**media, "checked": False, "indent": 0})
+            continue
         kind, words, checked = "text", body, False
         for rx, made in _LINE_RULES:
             m = rx.match(body)
@@ -367,6 +409,13 @@ def markdown_lines(blocks: List[dict], ids: bool = True,
             continue
         if t == "work":
             lines.append(f"{tag}(a list of the user's open work items, as they are now: the user sees it in Notes)")
+            continue
+        if t == "image":
+            lines.append(f"{tag}![{words}](image:{b.get('file', '')})")
+            continue
+        if t == "figma":
+            name = b.get("title") or "a frame"
+            lines.append(f"{tag}[Figma: {name}]({b.get('url', '')})" + (f" -- {words}" if words else ""))
             continue
         head = {"text": "", "h1": "# ", "h2": "## ", "h3": "### ", "bullet": "- ", "quote": "> ", "divider": "---",
                 "todo": "- [x] " if b.get("checked") else "- [ ] ", "number": f"{n}. "}[t]
@@ -749,6 +798,8 @@ def _block(b: Any, was: Optional[dict], kind: str) -> dict:
     except (TypeError, ValueError):
         raise NotebookError(f"{kind}: a block's `indent` is a whole number") from None
     out = {"id": b["id"], "type": t, "text": text, "checked": bool(b.get("checked")) and t == "todo", "indent": indent}
+    if t in MEDIA:
+        out.update(_media(b, t, kind))
     if "to" in b:                                         # (the line's one agent, as a notebook said it before)
         b = _as_calls(dict(b))
     calls = b.get("calls") or []
@@ -774,7 +825,7 @@ def _block(b: Any, was: Optional[dict], kind: str) -> dict:
             raise NotebookError(f"{kind}: a block's `thread` is a list of lines")
         out["thread"] = [_line(x, kind) for x in thread][-MAX_THREAD:]
     source = b.get("source") or ""
-    if source and t not in UNSENT:
+    if source and (t not in UNSENT or t in MEDIA):
         if not isinstance(source, str) or not CHANNEL.match(source):
             raise NotebookError(f"{kind}: a block's `source` is the channel of the agent that wrote it")
         out["source"], out["source_at"] = source, _when(b.get("source_at"), kind)
@@ -810,6 +861,46 @@ def _call(c: Any, kind: str) -> dict:
         out["group"] = group
     if c.get("dropped"):
         out["dropped"] = _when(c["dropped"], kind)
+    return out
+
+
+def _media(b: dict, t: str, kind: str) -> dict:
+    """What a picture's block keeps beside its caption (PICTURES, above)."""
+    out: Dict[str, Any] = {}
+
+    def side(k: str) -> None:
+        v = b.get(k)
+        if v is None:
+            return
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 < v <= MAX_SIDE:
+            raise NotebookError(f"{kind}: a picture's `{k}` is its size in pixels, a whole number")
+        out[k] = v
+
+    if t == "image":
+        if not isinstance(b.get("file"), str) or not FILE.match(b["file"]):
+            raise NotebookError(f"{kind}: an image's `file` is the name the app gave the picture when it was kept")
+        out["file"] = b["file"]
+    else:
+        if not isinstance(b.get("url"), str) or not FIGMA_URL.match(b["url"]):
+            raise NotebookError(f"{kind}: a figma block's `url` is a link to a Figma file, https://www.figma.com/...")
+        out["url"] = b["url"]
+        if b.get("title"):
+            out["title"] = _title(b.get("title"))
+        snap = b.get("snap")
+        if snap:
+            if not isinstance(snap, str) or not FILE.match(snap):
+                raise NotebookError(f"{kind}: a figma block's `snap` is the name of a picture the app kept")
+            out["snap"], out["snap_at"] = snap, _when(b.get("snap_at"), kind)
+            mod = b.get("snap_mod")
+            if isinstance(mod, str) and mod:
+                out["snap_mod"] = mod[:64]
+    side("w")
+    side("h")
+    width = b.get("width")
+    if width is not None:
+        if isinstance(width, bool) or not isinstance(width, (int, float)):
+            raise NotebookError(f"{kind}: a picture's `width` is a percent of the page's width")
+        out["width"] = max(10, min(100, int(round(width))))
     return out
 
 

@@ -20,7 +20,11 @@ Several lines can be picked at once (whole lines, as Notion's block selection): 
 turned into another type or sent to an agent together, as one message naming each of them.
 
 ⌘Z takes back the reader's own changes to the page open, one at a time, and ⌘⇧Z does them again (see "undo"): never the
-browser's own undo, which knows nothing of the ops. */
+browser's own undo, which knows nothing of the ops.
+
+A page can hold pictures (see "pictures"): an image pasted, dropped or picked from the / menu, kept by the backend, and a
+Figma frame or board shown live from its link, with a snapshot the backend keeps of it -- shown when Figma can't show it,
+and what agents see of it. The words under either are its caption. */
 (async function () {
   "use strict";
   const ag = await AgApp.connect();
@@ -33,7 +37,8 @@ browser's own undo, which knows nothing of the ops. */
   const LISTS = ["todo", "bullet", "number"];
   const MAX_INDENT = 6;
   const PH = { text: "Type ‘/’ for commands", h1: "Heading 1", h2: "Heading 2", h3: "Heading 3", todo: "To-do", bullet: "List",
-    number: "List", quote: "Quote", code: "Code" };
+    number: "List", quote: "Quote", code: "Code", image: "Add a caption", figma: "Add a caption" };
+  const MEDIA = ["image", "figma"];                        // blocks that show a picture: their words, its caption
   const KINDS = [                                          // the / menu, and a block's "Turn into"
     { type: "text", label: "Text", note: "Just writing", glyph: "Aa", words: "text plain paragraph" },
     { type: "h1", label: "Heading 1", note: "A big section heading", glyph: "H1", words: "h1 heading title" },
@@ -50,6 +55,8 @@ browser's own undo, which knows nothing of the ops. */
   ];
   const PAGE_KIND = { type: "page-new", label: "Page", note: "A new page inside this one", glyph: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M8.25 7.6v4.2M6.15 9.7h4.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', words: "page subpage new child doc document" };   // in the / menu too, not a block's type
   const LINK_KIND = { type: "page-link", label: "Link to a page", note: "Or type [[", glyph: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M6 8.2h4.5M6 10.8h4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', words: "link page mention reference subpage" };   // in the / menu, not a block's type
+  const IMAGE_KIND = { type: "image-new", label: "Image", note: "Upload, paste or drop a picture", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M2.3 11l3.4-3.4 2.8 2.8 1.8-1.8 3.4 3.4" stroke-linecap="round"/><circle cx="10.6" cy="6" r="1.1"/></svg>', words: "image picture photo png jpg screenshot figure upload" };   // in the / menu, not a block's type
+  const FIGMA_KIND = { type: "figma-new", label: "Figma", note: "A frame or board, kept live", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M5.5 2v12M10.5 2v12M2 5.5h12M2 10.5h12"/></svg>', words: "figma figjam design frame board embed diagram drawing" };
   const ICONS = ["📄", "📝", "✅", "📌", "📚", "💡", "🎯", "🚀", "🛒", "🏠", "💼", "🧪", "🐛", "🔧", "📅", "⭐", "❤️", "🔥", "🌱", "🎨",
     "🎵", "✈️", "🍳", "💰", "📈", "🧠", "☕", "🗂️", "🔖", "🧩", "🏃", "📖", "🎓", "🧾", "📦", "⚙️", "🗒️", "🌟", "🍀", "🐣"];
   const SVG = {
@@ -62,6 +69,7 @@ browser's own undo, which knows nothing of the ops. */
     trash: '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     restore: '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M3.5 6.5A5 5 0 1 1 4 11M3.2 3v3.7h3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     x: '<svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    full: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6V2.5H6M13.5 6V2.5H10M2.5 10v3.5H6M13.5 10v3.5H10"/></svg>',
     check: '<svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 6.2l2.4 2.4 4.6-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     people: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="6" cy="5.5" r="2.2"/><circle cx="11.5" cy="6.2" r="1.7"/><path d="M2 13c.5-2.3 2-3.4 4-3.4s3.5 1.1 4 3.4M10 9.9c.5-.3 1-.4 1.5-.4 1.5 0 2.5.9 2.9 2.6"/></svg>',
     at: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.4"/><path d="M10.4 8v1.1a1.7 1.7 0 0 0 3.4 0V8A5.8 5.8 0 1 0 11.5 12.6"/></svg>',
@@ -104,7 +112,7 @@ browser's own undo, which knows nothing of the ops. */
   const AGENTS = "@agents";                              // the Agents page (no page of the notebook: never an id)
   const WORK = "@work", LOG = "@logbook";                // the Work page, the Logbook (nor these)
   const SPECIAL = [WORK, LOG, AGENTS];
-  const UNSENT = ["divider", "agents", "work"];          // blocks with nothing in them to send
+  const UNSENT = ["divider", "agents", "work", "image", "figma"];   // blocks with nothing in them to send (a caption is no line of work)
   const short = (ch) => String(ch || "").slice(0, 8);
   const since = (t) => { const d = Math.max(0, now() - (t || now())); return d < 60 ? "just now" : d < 3600 ? `${Math.round(d / 60)}m`
     : d < 86400 ? `${Math.round(d / 3600)}h` : `${Math.round(d / 86400)}d`; };
@@ -471,7 +479,7 @@ browser's own undo, which knows nothing of the ops. */
       }
       if (current && !pages.has(current)) current = null;
       drawSide(m.agent ? touched : null);
-      if (current && touched.has(current)) drawPage(blocks);
+      if (current && touched.has(current)) drawPage(m.quiet ? null : blocks);   // (a snapshot fetched again: no flash)
       else if (!current || SPECIAL.includes(current) || linksTo(pages.get(current), retitled)) drawPage();
       if (m.agent) told(m.agent, [...touched].map((id) => pages.get(id)).filter(Boolean));
     }
@@ -683,6 +691,7 @@ browser's own undo, which knows nothing of the ops. */
     if (b.type === "divider") n.append(el("div", { class: "hr", tabindex: "0", role: "separator" }));
     else if (b.type === "agents") n.append(el("div", { class: "agt", tabindex: "0", role: "group", "aria-label": "The gatherer's actors" }));
     else if (b.type === "work") n.append(el("div", { class: "agt wkb", tabindex: "0", role: "group", "aria-label": "Your open work items" }));
+    else if (MEDIA.includes(b.type)) n.append(el("div", { class: "fig", tabindex: "0", role: "figure" }), el("div", { class: "tx cap", spellcheck: "true" }));
     else n.append(el("div", { class: "mk" }), el("div", { class: "tx", spellcheck: "true" }),
       el("button", { class: "to-btn", type: "button", tabindex: "-1", title: "Send it to an agent (or type @)", html: SVG.at }));
     return n;
@@ -708,6 +717,7 @@ browser's own undo, which knows nothing of the ops. */
       if (b.type === "code") { if (tx.textContent !== b.text) tx.textContent = b.text; }
       else { const h = withLinks(clean(b.text)); if (tx.innerHTML !== h) tx.innerHTML = h; }
     } else if (b.type !== "code") drawLinks(tx);
+    if (MEDIA.includes(b.type)) return drawMedia(n, b, ro);
     const mk = n.querySelector(".mk");
     const want = b.type === "todo" ? `todo:${!!b.checked}` : b.type === "bullet" ? `bullet:${(b.indent || 0) % 3}` : b.type;
     if (mk.dataset.is !== want) {
@@ -729,7 +739,7 @@ browser's own undo, which knows nothing of the ops. */
     const at = focus && focus.classList.contains("tx") ? caretIn(focus) : null;
     for (const [id, n] of have) if (!want.has(id)) n.remove();
     let prev = null;
-    const shape = (t) => (t === "divider" || t === "agents" || t === "work" ? t : "tx");
+    const shape = (t) => (["divider", "agents", "work", ...MEDIA].includes(t) ? t : "tx");
     for (const b of p.blocks) {
       if (foldedNow.has(b.id)) continue;
       let n = have.get(b.id);
@@ -892,14 +902,14 @@ browser's own undo, which knows nothing of the ops. */
     const n = rowOf(id);
     if (!n) return;
     const tx = n.querySelector(".tx");
-    if (!tx) return n.querySelector(".hr, .agt").focus();
+    if (!tx) return n.querySelector(".hr, .agt, .fig").focus();
     tx.focus();
     const len = tx.textContent.length;
     setCaret(tx, where === "end" ? len : where === "start" ? 0 : Math.min(where, len));
   }
   const empty = (tx) => tx.textContent.replace(/\u200b/g, "") === "" && !tx.querySelector("br, a");
   const textOf = (n, b) => (b.type === "code" ? n.querySelector(".tx").textContent : clean(n.querySelector(".tx").innerHTML));
-  const editable = (b) => !UNSENT.includes(b.type);
+  const editable = (b) => !UNSENT.includes(b.type) || MEDIA.includes(b.type);   // (a picture's caption: typed in)
 
   // ---------------------------------------------------------------- typing
   box.addEventListener("input", (ev) => {
@@ -911,6 +921,7 @@ browser's own undo, which knows nothing of the ops. */
     if (shortcut(n, tx, b, ev)) return;
     b.text = textOf(n, b);
     typed(current, b.id, b.text);
+    if (MEDIA.includes(b.type)) return pageInput(n, tx, b, ev);   // a caption: words and links to pages, no / or @
     slashInput(n, tx, b, ev);
     atInput(n, tx, b, ev);
     pageInput(n, tx, b, ev);
@@ -977,7 +988,7 @@ browser's own undo, which knows nothing of the ops. */
 
   box.addEventListener("keydown", (ev) => {
     if (ev.isComposing) return;
-    const hr = ev.target.closest && ev.target.closest(".hr, .agt");
+    const hr = ev.target.closest && ev.target.closest(".hr, .agt, .fig");
     if (hr && ev.target === hr) return dividerKey(ev, hr.closest(".blk"));
     const tx = ev.target.closest && ev.target.closest(".tx");
     if (!tx) return;
@@ -987,7 +998,9 @@ browser's own undo, which knows nothing of the ops. */
     if (menu && menu.kind === "slash" && slashKey(ev)) return;
     if (menu && menu.kind === "at" && atKey(ev)) return;
     if (menu && menu.kind === "page" && pageKey(ev)) return;
+    if (menu && menu.kind === "figma" && figmaKey(ev)) return;
     const mod = ev.metaKey || ev.ctrlKey, k = ev.key;
+    if (MEDIA.includes(b.type) && !mod && captionKey(ev, p, i, n, tx)) return;
     if (k === "Escape" && !mod && !ev.shiftKey) { ev.preventDefault(); pickRange(b.id, b.id); return holdKeys(); }   // the line picked
     if (ev.shiftKey && !mod && !ev.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
       const c = caretIn(tx), up = k === "ArrowUp", t = tx.textContent;   // its text selected to an end already: the lines
@@ -1063,6 +1076,9 @@ browser's own undo, which knows nothing of the ops. */
       change([{ op: "block.delete", page: p.id, block: n.dataset.id }]);
       drawPage();
       if (near) focusBlock(near.id, "end");
+    } else if (ev.key === "ArrowDown" && MEDIA.includes(p.blocks[i].type)) {   // a picture: down to its caption
+      ev.preventDefault();
+      focusBlock(p.blocks[i].id, "start");
     } else if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
       const to = ev.key === "ArrowUp" ? p.blocks[i - 1] : p.blocks[i + 1];
       if (to) { ev.preventDefault(); focusBlock(to.id, ev.key === "ArrowUp" ? "end" : "start"); }
@@ -1110,6 +1126,10 @@ browser's own undo, which knows nothing of the ops. */
     if (b.indent > 0) return indent(b, -1);
     if (!i) return;
     const prev = p.blocks[i - 1];
+    if (MEDIA.includes(prev.type)) {                       // a picture above: never joined; an empty line goes
+      if (empty(tx)) { forget(b.id); change([{ op: "block.delete", page: p.id, block: b.id }]); drawPage(); }
+      return focusFig(prev.id);
+    }
     if (prev.type === "divider") {
       change([{ op: "block.delete", page: p.id, block: prev.id }]);
       drawPage();
@@ -1126,6 +1146,7 @@ browser's own undo, which knows nothing of the ops. */
   }
   function joinNext(p, i, n, tx) {
     const b = p.blocks[i], next = p.blocks[i + 1];
+    if (MEDIA.includes(next.type)) return focusFig(next.id);
     if (next.type === "divider") { change([{ op: "block.delete", page: p.id, block: next.id }]); drawPage(); return; }
     const at = tx.textContent.length;
     const joined = b.type === "code" ? tx.textContent + plainOf(next.text) : clean(clean(tx.innerHTML) + (next.type === "code" ? esc(next.text) : next.text));
@@ -1265,7 +1286,7 @@ browser's own undo, which knows nothing of the ops. */
   $("convo").addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && !menu && !ev.target.closest(".reply")) { ev.preventDefault(); closeConvo(); }
   });
-  $("scroll").addEventListener("scroll", () => { if (menu && menu.kind !== "slash" && menu.kind !== "page" && !(menu.kind === "at" && menu.tx)) closePop(); });
+  $("scroll").addEventListener("scroll", () => { if (menu && !["slash", "page", "figma"].includes(menu.kind) && !(menu.kind === "at" && menu.tx)) closePop(); });
 
   function slashInput(n, tx, b, ev) {
     if (menu && menu.kind === "slash") {
@@ -1288,7 +1309,7 @@ browser's own undo, which knows nothing of the ops. */
   }
   function drawSlash(q) {
     const words = q.trim().toLowerCase();
-    const items = [...KINDS, PAGE_KIND, LINK_KIND].filter((k) => !words || k.label.toLowerCase().includes(words) || k.words.includes(words));
+    const items = [...KINDS, PAGE_KIND, LINK_KIND, IMAGE_KIND, FIGMA_KIND].filter((k) => !words || k.label.toLowerCase().includes(words) || k.words.includes(words));
     menu.items = items;
     menu.on = Math.min(menu.on || 0, Math.max(0, items.length - 1));
     const pop = menu.el;
@@ -1333,6 +1354,8 @@ browser's own undo, which knows nothing of the ops. */
     tx.focus();
     setCaret(tx, m.from);
     if (type === LINK_KIND.type) return void document.execCommand("insertText", false, "[[");   // the pages, as "[[" opens them
+    if (type === IMAGE_KIND.type) return pickPictures(b);
+    if (type === FIGMA_KIND.type) return figmaBox(b, tx);
     if (type === PAGE_KIND.type) {                         // a page made inside this one, linked here, and opened
       const id = subpage("");
       putLink(tx, m.from, m.from, id);
@@ -1491,6 +1514,8 @@ browser's own undo, which knows nothing of the ops. */
 
   // ---------------------------------------------------------------- the gutter: + and the grip (drag, or its menu)
   box.addEventListener("click", (ev) => {
+    const act = ev.target.closest(".fig [data-do]");
+    if (act) return figAct(act);
     const to = ev.target.closest(".to-btn");
     if (to) {
       const b = blockOf(to.closest(".blk").dataset.id);
@@ -1810,7 +1835,9 @@ browser's own undo, which knows nothing of the ops. */
       if (b.type === "number") counts.set(k, (counts.get(k) || 0) + 1); else counts.delete(k);
       if (b.type === "code") { out.push("```", ...String(b.text).split("\n"), "```"); continue; }
       if (b.type === "divider") { out.push("---"); continue; }
-      if (b.type === "agents") continue;
+      if (b.type === "agents" || b.type === "work") continue;
+      if (b.type === "image") { out.push(`![${mdInline(b.text)}](image:${b.file})`); continue; }
+      if (b.type === "figma") { out.push(`[Figma: ${b.title || figmaTitle(b.url) || "a frame"}](${b.url})${b.text ? ` -- ${mdInline(b.text)}` : ""}`); continue; }
       const pad = "  ".repeat(k), mark = { text: "", h1: "# ", h2: "## ", h3: "### ", bullet: "- ", quote: "> ",
         todo: b.checked ? "- [x] " : "- [ ] ", number: `${counts.get(k)}. ` }[b.type] || "";
       out.push(pad + mark + mdInline(b.text).replace(/\n/g, `\n${pad}${" ".repeat(mark.length)}`));
@@ -1875,7 +1902,7 @@ browser's own undo, which knows nothing of the ops. */
 
   // -- the drags that pick: a sweep from a line's words, a box from beside the lines
   let sweep = null, band = null, eatMouse = false;
-  const BAND_NOT = ".tx, button, input, textarea, a, .pg-title, .pg-icon, .pg-tools, .agt, .hr, .sent, .fold, .fold-all, .gut, .chk, .banner, .empty, .pk-bar";
+  const BAND_NOT = ".tx, button, input, textarea, a, .pg-title, .pg-icon, .pg-tools, .agt, .hr, .fig, .sent, .fold, .fold-all, .gut, .chk, .banner, .empty, .pk-bar";
   function rowAt(y) {                                     // the line at a height (above the first: it; below the last: it)
     const rows = [...box.children];
     return rows.find((r) => y < r.getBoundingClientRect().bottom) || rows[rows.length - 1] || null;
@@ -2043,9 +2070,13 @@ browser's own undo, which knows nothing of the ops. */
     const text = (ev.clipboardData.getData("text/plain") || "").replace(/\r\n?/g, "\n");
     const ours = clipBlocks(ev.clipboardData);
     const n = tx.closest(".blk"), b = blockOf(n.dataset.id);
+    const pics = [...(ev.clipboardData.files || [])].filter((f) => f.type.startsWith("image/"));
+    if (b && pics.length && !ours && b.type !== "code" && !page().deleted) return void putPictures(pics, b);
     if (!b || (!text && !ours)) return;
     if (b.type === "code" || (!ours && !text.trim().includes("\n"))) {
+      const alone = b.type === "text" && empty(tx) && FIGMA_URL.test(text.trim());
       document.execCommand("insertText", false, b.type === "code" ? text : text.replace(/\n+/g, " "));
+      if (alone) figmaChoice(b, tx, text.trim());           // a Figma link alone on a line: the frame, or a link?
       return;
     }
     let got = ours || [];
@@ -2074,6 +2105,398 @@ browser's own undo, which knows nothing of the ops. */
     drawPage();
     return after;
   }
+
+  // ---------------------------------------------------------------- pictures
+  // An image block shows a picture the backend keeps (POST image: pasted, dropped, or picked from the / menu), as wide as
+  // the reader drags its sides (`width`, a percent of the page's). A figma block shows a frame or board of Figma live, in
+  // Figma's own embed, over the snapshot the backend keeps of it (POST figma/snap: asked for as the page shows it, at
+  // most every SNAP_EVERY; fetched again only when Figma changed it). The snapshot shows while Figma loads, when it
+  // can't (offline), or when the reader picks it; it is what agents are given. Signing in to Figma, or a file the reader
+  // can't open, is for Figma's embed to say.
+  const FIGMA_URL = /^https:\/\/(?:www\.)?figma\.com\/(design|file|board|proto|slides|deck)\/([A-Za-z0-9]{6,64})(?:\/([^/?#\s]*))?[^\s<>"']*$/;
+  const SNAP_EVERY = 600;
+  const LOAD_WAIT = 25000;                                 // ms: Figma's embed not loaded by then, the snapshot shown
+  let figmaToken = { token: false, who: "" };
+  const figView = new Map();                               // block id -> "snap" | "live": as the reader picked
+  const snapAsked = new Map(), snapErr = new Map(), unloaded = new Set();
+  let sizing = null, dropAt = null;
+  const dark = () => !!(ag.theme.current && ag.theme.current.mode === "dark");
+  const fileUrl = (name) => `/api/file/${encodeURIComponent(name)}?${new URLSearchParams({ gatherer: ag.gatherer, instance: ag.instance })}`;
+  function figmaTitle(url) {
+    const m = FIGMA_URL.exec(url || "");
+    try { return m && m[3] ? decodeURIComponent(m[3]).replace(/-/g, " ").replace(/\s+/g, " ").trim() : ""; } catch { return ""; }
+  }
+  function embedUrl(url) {                                 // Figma's Embed Kit 2.0: the link, `embed` for `www`
+    const m = FIGMA_URL.exec(url), node = (new URL(url).searchParams.get("node-id") || "").replace(/:/g, "-");
+    const q = new URLSearchParams({ "embed-host": "ag", footer: "false", theme: dark() ? "dark" : "light" });
+    if (node) { q.set("node-id", node); q.set("page-selector", "false"); }
+    return `https://embed.figma.com/${m[1] === "file" ? "design" : m[1]}/${m[2]}/${m[3] || ""}?${q}`;
+  }
+  const figViewOf = (b) => (navigator.onLine === false || unloaded.has(b.id) ? "snap" : figView.get(b.id) || "live");
+  const focusFig = (id) => { const n = rowOf(id), f = n && n.querySelector(".fig"); if (f) f.focus(); };
+
+  function drawMedia(n, b, ro) {
+    const f = n.querySelector(".fig");
+    f.setAttribute("aria-label", b.type === "image" ? `Picture${b.text ? `: ${plainOf(b.text)}` : ""}` : `Figma: ${b.title || figmaTitle(b.url) || "a frame"}`);
+    if (b.type === "image") drawImage(f, b, ro);
+    else drawFigma(f, b, ro);
+  }
+  function drawImage(f, b, ro) {
+    const sig = JSON.stringify([b.file, b.w, b.h, b.width, ro]);
+    if (f.dataset.sig === sig) return;
+    f.dataset.sig = sig;
+    f.dataset.kind = "image";
+    let pic = f.querySelector(".pic");
+    if (!pic) {
+      pic = el("div", { class: "pic" }, el("img", { draggable: "false", alt: "" }),
+        el("div", { class: "pic-tools" },
+          el("button", { type: "button", "data-do": "caption", text: "Caption" }),
+          el("button", { type: "button", "data-do": "replace", text: "Replace" }),
+          el("button", { type: "button", "data-do": "open", text: "Open" }),
+          el("button", { type: "button", "data-do": "delete", title: "Delete the picture", "aria-label": "Delete the picture", html: SVG.trash })),
+        el("span", { class: "hdl l", "data-side": "l", title: "Drag to resize" }), el("span", { class: "hdl r", "data-side": "r", title: "Drag to resize" }));
+      f.replaceChildren(pic);
+    }
+    const img = pic.querySelector("img");
+    if (img.getAttribute("src") !== fileUrl(b.file)) img.src = fileUrl(b.file);
+    if (b.w && b.h) { img.width = b.w; img.height = b.h; } else { img.removeAttribute("width"); img.removeAttribute("height"); }
+    pic.style.width = b.width ? `${b.width}%` : "";
+    pic.style.maxWidth = !b.width && b.w ? `min(100%, ${b.w}px)` : "";
+    pic.classList.toggle("ro", ro);
+  }
+  function drawFigma(f, b, ro) {
+    const view = figViewOf(b), live = view === "live", err = snapErr.get(b.id) || "";
+    const title = b.title || figmaTitle(b.url) || "Figma";
+    const sig = JSON.stringify([b.url, title, b.snap, b.snap_at, b.w, b.h, ro, view, err, figmaToken.token, dark(), unloaded.has(b.id)]);
+    snapSoon(b);
+    if (f.dataset.sig === sig) return;
+    f.dataset.sig = sig;
+    f.dataset.kind = "figma";
+    let head = f.querySelector(".fg-head"), band = f.querySelector(".fg-band"), body = f.querySelector(".fg-body");
+    if (!head) {
+      head = el("div", { class: "fg-head" });
+      band = el("div", { class: "fg-band" });
+      body = el("div", { class: "fg-body" }, el("img", { class: "fg-snap", alt: "", draggable: "false" }), el("div", { class: "fg-none" }));
+      f.replaceChildren(head, band, body);
+    }
+    const state = live ? "Live" : b.snap ? `Snapshot · ${when(b.snap_at)}` : "No snapshot";
+    head.replaceChildren(
+      el("span", { class: "fg-mark", html: FIGMA_KIND.glyph }),
+      el("b", { class: "fg-name", text: title, title }),
+      el("span", { class: `fg-state ${live ? "live" : "snap"}`, text: state }),
+      el("span", { class: "fg-gap" }),
+      navigator.onLine === false ? null : el("button", { type: "button", class: "fg-btn", "data-do": "view", text: live ? "Snapshot" : "Live",
+        title: live ? "Show the snapshot kept of it" : "Show it live, from Figma" }),
+      el("a", { class: "fg-btn", href: b.url, target: "_blank", rel: "noopener", text: "Open in Figma" }),
+      el("button", { type: "button", class: "fg-btn icon", "data-do": "open", title: "Show it full size", "aria-label": "Show it full size", html: SVG.full }),
+      ro ? null : el("button", { type: "button", class: "fg-btn icon", "data-do": "more", title: "More", "aria-label": "More", text: "⋯" }));
+    const said = !live ? (unloaded.has(b.id) ? "Figma didn't load here, so this is the snapshot kept of it." : navigator.onLine === false
+      ? "Offline: this is the snapshot kept of it." : b.snap ? "" : err || "No snapshot of it yet.")
+      : !b.snap && err ? `Your agents can't see this frame: ${err.replace(/\.$/, "")}.` : "";
+    band.hidden = !said;
+    band.replaceChildren(el("span", { text: said }),
+      !ro && !figmaToken.token && /token|public/.test(said) ? el("button", { type: "button", class: "fg-btn", "data-do": "token", text: "Add a Figma token" }) : null,
+      unloaded.has(b.id) ? el("button", { type: "button", class: "fg-btn", "data-do": "retry", text: "Try again" }) : null);
+    const snap = body.querySelector(".fg-snap"), none = body.querySelector(".fg-none");
+    if (b.snap && snap.getAttribute("src") !== fileUrl(b.snap)) snap.src = fileUrl(b.snap);
+    snap.hidden = !b.snap;
+    none.hidden = !!b.snap || live;
+    none.textContent = "No snapshot";
+    body.style.aspectRatio = b.w && b.h ? `${b.w} / ${b.h}` : "";
+    let frame = body.querySelector("iframe");
+    if (!live) { if (frame) frame.remove(); return; }
+    const src = embedUrl(b.url);
+    if (!frame) {
+      frame = el("iframe", { class: "fg-live", allowfullscreen: true, referrerpolicy: "no-referrer-when-downgrade", title: `${title}, live from Figma` });
+      body.append(frame);
+    }
+    if (frame.getAttribute("src") !== src) {
+      clearTimeout(frame._wait);
+      frame.addEventListener("load", () => clearTimeout(frame._wait), { once: true });
+      frame._wait = setTimeout(() => { if (frame.isConnected) { unloaded.add(b.id); redrawFig(b.id); } }, LOAD_WAIT);
+      frame.src = src;
+    }
+  }
+  function redrawFig(id) {
+    const n = rowOf(id), b = blockOf(id), p = page();
+    if (n && b && MEDIA.includes(b.type)) drawMedia(n, b, !!(p && p.deleted));
+  }
+  // its snapshot asked for: when it has none, or it is SNAP_EVERY old (Figma's file unchanged: the backend keeps it)
+  function snapSoon(b, force = false, tell = false) {
+    const p = page(), t = now();
+    if (!p || p.deleted || b.type !== "figma") return;
+    if (!force && (t - (snapAsked.get(b.id) || 0) < SNAP_EVERY || (b.snap && t - (b.snap_at || 0) < SNAP_EVERY))) return;
+    snapAsked.set(b.id, t);
+    ag.api("figma/snap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ block: b.id }) })
+      .then((r) => r.json()).then((got) => {
+        if (got.error) snapErr.set(b.id, got.error); else snapErr.delete(b.id);
+        if (tell) say(got.error ? `No snapshot: ${got.error}` : "The snapshot is up to date", !!got.error);
+        redrawFig(b.id);
+      }).catch(() => {});
+  }
+  ag.api("figma").then((r) => r.json()).then((t) => { figmaToken = t; if (page()) drawPage(); }).catch(() => {});
+  ag.theme.on(() => { if (page()) drawPage(); });
+  for (const e of ["online", "offline"]) addEventListener(e, () => { if (page()) drawPage(); });
+
+  // -- keys in a caption: Enter a line below, Backspace (or ↑) at its start the picture
+  function captionKey(ev, p, i, n, tx) {
+    const b = p.blocks[i], k = ev.key;
+    if (k === "Enter" && !ev.shiftKey) { ev.preventDefault(); addAfter(b, "text"); return true; }
+    if ((k === "Backspace" && edge(tx, false)) || (k === "ArrowUp" && onLine(tx, false)) || (k === "ArrowLeft" && edge(tx, false))) {
+      ev.preventDefault();
+      focusFig(b.id);
+      return true;
+    }
+    if ((k === "Delete" && edge(tx, true)) || k === "Tab") { ev.preventDefault(); return true; }
+    return false;
+  }
+
+  // -- pictures added: kept by the backend, then put on the page as blocks -- into the empty line they came from, or
+  // after `at` ("": first) -- with a line to type in after them if they end the page; one step for ⌘Z
+  async function upload(file) {
+    const r = await ag.api("image", { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+    const got = await r.json().catch(() => ({}));
+    if (!r.ok || got.error) throw new Error(got.error || `not kept (${r.status})`);
+    return got;
+  }
+  async function putPictures(files, at) {
+    say(files.length > 1 ? `Adding ${files.length} pictures…` : "Adding the picture…");
+    const made = [];
+    for (const f of files) {
+      try { made.push({ type: "image", text: "", checked: false, indent: 0, ...(await upload(f)) }); }
+      catch (e) { return say(`${f.name || "The picture"}: ${e.message}`, true); }
+    }
+    say(made.length > 1 ? `${made.length} pictures added` : "Picture added");
+    putMedia(made, at && blockOf(at.id));
+  }
+  function putMedia(made, at, into = null) {
+    const p = page();
+    if (!p || p.deleted || !made.length) return;
+    const tx = at && rowOf(at.id) && rowOf(at.id).querySelector(".tx");
+    if (into === null) into = !!(at && at.type === "text" && tx && empty(tx));
+    const i = at ? p.blocks.findIndex((x) => x.id === at.id) : -1, ops = [];
+    let after = at ? at.id : "", next = p.blocks[i + 1];
+    made.forEach((m, j) => {
+      const id = j === 0 && into ? at.id : rid();
+      if (j === 0 && into) forget(at.id);
+      ops.push({ op: "block.put", page: p.id, block: { ...m, id }, ...(j === 0 && into ? {} : { after }) });
+      after = id;
+    });
+    if (!next) { next = { id: rid(), type: "text", text: "", checked: false, indent: 0 }; ops.push({ op: "block.put", page: p.id, block: next, after }); }
+    change(ops);
+    drawPage();
+    focusBlock(next.id, "start");
+  }
+  function pickFiles(then, many = true) {
+    const input = el("input", { type: "file", accept: "image/png,image/jpeg,image/gif,image/webp,image/svg+xml", multiple: many });
+    input.addEventListener("change", () => { if (input.files.length) then([...input.files]); });
+    input.click();
+  }
+  const pickPictures = (b) => pickFiles((fs) => putPictures(fs, blockOf(b.id) || b));
+  function replacePicture(b) {
+    pickFiles(async ([f]) => {
+      try {
+        const got = await upload(f);
+        change([{ op: "block.put", page: current, block: { id: b.id, ...got } }]);
+        drawPage();
+      } catch (e) { say(`${f.name || "The picture"}: ${e.message}`, true); }
+    }, false);
+  }
+  function dropBlock(b) {
+    const p = shown(), i = p.blocks.findIndex((x) => x.id === b.id), near = p.blocks[i + 1] || p.blocks[i - 1];
+    forget(b.id);
+    change([{ op: "block.delete", page: current, block: b.id }]);
+    drawPage();
+    if (near) focusBlock(near.id, "start");
+  }
+
+  // -- a Figma link: pasted alone on a line (shown live, or kept a link?), or given to the / menu's Figma
+  function makeFigma(b, url, into) {
+    const at = blockOf(b.id);
+    if (at) putMedia([{ type: "figma", url, title: figmaTitle(url), text: "", checked: false, indent: 0 }], at, into);
+  }
+  function figmaChoice(b, tx, url) {
+    const m = popUp(tx.getBoundingClientRect(), (pop) => pop.append(el("div", { class: "hd", text: "Show it as" }),
+      item({ glyph: FIGMA_KIND.glyph, label: "The frame, live", note: figmaTitle(url) || "From Figma" }, () => makeFigma(b, url, true)),
+      item({ glyph: "↗", label: "A link", note: "Keep it as words" }, () => linkIt(b, url))), null, "figma");
+    m.on = 0;
+    m.el.querySelector(".it").classList.add("on");
+  }
+  function figmaKey(ev) {
+    const its = [...menu.el.querySelectorAll(".it")];
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      menu.on = (menu.on + 1) % its.length;
+      its.forEach((x, j) => x.classList.toggle("on", j === menu.on));
+      return true;
+    }
+    if (ev.key === "Enter") { ev.preventDefault(); its[menu.on].click(); return true; }
+    if (ev.key === "Escape") { ev.preventDefault(); closePop(); return true; }
+    closePop();                                            // typing on: the link stays as it was pasted
+    return false;
+  }
+  function linkIt(b, url) {
+    const x = blockOf(b.id), tx = rowOf(b.id) && rowOf(b.id).querySelector(".tx");
+    if (!x || !tx) return;
+    const h = clean(`<a href="${url.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}">${esc(url)}</a>`);
+    forget(x.id);
+    x.text = h;
+    tx.innerHTML = withLinks(h);
+    change([{ op: "block.put", page: current, block: { id: x.id, text: h } }]);
+    focusBlock(x.id, "end");
+  }
+  function figmaBox(b, tx) {
+    const m = popUp(tx.getBoundingClientRect(), (pop) => {
+      const input = el("input", { class: "fg-input", type: "url", placeholder: "Paste the link to a frame or board", "aria-label": "The Figma link", autocomplete: "off" });
+      const bad = el("div", { class: "fg-bad", hidden: true });
+      const go = () => {
+        const url = input.value.trim();
+        if (!FIGMA_URL.test(url)) { bad.textContent = "That isn't a link to a Figma file: figma.com/design/…, /board/…, /proto/…"; bad.hidden = false; return; }
+        closePop();
+        const at = blockOf(b.id), t = rowOf(b.id) && rowOf(b.id).querySelector(".tx");
+        if (at) makeFigma(at, url, !!(t && empty(t) && at.type === "text"));
+      };
+      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); go(); } });
+      pop.append(el("div", { class: "hd", text: "Figma" }),
+        el("div", { class: "fg-row" }, input, el("button", { type: "button", class: "primary", text: "Show it", onclick: go })), bad,
+        el("p", { class: "fg-note", text: "In Figma, right-click a frame and pick Copy link to selection, or use Share, Copy link for the whole file." }));
+    }, null, "figma-box", "fg-pop");
+    setTimeout(() => { const i = m.el.querySelector("input"); if (i) i.focus(); });
+  }
+  function tokenBox(rect) {
+    const m = popUp(rect, (pop) => {
+      const input = el("input", { class: "fg-input", type: "password", placeholder: "figd_…", "aria-label": "Your Figma personal access token", autocomplete: "off" });
+      const bad = el("div", { class: "fg-bad", hidden: true });
+      const send = async (token) => {
+        bad.hidden = true;
+        let got;
+        try { got = await (await ag.api("figma/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) })).json(); }
+        catch { got = { error: "the dashboard didn't answer" }; }
+        if (got.error) { bad.textContent = got.error; bad.hidden = false; return; }
+        figmaToken = { token: !!token, who: got.who || "" };
+        closePop();
+        say(token ? `Figma token saved${got.who ? ` (${got.who})` : ""}` : "Figma token forgotten");
+        snapErr.clear();
+        const p = page();
+        if (p && token) for (const x of p.blocks) if (x.type === "figma") snapSoon(x, true);
+        drawPage();
+      };
+      const save = () => { if (input.value.trim()) send(input.value.trim()); };
+      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); save(); } });
+      pop.append(el("div", { class: "hd", text: "A Figma token" }),
+        el("p", { class: "fg-note", text: "With one, Notes keeps a snapshot of any frame you can open in Figma: it shows when Figma can't, and it is what your agents see. Without one, only a public file's cover." }),
+        el("p", { class: "fg-note" }, "Make one in Figma's ", el("a", { href: "https://www.figma.com/settings", target: "_blank", rel: "noopener", text: "Settings" }),
+          ": Security, Personal access tokens, with read access to file content. It stays on this computer."),
+        el("div", { class: "fg-row" }, input, el("button", { type: "button", class: "primary", text: "Save", onclick: save })), bad,
+        figmaToken.token ? el("button", { type: "button", class: "fg-forget", text: `Forget the token${figmaToken.who ? ` of ${figmaToken.who}` : ""}`, onclick: () => send("") }) : null);
+    }, null, "token", "fg-pop");
+    setTimeout(() => { const i = m.el.querySelector("input"); if (i) i.focus(); });
+  }
+  function figmaMenu(b, rect) {
+    popUp(rect, (pop) => pop.append(
+      item({ glyph: SVG.restore, sm: true, label: "Fetch the snapshot again" }, () => { unloaded.delete(b.id); snapSoon(b, true, true); }),
+      item({ glyph: "⚿", sm: true, label: figmaToken.token ? "Figma token…" : "Add a Figma token…", note: figmaToken.who || "" }, () => tokenBox(rect)),
+      item({ glyph: "⧉", sm: true, label: "Copy the link" }, () => navigator.clipboard.writeText(b.url).then(() => say("Link copied"), () => say("Couldn't copy the link", true))),
+      el("div", { class: "sep" }),
+      item({ glyph: SVG.trash, sm: true, label: "Delete", bad: true }, () => dropBlock(b))));
+  }
+
+  // -- a picture's buttons, its sides dragged, and full size
+  function figAct(btn) {
+    const n = btn.closest(".blk"), b = n && blockOf(n.dataset.id);
+    if (!b) return;
+    const what = btn.dataset.do, ro = !!page().deleted;
+    if (what === "open") return showFull(b);
+    if (what === "view") { figView.set(b.id, figViewOf(b) === "live" ? "snap" : "live"); unloaded.delete(b.id); return redrawFig(b.id); }
+    if (what === "retry") { unloaded.delete(b.id); figView.set(b.id, "live"); return redrawFig(b.id); }
+    if (ro) return;
+    if (what === "caption") return focusBlock(b.id, "end");
+    if (what === "replace") return replacePicture(b);
+    if (what === "delete") return dropBlock(b);
+    if (what === "token") return tokenBox(btn.getBoundingClientRect());
+    if (what === "more") return figmaMenu(b, btn.getBoundingClientRect());
+  }
+  box.addEventListener("dblclick", (ev) => {
+    const img = ev.target.closest(".fig .pic img, .fig .fg-snap");
+    const b = img && blockOf(img.closest(".blk").dataset.id);
+    if (b) showFull(b);
+  });
+  box.addEventListener("pointerdown", (ev) => {
+    const h = ev.target.closest(".fig .hdl");
+    if (!h || ev.button !== 0 || !page() || page().deleted) return;
+    ev.preventDefault();
+    const n = h.closest(".blk"), pic = h.closest(".pic");
+    sizing = { id: n.dataset.id, pic, col: n.querySelector(".fig").getBoundingClientRect().width, x: ev.clientX,
+      w: pic.getBoundingClientRect().width, side: h.dataset.side, pct: null };
+    h.setPointerCapture(ev.pointerId);
+    document.body.classList.add("sizing");
+  });
+  box.addEventListener("pointermove", (ev) => {
+    if (!sizing) return;
+    const dx = (ev.clientX - sizing.x) * (sizing.side === "r" ? 1 : -1);   // (at the left edge: the side dragged moves)
+    sizing.pct = Math.max(10, Math.min(100, ((sizing.w + dx) / sizing.col) * 100));
+    sizing.pic.style.width = `${sizing.pct}%`;
+    sizing.pic.style.maxWidth = "";
+  });
+  const endSize = () => {
+    if (!sizing) return;
+    const s = sizing;
+    sizing = null;
+    document.body.classList.remove("sizing");
+    if (s.pct === null) return;
+    change([{ op: "block.put", page: current, block: { id: s.id, width: Math.round(s.pct) } }]);
+    drawPage();
+  };
+  box.addEventListener("pointerup", endSize);
+  box.addEventListener("pointercancel", endSize);
+  function showFull(b) {
+    const lb = $("lightbox");
+    let inner;
+    if (b.type === "image") inner = el("img", { src: fileUrl(b.file), alt: plainOf(b.text) });
+    else if (figViewOf(b) === "live") inner = el("iframe", { src: embedUrl(b.url), allowfullscreen: true, title: `${b.title || figmaTitle(b.url) || "Figma"}, live from Figma` });
+    else inner = b.snap ? el("img", { src: fileUrl(b.snap), alt: b.title || "" }) : el("p", { class: "lb-none", text: "No snapshot of it yet." });
+    lb.replaceChildren(el("div", { class: `lb-in ${b.type}` }, inner),
+      el("button", { type: "button", class: "lb-x", title: "Close (Esc)", "aria-label": "Close", html: SVG.x, onclick: hideFull }));
+    lb.dataset.block = b.id;
+    lb.hidden = false;
+    lb.querySelector(".lb-x").focus();
+  }
+  function hideFull() {
+    const lb = $("lightbox"), id = lb.dataset.block;
+    lb.hidden = true;
+    lb.replaceChildren();
+    if (id) focusFig(id);
+  }
+  $("lightbox").addEventListener("click", (ev) => { if (ev.target === $("lightbox") || ev.target.classList.contains("lb-in")) hideFull(); });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("lightbox").hidden) { ev.preventDefault(); ev.stopPropagation(); hideFull(); } }, true);
+
+  // -- pictures dropped on the page: put where the line shows, between lines
+  const filesIn = (ev) => !!ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
+  document.addEventListener("dragover", (ev) => { if (filesIn(ev)) ev.preventDefault(); });   // (never the file opened in the panel)
+  document.addEventListener("drop", (ev) => { if (filesIn(ev)) { ev.preventDefault(); $("drop").hidden = true; } });
+  $("scroll").addEventListener("dragover", (ev) => {
+    const p = page();
+    if (!filesIn(ev) || !p || p.deleted || SPECIAL.includes(current)) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = "copy";
+    const rows = [...box.children], before = rows.find((r) => { const b = r.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; }) || null;
+    const k = before ? rows.indexOf(before) : rows.length;
+    dropAt = k ? rows[k - 1].dataset.id : "";
+    const at = (before || rows[rows.length - 1] || box).getBoundingClientRect(), left = box.getBoundingClientRect(), line = $("drop");
+    line.hidden = false;
+    Object.assign(line.style, { left: `${left.left}px`, width: `${left.width}px`, top: `${(before ? at.top : at.bottom) - 2}px` });
+  });
+  $("scroll").addEventListener("dragleave", (ev) => { if (!ev.relatedTarget || !$("scroll").contains(ev.relatedTarget)) $("drop").hidden = true; });
+  $("scroll").addEventListener("drop", (ev) => {
+    const p = page();
+    if (!filesIn(ev) || !p || p.deleted || SPECIAL.includes(current)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    $("drop").hidden = true;
+    const pics = [...ev.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
+    if (!pics.length) return say("Only pictures can be dropped into the notes", true);
+    putPictures(pics, dropAt ? p.blocks.find((x) => x.id === dropAt) : null);
+  });
 
   // ---------------------------------------------------------------- the gatherer's actors (ag.actors), to send blocks to
   let crew = { agents: [], harnesses: [], start: "", home: "" };
