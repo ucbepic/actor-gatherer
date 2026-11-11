@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
-from ag_dashboard import app_host, data, history  # noqa: E402
+from ag_dashboard import app_host, data, history, livedocs  # noqa: E402
 import app_kit  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 import codex_items  # noqa: E402
@@ -108,6 +108,14 @@ class MergedHomeTest(unittest.TestCase):
         self.assertTrue(history.search("b", None, "c2 question")["hits"])
         self.assertTrue(history.search("a", None, "c3 question")["hits"])
 
+
+    def test_a_file_s_writers_are_read_once_each_under_its_own_gatherer(self):
+        for gatherer, channel, path in (("a", "c1", "/w/one.txt"), ("b", "c2", "/w/two.txt")):
+            insert(self.m, gatherer, ch(channel), [{"type": "file_touched", "id": f"touch:{channel}",
+                                                    "payload": {"path": path, "how": "modified"}}])
+        found = livedocs.writers(["/w"], 0)
+        self.assertEqual({rel: [(w["gatherer"], w["channel"]) for w in ws] for rel, ws in found.items()},
+                         {"one.txt": [("a", "c1")], "two.txt": [("b", "c2")]})
 
 class MergedAppsTest(MergedHomeTest):
     """Apps in the home's one database: a gatherer's are the instances opened in it."""
