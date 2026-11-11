@@ -221,14 +221,31 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
         changed = {k: v for k, v in out.env.items() if os.environ.get(k) != v}
         print(" ".join([*(f"{k}={shlex.quote(v)}" for k, v in sorted(changed.items())), *map(shlex.quote, out.argv)]))
         return 0
-    if not shutil.which(out.argv[0], path=out.env.get("PATH")):
+    program = shutil.which(out.argv[0], path=out.env.get("PATH"))
+    if not program:
         raise AgError(f"no {out.argv[0]} to run; install {harness} or set [cli.harnesses.{harness}] command "
                       f"in {config.path()}")
     if out.session:
         claim(gatherer or out.session, out.session, opts["quiet"])
     migrations(opts["quiet"])
+    if os.name == "nt":
+        return run_child([program, *out.argv[1:]], out.env)
     os.execvpe(out.argv[0], out.argv, out.env)
     return 127  # not reached
+
+
+def run_child(argv: List[str], env: Dict[str, str]) -> int:
+    """Windows has no exec: os.execvpe there starts the harness as a new process and ends this one, so the shell takes
+    its prompt back and the harness runs with no console. Instead ag runs it as a child, by the path `shutil.which`
+    found (a harness npm installed is a .cmd, which a bare name cannot start), and waits: ag's pid, which `claim`
+    recorded, runs exactly as long as the harness. Ctrl-C reaches the harness itself, which shares the console; ag
+    keeps waiting for it to end."""
+    child = subprocess.Popen(argv, env=env)
+    while True:
+        try:
+            return child.wait()
+        except KeyboardInterrupt:
+            continue
 
 
 def claim(gatherer: str, session: str, quiet: bool = False) -> None:

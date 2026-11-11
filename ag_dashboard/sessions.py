@@ -114,6 +114,7 @@ from urllib.parse import urlsplit
 
 import harness_kit
 from harness_kit.base import AT_DENY, Box
+from harness_kit.processes import end_group
 from harness_kit.screen import Screen
 
 from . import actions, answers, home
@@ -995,7 +996,7 @@ class Sessions:
                 pass
             if a.busy:                           # mid-turn: it would finish the turn first
                 try:
-                    os.killpg(a.proc.pid, signal.SIGTERM)
+                    end_group(a.proc.pid)
                 except OSError:
                     pass
             return next(x for x in self.list() if x["session_id"] == session_id)

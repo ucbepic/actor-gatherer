@@ -131,7 +131,8 @@ def _bind(address) -> socket.socket:
     host, port = address
     sock = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM)
     try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name != "nt":      # Windows' SO_REUSEADDR would let this bind a port another program is listening on
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((host, port))
         sock.listen(2048)
     except BaseException:

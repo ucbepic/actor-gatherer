@@ -26,6 +26,8 @@ import re
 import uuid
 from typing import List, Optional
 
+from harness_kit.processes import running
+
 HOME = os.path.abspath(os.path.expanduser(os.environ.get("AG_HOME") or "~/.ag"))
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
@@ -127,13 +129,7 @@ def view_file(name: str) -> Optional[str]:
 
 
 def alive(pid) -> bool:
-    try:
-        os.kill(int(pid), 0)
-    except (ProcessLookupError, ValueError, TypeError):
-        return False
-    except PermissionError:
-        return True
-    return True
+    return running(pid)
 
 
 def _boot_id() -> Optional[str]:
