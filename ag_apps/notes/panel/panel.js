@@ -286,7 +286,7 @@ and what agents see of it. The words under either are its caption. */
   // or restored. One history per page, for as long as the panel is open.
   const PAUSE = 1000;                                      // a run of typing ends after this long without a key
   const LINE = ["type", "text", "checked", "indent"];      // what tells whether a line changed since
-  const BLANK = { type: "text", text: "", checked: false, indent: 0, to: "", sent: "", extra: "", group: "", work: false, ended: "", ended_at: "" };
+  const BLANK = { type: "text", text: "", checked: false, indent: 0, calls: [], work: false, ended: "", ended_at: "" };
   const histories = new Map();                             // page id -> {done: [step], undone: [step]}
   let run = null, replaying = false;                       // run: the step keys typed are adding to {step, key, page, at}
   const historyOf = (id) => { if (!histories.has(id)) histories.set(id, { done: [], undone: [] }); return histories.get(id); };
@@ -701,7 +701,7 @@ and what agents see of it. The words under either are its caption. */
     n.style.setProperty("--ind", b.indent || 0);
     n.classList.toggle("done", b.type === "todo" && !!b.checked);
     n.classList.toggle("ended", crossed(b));
-    n.classList.toggle("is-sent", !!b.to || outgoing.has(b.id));
+    n.classList.toggle("is-sent", onIt(b).length > 0 || outgoing.has(b.id));
     n.classList.toggle("ro", !!ro);
     if (b.type === "agents") return drawAgentsBlock(n);
     if (b.type === "work") return drawWorkBlock(n);
@@ -1599,9 +1599,9 @@ and what agents see of it. The words under either are its caption. */
       for (const k of KINDS) if (!UNSENT.includes(k.type) || b.type === k.type)
         pop.append(item({ ...k, note: "", sm: true, cur: k.type === b.type }, () => { if (k.type !== b.type) { retype(b, k.type); focusBlock(b.id); } }));
       pop.append(el("div", { class: "sep" }),
-        ...(UNSENT.includes(b.type) ? [] : b.to ? [
-          item({ glyph: SVG.at, sm: true, label: "Open its Chat" }, () => ag.actors.show(b.to).catch((e) => say(e.message, true))),
-          item({ glyph: SVG.x, sm: true, label: "Forget who it went to", note: "Still a work item" }, () => { change([{ op: "block.put", page: current, block: { id: b.id, to: "", work: true } }], false); drawPage(); }),
+        ...(UNSENT.includes(b.type) ? [] : onIt(b).length ? [
+          item({ glyph: SVG.at, sm: true, label: "Send to another agent…" }, () => openPicker(b.id, n.getBoundingClientRect())),
+          ...viewsOn(b).map((v) => item({ glyph: SVG.x, sm: true, label: `Remove ${nameOf(actorOf(v.to), v.to)}`, note: "from this line" }, () => drop(v))),
         ] : [item({ glyph: SVG.at, sm: true, label: "Send to an agent…" }, () => openPicker(b.id, n.getBoundingClientRect())),
           b.work ? item({ glyph: SVG.x, sm: true, label: "Not a work item" }, () => markWork([b], false))
             : item({ glyph: SVG.work, sm: true, label: "Mark as a work item", note: "Tracked on the Work page" }, () => markWork([b], true))]),
@@ -1695,7 +1695,7 @@ and what agents see of it. The words under either are its caption. */
     bar.style.left = `${box.offsetLeft + box.offsetWidth - bar.offsetWidth}px`;
   }
   // a line as its copy has it: a new id, and nothing of whom it was sent to or how it was ended
-  const copyOf = ({ to: _to, sent: _sent, thread: _thread, extra: _extra, group: _group, work: _work, ended: _ended, ended_at: _at,
+  const copyOf = ({ calls: _calls, to: _to, sent: _sent, thread: _thread, extra: _extra, group: _group, work: _work, ended: _ended, ended_at: _at,
     source: _source, source_at: _sourceAt, ...rest }) => ({ ...rest, id: rid() });
   // lines with words to send (no divider, no agents table)
   const sendable = (bs) => bs.filter((b) => !UNSENT.includes(b.type) && plainOf(b.type === "code" ? esc(b.text) : b.text).trim());
@@ -2132,7 +2132,7 @@ and what agents see of it. The words under either are its caption. */
     if (node) { q.set("node-id", node); q.set("page-selector", "false"); }
     return `https://embed.figma.com/${m[1] === "file" ? "design" : m[1]}/${m[2]}/${m[3] || ""}?${q}`;
   }
-  const viewOf = (b) => (navigator.onLine === false || unloaded.has(b.id) ? "snap" : figView.get(b.id) || "live");
+  const figViewOf = (b) => (navigator.onLine === false || unloaded.has(b.id) ? "snap" : figView.get(b.id) || "live");
   const focusFig = (id) => { const n = rowOf(id), f = n && n.querySelector(".fig"); if (f) f.focus(); };
 
   function drawMedia(n, b, ro) {
@@ -2165,7 +2165,7 @@ and what agents see of it. The words under either are its caption. */
     pic.classList.toggle("ro", ro);
   }
   function drawFigma(f, b, ro) {
-    const view = viewOf(b), live = view === "live", err = snapErr.get(b.id) || "";
+    const view = figViewOf(b), live = view === "live", err = snapErr.get(b.id) || "";
     const title = b.title || figmaTitle(b.url) || "Figma";
     const sig = JSON.stringify([b.url, title, b.snap, b.snap_at, b.w, b.h, ro, view, err, figmaToken.token, dark(), unloaded.has(b.id)]);
     snapSoon(b);
@@ -2407,7 +2407,7 @@ and what agents see of it. The words under either are its caption. */
     if (!b) return;
     const what = btn.dataset.do, ro = !!page().deleted;
     if (what === "open") return showFull(b);
-    if (what === "view") { figView.set(b.id, viewOf(b) === "live" ? "snap" : "live"); unloaded.delete(b.id); return redrawFig(b.id); }
+    if (what === "view") { figView.set(b.id, figViewOf(b) === "live" ? "snap" : "live"); unloaded.delete(b.id); return redrawFig(b.id); }
     if (what === "retry") { unloaded.delete(b.id); figView.set(b.id, "live"); return redrawFig(b.id); }
     if (ro) return;
     if (what === "caption") return focusBlock(b.id, "end");
@@ -2453,7 +2453,7 @@ and what agents see of it. The words under either are its caption. */
     const lb = $("lightbox");
     let inner;
     if (b.type === "image") inner = el("img", { src: fileUrl(b.file), alt: plainOf(b.text) });
-    else if (viewOf(b) === "live") inner = el("iframe", { src: embedUrl(b.url), allowfullscreen: true, title: `${b.title || figmaTitle(b.url) || "Figma"}, live from Figma` });
+    else if (figViewOf(b) === "live") inner = el("iframe", { src: embedUrl(b.url), allowfullscreen: true, title: `${b.title || figmaTitle(b.url) || "Figma"}, live from Figma` });
     else inner = b.snap ? el("img", { src: fileUrl(b.snap), alt: b.title || "" }) : el("p", { class: "lb-none", text: "No snapshot of it yet." });
     lb.replaceChildren(el("div", { class: `lb-in ${b.type}` }, inner),
       el("button", { type: "button", class: "lb-x", title: "Close (Esc)", "aria-label": "Close", html: SVG.x, onclick: hideFull }));
@@ -2542,26 +2542,61 @@ and what agents see of it. The words under either are its caption. */
   // The lines an actor is on now: the ones its latest message is about (ag.actors' `asked_of`, a line of this notebook's,
   // or several sent together: their ids, ", " between), or none -- its latest message came from elsewhere (Chat, another app).
   const linesOn = (a) => (a && a.asked_of && a.asked_of.app === ag.app ? String(a.asked_of.item || "").split(/,\s*/).filter(Boolean) : []);
-  // when a line last went to its actor: sent, or the user's latest message about it
-  const lastSent = (b) => Math.max(b.sent || 0, ...(b.thread || []).filter((l) => l.by === "user").map((l) => l.at || 0));
+  // -- who a line went to (notebook.py): its calls, one an agent, in the order sent -- {to, sent, extra?, group?,
+  // dropped?}; `dropped`: the reader took it back from that agent. (A notebook kept before a line could go to several
+  // said its one agent as the line's own `to`, `sent`, `extra`, `group`: read as its one call, as the notebook reads it.)
+  const callsOf = (b) => (!b ? [] : Array.isArray(b.calls) ? b.calls : b.to ? [{ to: b.to, sent: b.sent, extra: b.extra, group: b.group }] : []);
+  const onIt = (b) => callsOf(b).filter((c) => !c.dropped);
+  // whether a call went to this actor (a codex actor's thread, the channel it became; the gatherer agent, however named)
+  const callTo = (c, ch) => c.to === ch || (!!actorOf(c.to) && actorOf(c.to) === actorOf(ch));
+  const byCall = (c, by) => by === `agent:${c.to}` || byOf(actorOf(c.to), by);
+  // whether a line of a block's thread is of its conversation with this call's agent: the reader's messages to it, its
+  // reports -- and what no call claims: a message from before a line could go to several, its first agent's; a report by
+  // an agent the line never went to (one its agent handed it to), the first's it is with now
+  function claims(calls, c, l) {
+    const own = (x) => (l.by === "user" ? !!l.to && callTo(x, l.to) : byCall(x, l.by));
+    if (calls.some(own)) return own(c);
+    const home = l.by === "user" ? calls[0] : calls.find((x) => !x.dropped) || calls[0];
+    return !!home && c.to === home.to;
+  }
+  // A line as one of its agents has it: the line, with that call's `to`, `sent`, `extra`, `group` and `dropped`, and
+  // their conversation as its `thread`. Its status, its chip and the conversation beside the page are drawn from it.
+  function viewOf(b, c) {
+    const calls = callsOf(b);
+    return { ...b, to: c.to, sent: c.sent || 0, extra: c.extra || "", group: c.group || "", dropped: c.dropped || 0,
+      thread: (b.thread || []).filter((l) => claims(calls, c, l)) };
+  }
+  const viewsOf = (b) => callsOf(b).map((c) => viewOf(b, c));
+  const viewsOn = (b) => viewsOf(b).filter((v) => !v.dropped);
+  const viewFor = (b, ch) => { const c = ch ? callsOf(b).find((x) => callTo(x, ch)) : null; return c ? viewOf(b, c) : null; };
+  // a line's calls with one more: to the agent it just went to -- in the place of the one to that agent before, if any
+  function withCall(b, call, asked = "") {
+    const calls = callsOf(b).map((c) => ({ ...c })), i = calls.findIndex((c) => callTo(c, call.to) || (!!asked && callTo(c, asked)));
+    if (i < 0) calls.push(call); else calls[i] = call;
+    return calls;
+  }
+  // when a line last went to its actor (a view's: its call's), or to its agents: sent, or the user's latest message about it
+  const sentOf = (b) => ("sent" in b ? b.sent || 0 : Math.max(0, ...onIt(b).map((c) => c.sent || 0)));
+  const lastSent = (b) => Math.max(sentOf(b), ...(b.thread || []).filter((l) => l.by === "user").map((l) => l.at || 0));
   // -- work items (notebook.py): lines sent to an agent, or marked as one; only the reader ends one
-  const isWork = (b) => !!b && !UNSENT.includes(b.type) && !!(b.to || b.work);
+  const isWork = (b) => !!b && !UNSENT.includes(b.type) && !!(onIt(b).length || b.work);
   // how the reader ended one -- "done", "canceled" -- or "": a to-do one is done as it is ticked
   const endedOf = (b) => (!isWork(b) ? "" : b.ended || (b.type === "todo" && b.checked ? "done" : ""));
   // crossed out, and folded away on its page: a work item the reader ticked (a to-do, done so). Ending one -- accepting
   // or canceling it -- changes no line: the page stays as the reader wrote it, the line's chip saying how its work ended.
   const crossed = (b) => isWork(b) && b.type === "todo" && !!b.checked;
-  const endedAt = (b) => b.ended_at || Math.max(b.sent || 0, ...(b.thread || []).map((l) => l.at || 0)) || 0;
+  const endedAt = (b) => b.ended_at || Math.max(sentOf(b), ...(b.thread || []).map((l) => l.at || 0)) || 0;
   const pageOf = (b) => { const f = findLine(b.id); return f ? f.p : null; };
   const SETTLE = 15;                                       // s: a line just sent to an actor not busy yet: not taken up yet
-  // How a work item stands, {key, cls, word} -- its own state, not its actor's alone: ended (done, canceled); sent to no
-  // one (new); its actor on it now (run; ask: it asks about it, errs on it, or is gone); reported on since it was last
-  // sent, or its actor took it up and stopped without a report (review: the reader's to accept, or send back); sent,
-  // its actor on something before it (queue).
+  // How a work item stands with one of its agents (`b`, its view), {key, cls, word} -- its own state, not its actor's
+  // alone: ended (done, canceled); sent to no one (new); taken back from that agent (dropped); its actor on it now (run;
+  // ask: it asks about it, errs on it, or is gone); reported on since it was last sent, or its actor took it up and
+  // stopped without a report (review: the reader's to accept, or send back); sent, its actor on something before it (queue).
   function itemStands(b) {
     const e = endedOf(b);
     if (e) return e === "done" ? { key: "done", cls: "done", word: "Done" } : { key: "canceled", cls: "gone", word: "Canceled" };
     if (!b.to) return { key: "new", cls: "new", word: "Not started" };
+    if (b.dropped) return { key: "dropped", cls: "gone", word: "Removed" };
     const a = actorOf(b.to), [cls, word] = stands(a);
     if (cls === "gone") return crewKnown ? { key: "ask", cls: "bad", word: "Agent gone" } : { key: "queue", cls: "wait", word: "Sent" };
     const busy = cls === "work" || cls === "ask" || cls === "bad";
@@ -2571,8 +2606,18 @@ and what agents see of it. The words under either are its caption. */
     if (busy ? waiting(a, b) : now() - lastSent(b) < SETTLE) return { key: "queue", cls: "wait", word: busy ? "Queued" : "Sent" };
     return { key: "review", cls: "review", word: "To review" };
   }
-  // what to say of a work item beside how it stands: what it asks, what it waits for, its latest report
+  // How a work item stands, as one: ended; sent to no one now (new) -- else as the most pressing of its agents: one
+  // asking about it, one on it, one it is to review from, one it waits for (`v`: that agent's view of it).
+  function lineStands(b) {
+    const vs = endedOf(b) ? [] : viewsOn(b);
+    if (!vs.length) return itemStands(endedOf(b) ? b : { ...b, to: "" });
+    const all = vs.map((v) => ({ ...itemStands(v), v }));
+    return ["ask", "run", "review", "queue"].map((k) => all.find((s) => s.key === k)).find(Boolean) || all[0];
+  }
+  // what to say of a work item beside how it stands (`b`: the view of it its status is from): what it asks, what it
+  // waits for, its latest report
   function itemSaid(b, s = itemStands(b)) {
+    if (s.v) b = s.v;
     const a = b.to ? actorOf(b.to) : null;
     if (s.key === "new") return "Sent to no one yet";
     if (s.key === "ask") return s.word === "Agent gone" ? "Its agent is not here now: send it to another, or cancel it"
@@ -2613,14 +2658,14 @@ and what agents see of it. The words under either are its caption. */
   // Work items canceled: ended so, and an agent still to finish one (on it, or yet to take it up) told to leave it, in
   // a message of the user's -- it reads one sent mid-turn at its next step, as Chat's.
   async function cancel(bs) {
-    bs = bs.filter((b) => isWork(b) && !endedOf(b));
+    bs = [...new Map(bs.filter((b) => isWork(b) && !endedOf(b)).map((b) => [b.id, (findLine(b.id) || {}).b || b])).values()];
     if (!bs.length) return;
     const tell = new Map();                                 // per actor and page: its lines
-    for (const b of bs) {
-      const s = itemStands(b), p = pageOf(b);
-      if (!b.to || !p || !["run", "queue", "ask"].includes(s.key) || s.word === "Agent gone") continue;
-      const k = `${b.to} ${p.id}`;
-      if (!tell.has(k)) tell.set(k, { to: b.to, p, them: [] });
+    for (const b of bs) for (const v of viewsOn(b)) {
+      const s = itemStands(v), p = pageOf(b);
+      if (!p || !["run", "queue", "ask"].includes(s.key) || s.word === "Agent gone") continue;
+      const k = `${v.to} ${p.id}`;
+      if (!tell.has(k)) tell.set(k, { to: v.to, p, them: [] });
       tell.get(k).them.push(b);
     }
     change(endOps(bs, "canceled"), false);                 // (its agent told to stop: not to be undone)
@@ -2646,7 +2691,7 @@ and what agents see of it. The words under either are its caption. */
   // a line sent to a busy actor after the one it is on (or while it is on something else): not taken up yet
   function waiting(a, b) {
     const on = linesOn(a)[0], found = on ? findLine(on) : null;
-    return !found || lastSent(b) >= lastSent(found.b);       // (sent with it, or after: not taken up yet)
+    return !found || lastSent(b) >= lastSent(viewFor(found.b, a.channel) || found.b);   // (sent with it, or after: not taken up yet)
   }
   function findLine(id) {
     for (const p of live()) { const b = p.blocks.find((x) => x.id === id); if (b) return { p, b }; }
@@ -2654,13 +2699,14 @@ and what agents see of it. The words under either are its caption. */
   }
   // what an actor asks, if it asks it about this line (the line it is on now)
   const askedOn = (a, b) => (a && a.asking && stands(a)[0] === "ask" && linesOn(a).includes(b.id) ? a.asking : null);
-  // The lines sent together with one -- to the same actor, as one message: the same `group` -- in the page's order; just
-  // it, sent alone. They show once, at the last of them: how they stand together, and one conversation.
+  // The lines sent together with one (`b`, its view for one of its agents) -- to that agent, as one message: the same
+  // `group` -- in the page's order, as that agent has each; just it, sent alone. They show once for that agent, at the
+  // last of them: how they stand together, and one conversation.
   function sentWith(b) {
     const p = pageOf(b);
     if (!p || !b.to || !b.group) return [b];
-    const g = p.blocks.filter((x) => x.to === b.to && x.group === b.group);
-    return g.includes(b) ? g : [b];
+    const g = p.blocks.map((x) => { const c = callsOf(x).find((y) => y.to === b.to && y.group === b.group); return c ? viewOf(x, c) : null; }).filter(Boolean);
+    return g.some((x) => x.id === b.id) ? g : [b];
   }
   // How lines sent together stand: their open ones as one -- asking or working before all else; some to review, how
   // many of them; then queued, not started; all of them to review: to review. Every one ended: as the last.
@@ -2694,8 +2740,9 @@ and what agents see of it. The words under either are its caption. */
   const quiet = new Set();                                 // ... with others, not the last of them: no status of its own
   // A block's words sent to an actor, as the user's message: an actor there (`channel`; "gatherer", its gatherer agent),
   // or a new one (`harness`, `folder`), with what the user added (`extra`: instructions beyond the line). The block then
-  // says who it went to, and with what. The note at its start says where it is from (the Notes app's [asked] reads it
-  // back: first, so a message the list cuts short keeps it) and asks for a report on it, if the reader wants one.
+  // says it went to that one too, and with what (a call of its own: sent to it before, the call to it now). The note at
+  // its start says where it is from (the Notes app's [asked] reads it back: first, so a message the list cuts short keeps
+  // it) and asks for a report on it, if the reader wants one.
   async function sendBlock(id, who, extra = "") {
     flushTyped();
     pump();
@@ -2705,7 +2752,7 @@ and what agents see of it. The words under either are its caption. */
     if (!words) return say("Write what to ask first, then send it.", true);
     const report = store.get("report", true);
     extra = extra.trim();
-    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, block ${b.id}.`
+    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, block ${b.id}.${alsoWith([b], who)}`
       + `${report ? " When you're done, report back with notes_report, in one to three lines." : ""})`
       + `\n\n${words}${extra ? `\n\n${extra}` : ""}`;
     outgoing.add(id);
@@ -2713,7 +2760,8 @@ and what agents see of it. The words under either are its caption. */
     try {
       const got = who.harness ? await ag.actors.start({ harness: who.harness, folder: who.folder, text })
         : await ag.actors.send(who.channel, text);
-      change([{ op: "block.put", page: p.id, block: { id, to: got.channel, sent: now(), extra: esc(extra).replace(/\n/g, "<br>"), group: "", work: true, ended: "" } }], false);
+      const line = (findLine(id) || {}).b || b, call = { to: got.channel, sent: now(), ...(extra ? { extra: esc(extra).replace(/\n/g, "<br>") } : {}) };
+      change([{ op: "block.put", page: p.id, block: { id, calls: withCall(line, call, who.channel), work: true, ended: "" } }], false);
       say(`Sent to ${nameOf(actorOf(got.channel), who.channel || got.channel)}${who.harness ? ", a new actor" : ""}`);
     } catch (e) {
       say(`Not sent: ${e.message}`, true);
@@ -2723,8 +2771,8 @@ and what agents see of it. The words under either are its caption. */
     }
   }
   // Several lines sent together, as one message: the note names each line (in the order they follow it) and asks for a
-  // report on each; the lines as markdown, then what the user added. Each line then says who it went to, as one sent alone,
-  // and the `group` they share (`sentWith` finds them by it).
+  // report on each; the lines as markdown, then what the user added. Each line then says it went to that one, as one sent
+  // alone, and the `group` its calls to it share (`sentWith` finds them by it).
   async function sendBlocks(ids, who, extra = "") {
     flushTyped();
     pump();
@@ -2734,7 +2782,7 @@ and what agents see of it. The words under either are its caption. */
     if (bs.length < 2) return bs.length ? sendBlock(bs[0].id, who, extra) : say("Write what to ask first, then send it.", true);
     const report = store.get("report", true);
     extra = extra.trim();
-    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, blocks ${bs.map((b) => b.id).join(", ")}: the lines below, in that order.`
+    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, blocks ${bs.map((b) => b.id).join(", ")}: the lines below, in that order.${alsoWith(bs, who)}`
       + `${report ? " When you're done, report back on each with notes_report, in one to three lines." : ""})`
       + `\n\n${mdLines(bs).join("\n")}${extra ? `\n\n${extra}` : ""}`;
     for (const b of bs) { outgoing.add(b.id); if (b !== bs[bs.length - 1]) quiet.add(b.id); }
@@ -2743,7 +2791,10 @@ and what agents see of it. The words under either are its caption. */
       const got = who.harness ? await ag.actors.start({ harness: who.harness, folder: who.folder, text })
         : await ag.actors.send(who.channel, text);
       const at = now(), more = esc(extra).replace(/\n/g, "<br>"), group = rid();
-      change(bs.map((b) => ({ op: "block.put", page: p.id, block: { id: b.id, to: got.channel, sent: at, extra: more, group, work: true, ended: "" } })), false);
+      change(bs.map((b) => {
+        const line = (findLine(b.id) || {}).b || b, call = { to: got.channel, sent: at, ...(more ? { extra: more } : {}), group };
+        return { op: "block.put", page: p.id, block: { id: b.id, calls: withCall(line, call, who.channel), work: true, ended: "" } };
+      }), false);
       unpick();
       say(`Sent ${bs.length} lines to ${nameOf(actorOf(got.channel), who.channel || got.channel)}${who.harness ? ", a new actor" : ""}`);
     } catch (e) {
@@ -2754,12 +2805,21 @@ and what agents see of it. The words under either are its caption. */
     }
   }
   const sendTo = (ids, who, extra) => (ids.length > 1 ? sendBlocks(ids, who, extra) : sendBlock(ids[0], who, extra));
-  // A reply on a block sent to an actor: sent to that actor, then a line of the block's thread. On lines sent together,
-  // about them all, and kept on the last of them.
-  async function reply(id, words) {
-    const f = findLine(id), p = f && f.p, b = f && f.b;
+  // Lines sent to an agent while others are on them: the note says so, and that this message is the one's it goes to --
+  // else an agent of this gatherer, shown the other's message as a request made to another session in parallel, takes
+  // its own, the same words, for that one too, and leaves it. (No ")" in it: the [asked] pattern reads the note to its end.)
+  function alsoWith(bs, who) {
+    const others = [...new Set(bs.flatMap((b) => onIt(b).filter((c) => !(who.channel && callTo(c, who.channel))).map((c) => short(c.to))))];
+    if (!others.length) return "";
+    const them = `${others.length > 1 ? "actors" : "actor"} ${others.join(", ")}`;
+    return bs.length > 1 ? ` Some of them went to ${them} too; this message is for you.` : ` I sent this line to ${them} too; this message is for you.`;
+  }
+  // A reply on a block sent to an actor (`to`: which of its agents): sent to that actor, then a line of the block's
+  // thread, saying it went to that one. On lines sent together, about them all, and kept on the last of them.
+  async function reply(id, words, to = null) {
+    const f = findLine(id), p = f && f.p, b = f && ((to && viewFor(f.b, to)) || f.b);
     words = words.trim();
-    if (!p || !b || !(b.to || b.source) || !words) return false;
+    if (!p || !b || !(b.to || b.source) || b.dropped || !words) return false;
     const g = linesOf(b);
     const text = b.to ? `(A reply in my Notes, page ${JSON.stringify(p.title || "Untitled")}, ${g.length > 1 ? `blocks ${g.map((x) => x.id).join(", ")}` : `block ${b.id}`}.`
       + ` Report back with notes_report when you're done.)\n\n${words}` : followUpText(p, g, words);
@@ -2769,47 +2829,84 @@ and what agents see of it. The words under either are its caption. */
       say(`Not sent: ${e.message}`, true);
       return false;
     }
-    change([{ op: "thread.add", page: p.id, block: id, line: { id: rid(), by: "user", text: esc(words).replace(/\n/g, "<br>"), at: now() } }]);
+    change([{ op: "thread.add", page: p.id, block: id, line: { id: rid(), by: "user", ...(b.to ? { to: b.to } : {}), text: esc(words).replace(/\n/g, "<br>"), at: now() } }]);
     redraw();
     return true;
   }
-  // What a block sent to an actor shows under its words, at the line's end: who it went to (its avatar) and how the
-  // line stands (its chip -- the actor's name and its latest report, or what it asks, on hover), and a button that opens
-  // the conversation about it beside the page -- "Answer" while it asks the user. Neither the conversation nor a
-  // preview of it is on the page.
+  // One of a line's agents taken off it (`v`, its view): its call kept, `dropped` -- what was said stays, its reports on
+  // the line refused since -- on the lines sent to it with this one as one message too, which show as one; and the
+  // agent, if it is on them or yet to take them up, told to leave them, as a cancel tells it. Taken off every agent, a
+  // line is still a work item: sent to no one now (send it again, and the call is that agent's again).
+  async function drop(v) {
+    const g = sentWith(v), s = groupStands(g), p = pageOf(v), name = nameOf(actorOf(v.to), v.to);
+    if (!p || v.dropped) return;
+    const at = now();
+    change(g.map((x) => (findLine(x.id) || {}).b).filter(Boolean).map((line) => ({ op: "block.put", page: p.id,
+      block: { id: line.id, calls: callsOf(line).map((c) => (c.to === v.to && !c.dropped ? { ...c, dropped: at } : c)), work: true } })), false);
+    redraw();
+    if (["run", "queue", "ask"].includes(s.key) && s.word !== "Agent gone") {
+      const many = g.length > 1, it = many ? "them" : "it";
+      const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, ${many ? `blocks ${g.map((x) => x.id).join(", ")}` : `block ${v.id}`}.`
+        + ` The user took ${many ? "these lines" : "this line"} back from you: stop any work on ${it}, and don't report on ${it}.)`
+        + `\n\nTaken back: ${g.map((x) => oneLine(x.type === "code" ? esc(x.text) : x.text, 200)).join("; ")}`;
+      try { await ag.actors.send(v.to, text); } catch (e) { return say(`Removed ${name}, but it was not told: ${e.message}`, true); }
+    }
+    say(`Removed ${name} from ${g.length > 1 ? `these ${g.length} lines` : "this line"}`);
+  }
+  // What a block sent to agents shows under its words, at the line's end: each agent it is with now (its avatar) and how
+  // the line stands with that one (its chip -- the agent's name and its latest report, or what it asks, on hover -- which
+  // opens their conversation beside the page); "Answer" while one asks the reader about it, "Accept" while it is to
+  // review; a button that opens the conversation about it (how many messages); and, on hover, one that sends it to
+  // another agent too. An agent it went to with other lines, as one message, shows once, at the last of them. Sent to no
+  // one now: how it stands, as one. Neither a conversation nor a preview of one is on the page.
   function sentPart(n, b, ro) {
     n.classList.remove("has-src");
     if (!isWork(b) && b.source && !outgoing.has(b.id)) return sourcePart(n, b, ro);   // written by an agent: who, not a status
     let part = n.querySelector(":scope > .sent");
-    const g = sentWith(b), tail = [...g].reverse().find((x) => !foldedNow.has(x.id)) || g[g.length - 1];   // sent with others: shown once, at the last of them shown
-    const has = isWork(b) || (b.thread && b.thread.length) || outgoing.has(b.id);
-    const open = !!convo && g.some((x) => x.id === convo.block);
-    n.classList.toggle("convo-on", !!has && open);
-    if (!has || b !== tail || (quiet.has(b.id) && !b.to)) { if (part) part.remove(); return; }
+    const tailOf = (g) => [...g].reverse().find((x) => !foldedNow.has(x.id)) || g[g.length - 1];   // sent with others: shown at the last of them shown
+    const groups = viewsOf(b).map((v) => ({ v, g: sentWith(v) }));
+    const open = !!convo && (convo.block === b.id || groups.some(({ v, g }) => v.to === convo.to && g.some((x) => x.id === convo.block)));
+    n.classList.toggle("convo-on", open && (isWork(b) || groups.length > 0 || !!(b.thread && b.thread.length)));
+    const here = groups.filter(({ g }) => tailOf(g).id === b.id), on = here.filter(({ v }) => !v.dropped);
+    const sending = outgoing.has(b.id) && !quiet.has(b.id), none = !onIt(b).length;
+    if (!(on.length || sending || (none && !quiet.has(b.id) && (isWork(b) || here.length || (b.thread && b.thread.length))))) { if (part) part.remove(); return; }
     if (!part) { part = el("div", { class: "sent" }); n.append(part); }
-    const a = b.to ? actorOf(b.to) : null;
-    const sendingNow = outgoing.has(b.id) && !b.to;
-    const s = sendingNow ? { key: "run", cls: "work", word: "Sending…" } : isWork(b) ? groupStands(g) : { key: "none", cls: "idle", word: "Sent to no one now" };
-    const cls = s.cls, word = s.word, name = b.to ? nameOf(a, b.to) : "";
-    const asks = !!askedAll(a, g);
-    const latest = [...threadOf(g)].reverse().find((l) => l.by !== "user");
-    const said = asks ? `Asks: ${askLine(a.asking)}` : g.length > 1 ? (latest ? oneLine(latest.text, 240) : "") : isWork(b) ? itemSaid(b, s) : "";
-    const count = (b.sent ? 1 : 0) + g.reduce((k, x) => k + (x.thread || []).length, 0);
-    const review = s.key === "review" && !ro, talks = !sendingNow && (!!b.to || count > 0);
-    const sig = JSON.stringify([cls, word, name, a && a.avatar, said, count, asks, open, ro, g.length, review, talks]);
+    const items = on.map(({ v, g }) => {
+      const a = actorOf(v.to), s = groupStands(g), asks = !!askedAll(a, g);
+      const latest = [...threadOf(g)].reverse().find((l) => l.by !== "user");
+      const said = asks ? `Asks: ${askLine(a.asking)}` : g.length > 1 ? (latest ? oneLine(latest.text, 240) : "") : itemSaid(v, s);
+      const told = `${nameOf(a, v.to)}: ${s.word}${g.length > 1 ? ` (${g.length} lines sent together)` : ""}${said ? `\n${said}` : ""}`;   // on hover, not on the page
+      return { v, g, a, s, asks, told, open: open && convo.to === v.to };
+    });
+    const alone = none && !sending ? (isWork(b) ? lineStands(b) : { key: "none", cls: "idle", word: "Sent to no one now" }) : null;
+    const first = ["ask", "run", "review", "queue"].map((k) => items.find((x) => x.s.key === k)).find(Boolean) || items[0] || null;
+    const ended = items.length > 1 && endedOf(b) ? items[0].s : null;   // ended: how, once, with every agent's avatar
+    const review = !ro && !!first && first.s.key === "review";
+    const asking = items.find((x) => x.asks && !x.open);
+    const count = here.reduce((k, { v, g }) => k + (v.sent ? 1 : 0) + g.reduce((j, x) => j + (x.thread || []).length, 0), 0)
+      + (none && !here.length ? (b.thread || []).length : 0);
+    const talks = count > 0 && !(sending && !items.length), add = !ro && items.length > 0 && !sending;
+    const sig = JSON.stringify([items.map((x) => [x.v.to, x.s.cls, x.s.word, x.a && x.a.avatar, x.told, x.open, x.g.length]), alone, sending,
+      count, !!asking, open, ro, review, talks, add, !!ended]);
     if (part.dataset.sig === sig) return;
     part.dataset.sig = sig;
-    const talk = () => toggleConvo(b.id);
-    const told = `${name ? `${name}: ` : ""}${word}${g.length > 1 ? ` (${g.length} lines sent together)` : ""}${said ? `\n${said}` : ""}`;   // on hover, not on the page
+    const chip = (x) => el("button", { type: "button", class: `chip ${x.s.cls}`, title: `${x.told}\n(${x.open ? "close" : "open"} the conversation)`,
+      "aria-label": x.told, onclick: () => toggleConvo(tailOf(x.g).id, x.v.to) }, face(x.a, 16), el("span", { text: x.s.word }));
+    const talkTo = (asking || first || {}).v;
     part.replaceChildren(...[                              // (the slots left empty: none drawn, not "null")
-      b.to ? el("button", { type: "button", class: `chip ${cls}`, title: `${told}\n(${open ? "close" : "open"} the conversation)`,
-        "aria-label": told, onclick: talk }, face(a, 16), el("span", { text: word }))
-        : el("span", { class: `chip ${cls}`, title: told, "aria-label": told }, el("span", { text: word })),
-      review ? el("button", { type: "button", class: "accept", text: "Accept", title: "Accept it as done", onclick: () => accept(g) }) : null,
-      !talks ? null : asks && !open ? el("button", { type: "button", class: "talk answer", text: "Answer", onclick: () => openConvo(b.id) })
+      ...(ended ? [el("button", { type: "button", class: `chip ${ended.cls}`, title: `${items.map((x) => x.told).join("\n")}\n(${open ? "close" : "open"} the conversation)`,
+        "aria-label": items.map((x) => x.told).join("\n"), onclick: () => toggleConvo(b.id) }, ...items.map((x) => face(x.a, 16)), el("span", { text: ended.word }))]
+        : items.map(chip)),
+      alone ? el("span", { class: `chip ${alone.cls}`, title: alone.word, "aria-label": alone.word }, el("span", { text: alone.word })) : null,
+      sending ? el("span", { class: "chip work", title: "Sending…", "aria-label": "Sending…" }, el("span", { text: "Sending…" })) : null,
+      review ? el("button", { type: "button", class: "accept", text: "Accept", title: "Accept it as done",
+        onclick: () => accept([...new Map(items.flatMap((x) => x.g).map((x) => [x.id, x])).values()]) }) : null,
+      !talks ? null : asking ? el("button", { type: "button", class: "talk answer", text: "Answer", onclick: () => openConvo(b.id, asking.v.to) })
         : el("button", { type: "button", class: `talk${open ? " on" : ""}`, title: open ? "Close the conversation" : "Open the conversation",
-          "aria-label": `${open ? "Close" : "Open"} the conversation: ${count} message${count === 1 ? "" : "s"}`, onclick: talk },
-          el("span", { html: SVG.bubble }), el("span", { text: String(count) }))].filter(Boolean));
+          "aria-label": `${open ? "Close" : "Open"} the conversation: ${count} message${count === 1 ? "" : "s"}`, onclick: () => toggleConvo(b.id, open ? undefined : talkTo && talkTo.to) },
+          el("span", { html: SVG.bubble }), el("span", { text: String(count) })),
+      add ? el("button", { type: "button", class: "add-agent", title: "Send it to another agent too", "aria-label": "Send it to another agent too", html: SVG.plus,
+        onclick: (ev) => openPicker(b.id, ev.currentTarget.getBoundingClientRect()) }) : null].filter(Boolean));
   }
   // ---------------------------------------------------------------- lines an agent wrote from its conversation
   // Lines an agent wrote from its own conversation with the user (`source`, `source_at`: notes_add or notes_change with
@@ -2878,13 +2975,15 @@ and what agents see of it. The words under either are its caption. */
   }
 
   // ---------------------------------------------------------------- the conversation about a line, beside the page
-  // Opened from a sent line's status: the line as it was sent, then its thread -- the user's messages (each sent to the
-  // actor too) and the actor's reports -- as bubbles; what it asks, answered there; a box to message it. One at a time,
-  // on the page shown; another line's status shows that one's instead. Three parts, each drawn again only when it
-  // changed: the message typed is never drawn over.
-  let convo = null;                                       // {page, block}: the line whose conversation is open
-  function openConvo(id) {
-    convo = { page: current, block: id };
+  // Opened from a sent line's status: the line as it was sent to one of its agents, then their thread -- the user's
+  // messages (each sent to that actor too) and its reports -- as bubbles; what it asks, answered there; a box to message
+  // it. Its head names the line's agents, one a tab (those it was taken back from too: what was said is kept), with a
+  // button that sends the line to another agent too, and one that takes it back from this one. One at a time, on the page
+  // shown; another line's status shows that one's instead. Three parts, each drawn again only when it changed: the
+  // message typed is never drawn over.
+  let convo = null;                                       // {page, block, to}: the line whose conversation is open, and with which agent
+  function openConvo(id, to = null) {
+    convo = { page: current, block: id, to };
     drawPage();
     const input = $("convo").querySelector(".reply input");
     if (input && !input.disabled) input.focus();
@@ -2894,13 +2993,22 @@ and what agents see of it. The words under either are its caption. */
     convo = null;
     drawPage();
   }
-  const toggleConvo = (id) => (convo && convo.block === id ? closeConvo() : openConvo(id));
+  // (`to` left out: the line's conversation, whichever agent it is with)
+  const toggleConvo = (id, to = undefined) => (convo && convo.block === id && (to === undefined || convo.to === to) ? closeConvo() : openConvo(id, to || null));
   function drawConvo() {
     const box = $("convo");
     const p = convo && current === convo.page ? pages.get(convo.page) : null;
-    let b = p && p.blocks.find((x) => x.id === convo.block);
+    let line = p && p.blocks.find((x) => x.id === convo.block);
+    // with the agent asked for, else the most pressing of those it is with now, else the first it went to
+    const pick = (x) => { const vs = viewsOf(x); return vs.find((v) => v.to === convo.to) || lineStands(x).v || vs.find((v) => !v.dropped) || vs[0] || x; };
+    let b = line ? pick(line) : null;
     const g = b ? linesOf(b) : [];
-    if (b && g[g.length - 1] !== b) { b = g[g.length - 1]; convo.block = b.id; }   // lines sent together: one conversation, the last's
+    if (b && g[g.length - 1].id !== b.id) {                // lines sent together: one conversation, the last's
+      line = p.blocks.find((x) => x.id === g[g.length - 1].id) || line;
+      b = viewFor(line, b.to) || line;
+      convo.block = line.id;
+    }
+    if (convo && b) convo.to = b.to || null;
     if (!b || !(b.to || b.source || (b.thread && b.thread.length))) {
       convo = null;
       box.hidden = true;
@@ -2916,15 +3024,26 @@ and what agents see of it. The words under either are its caption. */
       box.replaceChildren(el("div", { class: "cv-head" }), el("div", { class: "cv-list", role: "log", "aria-live": "polite" }), el("div", { class: "cv-foot" }));
     }
     const who = b.to || b.source || "", a = who ? actorOf(who) : null, name = who ? nameOf(a, who) : "", ro = !!p.deleted;
-    const s = isWork(b) ? groupStands(g) : b.source ? srcStands(a, g) : { key: "none", cls: "idle", word: "Sent to no one now" }, cls = s.cls, word = s.word;
+    const s = b.to || isWork(b) ? groupStands(g) : b.source ? srcStands(a, g) : { key: "none", cls: "idle", word: "Sent to no one now" }, cls = s.cls, word = s.word;
     const words = (x) => (x.type === "code" ? esc(x.text) : x.text);
     const about = g.length > 1 ? `${g.length} lines: ${g.map((x) => oneLine(words(x), 60)).join(" · ")}` : oneLine(words(b), 160);
+    // its agents, one a tab: how the line stands with each
+    const tabs = b.to ? viewsOf(line).map((v) => { const x = actorOf(v.to); return { to: v.to, x, name: nameOf(x, v.to), s: v.to === b.to ? s : groupStands(sentWith(v)) }; }) : [];
+    const add = !ro && !!b.to, canDrop = !ro && !!b.to && !b.dropped;
     const head = box.querySelector(".cv-head");
-    const headSig = JSON.stringify([cls, word, name, a && a.avatar, about, !!a, b.source, b.source_at]);
+    const headSig = JSON.stringify([cls, word, name, a && a.avatar, about, !!a, b.source, b.source_at, b.to,
+      tabs.length > 1 ? tabs.map((t) => [t.to, t.name, t.x && t.x.avatar, t.s.cls, t.s.word]) : 0, add, canDrop]);
     if (head.dataset.sig !== headSig) {
       head.dataset.sig = headSig;
+      const tab = (t) => el("button", { type: "button", class: `cv-tab${t.to === b.to ? " on" : ""}`, role: "tab", "aria-selected": String(t.to === b.to),
+        title: `${t.name}: ${t.s.word}`, onclick: () => { if (convo && t.to !== convo.to) { convo.to = t.to; drawPage(); } } },
+        face(t.x, 18), el("b", { text: t.name }), el("span", { class: `pill ${t.s.cls}`, text: t.s.word }));
       head.replaceChildren(
-        el("div", { class: "cv-who" }, who ? face(a, 22) : null, el("b", { text: name || "No one" }), el("span", { class: `pill ${cls}`, text: word }),
+        el("div", { class: "cv-who" },
+          ...(tabs.length > 1 ? [el("div", { class: "cv-tabs", role: "tablist", "aria-label": "Its agents" }, ...tabs.map(tab))]
+            : [who ? face(a, 22) : null, el("b", { text: name || "No one" }), el("span", { class: `pill ${cls}`, text: word })]),
+          add ? el("button", { type: "button", class: "cv-add", title: "Send it to another agent too", "aria-label": "Send it to another agent too", html: SVG.plus,
+            onclick: (ev) => openPicker(line.id, ev.currentTarget.getBoundingClientRect()) }) : null,
           el("button", { type: "button", class: "cv-x", title: "Close", "aria-label": "Close the conversation", html: SVG.x, onclick: () => closeConvo() })),
         el("button", { type: "button", class: "cv-about", title: `${g.map((x) => oneLine(words(x), 400)).join("\n")}\n(show ${g.length > 1 ? "them" : "it"} on the page)`, onclick: () => {
           const rs = g.map((x) => rowOf(x.id)).filter(Boolean);
@@ -2932,12 +3051,15 @@ and what agents see of it. The words under either are its caption. */
           for (const r of rs) { r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash"); }
         } }, el("span", { class: "dim", text: "About: " }), about || "(empty)"),
         b.source ? el("div", { class: "cv-src", text: wroteLine(b) }) : "",
-        a ? el("button", { type: "button", class: "cv-chat", text: "Open its Chat", onclick: () => ag.actors.show(who).catch((e) => say(e.message, true)) }) : "");
+        a || canDrop ? el("div", { class: "cv-links" },
+          a ? el("button", { type: "button", class: "cv-chat", text: "Open its Chat", onclick: () => ag.actors.show(who).catch((e) => say(e.message, true)) }) : null,
+          canDrop ? el("button", { type: "button", class: "cv-drop", text: "Remove from this line", title: `Take the line back from ${name}${["run", "queue", "ask"].includes(s.key) ? ", and tell it to stop" : ""}`,
+            onclick: () => drop(b) }) : null) : "");
     }
     const list = box.querySelector(".cv-list");
     const lines = b.to ? threadOf(g) : threadOf(g).map((l) => ({ ...l, verb: "replied" }));
-    const ask = askedAll(a, g);
-    const listSig = JSON.stringify([g.map((x) => [x.id, x.text]), b.sent, b.extra, b.to ? 0 : b.source_at, lines.map((l) => [l.id, l.by === "user" ? "" : (actorOf(l.by.slice(6)) || {}).avatar || ""]),
+    const ask = b.dropped ? null : askedAll(a, g);
+    const listSig = JSON.stringify([g.map((x) => [x.id, x.text]), b.to, b.sent, b.extra, b.to ? 0 : b.source_at, lines.map((l) => [l.id, l.by === "user" ? "" : (actorOf(l.by.slice(6)) || {}).avatar || ""]),
       ask && ask.id, a && a.answerable, ro]);
     if (list.dataset.sig !== listSig) {
       const fresh = list.dataset.sig === undefined, atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
@@ -2954,15 +3076,18 @@ and what agents see of it. The words under either are its caption. */
     const foot = box.querySelector(".cv-foot");
     let end = foot.querySelector(".cv-end");
     if (!end) { end = el("div", { class: "cv-end" }); foot.prepend(end); }
-    drawEnd(end, g, s, ro);
+    drawEnd(end, g, s, ro || !!b.dropped);
     let r = foot.querySelector(".reply");
-    if ((b.to || b.source) && !ro) {
+    const none = ro ? "This page is in the trash." : b.dropped ? `Removed from this line: send it to ${name} again to talk about it.`
+      : !(b.to || b.source) ? "Sent to no one now: send the line to an agent again to talk about it." : "";
+    if (!none) {
       if (!r) { r = replyBox(b.id); for (const x of foot.querySelectorAll(".cv-none")) x.remove(); foot.append(r); }
       r.querySelector("input").placeholder = !b.to ? `Follow up with ${name}` : s.key === "review" ? `Send it back to ${name}: what's left` : `Message ${name}`;
-    } else if (r || !foot.querySelector(".cv-none")) {
+    } else {
       if (r) r.remove();
-      foot.append(el("div", { class: "cv-none", text: ro ? "This page is in the trash."
-        : "Sent to no one now: send the line to an agent again to talk about it." }));
+      let x = foot.querySelector(".cv-none");
+      if (!x) { x = el("div", { class: "cv-none" }); foot.append(x); }
+      if (x.textContent !== none) x.textContent = none;
     }
   }
   // Above the message box, whether it is done -- the reader's to say: to review, Accept or Cancel (or a message sending
@@ -3007,7 +3132,7 @@ and what agents see of it. The words under either are its caption. */
     const go = async () => {
       if (!input.value.trim() || input.disabled) return;
       input.disabled = true;
-      if (await reply(id, input.value)) input.value = "";
+      if (await reply(id, input.value, convo && convo.block === id ? convo.to : null)) input.value = "";
       input.disabled = false;
       input.focus();
     };
@@ -3058,7 +3183,7 @@ and what agents see of it. The words under either are its caption. */
       if (!n) continue;
       if (b.type === "agents") drawAgentsBlock(n);
       else if (b.type === "work") drawWorkBlock(n);
-      else if (isWork(b) || b.source || (b.thread && b.thread.length)) sentPart(n, b, !!p.deleted);
+      else if (isWork(b) || b.source || callsOf(b).length || (b.thread && b.thread.length)) sentPart(n, b, !!p.deleted);
     }
     drawConvo();
   }
@@ -3097,7 +3222,8 @@ and what agents see of it. The words under either are its caption. */
         placeholder: m.tx ? "Add instructions (optional): Tab to type here" : "Add instructions (optional)" });
       extra.addEventListener("input", () => { extra.style.height = "auto"; extra.style.height = `${Math.min(extra.scrollHeight, 140)}px`; });
       extra.addEventListener("keydown", (ev) => extraKey(ev, extra));
-      pop.append(el("div", { class: "hd lead", text: many ? `Send ${many} lines to an agent, as one message of yours` : "Send it to an agent, as your message" }), extra,
+      const also = !many && onIt((findLine(m.block) || {}).b).length > 0;
+      pop.append(el("div", { class: "hd lead", text: many ? `Send ${many} lines to an agent, as one message of yours` : also ? "Send it to another agent too, as your message" : "Send it to an agent, as your message" }), extra,
         el("div", { class: "at-list", role: "group", "aria-label": "Agents" }), el("div", { class: "at-end" }));
       menu.extra = extra;
     }, null, "at", "at-pop");
@@ -3109,12 +3235,15 @@ and what agents see of it. The words under either are its caption. */
     const hit = (...xs) => !words || xs.some((x) => String(x || "").toLowerCase().includes(words));
     const out = [];
     const lead = crew.agents.find(isLead);
-    if (hit("gatherer agent", "coordinator", "manager"))
+    // the agents a line is with now: not offered again (lines sent together: any agent, the call to it sent again)
+    const line = menu && !menu.blocks ? (findLine(menu.block) || {}).b : null;
+    const taken = (ch) => !!line && onIt(line).some((c) => callTo(c, ch));
+    if (!taken(lead ? lead.channel : "gatherer") && hit("gatherer agent", "coordinator", "manager"))
       out.push({ kind: "lead", group: "Coordinator", channel: lead ? lead.channel : "gatherer", a: lead, label: "Gatherer agent",
         note: "hands it to an actor, now or once another is done" });
     const shown = crew.agents.filter((a) => !isLead(a) && ((a.status || [])[0] !== "closed" || a.saved))
       .sort((x, y) => (y.last || 0) - (x.last || 0));
-    for (const a of shown) if (hit(nameOf(a), a.last_user_message, a.channel))
+    for (const a of shown) if (!taken(a.channel) && hit(nameOf(a), a.last_user_message, a.channel))
       out.push({ kind: "actor", group: "Actors", channel: a.channel, a, label: nameOf(a), note: oneLine(a.last_user_message || "", 60) });
     for (const h of crew.harnesses) if (hit(`new ${h.label} actor`))
       out.push({ kind: "new", group: "Start a new actor on it", harness: h.name, label: `New ${h.label} actor`, note: `in ${tilde(crew.start) || "a folder you name"}` });
@@ -3227,8 +3356,10 @@ and what agents see of it. The words under either are its caption. */
   function agentsTable(showSaved, showClosed) {
     const sent = new Map(), last = new Map();
     for (const p of live()) for (const b of p.blocks) {
-      const a = b.to ? actorOf(b.to) : null;
-      if (a) { if (!sent.has(a.channel)) sent.set(a.channel, []); sent.get(a.channel).push({ p, b }); }
+      for (const c of onIt(b)) {
+        const a = actorOf(c.to);
+        if (a) { if (!sent.has(a.channel)) sent.set(a.channel, []); sent.get(a.channel).push({ p, b, at: c.sent || 0 }); }
+      }
       for (const l of b.thread || []) {
         if (l.by === "user") continue;
         const who = actorOf(l.by.slice(6));
@@ -3243,7 +3374,7 @@ and what agents see of it. The words under either are its caption. */
     const go = (p, b) => { openPage(p.id); requestAnimationFrame(() => { const r = rowOf(b.id); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }); };
     const tr = (a) => {
       const [cls, word] = stands(a);
-      const mine = (sent.get(a.channel) || []).sort((x, y) => (y.b.sent || 0) - (x.b.sent || 0));
+      const mine = (sent.get(a.channel) || []).sort((x, y) => y.at - x.at);
       const l = last.get(a.channel);
       return el("tr", { class: cls === "ask" ? "asks" : null },
         el("td", {}, el("button", { type: "button", class: "who-btn", title: `Open ${nameOf(a)}'s Chat`,
@@ -3303,34 +3434,36 @@ and what agents see of it. The words under either are its caption. */
   const WEEK = 7 * 86400;
   function workItems() {
     const out = [];
-    for (const p of live()) for (const b of p.blocks) if (isWork(b)) out.push({ p, b, s: itemStands(b) });
+    for (const p of live()) for (const b of p.blocks) if (isWork(b)) out.push({ p, b, s: lineStands(b) });
     return out;
   }
   const isOpen = (x) => x.s.key !== "done" && x.s.key !== "canceled";
   const forYou = () => workItems().filter((x) => x.s.key === "ask" || x.s.key === "review").length;
   const wordsOf = (b) => oneLine(b.type === "code" ? esc(b.text) : b.text, 160) || "(empty)";
   // A work item shown on its page: the page opened (its ended lines shown, if it is one of them), the line flashed --
-  // and its conversation opened, if asked for and it has one.
-  function goLine(p, b, talk = false) {
+  // and its conversation opened (with the agent `to`, else the one most pressing), if asked for and it has one.
+  function goLine(p, b, talk = false, to = null) {
     if (foldOf(p).has(b.id)) showDone(p.id, true);
     openPage(p.id);
-    if (talk && (b.to || (b.thread && b.thread.length))) openConvo(b.id);
+    if (talk && (callsOf(b).length || (b.thread && b.thread.length))) openConvo(b.id, to);
     requestAnimationFrame(() => {
       const r = rowOf(b.id);
       if (r) { r.scrollIntoView({ block: "center" }); r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash"); }
     });
   }
+  // the agents a work item is with now, by name
+  const namesOf = (b) => onIt(b).map((c) => nameOf(actorOf(c.to), c.to)).join(", ");
   function workRow({ p, b, s }, compact = false) {
-    const a = b.to ? actorOf(b.to) : null, done = s.key === "done";
+    const v = s.v || viewsOn(b)[0] || null, a = v ? actorOf(v.to) : null, done = s.key === "done";   // (with several: the one its status is from)
     const said = done || s.key === "new" ? "" : itemSaid(b, s), made = done ? [] : madeOf(b);   // (not started: its meta says "No one yet")
-    const latest = [...(b.thread || [])].reverse().find((l) => l.by !== "user");
-    const time = done ? `accepted ${when(endedAt(b))}` : s.key === "review" && latest && (latest.at || 0) >= lastSent(b) ? `reported ${ago(latest.at)}`
-      : b.to && s.key !== "run" ? `sent ${ago(lastSent(b))}` : "";
+    const latest = [...((v || b).thread || [])].reverse().find((l) => l.by !== "user");
+    const time = done ? `accepted ${when(endedAt(b))}` : s.key === "review" && latest && (latest.at || 0) >= lastSent(v || b) ? `reported ${ago(latest.at)}`
+      : v && s.key !== "run" ? `sent ${ago(lastSent(v))}` : "";
     const btn = (label, cls, run, title) => el("button", { type: "button", class: `wk-btn${cls ? ` ${cls}` : ""}`, text: label, title: title || null, onclick: run });
     const pick = (ev) => openPicker(b.id, ev.currentTarget.getBoundingClientRect());
     const acts = s.key === "ask" ? (s.word === "Agent gone" ? [btn("Cancel", "", () => cancel([b])), btn("Send to…", "primary", pick)]
-      : [btn("Answer", "answer", () => goLine(p, b, true), "Open its conversation, where it asks")])
-      : s.key === "review" ? [btn("Send back", "", () => goLine(p, b, true), "Open its conversation, to say what's left"), btn("Accept", "accept", () => accept([b]), "Accept it as done")]
+      : [btn("Answer", "answer", () => goLine(p, b, true, v && v.to), "Open its conversation, where it asks")])
+      : s.key === "review" ? [btn("Send back", "", () => goLine(p, b, true, v && v.to), "Open its conversation, to say what's left"), btn("Accept", "accept", () => accept([b]), "Accept it as done")]
       : s.key === "run" || s.key === "queue" ? [btn("Cancel", "", () => cancel([b]), "Cancel it, and tell its agent to stop")]
       : s.key === "new" ? [btn("Remove", "", () => markWork([b], false), "Not a work item: the line stays on its page"),     // (done without an agent: ended here)
         btn("Cancel", "", () => cancel([b]), "Cancel it: into the Logbook, as canceled"), btn("Done", "accept", () => accept([b]), "Accept it as done: no agent needed"),
@@ -3338,11 +3471,11 @@ and what agents see of it. The words under either are its caption. */
       : [btn("Reopen", "", () => reopen([b]))];
     const pill = compact || s.key === "run" || s.key === "ask" || s.word === "Sent";
     return el("div", { class: `wk-row ${s.key}`, "data-id": b.id },
-      b.to ? face(a, compact ? 18 : 22) : el("span", { class: "face dash", style: `width:${compact ? 18 : 22}px;height:${compact ? 18 : 22}px`, "aria-hidden": "true" }),
+      v ? face(a, compact ? 18 : 22) : el("span", { class: "face dash", style: `width:${compact ? 18 : 22}px;height:${compact ? 18 : 22}px`, "aria-hidden": "true" }),
       el("div", { class: "wk-main" },
-        el("button", { type: "button", class: "wk-text", title: "Show it on its page", onclick: () => goLine(p, b, !done && s.key !== "new") }, wordsOf(b)),
+        el("button", { type: "button", class: "wk-text", title: "Show it on its page", onclick: () => goLine(p, b, !done && s.key !== "new", v && v.to) }, wordsOf(b)),
         el("div", { class: "wk-meta" }, pill ? el("span", { class: `pill ${s.cls}`, text: s.word }) : null,
-          el("span", { text: [b.to ? nameOf(a, b.to) : "No one yet", p.title || "Untitled", time].filter(Boolean).join(" · ") })),
+          el("span", { text: [namesOf(b) || "No one yet", p.title || "Untitled", time].filter(Boolean).join(" · ") })),
         said && !compact ? el("div", { class: "wk-said", text: said }) : null,
         made.length && !compact ? madeRow(made) : null),
       el("div", { class: "wk-acts" }, ...acts));
@@ -3393,12 +3526,12 @@ and what agents see of it. The words under either are its caption. */
         : [el("div", { class: "wk-none", text: "Nothing done or canceled yet. Work items you accept or cancel show here." })]));
   }
   function logRow({ p, b, s }) {
-    const a = b.to ? actorOf(b.to) : null, done = s.key === "done", made = madeOf(b);
+    const done = s.key === "done", made = madeOf(b);
     return el("div", { class: `lg-row${done ? "" : " canceled"}`, "data-id": b.id },
       el("span", { class: "lg-mk", role: "img", "aria-label": done ? "Done" : "Canceled", html: done ? SVG.check : SVG.x }),
       el("div", { class: "wk-main" },
         el("div", { class: "wk-text", text: wordsOf(b) }),
-        el("div", { class: "wk-meta" }, el("span", { text: [b.to ? nameOf(a, b.to) : "No agent", p.title || "Untitled", `${done ? "accepted" : "canceled"} ${clock(endedAt(b))}`].join(" · ") })),
+        el("div", { class: "wk-meta" }, el("span", { text: [namesOf(b) || "No agent", p.title || "Untitled", `${done ? "accepted" : "canceled"} ${clock(endedAt(b))}`].join(" · ") })),
         made.length ? madeRow(made) : null),
       el("div", { class: "wk-acts" },
         el("button", { type: "button", class: "wk-btn link", text: "Show line", onclick: () => goLine(p, b) }),

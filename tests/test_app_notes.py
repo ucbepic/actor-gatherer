@@ -207,41 +207,85 @@ class SentTest(BookBase):
     """A block sent to an agent says who it went to and when; its thread holds the user's replies and the agent's
     reports."""
 
+    def put(self, **given):
+        self.book.apply([{"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa01", **given}}])
+        return self.book.page("pagepage")["blocks"][0]
+
     def test_a_block_says_who_it_went_to_and_keeps_it_as_it_is_typed_in_and_retyped(self):
         self.page(blocks=[block("aaaaaa01", "todo", "ship it")])
-        self.book.apply([{"op": "block.put", "page": "pagepage",
-                          "block": {"id": "aaaaaa01", "to": "1f2e3d4c-aaaa-bbbb", "sent": 1700000000}}])
-        b = self.book.page("pagepage")["blocks"][0]
-        self.assertEqual((b["to"], b["sent"]), ("1f2e3d4c-aaaa-bbbb", 1700000000.0))
-        self.assertNotIn("extra", b)
-        self.book.apply([{"op": "block.put", "page": "pagepage",
-                          "block": {"id": "aaaaaa01", "extra": "in <b>ISO</b><script>"}}])
-        self.assertEqual(self.book.page("pagepage")["blocks"][0]["extra"], "in <b>ISO</b>")
-        self.book.apply([{"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa01", "text": "ship it now"}},
-                         {"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa01", "type": "bullet"}}])
-        b = self.book.page("pagepage")["blocks"][0]
-        self.assertEqual((b["type"], b["text"], b["to"]), ("bullet", "ship it now", "1f2e3d4c-aaaa-bbbb"))
-        self.book.apply([{"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa01", "to": ""}}])
-        b = self.book.page("pagepage")["blocks"][0]
-        self.assertFalse({"to", "sent", "extra"} & set(b))          # who it went to, and with what: forgotten
-        for bad in ({"to": "no spaces here"}, {"to": 7}, {"to": "abc123", "sent": "now"}):
+        b = self.put(calls=[{"to": "1f2e3d4c-aaaa-bbbb", "sent": 1700000000}], work=True)
+        self.assertEqual(b["calls"], [{"to": "1f2e3d4c-aaaa-bbbb", "sent": 1700000000.0}])
+        self.assertFalse({"to", "sent", "extra"} & set(b))
+        b = self.put(calls=[{"to": "1f2e3d4c-aaaa-bbbb", "sent": 1700000000, "extra": "in <b>ISO</b><script>"}])
+        self.assertEqual(b["calls"][0]["extra"], "in <b>ISO</b>")
+        self.put(text="ship it now")
+        b = self.put(type="bullet")
+        self.assertEqual((b["type"], b["text"], b["calls"][0]["to"]), ("bullet", "ship it now", "1f2e3d4c-aaaa-bbbb"))
+        for bad in ({"calls": [{"to": "no spaces here"}]}, {"calls": [{"to": 7}]}, {"calls": "chan-1"},
+                    {"calls": [{"to": "abc123", "sent": "now"}]}, {"calls": [{"to": "abc123", "dropped": "now"}]},
+                    {"calls": [{"to": "abc123", "extra": 7}]}, {"calls": ["abc123"]}):
             with self.subTest(bad=bad), self.assertRaises(nb.NotebookError):
-                self.book.apply([{"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa01", **bad}}])
+                self.put(**bad)
 
-    def test_lines_sent_together_share_a_group_which_goes_when_one_is_sent_alone_or_to_no_one(self):
+    def test_a_line_goes_to_several_agents_one_call_each_and_is_taken_back_from_one(self):
+        self.page(blocks=[block("aaaaaa01", "todo", "ship it")])
+        b = self.put(calls=[{"to": "chan-1", "sent": 1700000000}, {"to": "chan-2", "sent": 1700000100, "extra": "x"},
+                            {"to": "chan-1", "sent": 1700000200}], work=True)
+        self.assertEqual([(c["to"], c["sent"]) for c in b["calls"]],                 # one call an agent: the last
+                         [("chan-2", 1700000100.0), ("chan-1", 1700000200.0)])
+        b = self.put(calls=[{"to": "chan-2", "sent": 1700000100, "dropped": 1700000300}, {"to": "chan-1",
+                                                                                           "sent": 1700000200}])
+        self.assertEqual([c["to"] for c in nb.on_it(b)], ["chan-1"])
+        self.assertEqual(b["calls"][0]["dropped"], 1700000300.0)
+        self.assertTrue(nb.is_work(b))
+        b = self.put(calls=[{"to": "chan-2", "sent": 1700000100, "dropped": 1700000300},
+                            {"to": "chan-1", "sent": 1700000200, "dropped": 1700000400}])
+        self.assertEqual(nb.on_it(b), [])
+        self.assertTrue(nb.is_work(b))                                                # taken back from all: still one
+        b = self.put(work=False)
+        self.assertFalse(nb.is_work(b))
+        self.assertEqual(len(nb.calls_of(b)), 2)                                      # who it went to, kept
+
+    def test_a_block_put_giving_to_as_before_sets_the_lines_one_call(self):
+        self.page(blocks=[block("aaaaaa01", "todo", "ship it")])
+        b = self.put(to="chan-1", sent=1700000000, extra="today", group="grp00001")
+        self.assertEqual(b["calls"], [{"to": "chan-1", "sent": 1700000000.0, "extra": "today", "group": "grp00001"}])
+        self.assertFalse({"to", "sent", "extra", "group"} & set(b))
+        b = self.put(to="chan-2", sent=1700000100)
+        self.assertEqual(b["calls"], [{"to": "chan-2", "sent": 1700000100.0}])
+        b = self.put(to="")
+        self.assertNotIn("calls", b)                                                  # who it went to: forgotten
+        for bad in ({"to": "no spaces here"}, {"to": 7}, {"to": "abc123", "sent": "now"}, {"to": "x1", "group": "NO"}):
+            with self.subTest(bad=bad), self.assertRaises(nb.NotebookError):
+                self.put(**bad)
+
+    def test_a_notebook_kept_before_reads_the_agent_a_line_went_to_as_its_one_call(self):
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump({"version": 4, "pages": [{"id": "pagepage", "title": "Old", "parent": None, "blocks": [
+                block("aaaaaa01", "todo", "ship it", to="chan-1", sent=1700000000, extra="today", work=True,
+                      thread=[{"id": "line0001", "by": "user", "text": "and fast", "at": 1700000050}]),
+                block("aaaaaa02", text="plain")]}]}, fh)
+        book = nb.Notebook(self.path)
+        a, b = book.page("pagepage")["blocks"]
+        self.assertEqual(a["calls"], [{"to": "chan-1", "sent": 1700000000, "extra": "today"}])
+        self.assertFalse({"to", "sent", "extra"} & set(a))
+        self.assertNotIn("calls", b)
+        self.assertTrue(nb.is_work(a))
+        self.assertIn("- [aaaaaa01] sent to actor chan-1, with: today\n    the user: and fast", book.markdown(
+            book.page("pagepage")))
+
+    def test_lines_sent_together_share_a_group_which_goes_when_one_is_sent_alone(self):
         self.page(blocks=[block("aaaaaa01", "todo", "fix it"), block("aaaaaa02", "todo", "test it")])
         self.book.apply([{"op": "block.put", "page": "pagepage",
-                          "block": {"id": i, "to": "chan-1", "sent": 1700000000, "group": "grp00001"}}
+                          "block": {"id": i, "calls": [{"to": "chan-1", "sent": 1700000000, "group": "grp00001"}]}}
                          for i in ("aaaaaa01", "aaaaaa02")])
-        self.assertEqual([b.get("group") for b in self.book.page("pagepage")["blocks"]], ["grp00001", "grp00001"])
-        self.book.apply([{"op": "block.put", "page": "pagepage",                      # the first, sent again alone
-                          "block": {"id": "aaaaaa01", "to": "chan-2", "sent": 1700000100, "group": ""}},
-                         {"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa02", "to": ""}}])
-        self.assertFalse(any("group" in b for b in self.book.page("pagepage")["blocks"]))
-        for bad in ({"group": "NO SPACES"}, {"group": 7}):
+        self.assertEqual([b["calls"][0].get("group") for b in self.book.page("pagepage")["blocks"]],
+                         ["grp00001", "grp00001"])
+        b = self.put(calls=[{"to": "chan-1", "sent": 1700000100}])                    # the first, sent again alone
+        self.assertNotIn("group", b["calls"][0])
+        for bad in ("NO SPACES", 7):
             with self.subTest(bad=bad), self.assertRaises(nb.NotebookError):
-                self.book.apply([{"op": "block.put", "page": "pagepage",
-                                  "block": {"id": "aaaaaa01", "to": "chan-1", **bad}}])
+                self.put(calls=[{"to": "chan-1", "group": bad}])
 
     def test_its_thread_takes_lines_in_order_each_once_and_goes_with_it(self):
         self.page(blocks=[block("aaaaaa01", "todo", "ship it", to="chan-1"), block("aaaaaa02", text="other")])
@@ -259,8 +303,12 @@ class SentTest(BookBase):
         self.book.apply([{"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa01", "text": "ship"}},
                          {"op": "block.move", "page": "pagepage", "block": "aaaaaa01", "after": "aaaaaa02"}])
         self.assertEqual(len(self.book.page("pagepage")["blocks"][1]["thread"]), 2)
-        for bad in ({"id": "line0003", "by": "someone", "text": "x"}, {"id": "line0003", "by": "user", "text": " "},
-                    {"id": "x", "by": "user", "text": "x"}):
+        self.book.apply([{"op": "thread.add", "page": "pagepage", "block": "aaaaaa01",
+                          "line": {"id": "line0003", "by": "user", "to": "chan-1", "text": "to it"}}])
+        self.assertEqual(self.book.block("aaaaaa01")[1]["thread"][-1]["to"], "chan-1")    # a message's agent
+        for bad in ({"id": "line0004", "by": "someone", "text": "x"}, {"id": "line0004", "by": "user", "text": " "},
+                    {"id": "x", "by": "user", "text": "x"}, {"id": "line0004", "by": "user", "to": "a b", "text": "x"},
+                    {"id": "line0004", "by": "agent:chan-1", "to": "chan-2", "text": "x"}):
             with self.subTest(bad=bad), self.assertRaises(nb.NotebookError):
                 self.book.apply([{"op": "thread.add", "page": "pagepage", "block": "aaaaaa01", "line": bad}])
         self.book.apply([{"op": "block.delete", "page": "pagepage", "block": "aaaaaa01"}])
@@ -277,9 +325,24 @@ class SentTest(BookBase):
                       "    actor chan-1 (you): on it", md)
         self.assertIn("The user's work items on this page", md)
         self.assertNotIn("(you)", self.book.markdown(page, "chan-2"))
-        self.assertNotIn("to", self.book.page("pagepage")["blocks"][1])         # an agents block goes to no one
+        self.assertNotIn("calls", self.book.page("pagepage")["blocks"][1])      # an agents block goes to no one
         self.book.apply([{"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa02", "to": "chan-1"}}])
-        self.assertNotIn("to", self.book.page("pagepage")["blocks"][1])
+        self.assertNotIn("calls", self.book.page("pagepage")["blocks"][1])
+
+    def test_an_agent_reads_every_agent_a_block_went_to_and_who_each_message_went_to(self):
+        page = self.page(blocks=[block("aaaaaa01", "todo", "ship it", calls=[
+            {"to": "chan-1", "sent": 1700000000, "dropped": 1700000500}, {"to": "chan-2", "sent": 1700000100},
+            {"to": "chan-3", "sent": 1700000200, "extra": "review it"}],
+            thread=[{"id": "line0001", "by": "user", "to": "chan-2", "text": "and fast"},
+                    {"id": "line0002", "by": "agent:chan-2", "text": "on it"}])])
+        md = self.book.markdown(page, "chan-2")
+        self.assertIn("- [aaaaaa01] sent to actor chan-2 (you); also sent to actor chan-3, with: review it; taken back "
+                      "from actor chan-1\n    the user (to actor chan-2 (you)): and fast\n"
+                      "    actor chan-2 (you): on it", md)
+        self.book.apply([{"op": "block.put", "page": "pagepage", "block": {"id": "aaaaaa01", "calls": [
+            {"to": "chan-1", "sent": 1700000000, "dropped": 1700000500}]}}])
+        self.assertIn("- [aaaaaa01] sent to no one now; taken back from actor chan-1",
+                      self.book.markdown(self.book.page("pagepage")))
 
 
 class WorkTest(BookBase):
@@ -533,6 +596,24 @@ class BackendTest(unittest.TestCase):
             "id": "aaaaaa01", "ended": "canceled"}}]})
         err, text = self.call("report", block="aaaaaa01", text="Late.")
         self.assertIn("The user canceled that line: leave it.", text)
+
+    def test_an_agent_the_user_took_a_line_back_from_may_not_report_on_it(self):
+        self.sent_block()
+        self.ask("POST", "ops", {"by": "p-one", "ops": [{"op": "block.put", "page": "pagepage", "block": {
+            "id": "aaaaaa01", "calls": [{"to": "chan-1", "sent": 1700000000, "dropped": 1700000100},
+                                        {"to": "chan-2", "sent": 1700000100}]}}]})
+        err, text = self.call("report", block="aaaaaa01", text="Did it.")
+        self.assertFalse(err)
+        self.assertIn("the user took the line on “Plans” back from you", text)
+        self.assertNotIn("thread", self.app.book(self.inst.gatherer).block("aaaaaa01")[1])
+        self.agent = Caller(channel="chan-2", gatherer="my gatherer/1")              # the one it is with now
+        err, text = self.call("report", block="aaaaaa01", text="Did it.")
+        self.assertIn("the user reviews it there", text)
+        self.agent = Caller(channel="chan-9", gatherer="my gatherer/1")              # one it never went to (a helper)
+        err, text = self.call("report", block="aaaaaa01", text="Helped.")
+        self.assertIn("the user reviews it there", text)
+        self.assertEqual([x["by"] for x in self.app.book(self.inst.gatherer).block("aaaaaa01")[1]["thread"]],
+                         ["agent:chan-2", "agent:chan-9"])
 
     def test_an_agent_is_told_what_is_wrong_with_its_report(self):
         self.sent_block()
