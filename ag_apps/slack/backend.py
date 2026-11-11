@@ -38,6 +38,18 @@ restarts), not from the newest message kept, so a gap followed by newer messages
 and DMs from then, and what Slack's search of the last days finds that the app hasn't kept and the user hasn't read.
 While it is down the panel says so: `setup` says "disconnected", never "connected" without a line.
 
+A line can also say it is up and bring nothing (one dead without a word; Slack handing the messages to another
+connection on the same tokens): so each minute, with the line up, Slack's search of the newest messages is looked at
+too (_check_missed), and what came in the last CHECK_BACK seconds in a conversation of the user's that the app hasn't
+kept is fetched and taken as if it had come on the line -- told, notified, popped up --, and the line made again (at
+most every REMAKE_EVERY seconds). One search a minute.
+
+The line is the HOME's it was connected in (credentials.json keeps that home): Slack hands each message to only one of
+the connections on an app's tokens, so a copy of the home (a test's, a backup's) that opened its own would take the
+user's messages from the dashboard they use. A copy gets no line -- its panel reads Slack, says it is a copy and shows
+new messages as a conversation is opened (status "copied") -- until the user connects it again there. Tokens kept
+before homes were (none named) are DEFAULT_HOME's, and taken as a copy's anywhere else.
+
 What the user and agents did is recorded in the gatherer as the app's own events (slack.drafted, slack.sent,
 slack.discarded), which no model is shown. Slack's own history stays in the cache, not in the gatherer.
 
@@ -75,6 +87,7 @@ from .store import Store
 STREAM = "Slack"
 VIEW_SETTLE = 2.0   # seconds a conversation (or thread) stays open in the panel before its agents are told of it
 CREDENTIALS = "credentials.json"
+DEFAULT_HOME = "~/.ag"         # ag's home when AG_HOME isn't set (ag/cli/config.py): tokens kept there unnamed are its
 TELL = ("all", "mentions", "none")
 MANIFEST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "slack_app_manifest.json")
 REFRESH_EVERY = 300.0          # seconds between re-reads of the conversations list (joins, leaves, renames)
@@ -84,6 +97,8 @@ CATCH_PAGES = 3                # at most this many pages (of 100) of one convers
 GAP_WAIT = 150.0               # seconds the line may go unseen (the "line" schedule sees it each minute) before what
                                # may have been missed then is fetched: the computer slept
 GAP_MARGIN = 60.0              # seconds before the line was last seen up that missed messages are fetched from
+CHECK_BACK = 300.0             # seconds back each minute's look at Slack's search finds messages the line never brought
+REMAKE_EVERY = 600.0           # seconds: a line that missed messages made again at most this often
 LEARN_MOST = 5                 # at most this many guessed read marks a minute replaced by Slack's (all on connecting)
 NAMES_MOST = 20                # at most this many people users.list leaves out looked up a refresh
 NOT_THERE = ("channel_not_found", "not_in_channel", "is_archived")   # a conversation Slack has no read cursor of
@@ -104,7 +119,8 @@ class SlackApp(App):
         self.store: Optional[Store] = None
         self.cl = None
         self.me: Dict[str, str] = {}
-        self.status = "off"          # off | connecting | connected | live-off (no app token) | disconnected | error
+        self.status = "off"          # off | connecting | connected | live-off (no app token) | copied (a copy of
+                                     # the home the tokens are of: no line) | disconnected | error
         self.error = ""
         self._users: Dict[str, dict] = {}
         self._refreshed = 0.0
@@ -121,6 +137,8 @@ class SlackApp(App):
         self._said: Dict[str, float] = {}                    # a notification's key -> when it was last said
         self._noticed: Dict[str, str] = {}                   # the keys that may be open -> the ts each said (kept)
         self._threads: Dict[tuple, tuple] = {}               # (conversation, thread) -> (followed, when found so)
+        self._copy_of: Optional[str] = None                  # the home the tokens are of, when this one is a copy
+        self._remade_at = 0.0                                # when a line that missed messages was last made again
 
     # -- the host
 
@@ -149,19 +167,34 @@ class SlackApp(App):
 
     # -- the connection
 
+    def _home(self) -> str:
+        """The ag home the app runs in (its folder is <home>/apps/<name>/data), as a real path."""
+        return os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(self.host.folder()))))
+
     def _tokens(self):
+        """(user token, app token) -- the app token, which opens the live line, only in the home the tokens were
+        connected in: in a copy of it, '' (and `_copy_of` that home). Kept with no home named (before homes were):
+        DEFAULT_HOME's, named so now; anywhere else, a copy's."""
         try:
             with open(os.path.join(self.host.folder(), CREDENTIALS)) as f:
                 got = json.load(f)
-            return str(got.get("user_token") or ""), str(got.get("app_token") or "")
-        except (OSError, ValueError):
+            user, app, home = (str(got.get(k) or "") for k in ("user_token", "app_token", "home"))
+        except (OSError, ValueError, AttributeError):
+            self._copy_of = None
             return os.environ.get(ENV[0], ""), os.environ.get(ENV[1], "")
+        here = self._home()
+        if not home and here == os.path.realpath(os.path.expanduser(DEFAULT_HOME)):
+            self._save_tokens(user, app)
+            home = here
+        self._copy_of = None if (not app or home == here) else (home or "another ag home")
+        return user, ("" if self._copy_of is not None else app)
 
     def _save_tokens(self, user: str, app: str) -> None:
+        """The tokens kept, readable by the user only, with the home they are this one's of."""
         path = os.path.join(self.host.folder(), CREDENTIALS)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
-            json.dump({"user_token": user, "app_token": app}, f)
+            json.dump({"user_token": user, "app_token": app, "home": self._home()}, f)
         os.chmod(path, 0o600)
 
     def _connect(self, user: str, app: str, wait: bool = False) -> None:
@@ -196,7 +229,7 @@ class SlackApp(App):
                 self._lost = False
                 self._seen_up(time.time())
             else:
-                self._on_status(gen, "live-off")
+                self._on_status(gen, "copied" if self._copy_of is not None else "live-off")
             self._learn_reads(gen, cl)
             self._catch_up(gen, cl, self._recent(gen, cl), after)
         except Exception as exc:  # noqa: BLE001 - shown to the user in the panel, not raised
@@ -458,11 +491,17 @@ class SlackApp(App):
             self._down_since = None
             if status != "connected":
                 self._on_status(gen, "connected")
-            if self._lost or (self._up_at > 0 and now - self._up_at > GAP_WAIT):
+            gap = self._lost or (self._up_at > 0 and now - self._up_at > GAP_WAIT)
+            if gap:
                 self._later_catch_up(gen, cl, self._missed_after())
             self._seen_up(now)
             self._learn_reads(gen, cl, LEARN_MOST)
             self._sync_read(cl)
+            if not gap:                                     # (a catch-up fetches those, and more)
+                try:
+                    self._check_missed(gen, cl, now)
+                except Exception:  # noqa: BLE001 - looked at again next minute; the line's own checks go on
+                    pass
         elif self._down_since is None:
             self._down_since = now
             self._lost = True
@@ -470,6 +509,47 @@ class SlackApp(App):
         elif now - self._down_since >= DOWN_WAIT:
             self._down_since = None
             self._connect(user, app)
+
+    def _check_missed(self, gen: int, cl, now: float) -> int:
+        """Each minute, with the line up: Slack's search of the newest messages, and those of the last CHECK_BACK
+        seconds in a conversation of the user's that the app hasn't kept -- the line never brought them -- fetched
+        (their conversation since then, or their thread) and taken as if they had come on it; then the line made again
+        (at most every REMAKE_EVERY seconds). -> how many were taken."""
+        day = time.strftime("%Y-%m-%d", time.localtime(now - 2 * 86400))   # (search's after: is a day, not a time)
+        try:
+            hits = cl.recent(day, pages=1)
+        except slack.SlackError:
+            return 0
+        floor = now - CHECK_BACK
+        want: Dict[tuple, None] = {}                        # (conversation, thread or '')
+        for h in hits:
+            cid, ts = h.get("channel") or "", h.get("ts") or ""
+            c = self.store.conversation(cid) if cid else None
+            if c is None or c.get("gone") or _num(ts) <= floor or self.store.message(cid, ts) is not None:
+                continue
+            thread = h.get("thread_ts") or ""
+            want[(cid, thread if thread and thread != ts else "")] = None
+        got: List[tuple] = []
+        for cid, thread in list(want)[:CATCH_UP]:
+            if gen != self._gen:
+                return 0
+            try:
+                msgs = cl.replies(cid, thread) if thread else self._since(cl, cid, f"{floor:.6f}")
+            except slack.SlackError:
+                continue
+            parent = next((m.get("user") or "" for m in msgs if m["ts"] == thread), "") if thread else ""
+            got.extend((cid, m, parent) for m in msgs if _num(m["ts"]) > floor)
+        taken = 0
+        for cid, m, parent in sorted(got, key=lambda x: _num(x[1]["ts"])):
+            if gen != self._gen:
+                return taken
+            taken += self._take(cid, m, parent)
+        if taken and now - self._remade_at >= REMAKE_EVERY:
+            self._remade_at = now
+            user, app = self._tokens()
+            if user and app:
+                self._connect(user, app)                    # a line that let messages by is not one to keep
+        return taken
 
     def _caught_up(self, ch: str, new: List[dict], kinds: tuple = ("you", "thread", "new")) -> None:
         """Messages missed while the line was down, listed for the user quietly: the newest of each kind (of `kinds`),
@@ -502,7 +582,7 @@ class SlackApp(App):
             status = "disconnected"                         # said connected once, its line gone since
         return {"sdk": slack.available(), "tokens": bool(user), "live": bool(app), "status": status,
                 "error": self.error, "me": self.me.get("user_id", ""), "team": self.me.get("team", ""),
-                "url": self.me.get("url", "")}
+                "url": self.me.get("url", ""), "copy_of": self._copy_of or ""}
 
     # -- what comes in
 
@@ -544,8 +624,14 @@ class SlackApp(App):
             self.store.add_conversation(got or {"id": ch, "kind": _kind(ev.get("channel_type"))},
                                         read_ts=f"{float(m['ts']) - 1e-6:.6f}")
             self._tell_all({"kind": "conversations", **self._lists()})
+        self._take(ch, m, ev.get("parent_user_id") or "")
+
+    def _take(self, ch: str, m: dict, parent_user: str = "") -> bool:
+        """A new message of a conversation kept (from the line, or found by _check_missed): told to the panels and the
+        agents, the user notified. -> False if it was kept already (the panel's own send, a re-sent event)."""
+        me = self.me.get("user_id", "")
         if not self.store.put_messages(ch, [m]):
-            return                                          # seen already (the panel's own send, a re-sent event)
+            return False
         self.store.active(ch, m["ts"])
         if m["user"] and m["user"] == me:
             self.store.read(ch, m["ts"])                    # the user wrote it: read up to there
@@ -559,7 +645,8 @@ class SlackApp(App):
         if m["user"] and m["user"] == me:
             self._clear(ch, m["thread_ts"] if reply else "")   # they wrote in it: read (and follow its thread)
         else:
-            self._notify(ch, m, parent_user=ev.get("parent_user_id") or "")
+            self._notify(ch, m, parent_user=parent_user)
+        return True
 
     def _reaction(self, ev: dict, added: bool) -> None:
         item = ev.get("item") or {}

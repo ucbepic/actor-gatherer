@@ -418,10 +418,12 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const [cls, text] = s.status === "connected" ? ["on", "Live: new messages arrive as they're sent"]
       : s.status === "connecting" ? ["warn", "Connecting to Slack…"]
       : s.status === "live-off" ? ["warn", "No app-level token: new messages show when you open a conversation"]
+      : s.status === "copied" ? ["warn", "A copy of another ag home: new messages show when you open a conversation"]
       : s.status === "disconnected" ? ["warn", "Reconnecting…"]
       : s.status === "error" ? ["bad", `Can't reach Slack: ${s.error || "unknown error"}`]
       : ["", "Not connected"];
     box.className = `status ${cls}`;
+    box.title = s.status === "copied" ? `Slack's live line stays with ${s.copy_of}, where you connected it, so this copy doesn't take its messages. Connecting again here moves it.` : "";
     box.replaceChildren(el("span", { class: "led", "aria-hidden": "true" }), el("span", null, text));
     $("team").textContent = s.team || "";
   }
