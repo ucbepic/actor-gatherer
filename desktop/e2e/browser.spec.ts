@@ -243,6 +243,43 @@ test("a Browser's tab is a native page over its pane, and the agent's tools act 
     expect(Math.abs(shown.bounds.y - stage!.y)).toBeLessThan(2);
     expect(Math.abs(shown.bounds.width - stage!.width)).toBeLessThan(2);
 
+    // the dashboard zoomed out (⌘−, kept per host): the page still over its pane, not over what is below and right of it
+    // -- the pane's place, in the page's pixels, times the zoom
+    const zoomTo = (level: number) =>
+      app.evaluate(({ BrowserWindow }, l) => BrowserWindow.getAllWindows()[0].webContents.setZoomLevel(l), level);
+    await zoomTo(-0.5);
+    try {
+      const inWindow = async () => {
+        const zoom = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor());
+        const f = await page.locator("#top-row .app-pane[data-app=browser] iframe").evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.left + el.clientLeft, y: r.top + el.clientTop };
+        });
+        const s = await panel(page).locator(".bw-stage").evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.left, y: r.top, w: r.width, h: r.height };
+        });
+        return { zoom, x: (f.x + s.x) * zoom, y: (f.y + s.y) * zoom, w: s.w * zoom, h: s.h * zoom };
+      };
+      let want = await inWindow();
+      expect(want.zoom).toBeLessThan(0.95);
+      await until(async () => {
+        want = await inWindow();
+        const b = (await pagesOf(app)).find((p) => p.url === site && p.visible)?.bounds;
+        return !!b && Math.abs(b.x - want.x) < 2 && Math.abs(b.y - want.y) < 2 &&
+          Math.abs(b.width - want.w) < 2 && Math.abs(b.height - want.h) < 2;
+      }, 10_000).catch(async (e) => {
+        console.log("want:", JSON.stringify(want), "pages:", JSON.stringify(await pagesOf(app)));
+        throw e;
+      });
+    } finally {
+      await zoomTo(0);
+    }
+    await until(async () => {
+      const b = (await pagesOf(app)).find((p) => p.url === site && p.visible)?.bounds;
+      return !!b && Math.abs(b.width - stage!.width) < 2;
+    }, 10_000);
+
     const email = await refOnce('textbox "Email"');
     const pay = await refOnce('button "Pay"');
     const still = [{ js: "document.title === 'Shop'", why: "still the shop" }];
