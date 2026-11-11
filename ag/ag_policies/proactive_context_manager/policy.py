@@ -43,9 +43,12 @@ Every context opens, after the harness's own set-up, with the GATHERER GUIDE
 parallel requests, notices, stream messages, left-out notes -- and where the full history
 is. On every read, with or without a build; one made item, the same while its text is.
 
-Not every channel is shown to the others. One whose latest `role` record (ROLE: the dashboard's, for a gatherer's
-gatherer agent) says `private` is seen by no other channel -- neither its requests, as parallel messages or in the
-index, nor its tasks, ranked into another's sections -- though it sees theirs (`unseen`). Nor is a message the
+Not every channel is shown to the others. A channel shares only with those of its GROUP: the latest `group` record
+in it (GROUP: the dashboard's, from the folder the actor is in) names it, and a channel with none is in the gatherer's
+own group, "" -- so in a gatherer where no channel has one, every channel shares with every other, as before groups.
+One in another group is seen neither by its requests, as parallel messages or in the index, nor by its tasks, ranked
+into the sections, nor counts for a join (`unseen`). One whose latest `role` record (ROLE: the dashboard's, for a
+gatherer's gatherer agent) says `private` is seen by no other channel, though it sees theirs. Nor is a message the
 actors send one another (`ag actors`, typed into the receiver's conversation as its user's), known by its opening
 (`unshared_openings`): it is the receiver's to act on, not a request of the user's (`shared`).
 
@@ -120,6 +123,8 @@ DRIFT_MAX = 1.5                 # the most `drift_of` scales ag's count by: toke
 GUIDE = "gatherer_guide"        # the guide every context opens with
 AGENT_STEP = ("agent_message", "tool_call", "agent_reasoning")   # what an agent step may start with
 ROLE = "role"                   # a channel's role, as the dashboard records it: {role, private} (`unseen`)
+GROUP = "group"                 # a channel's group, as the dashboard records it: {group, ...} (`unseen`); each
+                                # change its own id, as a re-sent id keeps the place it was first stored at
 OPENING_CHARS = 600             # how far into a message its opening is looked for, past a harness's wrapper (`shared`)
 
 # A tool call that could have WRITTEN a file it names. Reading one (cat, head, grep, wc, awk, a script
@@ -228,6 +233,21 @@ def mentions(text: str, subject: str, cwd=None) -> bool:
         elif os.path.normpath(path) == os.path.normpath(subject) and not moved(text[:start], cwd):
             return True
     return False
+
+
+class Unseen:
+    """The channels one channel is not shown (`in`): the private ones (`private`, a set), and those of another group
+    than its own (`own`): a channel's group is `groups`' for it, "" (its gatherer's own) when it has none."""
+
+    def __init__(self, private: set, groups: Dict[str, str], own: str):
+        self.private, self.groups, self.own = private, groups, own
+
+    def grouped(self, channel_id) -> bool:
+        """Whether `channel_id` is in the same group, private or not."""
+        return self.groups.get(channel_id, "") == self.own
+
+    def __contains__(self, channel_id) -> bool:
+        return channel_id in self.private or not self.grouped(channel_id)
 
 
 class ProactiveContextManager(Policy):
@@ -604,7 +624,7 @@ class ProactiveContextManager(Policy):
     def parallel_requests(self, conn, types: TypeIds, channel_id, after_row: int) -> List[tuple]:
         """(made_id, item, tokens, its row id) for each user message stored in
         another channel after `after_row`, oldest first."""
-        out, unseen = [], self.unseen(conn, types)
+        out, unseen = [], self.unseen(conn, types, channel_id)
         for r in conn.rows(after_row, types.of(*self.groups.user), differ=channel.of(channel_id)):
             other = channel_of(r)
             if other is None or other == channel_id or other in unseen or not self.shared(r):
@@ -638,7 +658,7 @@ class ProactiveContextManager(Policy):
                     if name == PARALLEL_BEFORE]
             if kept:
                 return kept[:1], start
-        unseen = self.unseen(conn, types)
+        unseen = self.unseen(conn, types, channel_id)
         before = [(c, e) for c, e in history.other_requests(conn, types, self.groups, self.tokenizer, channel_id,
                                                             keep=lambda r: channel_of(r) not in unseen and self.shared(r))
                   if e.row_id < start]
@@ -656,14 +676,21 @@ class ProactiveContextManager(Policy):
                                  source=f"requests before {start}")
         return [(made_id, item, conn.made_items([made_id])[made_id][2])], start
 
-    def unseen(self, conn, types: TypeIds) -> set:
-        """The channels no other channel is shown: those whose latest ROLE record says `private`."""
+    def unseen(self, conn, types: TypeIds, channel_id) -> "Unseen":
+        """The channels `channel_id` is not shown (`in`): those whose latest ROLE record says `private`, and those of
+        another group than its own -- a channel's group the latest GROUP record in it names, "" without one."""
         private: Dict[str, bool] = {}
-        for r in conn.rows(0, types.of(ROLE)):
+        group: Dict[str, str] = {}
+        role_ids = types.of(ROLE)
+        for r in conn.rows(0, types.of(ROLE, GROUP)):
             ch = channel_of(r)
-            if ch is not None:
-                private[ch] = bool(isinstance(r.payload, dict) and r.payload.get("private"))
-        return {ch for ch, hidden in private.items() if hidden}
+            if ch is None or not isinstance(r.payload, dict):
+                continue
+            if r.type.id in role_ids:
+                private[ch] = bool(r.payload.get("private"))
+            else:
+                group[ch] = str(r.payload.get("group") or "")
+        return Unseen({ch for ch, hidden in private.items() if hidden}, group, group.get(channel_id, ""))
 
     def shared(self, r: Row) -> bool:
         """Whether another channel's user message is shown to this one as its user's request: not a message the actors
@@ -849,7 +876,7 @@ class ProactiveContextManager(Policy):
         ranked = [by_key[tuple(k)] for k in build["ranking"] if tuple(k) in by_key]
         ranked = [t for t in ranked if id(t) not in shown]
         mark = build["parallel_mark"]
-        unseen = self.unseen(conn, types)
+        unseen = self.unseen(conn, types, ch)
         others = [(c, e) for c, e in history.other_requests(conn, types, groups, tok, ch,
                                                             keep=lambda r: channel_of(r) not in unseen and self.shared(r))
                   if e.row_id <= mark]
@@ -917,7 +944,7 @@ class ProactiveContextManager(Policy):
         cfg, ch = self.config, channel_of(read)
         if self.jobs is None:                      # no background work
             return ""
-        if latest is None and tables.joinable(conn, ch):
+        if latest is None and tables.joinable(conn, ch, self.unseen(conn, types, ch).grouped):
             build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.JOIN)
             if build_id is None:
                 return ""
@@ -1062,7 +1089,7 @@ class ProactiveContextManager(Policy):
         """(the other channels' tasks, located in their turns; those turns, by channel): each channel's whole history
         read, so seconds in a big gatherer -- cut short, with what was found so far, once `stopped` (the harness hung
         up on the call: `Read.stopped`)."""
-        found, turns_by_channel, unseen = [], {}, self.unseen(conn, types)
+        found, turns_by_channel, unseen = [], {}, self.unseen(conn, types, channel_id)
         for other in tables.channels_with_tasks(conn):
             if stopped():
                 break
