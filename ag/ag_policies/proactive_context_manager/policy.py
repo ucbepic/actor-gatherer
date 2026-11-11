@@ -131,7 +131,8 @@ GUIDE = "gatherer_guide"        # the guide every context opens with
 AGENT_STEP = ("agent_message", "tool_call", "agent_reasoning")   # what an agent step may start with
 ROLE = "role"                   # a channel's role, as the dashboard records it: {role, private} (`unseen`)
 GROUP = "group"                 # a channel's group, as the dashboard records it: {group, ...} (`unseen`); each
-                                # change its own id, as a re-sent id keeps the place it was first stored at
+                                # record an id of its own, naming its channel: a read returns an id once, where it
+                                # was first stored, whatever its channel
 OPENING_CHARS = 600             # how far into a message its opening is looked for, past a harness's wrapper (`shared`)
 
 # A tool call that could have WRITTEN a file it names. Reading one (cat, head, grep, wc, awk, a script
