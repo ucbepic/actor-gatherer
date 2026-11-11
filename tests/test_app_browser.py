@@ -527,6 +527,28 @@ class ChromeTest(ChromeBase):
         self.assertIn("opened " + first, told)
         self.assertIn("opened a new tab: " + second, told)
 
+    def test_a_new_tab_is_told_at_the_page_asked_for_whatever_chrome_says_first(self):
+        first = self.serve("first.html", "<title>First</title><p>one</p>")
+        second = first.replace("first.html", "second.html")
+        self.write("second.html", "<title>Second</title><p>two</p>")
+        self.b.open_link(first)
+        self.assertTrue(self.until(lambda: [t.url for t in self.b.tabs] == [first]), [t.url for t in self.b.tabs])
+        made = self.b._open
+
+        def blank_first(cdp, url, *a, **k):              # Chrome's first word on the new tab, "about:blank", handled
+            tab = made(cdp, url, *a, **k)                 # after the tab is made (as a slower machine has it)
+            self.b._target_event("Target.targetInfoChanged",
+                                 {"targetInfo": {"targetId": tab.target, "url": "about:blank", "title": "about:blank"}})
+            return tab
+        with mock.patch.object(self.b, "_open", blank_first):
+            self.b.open_link(second)
+        urls = lambda: [t.url for t in self.b.tabs]          # noqa: E731
+        self.assertTrue(self.until(lambda: urls() == [first, second]), urls())
+        told = [what for _, what in self.b.lately]
+        self.assertIn("opened a new tab: " + second, told)
+        self.assertNotIn("opened a new tab: about:blank", told)
+        self.assertNotIn("the page went to " + second, told)   # (the same thing, told once)
+
     def test_the_agent_and_the_user_use_one_tab(self):
         self.assertIn('"Shop checkout"', self.text("navigate", url=os.path.join(self.root, "index.html")))
         outline = self.text("snapshot")
