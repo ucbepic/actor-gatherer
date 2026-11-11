@@ -1,6 +1,6 @@
 // Work items in Notes (ag_apps/notes/): lines sent to an agent, or marked as one, tracked on the Work page by how each
-// stands; only the reader ends one -- accepted (a to-do one, ticked) or canceled -- and then it folds away on its page,
-// a fold saying where, and the Logbook keeps it. An agent's report is faked into the notebook the panel reads (the test
+// stands; only the reader ends one -- accepted or canceled, which changes no line (its chip says how it ended), or a
+// to-do one ticked, which then folds away on its page, a fold saying where -- and the Logbook keeps it. An agent's report is faked into the notebook the panel reads (the test
 // home's actors have no session to call notes_report from); what reaches an actor is the page's /api/send, held here.
 import type { FrameLocator, Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
@@ -151,7 +151,7 @@ test("a line marked as a work item is tracked until it is ticked, and goes when 
   await binPage(panel, "Plan");
 });
 
-test("a line its agent reported on is the reader's to accept: it folds away on its page, and the Logbook keeps it", async ({
+test("a line its agent reported on is the reader's to accept: the line stays as written, and the Logbook keeps it", async ({
   page,
 }) => {
   const actor = await fakeActor(page);
@@ -182,14 +182,16 @@ test("a line its agent reported on is the reader's to accept: it folds away on i
   await expect(review.locator(".res > *")).toHaveText(["fix-parser", "example.com/pull/4"]);
   await expect(review.locator(".res a")).toHaveAttribute("href", "https://example.com/pull/4");
 
-  // accepted: done -- in the Work page's Done (folded), no longer for the reader, folded away on its page
+  // accepted: done -- in the Work page's Done (folded), no longer for the reader; on its page, Done beside it, the to-do
+  // not ticked (the reader's to tick), nothing folded
   await review.locator(".wk-btn.accept").click();
   await expect(panel.locator("#work-page .wk-group.review")).toHaveCount(0);
   await expect(panel.locator("#work-page .wk-group.done .wk-fold")).toHaveText("Show");
   await expect(side(panel, "Work").locator(".needs")).toHaveCount(0);
   await side(panel, "Review").click();
-  await expect(line).toHaveCount(0);
-  await expect(row(panel, "Intro").locator(".fold button")).toHaveText("1 done");
+  await expect(line.locator(".sent .chip")).toHaveText("Done");
+  await expect(line).not.toHaveClass(/\b(done|ended)\b/);
+  await expect(panel.locator(".fold")).toHaveCount(0);
 
   // the Logbook keeps it; reopened from there, it is to review again
   await side(panel, "Logbook").click();
@@ -209,8 +211,42 @@ test("a line its agent reported on is the reader's to accept: it folds away on i
   await expect(convo.locator(".reply input")).toHaveAttribute("placeholder", `Send it back to ${CLAUDE}: what's left`);
   await convo.locator(".accept.big").click();
   await expect(convo.locator(".cv-ended")).toContainText("Accepted as done");
-  await expect(line).toHaveCount(0);
+  await expect(line.locator(".sent .chip")).toHaveText("Done");
+  await expect(line).not.toHaveClass(/\b(done|ended)\b/);
   await binPage(panel, "Review");
+});
+
+test("a line that is not a to-do stays as written once its work is accepted too: not struck through, not folded away", async ({
+  page,
+}) => {
+  const actor = await fakeActor(page);
+  const reports = await fakeReports(page, () => actor.channel);
+  const sent = await holdSends(page);
+  await open(page);
+  let { panel } = await openNotes(page);
+  await newPage(page, panel, "Ideas");
+  await type(page, "Intro", "Summarize the parser design @pars");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => sent.length).toBe(1);
+  const line = row(panel, "Summarize the parser design");
+  const id = (await line.getAttribute("data-id")) || "";
+  reports[id] = { text: "Wrote the summary" };
+  panel = await again(page, "Ideas");
+  await expect(line.locator(".sent .chip")).toHaveText("To review");
+
+  // accepted: Done beside it, the line itself as it was -- not struck, nothing folded, nothing to show
+  await line.locator(".sent .accept").click();
+  await expect(line.locator(".sent .chip")).toHaveText("Done");
+  await expect(line).not.toHaveClass(/ended/);
+  await expect(line.locator(".tx")).toHaveCSS("text-decoration-line", "none");
+  await expect(panel.locator(".fold")).toHaveCount(0);
+  await expect(panel.locator("#done-btn")).toBeHidden();
+
+  // a work item done all the same: in the Logbook
+  await side(panel, "Logbook").click();
+  const logged = panel.locator("#work-page .lg-row", { hasText: "Summarize the parser design" });
+  await expect(logged.locator(".wk-meta")).toContainText("accepted");
+  await binPage(panel, "Ideas");
 });
 
 test("canceling a line its agent is on tells the agent to stop, and the Logbook keeps it as canceled", async ({
@@ -250,8 +286,9 @@ test("canceling a line its agent is on tells the agent to stop, and the Logbook 
     `(From my Notes, page "Stop", block ${id}. The user canceled this line: stop any work on it, and don't report ` +
       "on it.)\n\nCanceled: Long job",
   );
-  await expect(line).toHaveCount(0);
-  await expect(panel.locator("#fold-all .fold button")).toHaveText("1 canceled"); // every line folded: the fold alone
+  await expect(line.locator(".sent .chip")).toHaveText("Canceled"); // the line as it was, not struck or folded
+  await expect(line).not.toHaveClass(/\b(done|ended)\b/);
+  await expect(panel.locator(".fold")).toHaveCount(0);
   await side(panel, "Logbook").click();
   await expect(panel.locator("#work-page .lg-row.canceled")).toContainText("Long job");
   await binPage(panel, "Stop");
