@@ -10,7 +10,10 @@ instances and the agents attached to them, and puts their events into the gather
 Where apps are found is app_kit's `finding` (the repo's apps/, AG_APPS_PATH, <home>/apps/), as ag finds their
 pollers. An app whose manifest can't be read is `broken`, with why, and nothing else.
 
-What it keeps, as events of the gatherer an instance was opened in (app_kit's HOST_TYPES, records no policy groups):
+What it keeps, as events of the gatherer an instance was opened in (app_kit's HOST_TYPES, records no policy groups) --
+in the home's one database (home.py's `merged`) every gatherer's together, each instance knowing its own gatherer, and
+the context events an app puts in with no channel naming its group (`group`), for the policy to show only to that
+group's agents:
 
     app_opened    {instance}: the instance (its id, folder, title, data), no channel -- its gatherer's
     app_named     {name, by}: what the user called it ("": its own title again) -- the page shows it over its title
@@ -513,7 +516,10 @@ class AppHost:
                 declared[t] = m.event_types()[[x.name for x in m.events].index(t)]
             # the host's properties on the event itself: ag declares a property an event carries on a type that lacks
             # it (the context types), where one given for the whole insert must be its type's already
-            ev = {"type": t, "payload": e["payload"], **({"text": e["text"]} if isinstance(e.get("text"), str) else {}),
+            payload = e["payload"]
+            if channel is None and t in app_kit.CONTEXT_TYPES and home.merged() and isinstance(payload, dict):
+                payload = {**payload, "group": instance.gatherer}   # the home's one database: its group's agents alone
+            ev = {"type": t, "payload": payload, **({"text": e["text"]} if isinstance(e.get("text"), str) else {}),
                   "properties": {**own, "app": name, "instance": instance.id}}
             if e.get("id"):
                 ev["id"] = f"{name}:{instance.id}:{e['id']}"     # one app's ids never another's
