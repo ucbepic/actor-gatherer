@@ -387,7 +387,8 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 .actor-card button.c-row:is(:hover, :focus-visible) { background: var(--wash); outline: none; }
 /* a folder's card's tree (cardTree): each row set in by its depth; a folder's row its caret, mark, name and count; the
    rows scrolling past a height */
-.actor-card .c-tree { display: grid; gap: 1px; max-height: min(60vh, 460px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+/* one column as wide as the card: an auto one grew to a long name's whole width, its row's buttons past the card's edge */
+.actor-card .c-tree { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; max-height: min(60vh, 460px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .actor-card .c-tree .c-row { padding-left: calc(4px + var(--depth, 0) * 16px); }
 .actor-card .c-tree .c-rest { padding-left: calc(var(--depth, 0) * 16px); color: var(--muted); font-size: 11px; padding-top: 1px; }
 .actor-card .c-frow .caret { flex: none; width: 9px; font-size: 7px; color: var(--muted); transition: transform .15s; }
