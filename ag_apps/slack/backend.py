@@ -24,13 +24,18 @@ What the user READ IN SLACK'S OWN APP is followed too: Slack keeps a read cursor
 sends no event when it moves, so it is asked -- every minute, of the conversations here unread or with a notification
 open, and of the threads with one open (at most SYNC_MOST in all), and on (re)connecting, of those with missed
 messages. A cursor further on than the app's is taken: those messages read here too, and a notification of one read
-cleared. (The app doesn't move Slack's.)
+cleared. (The app doesn't move Slack's.) A conversation's read mark is the app's GUESS until then -- read up to when
+the app first saw it --, so on connecting (and each minute, for one new since) Slack's cursor of each such one is taken
+whichever way it moves (_learn_reads): what the user hasn't read in Slack since before the app was connected is
+fetched and unread here too, its DMs and mentions listed quietly, as missed messages are.
 
 The LIVE LINE is kept up by the "line" schedule (app.toml, every minute; it also starts the backend with the
 dashboard): a line down DOWN_WAIT seconds -- Slack's SDK reconnects by itself, but not always (a sleep, a network
-change) -- is made again, and what was missed fetched (_catch_up: what Slack's search of the last days finds that the
-app hasn't kept and the user hasn't read here, and the newest of the conversations shown and DMs); a connection that
-failed, tried again (not a refused token).
+change) -- is made again; a connection that failed, tried again (not a refused token). What was missed is fetched
+(_catch_up) on connecting, and when the line is found up after it went down or after a while unseen (GAP_WAIT: the
+computer slept, and the SDK may have reconnected by itself) -- from when the line was last seen up (kept across
+restarts), not from the newest message kept, so a gap followed by newer messages is filled too: the conversations shown
+and DMs from then, and what Slack's search of the last days finds that the app hasn't kept and the user hasn't read.
 While it is down the panel says so: `setup` says "disconnected", never "connected" without a line.
 
 What the user and agents did is recorded in the gatherer as the app's own events (slack.drafted, slack.sent,
@@ -75,6 +80,13 @@ MANIFEST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "slack_
 REFRESH_EVERY = 300.0          # seconds between re-reads of the conversations list (joins, leaves, renames)
 RECENT_DAYS = 14               # how far back the panel's Recent list looks
 CATCH_UP = 40                  # at most this many conversations' missed messages fetched after (re)connecting
+CATCH_PAGES = 3                # at most this many pages (of 100) of one conversation's missed messages
+GAP_WAIT = 150.0               # seconds the line may go unseen (the "line" schedule sees it each minute) before what
+                               # may have been missed then is fetched: the computer slept
+GAP_MARGIN = 60.0              # seconds before the line was last seen up that missed messages are fetched from
+LEARN_MOST = 5                 # at most this many guessed read marks a minute replaced by Slack's (all on connecting)
+NAMES_MOST = 20                # at most this many people users.list leaves out looked up a refresh
+NOT_THERE = ("channel_not_found", "not_in_channel", "is_archived")   # a conversation Slack has no read cursor of
 ENV = ("AG_SLACK_USER_TOKEN", "AG_SLACK_APP_TOKEN")
 ID = re.compile(r"^[CGD][A-Z0-9]{6,}$")   # a Slack conversation's id
 DOWN_WAIT = 45.0               # seconds the live line may be down (the SDK reconnecting by itself) before it is made again
@@ -102,6 +114,10 @@ class SlackApp(App):
         self._view_timers: Dict[str, threading.Timer] = {}   # instance -> the wait before telling its agents
         self._view_told: Dict[str, tuple] = {}               # instance -> (conversation, thread) its agents were told
         self._down_since: Optional[float] = None             # when the live line was first seen down
+        self._up_at = 0.0                                    # when it was last seen up (kept: "live_at")
+        self._lost = False                                   # it went down since: what was missed to be fetched
+        self._catching = threading.Lock()                    # one catch-up at a time
+        self._asked_users: set = set()                       # people users.list left out, looked up once
         self._said: Dict[str, float] = {}                    # a notification's key -> when it was last said
         self._noticed: Dict[str, str] = {}                   # the keys that may be open -> the ts each said (kept)
         self._threads: Dict[tuple, tuple] = {}               # (conversation, thread) -> (followed, when found so)
@@ -114,6 +130,7 @@ class SlackApp(App):
         self._users = self.store.users()
         kept = self.store.setting("noticed", {}) or {}
         self._noticed = {str(k): str(v) for k, v in (kept.items() if isinstance(kept, dict) else ((k, "") for k in kept))}
+        self._up_at = _num(self.store.setting("live_at", 0))
         user, app = self._tokens()
         if user:
             self._connect(user, app)
@@ -165,6 +182,7 @@ class SlackApp(App):
 
     def _run(self, gen: int, user: str, app: str) -> None:
         try:
+            after = self._missed_after()                    # (before the line is seen up again)
             cl = self._make(user, app)
             me = cl.who()
             with self._lock:
@@ -175,9 +193,12 @@ class SlackApp(App):
             self._refresh(cl)
             if app:
                 cl.listen(lambda ev: self._event(gen, ev), lambda s: self._on_status(gen, s))
+                self._lost = False
+                self._seen_up(time.time())
             else:
                 self._on_status(gen, "live-off")
-            self._catch_up(gen, cl, self._recent(gen, cl))
+            self._learn_reads(gen, cl)
+            self._catch_up(gen, cl, self._recent(gen, cl), after)
         except Exception as exc:  # noqa: BLE001 - shown to the user in the panel, not raised
             if gen == self._gen:
                 with self._lock:
@@ -196,14 +217,36 @@ class SlackApp(App):
                 self.status = status
                 if status == "connected":
                     self.error = ""
+            if status == "disconnected" or status.startswith("error: "):
+                self._lost = True                           # what came meanwhile fetched once it is back
         self._tell_all({"kind": "status", "setup": self.setup()})
 
+    def _seen_up(self, now: float) -> None:
+        """The live line seen up at `now`: what a later catch-up fetches from, kept for the next start."""
+        self._up_at = now
+        self.store.set_setting("live_at", now)
+
+    def _missed_after(self) -> str:
+        """Where missed messages may start: a little before the line was last seen up ('' if never)."""
+        return f"{self._up_at - GAP_MARGIN:.6f}" if self._up_at > 0 else ""
+
     def _refresh(self, cl) -> None:
-        """The people and the conversations, read again."""
+        """The people and the conversations, read again -- and the people users.list leaves out whom a DM is with
+        (Slack's own "Slack" account), looked up once each."""
         users = cl.users()
         self.store.put_users(users)
         self._users = self.store.users()
-        self.store.put_conversations(cl.conversations())
+        convs = cl.conversations()
+        self.store.put_conversations(convs)
+        missing = [c["user"] for c in convs if c.get("kind") == "im" and c.get("user")
+                   and c["user"] not in self._users and c["user"] not in self._asked_users][:NAMES_MOST]
+        for uid in missing:
+            self._asked_users.add(uid)
+            got = cl.user(uid)
+            if got:
+                self.store.put_users([got])
+        if missing:
+            self._users = self.store.users()
         self._refreshed = time.time()
         self._tell_all({"kind": "conversations", **self._lists()})
 
@@ -224,14 +267,20 @@ class SlackApp(App):
         self._tell_all({"kind": "conversations", **self._lists()})
         return hits
 
-    def _catch_up(self, gen: int, cl, hits: List[dict] = ()) -> None:
-        """Messages sent while the line was down, fetched (at most CATCH_UP calls): first those Slack's search found
-        (`hits`) that the app hasn't kept and that are newer than the user read here -- their conversations since then,
-        their threads -- then the newest of the conversations the panel has shown and of DMs. Slack's read cursors of
-        those with new messages taken (the user may have read them in Slack's own app), what is left unread listed for
-        the user quietly; not told to agents (they are not new news)."""
+    def _catch_up(self, gen: int, cl, hits: List[dict] = (), after: str = "") -> None:
+        """Messages sent while the line was down, fetched (at most CATCH_UP conversations, CATCH_PAGES pages each):
+        those Slack's search found (`hits`) that the app hasn't kept and that are newer than the user read here --
+        their conversations, their threads -- and those of the conversations the panel has shown and of DMs; each
+        conversation from its newest message kept or from `after` (a little before the line was last seen up), the
+        earlier, so a gap with newer messages after it is filled. Slack's read cursors of those with new messages
+        taken (the user may have read them in Slack's own app), what is left unread listed for the user quietly; not
+        told to agents (they are not new news)."""
         since: Dict[str, str] = {}                          # conversation -> fetch what came after
         threads: Dict[tuple, None] = {}
+
+        def start(floor: str) -> str:                       # where a conversation's missed messages may start
+            return min([t for t in (floor, after) if _num(t) > 0], key=_num, default="")
+
         for h in hits:
             c = self.store.conversation(h.get("channel") or "")
             if c is None or c.get("gone") or _num(h.get("ts")) <= _num(c["read_ts"]) \
@@ -240,21 +289,19 @@ class SlackApp(App):
             if h.get("thread_ts") and h["thread_ts"] != h["ts"]:
                 threads[(c["id"], h["thread_ts"])] = None
             else:
-                since[c["id"]] = max(c["latest_ts"], c["read_ts"], key=_num)
+                since[c["id"]] = start(max(c["latest_ts"], c["read_ts"], key=_num))
         for c in self.store.conversations():
             if c["id"] not in since and c["latest_ts"] and (c["synced"] or c["kind"] in ("im", "mpim")):
-                since[c["id"]] = c["latest_ts"]
+                since[c["id"]] = start(c["latest_ts"])
         got: Dict[str, List[dict]] = {}
-        calls = [(cl.history, cid, {"oldest": ts, "limit": 100}) for cid, ts in since.items()] \
-            + [(cl.replies, cid, {"ts": ts}) for cid, ts in threads]
-        for fetch, cid, kw in calls[:CATCH_UP]:
+        calls = [(cid, ts, "") for cid, ts in since.items()] + [(cid, "", ts) for cid, ts in threads]
+        for cid, oldest, thread in calls[:CATCH_UP]:
             if gen != self._gen:
                 return
             try:
-                msgs = fetch(cid, **kw)
+                msgs = cl.replies(cid, thread) if thread else self._since(cl, cid, oldest)
             except slack.SlackError:
                 continue
-            msgs = msgs[0] if isinstance(msgs, tuple) else msgs
             new = self.store.put_messages(cid, msgs) if msgs else []
             if new:
                 got.setdefault(cid, []).extend(new)
@@ -264,6 +311,77 @@ class SlackApp(App):
         for cid, new in got.items():
             self._tell_all({"kind": "history", "conversation": cid})
             self._caught_up(cid, new)
+        self._tell_all({"kind": "unread", "unread": self._unread()})
+
+    def _since(self, cl, cid: str, oldest: str) -> List[dict]:
+        """A conversation's messages after `oldest`, newest first: the newest at most CATCH_PAGES pages of 100 (one,
+        with no `oldest`). Read back from the newest, not with Slack's own `oldest`: given that alone, Slack answers
+        the OLDEST 100 after it (as checked on a real workspace), and a long gap would miss its newest."""
+        out: List[dict] = []
+        latest = ""
+        for _ in range(CATCH_PAGES if oldest else 1):
+            msgs, more = cl.history(cid, latest=latest, limit=100)
+            after = [m for m in msgs if _num(m["ts"]) > _num(oldest)]
+            out.extend(after)
+            if not more or not msgs or len(after) < len(msgs):
+                break
+            latest = min((m["ts"] for m in msgs), key=_num)
+        return out
+
+    def _later_catch_up(self, gen: int, cl, after: str) -> None:
+        """What may have been missed since `after`, fetched in the background -- unless a catch-up is running."""
+        self._lost = False
+
+        def run() -> None:
+            if not self._catching.acquire(blocking=False):
+                return
+            try:
+                self._catch_up(gen, cl, self._recent(gen, cl), after)
+            except Exception:  # noqa: BLE001 - fetched again at the next gap
+                pass
+            finally:
+                self._catching.release()
+        threading.Thread(target=run, name="ag-slack-catch-up", daemon=True).start()
+
+    def _learn_reads(self, gen: int, cl, most: Optional[int] = None) -> None:
+        """Slack's own read cursor taken for each conversation whose read mark is still the app's guess (`most` of
+        them, the most recently active first): back or on. One moved back -- the user hadn't read it in Slack since
+        before the app first saw it -- has what came after it fetched, unread here as there, and its DMs and mentions
+        listed quietly (a channel's other messages only counted, as Slack's app does)."""
+        ids = self.store.guessed_reads()
+        if most is not None:
+            ids = ids[:most]
+        got: Dict[str, List[dict]] = {}
+        moved = False
+        for cid in ids:
+            if gen != self._gen:
+                return
+            c = self.store.conversation(cid)
+            if c is None:
+                continue
+            try:
+                last = cl.last_read(cid)
+            except slack.SlackError as exc:
+                if str(exc) in NOT_THERE:
+                    self.store.take_read(cid, "")            # (no cursor to take: the guess stays, not asked again)
+                continue
+            self.store.take_read(cid, last)
+            if not last or _num(last) == _num(c["read_ts"]):
+                continue
+            moved = True
+            if _num(last) < _num(c["read_ts"]):
+                try:
+                    new = self.store.put_messages(cid, self._since(cl, cid, last))
+                except slack.SlackError:
+                    continue
+                if new:
+                    got[cid] = new
+        if gen != self._gen or not (moved or got):
+            return
+        self._tell_all({"kind": "conversations", **self._lists()})
+        for cid, new in got.items():
+            self._tell_all({"kind": "history", "conversation": cid})
+            self._caught_up(cid, new, kinds=("you", "thread"))
         self._tell_all({"kind": "unread", "unread": self._unread()})
 
     def _slack_read(self, cl, cids: List[str]) -> List[str]:
@@ -321,7 +439,9 @@ class SlackApp(App):
     def keep_line(self, now: Optional[float] = None) -> None:
         """The live line kept up (the "line" schedule, every minute): a connection that failed, made again -- not one
         Slack refused the tokens of --, and a line down DOWN_WAIT seconds made again (missed messages fetched); the
-        panels told when it goes down and comes back."""
+        panels told when it goes down and comes back. A line up again by itself after it went down, or seen up after
+        more than GAP_WAIT unseen (the computer slept: the SDK may have reconnected without a word), has what may have
+        been missed since it was last seen up fetched."""
         now = time.time() if now is None else now
         user, app = self._tokens()
         if not user or self.store is None:
@@ -338,17 +458,22 @@ class SlackApp(App):
             self._down_since = None
             if status != "connected":
                 self._on_status(gen, "connected")
+            if self._lost or (self._up_at > 0 and now - self._up_at > GAP_WAIT):
+                self._later_catch_up(gen, cl, self._missed_after())
+            self._seen_up(now)
+            self._learn_reads(gen, cl, LEARN_MOST)
             self._sync_read(cl)
         elif self._down_since is None:
             self._down_since = now
+            self._lost = True
             self._tell_all({"kind": "status", "setup": self.setup()})
         elif now - self._down_since >= DOWN_WAIT:
             self._down_since = None
             self._connect(user, app)
 
-    def _caught_up(self, ch: str, new: List[dict]) -> None:
-        """Messages missed while the line was down, listed for the user quietly: the newest of each kind, unless they
-        wrote in the conversation after (read)."""
+    def _caught_up(self, ch: str, new: List[dict], kinds: tuple = ("you", "thread", "new")) -> None:
+        """Messages missed while the line was down, listed for the user quietly: the newest of each kind (of `kinds`),
+        unless they wrote in the conversation after (read)."""
         newest: Dict[str, dict] = {}
         read = _num((self.store.conversation(ch) or {}).get("read_ts"))
         for m in sorted(new, key=lambda m: _num(m["ts"])):
@@ -358,7 +483,7 @@ class SlackApp(App):
                 newest.clear()
             else:
                 what = self._news(ch, m)
-                if what:
+                if what in kinds:
                     newest[self._key(ch, m, what)] = m
         for m in newest.values():
             self._notify(ch, m, caught_up=True)

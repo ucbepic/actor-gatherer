@@ -9,6 +9,8 @@
         last_read(id)               the user's read cursor in it, as Slack keeps it: what they last read in Slack's
                                     own app ('' if none said)
         users()                     the workspace's people: each {id, name, real_name, bot}
+        user(id)                    one users() leaves out (Slack's own "Slack" account a DM can be with), the same
+                                    shape (None: Slack won't say)
         history(id, latest, limit, oldest)  (messages newest first, more?) -- each message as `message` shapes it
         open_dm(user)               the DM with a person, opened if it wasn't
         replies(id, ts)             a thread, its parent first
@@ -79,6 +81,14 @@ def conversation(c: dict) -> dict:
     return {"id": c.get("id") or "", "kind": kind_of(c), "name": c.get("name") or "", "user": c.get("user") or "",
             "members": list(c.get("members") or []),
             "topic": (topic.get("value") if isinstance(topic, dict) else topic) or ""}
+
+
+def person(u: dict) -> dict:
+    """A person (or app) as Slack gives them, in the app's shape."""
+    p = u.get("profile") or {}
+    return {"id": u.get("id"), "name": p.get("display_name") or u.get("name") or "",
+            "real_name": p.get("real_name") or u.get("real_name") or "",
+            "bot": bool(u.get("is_bot") or u.get("id") in ("USLACKBOT", "USLACK"))}
 
 
 def message(m: dict, me: str = "") -> dict:
@@ -157,13 +167,15 @@ class Client:
         return got if _ts(got) > 0 else ""
 
     def users(self) -> List[dict]:
-        out = []
-        for u in self._pages("users_list", "members"):
-            p = u.get("profile") or {}
-            out.append({"id": u.get("id"), "name": p.get("display_name") or u.get("name") or "",
-                        "real_name": p.get("real_name") or u.get("real_name") or "",
-                        "bot": bool(u.get("is_bot") or u.get("id") == "USLACKBOT")})
-        return out
+        return [person(u) for u in self._pages("users_list", "members")]
+
+    def user(self, uid: str) -> Optional[dict]:
+        """users.info: one users.list doesn't list -- Slack's own "Slack" account (USLACK), whose DM holds its notices."""
+        try:
+            u = self._call("users_info", user=uid).get("user") or {}
+        except SlackError:
+            return None
+        return person(u) if u.get("id") else None
 
     def history(self, cid: str, latest: str = "", limit: int = 50, oldest: str = "") -> Tuple[List[dict], bool]:
         r = self._call("conversations_history", channel=cid, latest=latest or None, oldest=oldest or None,

@@ -5,14 +5,19 @@ gatherer's events: Slack's history is Slack's, and the gatherer gets only what i
 
     Store(path)
         put_conversations(rows) / conversation(id) / conversations()   each {id, kind, name, user, members, topic,
-                                                                        read_ts, latest_ts, active_ts, synced}
+                                                                        read_ts, read_known, latest_ts, active_ts,
+                                                                        synced}
         active(id, ts)                                                  when it was last active
         put_users(rows) / users()                                       {id: {name, real_name, bot}}
         put_messages(channel, msgs) -> new ones / message(ch, ts) / history(ch, before, limit) / thread(ch, ts)
         change(channel, ts, fields) / delete(channel, ts)
         read(channel, ts) / unread(me)                                  read marks; {channel: (unread, mentions)}
+        guessed_reads() / take_read(channel, ts)                        read marks still the app's guess; Slack's taken
         draft(...) / drafts(status) / set_draft(id, **fields)
         setting(k, default) / set_setting(k, v)
+
+A conversation's read mark starts as the app's GUESS -- read up to when the app first saw it -- until Slack's own read
+cursor of it is taken (take_read, backend.py: on connecting) or the user reads it here (`read_known`).
 
 Slack's timestamps (`ts`, "1794193521.100519") are kept as Slack gives them: strings, ordered as numbers (`_num`).
 Every method is safe from any thread (one connection, one lock)."""
@@ -26,13 +31,14 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 KINDS = ("channel", "private", "im", "mpim")
 DRAFT_STATES = ("pending", "sent", "discarded")
+NOT_COUNTED = ("channel_join", "channel_leave", "group_join", "group_leave")   # never unread, as in Slack's app
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', user TEXT NOT NULL DEFAULT '',
     members TEXT NOT NULL DEFAULT '[]', topic TEXT NOT NULL DEFAULT '', read_ts TEXT NOT NULL DEFAULT '',
     latest_ts TEXT NOT NULL DEFAULT '', synced INTEGER NOT NULL DEFAULT 0, gone INTEGER NOT NULL DEFAULT 0,
-    active_ts TEXT NOT NULL DEFAULT '');
+    active_ts TEXT NOT NULL DEFAULT '', read_known INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', real_name TEXT NOT NULL DEFAULT '',
     bot INTEGER NOT NULL DEFAULT 0);
@@ -73,6 +79,8 @@ class Store:
             cols = {r["name"] for r in self._db.execute("PRAGMA table_info(conversations)")}
             if "active_ts" not in cols:                      # a cache from before activity was kept
                 self._db.execute("ALTER TABLE conversations ADD COLUMN active_ts TEXT NOT NULL DEFAULT ''")
+            if "read_known" not in cols:                     # from before Slack's read cursors were taken: guesses
+                self._db.execute("ALTER TABLE conversations ADD COLUMN read_known INTEGER NOT NULL DEFAULT 0")
 
     def close(self) -> None:
         with self._lock:
@@ -94,7 +102,8 @@ class Store:
 
     def put_conversations(self, rows: List[dict]) -> None:
         """The conversations the user is in now, as client.py gives them; one not among them is marked gone (left,
-        archived), kept with its messages. A new one starts read up to now: unread counts what arrives after."""
+        archived), kept with its messages. A new one starts read up to now -- a guess, until Slack's own read cursor
+        of it is taken: unread counts what arrives after."""
         now = f"{time.time():.6f}"
         with self._lock:
             self._db.execute("BEGIN")
@@ -129,7 +138,7 @@ class Store:
     def _conv(self, r: sqlite3.Row) -> dict:
         return {"id": r["id"], "kind": r["kind"], "name": r["name"], "user": r["user"],
                 "members": json.loads(r["members"] or "[]"), "topic": r["topic"], "read_ts": r["read_ts"],
-                "latest_ts": r["latest_ts"], "active_ts": r["active_ts"], "synced": bool(r["synced"]),
+                "read_known": bool(r["read_known"]), "latest_ts": r["latest_ts"], "active_ts": r["active_ts"], "synced": bool(r["synced"]),
                 "member": not r["gone"]}
 
     def conversation(self, cid: str) -> Optional[dict]:
@@ -247,17 +256,33 @@ class Store:
     # -- read marks
 
     def read(self, channel: str, ts: str) -> None:
-        """The user has read `channel` up to `ts` (never moved back)."""
-        self._do("UPDATE conversations SET read_ts = ? WHERE id = ? AND CAST(read_ts AS REAL) < ?",
-                 (ts, channel, _num(ts)))
+        """The user has read `channel` up to `ts` (never moved back) -- here, or in Slack's own app: its read mark is
+        no longer the app's guess."""
+        self._do("UPDATE conversations SET read_ts = CASE WHEN CAST(read_ts AS REAL) < ? THEN ? ELSE read_ts END, "
+                 "read_known = 1 WHERE id = ?", (_num(ts), ts, channel))
+
+    def guessed_reads(self) -> List[str]:
+        """The conversations the user is in whose read mark is still the app's guess, the most recently active first."""
+        return [r["id"] for r in self._all(
+            "SELECT id FROM conversations WHERE gone = 0 AND read_known = 0 "
+            "ORDER BY max(CAST(active_ts AS REAL), CAST(latest_ts AS REAL)) DESC, id")]
+
+    def take_read(self, channel: str, ts: str) -> None:
+        """Slack's own read cursor of `channel` taken in place of the app's guess, back or on; '' (Slack has none: it
+        never had a message to read) keeps the guess, as known."""
+        if ts:
+            self._do("UPDATE conversations SET read_ts = ?, read_known = 1 WHERE id = ?", (ts, channel))
+        else:
+            self._do("UPDATE conversations SET read_known = 1 WHERE id = ?", (channel,))
 
     def unread(self, me: str) -> Dict[str, Tuple[int, int]]:
         """{conversation: (messages after its read mark from others, how many of those name the user or are in a
-        DM)}: top-level messages only, as Slack counts them."""
+        DM)}: top-level messages only, and no joins or leaves, as Slack counts them."""
         rows = self._all(
             "SELECT m.channel AS ch, c.kind AS kind, m.text AS text FROM messages m JOIN conversations c ON "
             "c.id = m.channel WHERE c.gone = 0 AND m.deleted = 0 AND m.user != ? AND m.tsn > CAST(c.read_ts AS REAL) "
-            "AND (m.thread_ts = '' OR m.thread_ts = m.ts OR m.subtype = 'thread_broadcast')", (me,))
+            "AND (m.thread_ts = '' OR m.thread_ts = m.ts OR m.subtype = 'thread_broadcast') "
+            f"AND m.subtype NOT IN ({', '.join('?' * len(NOT_COUNTED))})", (me, *NOT_COUNTED))
         out: Dict[str, List[int]] = {}
         for r in rows:
             got = out.setdefault(r["ch"], [0, 0])
