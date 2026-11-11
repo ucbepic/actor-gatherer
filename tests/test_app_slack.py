@@ -31,6 +31,11 @@ def ts_ago(seconds: float) -> str:
     return f"{time.time() - seconds:.6f}"
 
 
+def full(m: dict) -> dict:
+    """A message as client.Client gives it (history, replies): every field, from Slack's few."""
+    return be.slack.message(m, ME)
+
+
 class FakeSlack:
     """Slack, as client.Client gives it: a channel and a DM with old messages, and what was posted."""
 
@@ -61,6 +66,7 @@ class FakeSlack:
         self.not_there = set()     # conversations conversations.info can't find
         self.others = {"USLACK": {"id": "USLACK", "name": "slack", "real_name": "Slack", "bot": True}}   # users.info only
         self.asked_user = []
+        self.asked_history = []
         FakeSlack.made.append(self)
 
     def who(self):
@@ -76,6 +82,7 @@ class FakeSlack:
         return [dict(u) for u in self.people]
 
     def history(self, cid, latest="", limit=50, oldest=""):
+        self.asked_history.append(cid)
         got = [m for m in self.msgs.get(cid, []) if (not latest or float(m["ts"]) < float(latest))
                and (not oldest or float(m["ts"]) > float(oldest))]
         got.sort(key=lambda m: -float(m["ts"]))
@@ -103,7 +110,7 @@ class FakeSlack:
         return []
 
     def recent(self, after, pages=3):
-        self.recent_after = after
+        self.recent_after, self.recent_pages = after, pages
         if self.hits is not None:
             return [dict(h) for h in self.hits]
         return [{"channel": "D1", "ts": ts_ago(600), "thread_ts": ""}, {"channel": "CNOTMINE", "ts": ts_ago(60), "thread_ts": ""}]
@@ -894,10 +901,11 @@ class GapTest(BackendBase):
     def test_a_line_seen_each_minute_fetches_nothing(self):
         t = time.time()
         self.app._seen_up(t)
-        self.slack.recent_after = None
+        self.slack.recent_after, self.slack.asked_history = None, []
         self.app.keep_line(t + 60)
         time.sleep(0.1)
-        self.assertIsNone(self.slack.recent_after)
+        self.assertEqual(self.slack.recent_pages, 1)                            # only the minute's look (MissedTest)
+        self.assertEqual(self.slack.asked_history, [])
 
     def test_a_line_back_by_itself_soon_after_it_went_down_has_what_came_meanwhile_fetched(self):
         self.get("history", conversation="C1")
@@ -985,3 +993,130 @@ class ThreadTest(BackendBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissedTest(BackendBase):
+    """A line that says it is up and brings nothing (dead without a word, or Slack handing the messages to another
+    connection): each minute Slack's search is looked at, and what the line never brought is taken as new."""
+
+    def test_a_message_the_line_never_brought_is_found_and_taken_as_new_and_the_line_made_again(self):
+        ts = ts_ago(30)
+        self.slack.msgs["D1"].append(full({"ts": ts, "user": MAYA, "text": "you there?"}))
+        self.slack.hits = [{"channel": "D1", "ts": ts, "thread_ts": ""}]
+        with mock.patch.object(self.app, "_connect") as remake:
+            self.app.keep_line()
+            self.assertEqual(self.slack.recent_pages, 1)
+            self.assertEqual(self.slack.recent_after, time.strftime("%Y-%m-%d", time.localtime(time.time() - 2 * 86400)))
+            self.assertIsNotNone(self.app.store.message("D1", ts))
+            n = self.host.notices[-1]
+            self.assertEqual((n["key"], n["show"], n["text"]), ("you:D1", ["ag", "system"], "you there?"))   # popped up
+            self.assertEqual([t["conversation"] for t in self.host.told if t["kind"] == "message"], ["D1"])
+            self.assertEqual([e["payload"]["stream"] for e in self.streams()], ["Slack DM with Maya Chen"])
+            self.assertEqual(remake.call_args.args, ("xoxp-1", "xapp-1"))
+            self.app.keep_line()                                                  # kept now: nothing again
+            self.assertEqual((len(self.host.notices), remake.call_count), (1, 1))
+
+    def test_a_missed_thread_reply_is_fetched_from_its_thread(self):
+        parent = self.slack.msgs["C1"][0]["ts"]
+        reply = full({"ts": ts_ago(20), "user": MAYA, "text": f"<@{ME}> see above", "thread_ts": parent})
+        self.slack.threads[("C1", parent)] = [reply]
+        self.slack.hits = [{"channel": "C1", "ts": reply["ts"], "thread_ts": parent}]
+        with mock.patch.object(self.app, "_connect"):
+            self.app.keep_line()
+        self.assertIsNotNone(self.app.store.message("C1", reply["ts"]))
+        self.assertEqual(self.host.notices[-1]["key"], f"thread:C1:{parent}")
+        self.assertEqual(self.slack.asked_history, [])
+
+    def test_what_the_line_brought_what_is_older_and_others_conversations_are_left_alone(self):
+        brought = ts_ago(10)
+        self.live(channel="C1", user=LEO, text="on the line", ts=brought)
+        self.host.notices.clear()
+        old = ts_ago(be.CHECK_BACK + 60)
+        self.slack.msgs["C1"].append(full({"ts": old, "user": LEO, "text": "long ago"}))
+        self.slack.hits = [{"channel": "C1", "ts": brought, "thread_ts": ""}, {"channel": "C1", "ts": old, "thread_ts": ""},
+                           {"channel": "CNOTMINE", "ts": ts_ago(5), "thread_ts": ""}]
+        self.slack.asked_history = []
+        with mock.patch.object(self.app, "_connect") as remake:
+            self.app.keep_line()
+        self.assertEqual((self.slack.asked_history, self.host.notices, remake.call_count), ([], [], 0))
+        self.assertIsNone(self.app.store.message("C1", old))                     # (a catch-up's, after a gap)
+
+    def test_a_line_that_keeps_missing_is_made_again_at_most_every_while(self):
+        with mock.patch.object(self.app, "_connect") as remake:
+            for i, ago in enumerate((40, 30)):
+                ts = ts_ago(ago)
+                self.slack.msgs["D1"].append(full({"ts": ts, "user": MAYA, "text": f"m{i}"}))
+                self.slack.hits = [{"channel": "D1", "ts": ts, "thread_ts": ""}]
+                self.assertEqual(self.app._check_missed(self.app._gen, self.slack, time.time()), 1)
+            self.assertEqual(remake.call_count, 1)
+            later = time.time() + be.REMAKE_EVERY                                  # a while on: made again
+            ts = f"{later - 10:.6f}"
+            self.slack.msgs["D1"].append(full({"ts": ts, "user": MAYA, "text": "later"}))
+            self.slack.hits = [{"channel": "D1", "ts": ts, "thread_ts": ""}]
+            self.app._check_missed(self.app._gen, self.slack, later)
+            self.assertEqual(remake.call_count, 2)
+
+    def test_no_check_while_a_gap_is_being_caught_up(self):
+        self.app._seen_up(time.time())
+        self.slack.recent_pages = None
+        with mock.patch.object(self.app, "_check_missed") as check:
+            self.app.keep_line(time.time() + 900)                                 # unseen 15 minutes: a catch-up
+        self.assertEqual(check.call_count, 0)
+
+
+class HomeTest(BackendBase):
+    """The live line is the home's the tokens were connected in: a copy of the home opens none, so it can't take the
+    user's messages (Slack hands each to only one connection on the tokens)."""
+
+    def copy(self):
+        other = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, other, True)
+        folder = os.path.join(other, "home", "apps", "slack", "data")
+        os.makedirs(folder)
+        shutil.copy(os.path.join(self.dir, be.CREDENTIALS), folder)
+        host = Host(folder)
+        app = be.SlackApp(make_client=FakeSlack)
+        self.addCleanup(app.stop)
+        app.start(host)
+        deadline = time.time() + 5
+        while app.status in ("off", "connecting") and time.time() < deadline:
+            time.sleep(0.02)
+        return app, host, folder
+
+    def kept(self, folder):
+        with open(os.path.join(folder, be.CREDENTIALS)) as f:
+            return json.load(f)
+
+    def test_the_tokens_are_kept_with_the_home_they_were_connected_in(self):
+        self.assertEqual(self.kept(self.dir)["home"], self.app._home())
+        self.assertEqual(self.get("state")["setup"]["copy_of"], "")
+
+    def test_a_copy_of_the_home_reads_slack_but_opens_no_line(self):
+        app, host, folder = self.copy()
+        made = FakeSlack.made[-1]
+        self.assertEqual((app.status, made.user_token, made.app_token, made.on_event), ("copied", "xoxp-1", "", None))
+        st = json.loads(app.request(host.inst, "GET", "state", {}, b"").body)["setup"]
+        self.assertEqual((st["status"], st["live"], st["tokens"], st["copy_of"]), ("copied", False, True, self.app._home()))
+        made.recent_pages = None
+        app.keep_line()                                                          # no line to keep: none made, no look
+        self.assertEqual((len(FakeSlack.made), made.recent_pages), (2, None))
+
+    def test_connecting_again_in_the_copy_moves_the_line_there(self):
+        app, host, folder = self.copy()
+        r = app.request(host.inst, "POST", "connect", {}, json.dumps({"user_token": "xoxp-1", "app_token": "xapp-1",
+                                                                        "wait": True}).encode())
+        self.assertEqual(json.loads(r.body)["setup"]["status"], "connected")
+        self.assertEqual(self.kept(folder)["home"], app._home())
+
+    def test_tokens_kept_before_homes_were_named_are_the_default_homes(self):
+        path = os.path.join(self.dir, be.CREDENTIALS)
+        with open(path, "w") as f:
+            json.dump({"user_token": "xoxp-1", "app_token": "xapp-1"}, f)
+        with mock.patch.object(be, "DEFAULT_HOME", "/nowhere/.ag"):              # not the default home: a copy's
+            self.assertEqual(self.app._tokens(), ("xoxp-1", ""))
+            self.assertEqual(self.app._copy_of, "another ag home")
+        self.assertNotIn("home", self.kept(self.dir))
+        with mock.patch.object(be, "DEFAULT_HOME", self.app._home()):            # the default home: its, named now
+            self.assertEqual(self.app._tokens(), ("xoxp-1", "xapp-1"))
+        self.assertEqual(self.kept(self.dir)["home"], self.app._home())
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
