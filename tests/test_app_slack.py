@@ -5,6 +5,7 @@ agents, what it posts."""
 import json
 import os
 import shutil
+import sqlite3
 import stat
 import sys
 import tempfile
@@ -57,6 +58,9 @@ class FakeSlack:
         self.hits = None           # search's hits, for recent() (None: its default)
         self.followed = {}         # (conversation, thread) -> [subscribed, last_read], as Slack keeps them
         self.asked_thread = []
+        self.not_there = set()     # conversations conversations.info can't find
+        self.others = {"USLACK": {"id": "USLACK", "name": "slack", "real_name": "Slack", "bot": True}}   # users.info only
+        self.asked_user = []
         FakeSlack.made.append(self)
 
     def who(self):
@@ -75,6 +79,8 @@ class FakeSlack:
         got = [m for m in self.msgs.get(cid, []) if (not latest or float(m["ts"]) < float(latest))
                and (not oldest or float(m["ts"]) > float(oldest))]
         got.sort(key=lambda m: -float(m["ts"]))
+        if oldest and not latest:                       # as Slack does: the OLDEST `limit` after `oldest`
+            return [dict(m) for m in got[-limit:]], len(got) > limit
         return [dict(m) for m in got[:limit]], len(got) > limit
 
     def replies(self, cid, ts, limit=200):
@@ -109,7 +115,13 @@ class FakeSlack:
 
     def last_read(self, cid):
         self.asked_read.append(cid)
+        if cid in self.not_there:
+            raise be.slack.SlackError("channel_not_found")
         return self.cursors.get(cid, "")
+
+    def user(self, uid):
+        self.asked_user.append(uid)
+        return dict(self.others[uid]) if uid in self.others else None
 
     def open_dm(self, user):
         c = {"id": f"D-{user}", "kind": "im", "name": "", "user": user, "members": [], "topic": ""}
@@ -242,6 +254,40 @@ class StoreTest(unittest.TestCase):
         self.assertEqual([(c["id"], c["name"]) for c in self.s.conversations()], [("C1", "a2")])
         self.assertIsNotNone(self.s.conversation("C2"))
 
+    def test_a_read_mark_is_a_guess_until_slacks_is_taken_or_the_user_reads(self):
+        self.s.put_conversations([{"id": "C1", "kind": "channel", "name": "a"}, {"id": "D1", "kind": "im", "user": MAYA},
+                                  {"id": "D2", "kind": "im", "user": LEO}])
+        self.assertEqual(sorted(self.s.guessed_reads()), ["C1", "D1", "D2"])
+        self.s.put_messages("D1", [{"ts": ts_ago(3600), "user": MAYA, "text": "call?"}])
+        self.assertEqual(self.s.unread(ME), {})                              # the guess: read up to when first seen
+        self.s.take_read("D1", ts_ago(7200))                                 # Slack's, before it: taken, back
+        self.s.take_read("D2", "")                                           # Slack has none: the guess stays
+        self.s.read("C1", ts_ago(100))                                       # read here: known, never moved back
+        self.assertEqual(self.s.guessed_reads(), [])
+        self.assertEqual(self.s.unread(ME), {"D1": (1, 1)})
+        self.assertGreater(float(self.s.conversation("C1")["read_ts"]), time.time() - 50)
+        self.s.put_conversations([{"id": "D1", "kind": "im", "user": MAYA}])   # listed again: still Slack's
+        self.assertEqual((self.s.unread(ME), self.s.conversation("D1")["read_known"]), ({"D1": (1, 1)}, True))
+
+    def test_a_cache_from_before_has_every_read_mark_a_guess(self):
+        path = os.path.join(self.dir, "old.db")
+        db = sqlite3.connect(path)
+        db.executescript("CREATE TABLE conversations (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL "
+                         "DEFAULT '', user TEXT NOT NULL DEFAULT '', members TEXT NOT NULL DEFAULT '[]', topic TEXT NOT "
+                         "NULL DEFAULT '', read_ts TEXT NOT NULL DEFAULT '', latest_ts TEXT NOT NULL DEFAULT '', synced "
+                         "INTEGER NOT NULL DEFAULT 0, gone INTEGER NOT NULL DEFAULT 0, active_ts TEXT NOT NULL DEFAULT '');"
+                         "INSERT INTO conversations (id, kind, read_ts) VALUES ('D1', 'im', '5.000000');")
+        db.close()
+        old = Store(path)
+        self.assertEqual((old.guessed_reads(), old.conversation("D1")["read_ts"]), (["D1"], "5.000000"))
+        old.close()
+
+    def test_joins_and_leaves_are_never_unread(self):
+        self.s.put_conversations([{"id": "C1", "kind": "channel", "name": "a"}])
+        self.s.put_messages("C1", [{"ts": ts_ago(-1), "user": LEO, "text": "joined", "subtype": "channel_join"},
+                                   {"ts": ts_ago(-2), "user": MAYA, "text": "left", "subtype": "group_leave"}])
+        self.assertEqual(self.s.unread(ME), {})
+
     def test_drafts_wait_until_settled(self):
         d = self.s.draft("C1", "yes", "1.0", by_channel="agent-a", gatherer="g")
         self.assertEqual([x["id"] for x in self.s.drafts()], [d["id"]])
@@ -262,6 +308,7 @@ class BackendBase(unittest.TestCase):
         self.assertEqual(r.status, 200, r.body)
         self.slack = FakeSlack.made[-1]
         self.host.told.clear()
+        self.slack.asked_read.clear()                    # (connecting asks each conversation's once: _learn_reads)
 
     def tearDown(self):
         self.app.stop()
@@ -298,6 +345,7 @@ class ConnectTest(BackendBase):
                                                                                 "D1": "DM with Maya Chen"})
         self.assertEqual(st["users"][MAYA]["name"], "Maya Chen")
         self.assertEqual(st["unread"], {})                   # what was there before connecting is read
+        self.assertEqual(self.app.store.guessed_reads(), [])   # Slack asked: its read cursors (none here) taken
 
     def test_a_restart_connects_again_from_the_kept_tokens(self):
         self.app.stop()
@@ -685,7 +733,8 @@ class LineTest(BackendBase):
         self.app._on_status(self.app._gen, "disconnected")
         self.slack.up = True
         self.app.keep_line()
-        self.assertEqual((self.app.status, self.host.told[-1]["setup"]["status"]), ("connected", "connected"))
+        said = [t["setup"]["status"] for t in self.host.told if t["kind"] == "status"]
+        self.assertEqual((self.app.status, said[-1]), ("connected", "connected"))
         self.assertEqual(len(FakeSlack.made), 1)
 
     def test_a_connection_that_failed_is_tried_again_but_not_refused_tokens(self):
@@ -768,6 +817,116 @@ class ReadInSlackTest(BackendBase):
         FakeSlack.made[-1].cursors = {"D1": ts_ago(-5)}                          # read in Slack since
         self.app.keep_line()
         self.assertEqual(self.host.cleared, ["you:D1"])
+
+
+class LearnReadsTest(BackendBase):
+    """A conversation's read mark is the app's guess until Slack's own cursor of it is taken (on connecting): what the
+    user hadn't read in Slack before the app first saw it is unread here too."""
+
+    def guess_again(self):
+        self.app.store._do("UPDATE conversations SET read_known = 0")       # as a cache from before cursors were taken
+
+    def test_what_was_unread_in_slack_before_is_fetched_and_its_dms_listed_quietly(self):
+        a, b = ts_ago(7200), ts_ago(5400)
+        self.slack.msgs["D1"] = [{"ts": a, "user": MAYA, "text": "call?"}, {"ts": b, "user": MAYA, "text": "?"}]
+        self.slack.msgs["C1"].append({"ts": ts_ago(3000), "user": LEO, "text": "lunch?"})
+        self.guess_again()
+        self.slack.cursors = {"D1": ts_ago(9000), "C1": self.slack.msgs["C1"][0]["ts"]}
+        self.app._learn_reads(self.app._gen, self.slack)
+        self.assertEqual(self.app._unread(), {"D1": [2, 2], "C1": [1, 0]})
+        self.assertEqual([(n["key"], n["show"], n["title"], n["where"]["ts"]) for n in self.host.notices],
+                         [("you:D1", [], "Maya Chen, direct message", b)])  # quiet; a channel's only counted
+        self.assertIn("history", self.kinds())
+        self.slack.asked_read.clear()
+        self.app._learn_reads(self.app._gen, self.slack)
+        self.assertEqual(self.slack.asked_read, [])                          # known now: not asked again
+
+    def test_a_cursor_further_on_is_taken_and_nothing_fetched(self):
+        self.guess_again()
+        on = ts_ago(-60)
+        self.slack.cursors = {"C1": on}
+        self.app._learn_reads(self.app._gen, self.slack)
+        self.assertEqual(self.app.store.conversation("C1")["read_ts"], on)
+        self.assertIsNone(self.app.store.message("C1", self.slack.msgs["C1"][0]["ts"]))
+
+    def test_a_conversation_slack_cant_find_keeps_its_guess_and_isnt_asked_again(self):
+        self.guess_again()
+        self.slack.not_there = {"D1"}
+        self.app._learn_reads(self.app._gen, self.slack)
+        self.app._learn_reads(self.app._gen, self.slack)
+        self.assertEqual(sorted(self.slack.asked_read), ["C1", "D1"])
+
+    def test_a_dm_with_an_account_users_list_leaves_out_is_named_looked_up_once(self):
+        self.slack.convs += [{"id": "D9", "kind": "im", "name": "", "user": "USLACK", "members": [], "topic": ""},
+                             {"id": "D8", "kind": "im", "name": "", "user": "UGONE", "members": [], "topic": ""}]
+        self.app._refresh(self.slack)
+        self.app._refresh(self.slack)
+        labels = {c["id"]: c["label"] for c in self.get("state")["conversations"]}
+        self.assertEqual((labels["D9"], labels["D8"]), ("DM with Slack", "DM with UGONE"))
+        self.assertEqual(sorted(self.slack.asked_user), ["UGONE", "USLACK"])
+
+
+class GapTest(BackendBase):
+    """What came while the line was down or unseen (the computer asleep), fetched from when it was last seen up -- also
+    when newer messages came after, and when Slack's SDK reconnected by itself."""
+
+    def until(self, check, seconds=5.0):
+        deadline = time.time() + seconds
+        while not check() and time.time() < deadline:
+            time.sleep(0.02)
+        return check()
+
+    def test_a_gap_with_newer_messages_after_it_is_filled_once_the_line_is_seen_after_a_while(self):
+        self.get("history", conversation="C1")                                  # shown in the panel
+        t = time.time()
+        self.app._seen_up(t)
+        gap, after = ts_ago(-300), ts_ago(-600)                                 # asleep; the SDK back by itself
+        self.slack.msgs["C1"] += [{"ts": gap, "user": MAYA, "text": f"<@{ME}> while you slept"},
+                                  {"ts": after, "user": LEO, "text": "after"}]
+        self.live(channel="C1", user=LEO, text="after", ts=after)              # newer than the gap: kept first
+        self.app.keep_line(t + 900)                                             # seen again after 15 minutes
+        self.assertTrue(self.until(lambda: self.app.store.message("C1", gap) is not None))
+        self.assertTrue(self.until(lambda: any(n["key"] == "you:C1" for n in self.host.notices)))
+        n = next(n for n in self.host.notices if n["key"] == "you:C1")
+        self.assertEqual((n["show"], n["where"]["ts"]), ([], gap))              # listed quietly
+        self.assertEqual(self.app.store.setting("live_at"), t + 900)
+
+    def test_a_line_seen_each_minute_fetches_nothing(self):
+        t = time.time()
+        self.app._seen_up(t)
+        self.slack.recent_after = None
+        self.app.keep_line(t + 60)
+        time.sleep(0.1)
+        self.assertIsNone(self.slack.recent_after)
+
+    def test_a_line_back_by_itself_soon_after_it_went_down_has_what_came_meanwhile_fetched(self):
+        self.get("history", conversation="C1")
+        self.app._seen_up(time.time())
+        self.slack.up = False
+        self.app._on_status(self.app._gen, "error: [Errno 54] Connection reset by peer")
+        missed = ts_ago(-1)
+        self.slack.msgs["C1"].append({"ts": missed, "user": MAYA, "text": "meanwhile"})
+        self.slack.up = True
+        self.app._on_status(self.app._gen, "connected")                         # the SDK's own reconnect
+        self.app.keep_line()
+        self.assertTrue(self.until(lambda: self.app.store.message("C1", missed) is not None))
+
+    def test_a_restart_fetches_from_when_the_line_was_last_seen_up(self):
+        t = time.time() - 30
+        self.app.keep_line(t)
+        self.app.stop()
+        self.app = be.SlackApp(make_client=FakeSlack)
+        self.app.start(self.host)
+        self.assertEqual(self.app._missed_after(), f"{t - be.GAP_MARGIN:.6f}")
+
+    def test_a_long_gap_is_fetched_newest_first_page_by_page(self):
+        self.get("history", conversation="C1")
+        base = time.time() + 10
+        many = [{"ts": f"{base + i:.6f}", "user": LEO, "text": f"m{i}"} for i in range(350)]
+        self.slack.msgs["C1"] += many
+        self.app._catch_up(self.app._gen, self.slack)
+        kept = [i for i, m in enumerate(many) if self.app.store.message("C1", m["ts"])]
+        self.assertEqual((len(kept), kept[0], kept[-1]), (be.CATCH_PAGES * 100, 50, 349))   # the newest, not the oldest
 
 
 class ThreadTest(BackendBase):
