@@ -212,6 +212,17 @@ class ProactiveContextManagerConfig:
         "applies to your work too. That session's work is in {db_path}, table events, where "
         "{channel_column} = '{channel}'.")
 
+    # The developer message shown, at its place in the history, for a change of groups that changes what this
+    # session is shown (a `group` record in the verbatim part, policy.py's `group_changes`): its own move
+    # (`group_moved`), or a run of other sessions' moves into (`group_joined`) or out of (`group_left`) its group.
+    # `{group}` and `{was}` name the groups (the record's `name` and `was_name`, else its ids; the gatherer's own
+    # group is `group_own`); `{channels}` the sessions moved, by id.
+    group_moved: str = ("Your group changed: from now on you share work with the sessions of {group}, no longer with "
+                        "those of {was}. What you were shown of their work before is no longer part of yours.")
+    group_joined: str = "These sessions are in your group now, and their work is part of yours: {channels}."
+    group_left: str = "These sessions left your group, and their work is no longer part of yours: {channels}."
+    group_own: str = "this gatherer's own group"
+
     # A user message of another channel that opens a line, in its first characters, with one of these is not
     # shown to this one (policy.py's `shared`): a message the actors of the gatherer sent each other through the
     # dashboard (`ag actors`, ag_dashboard/coordination.py's envelopes), the receiver's to act on, not a request of the

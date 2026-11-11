@@ -286,12 +286,12 @@ class RegroupTest(JoinBase):
 
     moves = 0
 
-    def moved(self, channel, group, was=None):
+    def moved(self, channel, group, was=None, **names):
         """A `group` record in `channel`, as the dashboard writes one when the actor's folder moves to another group;
         without `was`, the actor's first."""
         from replies import insert
         RegroupTest.moves += 1
-        payload = {"group": group} if was is None else {"group": group, "was": was}
+        payload = ({"group": group} if was is None else {"group": group, "was": was}) | names
         insert(self.m, "w", ch(channel), [{"type": "group", "id": f"group:{channel}:{RegroupTest.moves}", "payload": payload}])
 
     def adopted(self):
@@ -352,6 +352,39 @@ class RegroupTest(JoinBase):
         self.assertNotIn("c1 question", again)
         self.assertEqual(self.jobs.started, [("c2", "build"), ("c2", "build")])
         self.assertEqual(tables.latest_build(self.m._conn("w"), "c2")["reason"], tables.JOIN)
+
+    def said(self, context):
+        return [t for t in self.texts(context) if "your group" in t.lower()]
+
+    def test_an_actor_is_told_its_group_changed(self):
+        self.adopted()
+        self.moved("c1", "b", "", name="Editor")
+        self.put([agent("working on it", 200)])
+        said = self.said(self.read())
+        self.assertEqual(len(said), 1)
+        self.assertIn("the sessions of Editor, no longer with those of this gatherer's own group", said[0])
+        self.put([agent("still working", 201)])
+        self.assertEqual(self.said(self.read()), said)                    # the same message, kept in its place
+
+    def test_the_others_are_told_who_joined_their_group_in_one_message(self):
+        self.adopted()
+        self.moved("c3", "b")
+        self.moved("c4", "b")
+        self.moved("c3", "", "b")                                         # a folder of two moved in
+        self.moved("c4", "", "b")
+        self.put([agent("working on it", 200)])
+        said = self.said(self.read())
+        self.assertEqual(len(said), 1)
+        self.assertIn("in your group now", said[0])
+        self.assertIn("c3, c4", said[0])
+
+    def test_a_move_between_two_other_groups_says_nothing(self):
+        self.adopted()
+        self.moved("c3", "b")
+        self.moved("c3", "x", "b")
+        self.put([agent("working on it", 200)])
+        self.assertEqual(self.said(self.read()), [])
+        self.assertEqual(self.jobs.started, [])
 
 if __name__ == "__main__":
     unittest.main()
