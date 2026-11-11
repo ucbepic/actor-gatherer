@@ -215,6 +215,7 @@ RECORDS_LANE = "records"
 #: The requests that read for a harness's call -- and may wait for the policy's work in the background, until the
 #: harness hangs up on it (`hung_up`).
 READS = ("read", "rewrite", "compaction")
+GROUP = "group"         # a conversation's group in the home's one database: its record (`Server.grouped`)
 
 
 def log_line(gatherer: str, line: str) -> None:
@@ -354,6 +355,7 @@ class Server:
                  log: Callable[[str, str], None] = lambda gatherer, line: None,
                  describe: Callable = lambda gatherer: {}):
         self.factory, self.pollers, self.log, self.describe = factory, pollers, log, describe
+        self.grouped_seen: set = set()      # (gatherer, its identifying values) known to have a `group` record (`grouped`)
 
     def manager(self, gatherer: str):
         """A manager for one request, made from the gatherer's directory
@@ -433,6 +435,7 @@ class Server:
         those the harness had taken back and sends again (`kept`), in reads again. Events given their time (`at`):
         each stored at it, in one transaction, no rows said."""
         manager = manager or self.manager(gatherer)
+        self.grouped(manager, gatherer, properties)
         stored = self.events_of(manager, gatherer, events, properties)
         times = [e.get("at") if isinstance(e, dict) and isinstance(e.get("at"), str) else None for e in events]
         if any(times):
@@ -444,6 +447,24 @@ class Server:
         if stored and last is None and stored[-1].id:          # the last one was already stored
             last = manager.locate(gatherer, stored[-1].id, properties=properties)
         return {"rows": rows, "last": last, "kept": kept}
+
+    def grouped(self, manager, gatherer: str, properties: Dict[str, Any]) -> None:
+        """In the home's one database (`paths.merged`), before a conversation's first event: a `group` record in it --
+        {group: the gatherer its request names, the one it was started under} -- so that every conversation there is
+        in a group, none by default. Never over a record it has (the dashboard's, moving it); once per process for
+        each conversation (its values of the gatherer's identifying properties)."""
+        if not paths.merged():
+            return
+        names = self.identifying(gatherer) or ()
+        values = tuple(properties.get(n) for n in names)
+        if not names or any(v is None for v in values) or (gatherer, values) in self.grouped_seen:
+            return
+        own = dict(zip(names, values))
+        if not manager.latest(gatherer, own, 1, types=[GROUP]):
+            for e in self.events_of(manager, gatherer, [{"type": GROUP, "id": f"{GROUP}:first",
+                                                          "payload": {"group": gatherer}}], own):
+                manager.insert(gatherer, e)
+        self.grouped_seen.add((gatherer, values))
 
     def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None,
              limit: Optional[int] = None, preamble: Optional[List[dict]] = None,

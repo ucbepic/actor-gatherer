@@ -4,6 +4,7 @@ dashboard lists each gatherer's actors as those of its group."""
 import os
 import sys
 import json
+import sqlite3
 import tempfile
 import unittest
 import unittest.mock
@@ -22,6 +23,7 @@ from channels import ch  # noqa: E402
 from replies import insert  # noqa: E402
 from test_core import PREAMBLE, ScriptedLLM, conversation  # noqa: E402
 from test_dashboard_app_host import NOTES, insert_here, write_app  # noqa: E402
+import test_server  # noqa: E402
 
 
 class PathsTest(unittest.TestCase):
@@ -158,6 +160,81 @@ class MergedAppsTest(MergedHomeTest):
         (raw,) = conn.execute("SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = "
                               "e.event_type_id WHERE t.name = 'context_stream'").fetchone()
         self.assertEqual(json.loads(raw)["group"], "a")
+
+
+class FirstGroupTest(test_server.HomeBase):
+    """In the home's one database ag's server puts a `group` record -- the gatherer the conversation was started under --
+    before a conversation's first event, so that every conversation there is in a group; never over one it has."""
+
+    def setUp(self):
+        super().setUp()
+        os.makedirs(paths.TRACE_DIR)
+        open(paths.home_db(), "w").close()
+
+    def stored(self):
+        conn = sqlite3.connect(paths.home_db())
+        try:
+            return [(r, c, t, json.loads(p).get("group") if t == "group" else None) for r, c, t, p in conn.execute(
+                "SELECT e.row_id, e.p_channel, t.name, e.payload_json FROM events e JOIN event_types t "
+                "ON t.event_type_id = e.event_type_id ORDER BY e.row_id")]
+        finally:
+            conn.close()
+
+    def groups(self):
+        return [(c, g) for _, c, t, g in self.stored() if t == "group"]
+
+    def put(self, gatherer, channel, *items):
+        return self.ask({"op": "insert", "gatherer": gatherer, "properties": {"channel": channel},
+                         "events": test_server.events(*items)})
+
+    def test_a_conversation_starts_in_the_group_of_its_gatherer(self):
+        self.put("a", "c1", test_server.DEV, test_server.user("q", 1))
+        self.put("b", "c2", test_server.DEV, test_server.user("q", 1))
+        self.put("a", "c1", test_server.user("more", 2))
+        self.assertEqual(self.groups(), [("c1", "a"), ("c2", "b")])
+        self.assertEqual(next(t for _, c, t, _ in self.stored() if c == "c1"), "group")     # before its first event
+
+    def test_never_over_a_record_it_has(self):
+        self.put("a", "c1", test_server.DEV)
+        self.ask({"op": "insert", "gatherer": "a", "properties": {"channel": "c1"},
+                  "events": [{"type": "group", "id": "group:moved", "payload": {"group": "x", "was": "a"}}]})
+        self.put("a", "c1", test_server.user("q", 1))                     # a new process: nothing known of c1
+        self.assertEqual(self.groups(), [("c1", "a"), ("c1", "x")])
+
+    def test_none_while_each_gatherer_has_a_database_of_its_own(self):
+        os.remove(paths.home_db())
+        self.put("a", "c1", test_server.DEV)
+        conn = sqlite3.connect(paths.db_path("a"))
+        try:
+            self.assertEqual(conn.execute("SELECT count(*) FROM event_types WHERE name = 'group'").fetchone()[0], 0)
+        finally:
+            conn.close()
+
+
+class MigrationsTest(unittest.TestCase):
+    """ag's migrations of a file an older ag wrote find the home's one database: every gatherer's, by any one name."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for g in ("a", "b"):
+            os.makedirs(os.path.join(self.tmp.name, "gatherers", g))
+        conn = sqlite3.connect(os.path.join(self.tmp.name, "context.db"))
+        conn.execute("CREATE TABLE _read_items (x)")                  # a read log one row per item: due to move
+        conn.commit()
+        conn.close()
+
+    def test_ag_s_start_moves_the_home_database_once(self):
+        from ag.cli import config as cli_config, main as cli
+        with unittest.mock.patch.object(cli_config, "home", return_value=self.tmp.name), \
+                unittest.mock.patch.object(cli.subprocess, "Popen") as popen:
+            cli.migrations(quiet=True)
+        self.assertEqual(popen.call_args.args[0][1:], ["-m", "ag.ag_harness.home", "migrate", "a"])
+
+    def test_the_hooks_migration_names_it_once(self):
+        from ag.integrations.tools.ag_orchestrator import migrate
+        with unittest.mock.patch.object(migrate, "home", return_value=self.tmp.name):
+            self.assertEqual(migrate.gatherers(), ["a"])
 
 if __name__ == "__main__":
     unittest.main()

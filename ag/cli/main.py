@@ -334,8 +334,10 @@ def migrations(quiet: bool = False) -> None:
         due = _migrate_module().due
         root = config.home()
         folder = os.path.join(root, "gatherers")
-        found = {g: due(os.path.join(folder, g, "context.db")) for g in sorted(os.listdir(folder))} \
-            if os.path.isdir(folder) else {}
+        listed = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
+        one = os.path.join(root, "context.db")             # the home's one database: every gatherer's, by any name
+        found = ({listed[0]: due(one)} if listed else {}) if os.path.isfile(one) else \
+            {g: due(os.path.join(folder, g, "context.db")) for g in listed}
         names = [g for g, what in found.items() if what]
         if not names:
             return
