@@ -531,7 +531,7 @@ turned into another type or sent to an agent together, as one message naming eac
     n.dataset.type = b.type;
     n.style.setProperty("--ind", b.indent || 0);
     n.classList.toggle("done", b.type === "todo" && !!b.checked);
-    n.classList.toggle("ended", !!endedOf(b));
+    n.classList.toggle("ended", crossed(b));
     n.classList.toggle("is-sent", !!b.to || outgoing.has(b.id));
     n.classList.toggle("ro", !!ro);
     if (b.type === "agents") return drawAgentsBlock(n);
@@ -607,7 +607,8 @@ turned into another type or sent to an agent together, as one message naming eac
     if (on) doneShown.add(pid); else doneShown.delete(pid);
     store.set("doneShown", [...doneShown]);
   }
-  // The lines folded away on a page: its ended work items, and what is set in under one -- but an open work item.
+  // The lines folded away on a page: the work items the reader ticked (`crossed`), and what is set in under one -- but
+  // an open work item.
   function foldOf(p) {
     const out = new Set();
     if (!p || doneShown.has(p.id)) return out;
@@ -616,7 +617,7 @@ turned into another type or sent to an agent together, as one message naming eac
       const k = b.indent || 0;
       if (under !== null && k > under && !(isWork(b) && !endedOf(b))) { out.add(b.id); continue; }
       under = null;
-      if (endedOf(b)) { out.add(b.id); under = k; }
+      if (crossed(b)) { out.add(b.id); under = k; }
     }
     return out;
   }
@@ -653,7 +654,7 @@ turned into another type or sent to an agent together, as one message naming eac
       onclick: () => { showDone(p.id, true); drawPage(); } }, el("span", { html: SVG.check }), el("span", { text: said })));
   }
   function drawDoneBtn(p) {
-    const btn = $("done-btn"), n = p && !p.deleted ? p.blocks.filter((b) => endedOf(b)).length : 0;
+    const btn = $("done-btn"), n = p && !p.deleted ? p.blocks.filter(crossed).length : 0;
     btn.hidden = !n;
     if (!n) return;
     const on = doneShown.has(p.id);
@@ -1926,6 +1927,9 @@ turned into another type or sent to an agent together, as one message naming eac
   const isWork = (b) => !!b && !UNSENT.includes(b.type) && !!(b.to || b.work);
   // how the reader ended one -- "done", "canceled" -- or "": a to-do one is done as it is ticked
   const endedOf = (b) => (!isWork(b) ? "" : b.ended || (b.type === "todo" && b.checked ? "done" : ""));
+  // crossed out, and folded away on its page: a work item the reader ticked (a to-do, done so). Ending one -- accepting
+  // or canceling it -- changes no line: the page stays as the reader wrote it, the line's chip saying how its work ended.
+  const crossed = (b) => isWork(b) && b.type === "todo" && !!b.checked;
   const endedAt = (b) => b.ended_at || Math.max(b.sent || 0, ...(b.thread || []).map((l) => l.at || 0)) || 0;
   const pageOf = (b) => { const f = findLine(b.id); return f ? f.p : null; };
   const SETTLE = 15;                                       // s: a line just sent to an actor not busy yet: not taken up yet
@@ -1959,12 +1963,12 @@ turned into another type or sent to an agent together, as one message naming eac
   }
   // what its agent said it made (its latest report that names any)
   const madeOf = (b) => ([...(b.thread || [])].reverse().find((l) => l.by !== "user" && l.results) || {}).results || [];
-  // ops ending work items as the reader says ("done", "canceled"; "": open again), wherever they are -- a to-do one
-  // ticked as it is done
+  // ops ending work items as the reader says ("done", "canceled"; "": open again), wherever they are. Ending one ticks
+  // no to-do (only the reader ticks one); opening one again unticks it, a ticked to-do being one done.
   function endOps(bs, how) {
     const at = now();
     return bs.map((b) => [pageOf(b), b]).filter(([p]) => p).map(([p, b]) => ({ op: "block.put", page: p.id,
-      block: { id: b.id, ended: how, ended_at: at, ...(b.type === "todo" ? { checked: how === "done" } : {}) } }));
+      block: { id: b.id, ended: how, ended_at: at, ...(b.type === "todo" && !how ? { checked: false } : {}) } }));
   }
   function accept(bs) {
     bs = bs.filter((b) => isWork(b) && !endedOf(b));
@@ -2624,7 +2628,7 @@ turned into another type or sent to an agent together, as one message naming eac
         el("td", {}, el("button", { type: "button", class: "who-btn", title: `Open ${nameOf(a)}'s Chat`,
           onclick: () => ag.actors.show(a.channel).catch((e) => say(e.message, true)) }, face(a, 20), el("b", { text: nameOf(a) }))),
         el("td", {}, el("span", { class: `pill ${cls}`, text: word })),
-        el("td", { class: "from" }, ...(mine.length ? mine.slice(0, 2).map(({ p, b }) => el("button", { type: "button", class: `blk-link${endedOf(b) || (b.type === "todo" && b.checked) ? " done" : ""}`,
+        el("td", { class: "from" }, ...(mine.length ? mine.slice(0, 2).map(({ p, b }) => el("button", { type: "button", class: `blk-link${b.type === "todo" && b.checked ? " done" : ""}`,
           title: `On “${p.title || "Untitled"}”`, onclick: () => go(p, b), text: oneLine(b.text, 70) || "(empty)" })) : [el("span", { class: "dim", text: "—" })]),
           mine.length > 2 ? el("span", { class: "dim", text: `+${mine.length - 2} more` }) : null),
         el("td", { class: "said" }, l ? el("span", {}, oneLine(l.text, 160), el("span", { class: "dim", text: ` · ${clock(l.at)}` }))
