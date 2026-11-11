@@ -1924,8 +1924,9 @@ class Browser:
 
     def note(self, what: str) -> None:
         """Something the user did, for the agent's next message: a run of typing into one field is one note."""
-        def again(last: Optional[str]) -> bool:
-            return last == what or (what.startswith("the page went to ") and last == "opened " + what[len("the page went to "):])
+        def again(last: Optional[str]) -> bool:          # (a page opened, then Chrome saying its tab went there)
+            went = what[len("the page went to "):] if what.startswith("the page went to ") else None
+            return last == what or (went is not None and last in ("opened " + went, "opened a new tab: " + went))
         with self.lock:
             if self.lately and again(self.lately[-1][1]):
                 self.lately[-1] = (time.time(), self.lately[-1][1])   # the same, again: when it last went on
@@ -2266,8 +2267,8 @@ class Browser:
     def new_tab(self, url: str = "", by_user: bool = True) -> Tab:
         cdp = self.live()
         tab = self._open(cdp, _url(url) if url else "about:blank", by_user=by_user, sent=self.let_go)
-        if by_user:
-            self.note(f"opened a new tab: {tab.url or 'blank'}")
+        if by_user:                                      # the page asked for: Chrome may not have said it is there yet,
+            self.note(f"opened a new tab: {_url(url) if url else tab.url or 'blank'}")   # or said "about:blank" first
         self._recast()
         self._publish()
         self._save()
