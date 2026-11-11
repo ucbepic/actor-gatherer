@@ -279,5 +279,79 @@ class JoinTest(JoinBase):
         self.assertGreater(shown * line, self.cfg.parallel_index_tokens)
 
 
+
+class RegroupTest(JoinBase):
+    """When a channel's group changes, its next read builds its sections again from its group's work, and waits for it:
+    a `regrouped` build for a channel with a build of its own in use, a `join` again for one that joined."""
+
+    moves = 0
+
+    def moved(self, channel, group, was=None):
+        """A `group` record in `channel`, as the dashboard writes one when the actor's folder moves to another group;
+        without `was`, the actor's first."""
+        from replies import insert
+        RegroupTest.moves += 1
+        payload = {"group": group} if was is None else {"group": group, "was": was}
+        insert(self.m, "w", ch(channel), [{"type": "group", "id": f"group:{channel}:{RegroupTest.moves}", "payload": payload}])
+
+    def adopted(self):
+        """c1, built and taken up at its next user message, its sections made from c2's work too."""
+        self.put(PREAMBLE + conversation(12, prefix="c2 "), channel="c2")
+        self.built("c2")
+        self.put(PREAMBLE + conversation(12, prefix="c1 "))
+        self.built("c1")
+        self.put([user("mine", 200)])
+        self.assertIn("c2 question", self.sections(self.read()))
+
+    def test_a_channel_s_sections_are_built_again_without_the_group_it_left(self):
+        self.adopted()
+        self.moved("c2", "b", "")
+        self.put([agent("working on it", 200)])                       # mid-turn: no user message
+        sections = self.sections(self.read())
+        self.assertNotIn("c2 question", sections)
+        self.assertEqual(self.jobs.started, [("c1", "build")])
+        self.assertEqual(tables.latest_build(self.m._conn("w"), "c1")["reason"], tables.REGROUPED)
+
+    def test_a_joined_folder_s_requests_come_in_the_index_not_one_by_one(self):
+        self.moved("c2", "b")
+        self.adopted_apart()
+        self.moved("c2", "", "b")
+        context = self.read()
+        self.assertIn("c2 question", self.sections(context))
+        self.assertEqual(self.parallel(context), [])
+
+    def adopted_apart(self):
+        """c1 built and taken up, c2 (of another group) with work of its own."""
+        self.put(PREAMBLE + conversation(12, prefix="c2 "), channel="c2")
+        self.put(PREAMBLE + conversation(12, prefix="c1 "))
+        self.built("c1")
+        self.put([user("mine", 200)])
+        self.assertNotIn("c2 question", "\n".join(self.texts(self.read())))
+
+    def test_an_actor_s_first_record_rebuilds_no_one(self):
+        self.adopted()
+        self.moved("c3", "")
+        self.put([agent("working on it", 200)])
+        self.read()
+        self.assertEqual(self.jobs.started, [])
+
+    def test_a_channel_that_joined_joins_its_new_group(self):
+        self.moved("c3", "b")
+        self.put(PREAMBLE + conversation(12, prefix="c3 "), channel="c3")
+        self.built("c3")
+        self.put(PREAMBLE + conversation(12, prefix="c1 "))
+        self.built("c1")
+        self.put(PREAMBLE + [user("new work", 300)], channel="c2")
+        joined = self.sections(self.read("c2"))
+        self.assertIn("c1 question", joined)
+        self.assertNotIn("c3 question", joined)
+        self.moved("c2", "b", "")
+        self.put([agent("ok", 300)], channel="c2")
+        again = self.sections(self.read("c2"))
+        self.assertIn("c3 question", again)
+        self.assertNotIn("c1 question", again)
+        self.assertEqual(self.jobs.started, [("c2", "build"), ("c2", "build")])
+        self.assertEqual(tables.latest_build(self.m._conn("w"), "c2")["reason"], tables.JOIN)
+
 if __name__ == "__main__":
     unittest.main()

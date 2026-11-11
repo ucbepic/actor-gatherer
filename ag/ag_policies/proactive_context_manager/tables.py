@@ -185,9 +185,10 @@ BUILD_COLUMNS = ("build_id, status, started_at, finished_at, through_row, open_f
 #: history (a build that closes the running task, as `limit` does, and is adopted whatever its size); a
 #: channel with no build of its own joined a gatherer where another channel has one (`joinable`): it
 #: starts from their work, its own history all the running task; a reader asked for one from outside
-#: any call (the dashboard's History view: `requested`), an ordinary build.
+#: any call (the dashboard's History view: `requested`), an ordinary build; the channel's group changed since the
+#: build its context comes from (`regrouped`): an ordinary build, adopted whatever its size, mid-turn too.
 LIMIT, BOUNDARY, REQUEST, DIRECT, COMPACTION = "limit", "boundary", "request", "direct", "compaction"
-JOIN, ASKED = "join", "asked"
+JOIN, ASKED, REGROUPED = "join", "asked", "regrouped"
 
 
 def _build(row) -> Optional[dict]:

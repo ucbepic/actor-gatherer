@@ -52,6 +52,13 @@ gatherer's gatherer agent) says `private` is seen by no other channel, though it
 actors send one another (`ag actors`, typed into the receiver's conversation as its user's), known by its opening
 (`unshared_openings`): it is the receiver's to act on, not a request of the user's (`shared`).
 
+When a channel's group changes -- a `group` record moves it, or another channel into or out of its group, since its
+last read (`regrouped`) -- what it is shown follows at once: the parallel requests are worked out at every read, and
+the block of requests made before it began is made again. Its sections, made from the build it uses, are built again
+at that read, which waits for it as for a join (`regroup`): a `regrouped` build, for a channel with a build of its
+own, adopted mid-turn and whatever its size; a `join` again, for one whose context came from a join or that has
+none. Its parallel mark moves up with it, so a joined channel's past requests come in the index, not one by one.
+
 A channel with no build of its own, in a gatherer where another channel has a ready one
 (`tables.joinable`), JOINS at its first user message: a `join` build ranks the other
 channels' tasks against its request and marks their requests as seen, and the read waits
@@ -336,6 +343,11 @@ class ProactiveContextManager(Policy):
         self.drift = self.drift_of(last)
         build, made = self.choose(conn, types, rows, latest, last, at_user or self.for_this_turn(latest, rows, types), read)
         items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
+        if last and self.regrouped(conn, types, ch, last.get("row_id") or 0) \
+                and self.regroup(conn, types, read, rows, latest, build):
+            latest = tables.build_for(conn, ch)
+            build, made = self.choose(conn, types, rows, latest, last, True, read)
+            items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
         over = self.by_provider(size) > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if over and not at_user and tables.waiting(latest, last):        # a ready build: taken now, not at the user
             build, made = self.choose(conn, types, rows, latest, last, True, read)
@@ -656,7 +668,7 @@ class ProactiveContextManager(Policy):
             made = [r.made_id for r in last["refs"] if r.made_id is not None]
             kept = [(m, item, tokens) for m, (name, item, tokens) in conn.made_items(made).items()
                     if name == PARALLEL_BEFORE]
-            if kept:
+            if kept and not self.regrouped(conn, types, channel_id, last.get("row_id") or 0):
                 return kept[:1], start
         unseen = self.unseen(conn, types, channel_id)
         before = [(c, e) for c, e in history.other_requests(conn, types, self.groups, self.tokenizer, channel_id,
@@ -691,6 +703,46 @@ class ProactiveContextManager(Policy):
             else:
                 group[ch] = str(r.payload.get("group") or "")
         return Unseen({ch for ch, hidden in private.items() if hidden}, group, group.get(channel_id, ""))
+
+    def regrouped(self, conn, types: TypeIds, channel_id, since_row: int) -> bool:
+        """Whether what the channel is shown changed groups after `since_row`: a GROUP record stored since moved a
+        channel from one group to another (its `was` given, and not its `group`) -- this one, or another into or out
+        of this one's group. A first record (no `was`: an actor starting) changes nothing of the others': its
+        requests come to them as any new session's do."""
+        moves = []
+        for r in conn.rows(since_row, types.of(GROUP)):
+            p = r.payload if isinstance(r.payload, dict) else {}
+            if "was" in p and str(p.get("group") or "") != str(p.get("was") or ""):
+                moves.append((channel_of(r), str(p.get("group") or ""), str(p.get("was") or "")))
+        if not moves:
+            return False
+        own = self.unseen(conn, types, channel_id).own
+        return any(moved == channel_id or own in (group, was) for moved, group, was in moves)
+
+    def regroup(self, conn, types: TypeIds, read: Read, rows, latest, in_use) -> bool:
+        """After a change of the channel's group (`regrouped`): its sections built again from its group's work, and
+        waited for (up to build_timeout) -- a `join` again, for a channel whose context came from one, or that has no
+        build and can join its new group (`tables.joinable`); a `regrouped` build, for one with a build of its own in
+        use. Whether one is ready; nothing is started without background work, or while a build runs."""
+        cfg, ch = self.config, channel_of(read)
+        if self.jobs is None:
+            return False
+        joining = joined(in_use) or (in_use is None and latest is None)
+        if joining and not tables.joinable(conn, ch, self.unseen(conn, types, ch).grouped):
+            return False
+        if not joining and in_use is None:          # a build of its own, not taken up yet: adopted at its user message
+            return False
+        reason = tables.JOIN if joining else tables.REGROUPED
+        build_id = tables.claim_build(conn, ch, cfg.build_timeout, reason)
+        if build_id is None:
+            return False
+        try:
+            self.jobs.start(read.gatherer_id, channel.of(ch), "build", build_id)
+        except OSError as exc:
+            tables.fail_build(conn, build_id, f"could not start the worker: {exc}")
+            return False
+        self.log(f"[{ch}] its group changed: a {reason} build ({build_id})")
+        return self.wait(conn, ch, rows[-1].row_id, "build", cfg.build_timeout, read.stopped)
 
     def shared(self, r: Row) -> bool:
         """Whether another channel's user message is shown to this one as its user's request: not a message the actors
@@ -892,8 +944,9 @@ class ProactiveContextManager(Policy):
             return None
         if sections.open_from_row != build["open_from_row"]:
             tables.set_cut(conn, build["build_id"], sections.open_from_row)
-        # compacted: not sent whole again; joined: the sections replace nothing of its own, they add the others' work
-        if cfg.require_smaller and build.get("reason") not in (tables.COMPACTION, tables.JOIN):
+        # compacted: not sent whole again; joined: the sections replace nothing of its own, they add the others' work;
+        # regrouped: they replace sections made from another group's work
+        if cfg.require_smaller and build.get("reason") not in (tables.COMPACTION, tables.JOIN, tables.REGROUPED):
             why = self.not_smaller(sections, rows, turns, types)
             if why:
                 tables.settle(conn, build["build_id"], "nothing", error=why)
