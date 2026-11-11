@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
-from ag_dashboard import data  # noqa: E402
+from ag_dashboard import data, history  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 import codex_items  # noqa: E402
 from channels import ch  # noqa: E402
@@ -91,6 +91,16 @@ class MergedHomeTest(unittest.TestCase):
         insert(self.m, "a", ch("c3"), [{"type": "group", "id": "group:c3:2", "payload": {"group": "b", "was": "a"}}])
         self.assertEqual(self.listed(data.home([])), {"a": ["c1"], "b": ["c2", "c3"]})
 
+
+    def test_history_shows_a_gatherer_its_group_s_events_alone(self):
+        self.assertEqual({e["channel"] for e in history.outline("a")["events"]}, {"c1", "c3"})
+        self.assertEqual({e["channel"] for e in history.outline("b")["events"]}, {"c2"})
+        self.assertEqual(set(history.outline("a")["builds"]), {"c1", "c3"})
+
+    def test_history_search_keeps_to_the_group(self):
+        self.assertEqual(history.search("a", None, "c2 question")["hits"], [])
+        self.assertTrue(history.search("b", None, "c2 question")["hits"])
+        self.assertTrue(history.search("a", None, "c3 question")["hits"])
 
 if __name__ == "__main__":
     unittest.main()
