@@ -29,8 +29,9 @@ type Log = (...parts: unknown[]) => void;
 /** A page, and what ag said of it: its user's input `held` off it while the agent acts (App.hold); their Esc ag's
  * (`esc`, App.esc: to stop the agent, or end a Pick); a still picture shown in its place while something of the
  * dashboard's covers its pane (`still`), or none to be had (`bare`: the page shown as it is); the dialog it waits on
- * (`asking`: page-preload.cts). Its `size`: its pane's when last shown (or, before any showed it, the one ag asked
- * for), which it is laid out at while hidden (`sizedAt`, `Pages.hide`). */
+ * (`asking`: page-preload.cts). Its `size`: its pane's when last placed (or, before any was, the one ag asked for),
+ * which it is always laid out at (`Pages.emulate`: `sizedAt` the size last sent, `sizing` while Chrome has yet to
+ * answer it). */
 type Page = {
   view: WebContentsView;
   app: string; // the dashboard's app it is of
@@ -42,6 +43,7 @@ type Page = {
   asking?: Asking;
   size: Size;
   sizedAt?: string;
+  sizing?: boolean;
 };
 type Asking = { event: IpcMainEvent; type: string; given: string };
 export type Dialog = { type: string; message: string; default: string };
@@ -79,8 +81,8 @@ function freshPath(dir: string, name: string): string {
 }
 
 /** The id Chrome gives a page: ag compares a tab's main frame id with it, so it must be Chrome's own. The page's in-app
- * DevTools connection is left attached: ag's sessions share it, and the size a hidden page is laid out at
- * (`Pages.hide`) lasts only while it is. */
+ * DevTools connection is left attached: ag's sessions share it, and the size the page is laid out at
+ * (`Pages.emulate`) lasts only while it is. */
 async function targetIdOf(wc: WebContents): Promise<string> {
   if (!wc.debugger.isAttached()) wc.debugger.attach("1.3");
   return ((await wc.debugger.sendCommand("Target.getTargetInfo")) as { targetInfo: { targetId: string } }).targetInfo
@@ -398,8 +400,8 @@ export class Pages {
       const bounds = { x, y, width: Math.max(1, Math.round((s.x + s.w) * zoom) - x), height: Math.max(1, Math.round((s.y + s.h) * zoom) - y) };
       p.size = this.lastSize = { width: bounds.width, height: bounds.height };
       p.view.setBounds(bounds);
+      this.emulate(p); // (laid out at its pane's size: its picture too, if covered)
       if (s.covered && !p.bare) {
-        if (!p.view.getVisible()) this.emulate(p); // (laid out at the pane's size, for its picture too)
         if (!p.still) {
           p.still = true;
           this.picture(p)
@@ -426,7 +428,6 @@ export class Pages {
       const pictured = p.still;
       p.still = false;
       p.view.setVisible(true);
-      this.unemulate(p); // (its own size now, the pane's)
       if (pictured) {
         // the page over its pane first, then its picture gone from under it (unless covered again meanwhile)
         this.drawing.get(s.target)?.();
@@ -474,30 +475,50 @@ export class Pages {
     this.drawing.get(target)?.();
   }
 
-  /** `p` out of sight, laid out at its size: a page hidden in the window has none of its own -- a tab the agent opened
-   * while its pane showed something else would be laid out at 0 x 0, so its tools would work on a page the user
-   * never sees, and Chrome would leave a screenshot's scale on it (ag's are at 1/dpr), drawing it at half size once
-   * shown. The size is the DevTools emulation's, which lays a page out without drawing it; taken off when shown. */
+  /** `p` out of sight, laid out at its size still (`emulate`). */
   private hide(p: Page): void {
     p.view.setVisible(false);
     this.emulate(p);
   }
 
+  /** `p` laid out at its pane's size (`size`), shown or hidden, by the DevTools emulation -- never left to Chrome:
+   * - a page hidden in the window has no size of its own: a tab the agent opened while its pane showed something else
+   *   would be laid out at 0 x 0, its tools working on a page the user never sees, and Chrome would leave a
+   *   screenshot's scale on it (ag's are at 1/dpr), drawing it at half size once shown;
+   * - a page shown again after its pane changed size while it was hidden (the chat minimized or shown, another task's
+   *   layout, the window resized) can be left at its size from before -- drawn short of its pane, or past it -- and
+   *   Electron has no call that sends a page its view's size again; nor would clearing an emulation once shown.
+   * One size at a time, each sent once Chrome has answered the last (answers can come out of order, an older size
+   * then winning), the latest sent after if the pane has moved on meanwhile. */
   private emulate(p: Page): void {
     const at = `${p.size.width}x${p.size.height}`;
     const wc = p.view.webContents;
-    if (p.sizedAt === at || wc.isDestroyed() || !wc.debugger.isAttached()) return;
+    if (p.sizing || p.sizedAt === at || wc.isDestroyed() || !wc.debugger.isAttached()) return;
     p.sizedAt = at;
+    p.sizing = true;
     wc.debugger
       .sendCommand("Emulation.setDeviceMetricsOverride", { ...p.size, deviceScaleFactor: 0, mobile: false })
-      .catch(() => (p.sizedAt = undefined));
+      .then(
+        () => {
+          p.sizing = false;
+          this.emulate(p); // (the pane's size now, if not the one just sent)
+        },
+        () => {
+          p.sizing = false;
+          p.sizedAt = undefined; // (sent again when it is next placed)
+        },
+      );
   }
 
-  private unemulate(p: Page): void {
-    const wc = p.view.webContents;
-    if (!p.sizedAt || wc.isDestroyed() || !wc.debugger.isAttached()) return;
+  /** Page `id`'s size sent again, after a screenshot of it (Page.captureScreenshot): the app's picture of a hidden
+   * page, or the agent's. Chrome puts back the emulation a page had when its screenshot began once the screenshot is
+   * made -- and a hidden page's is made only once it is shown, perhaps at another size by then: put back, it would
+   * hold the page at its old size. */
+  reemulate(id: string): void {
+    const p = this.pages.get(id);
+    if (!p) return;
     p.sizedAt = undefined;
-    wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride").catch(() => {});
+    this.emulate(p);
   }
 
   /** A still picture of `p` as it is now, as a data URL, or null if none could be had: a page shown, what the window
@@ -510,8 +531,11 @@ export class Pages {
       if (!img.isEmpty()) return img.toDataURL();
     }
     if (wc.isDestroyed() || !wc.debugger.isAttached()) return null;
+    const shot = wc.debugger.sendCommand("Page.captureScreenshot", { format: "png" });
+    const id = this.idOf(wc);
+    if (id) shot.then(() => this.reemulate(id), () => {}); // (whenever it is made: after PICTURE_WAIT too)
     const got = (await Promise.race([
-      wc.debugger.sendCommand("Page.captureScreenshot", { format: "png" }),
+      shot,
       new Promise((resolve) => setTimeout(() => resolve({}), PICTURE_WAIT)),
     ])) as { data?: string };
     return got.data ? `data:image/png;base64,${got.data}` : null;
@@ -653,7 +677,9 @@ export class Link {
               if (x.wc === wc) send({ method: "Page.javascriptDialogClosed", sessionId: sid, params: { result: !!p.accept, userInput: String(p.promptText ?? "") } }, x.app);
             return;
           }
-          return answer({ result: await wc.debugger.sendCommand(m.method || "", p) });
+          const result = await wc.debugger.sendCommand(m.method || "", p);
+          if (id && m.method === "Page.captureScreenshot") this.pages.reemulate(id); // (its emulation as the app has it)
+          return answer({ result });
         }
         switch (m.method) {
           case "Target.setDiscoverTargets":
