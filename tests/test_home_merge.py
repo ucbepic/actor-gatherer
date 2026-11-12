@@ -82,6 +82,17 @@ class PlanTest(MergeBase):
         self.assertEqual((p["target"], p["others"]), ("big", ["small"]))
         self.assertEqual(p["conversations"], {"big": 2, "small": 1})
 
+    def test_a_gatherer_whose_database_was_never_written_has_nothing_to_merge(self):
+        os.makedirs(os.path.join(paths.TRACE_DIR, "empty"))
+        open(os.path.join(paths.TRACE_DIR, "empty", "context.db"), "w").close()        # made, never written: no tables
+        self.assertEqual(merge.gatherers(), ["big", "small"])
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(home_cli.cmd_merge(dry_run=True), 0)
+        self.assertNotIn("empty", out.getvalue())
+        self.assertEqual(self.merged()["copied"], {"big": len(self.before["big"]), "small": len(self.before["small"])})
+        self.assertEqual(os.path.getsize(os.path.join(paths.TRACE_DIR, "empty", "context.db")), 0)   # left as it was
+
     def test_the_command_says_what_it_would_do_and_does_nothing(self):
         out = io.StringIO()
         with redirect_stdout(out):

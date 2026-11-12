@@ -42,11 +42,26 @@ class MergeError(Exception):
 
 
 def gatherers() -> List[str]:
-    """The gatherers with a database of their own, by name."""
+    """The gatherers with a database of their own, by name: a file with events in it -- an empty one (made, never
+    written: no tables) holds nothing to merge."""
     root = paths.TRACE_DIR
     if not os.path.isdir(root):
         return []
-    return sorted(g for g in os.listdir(root) if os.path.isfile(os.path.join(root, g, "context.db")))
+    return sorted(g for g in os.listdir(root) if os.path.isfile(os.path.join(root, g, "context.db")) and _written(g))
+
+
+def _written(gatherer: str) -> bool:
+    """Whether the gatherer's own database has its events table."""
+    try:
+        conn = _read_only(own(gatherer))
+    except sqlite3.Error:
+        return False
+    try:
+        return "events" in _tables(conn)
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
 
 
 def own(gatherer: str) -> str:
