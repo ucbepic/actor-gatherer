@@ -45,6 +45,11 @@ Everything goes through the page around it, by postMessage, which checks it agai
                                                          drawn over `el` (but what takes no pointer) covers it: the page
                                                          is then a still picture, drawn in el's own <img> (its first)
     ag.native.release()                                  the keys back from the native page, to the panel
+    ag.spelling.available                                in the ag desktop app: the spellchecker of the user's system
+                                                         (the one underlining misspelled words in text boxes) can be
+                                                         asked about a word
+    ag.spelling.check(word)                              {misspelled, suggestions} (its fixes, best first), or null
+    ag.spelling.learn(word)                              the word added to the user's dictionary: only as they click
     ag.notices.send({title, text?, key?, show?, where?}) a notification to the user (capability notify): the dashboard
                                                          lists it until they look at this instance, and pops it up
                                                          where `show` says (default ["ag"]): "ag" there, "system" on
@@ -68,6 +73,7 @@ Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as
                       states: [], actors: [] };
   const handlers = new Map();
   let info = null, attached = [], selection = null, theme = null, states = {}, nativeOn = false, actors = null;
+  let spellOn = false;
 
   function send(op, body) {
     return new Promise((resolve, reject) => {
@@ -207,6 +213,11 @@ Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as
       hide() { shown = null; report(); },
       release: () => send("native.release", {}),
     },
+    spelling: {
+      get available() { return spellOn; },
+      check: (word) => (spellOn ? send("spelling.check", { word: String(word || "") }) : Promise.resolve(null)),
+      learn: (word) => send("spelling.learn", { word: String(word || "") }),
+    },
     agents: {
       get attached() { return attached.slice(); },
       onChange(cb) { listeners.attached.push(cb); },
@@ -260,6 +271,7 @@ Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as
       attached = got.attached || [];
       states = got.states || {};
       nativeOn = !!got.native;
+      spellOn = !!got.spelling;
       selection = got.selection || null;
       actors = got.actors || null;
       if (got.theme) applyTheme(got.theme);

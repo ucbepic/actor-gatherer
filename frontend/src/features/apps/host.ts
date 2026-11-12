@@ -10,6 +10,7 @@ import "./apps.css";
 import { desktop, nativePanes, nativeSoon, type NativePlace } from "./native";
 import { ACTOR_OPS, toActors } from "./actors";
 import { NOTICE_OPS, toNotices } from "./notices";
+import { SPELLING_OPS, spellingOn, toSpelling } from "./spelling";
 import { drawWho, nameable } from "./naming";
 
 type Capability =
@@ -382,6 +383,7 @@ export class AppPane {
     const w = this.where();
     if (ACTOR_OPS.has(String(m.op))) return toActors(this.app, this.hooks, m, w.gatherer);
     if (NOTICE_OPS.has(String(m.op))) return toNotices(this.app, m, w);
+    if (SPELLING_OPS.has(String(m.op))) return toSpelling(m);
     switch (m.op) {
       case "hello": {
         this.ready = true;
@@ -390,6 +392,7 @@ export class AppPane {
           info: { ...w, label: this.app.label, title: this.instance.title, folder: this.instance.folder },
           attached: this.attached,
           native: !!desktop() && !!this.app.capabilities?.native_view,
+          spelling: spellingOn(),
           states: this.states(),
           selection: this.hooks.selection(),
           theme: theme(),
