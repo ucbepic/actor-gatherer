@@ -1,7 +1,8 @@
 // Moves between groups (05-group-moves.js; groups.py): in the home's one database, an actor dragged onto another
 // group asks first -- who moves, from which group to which -- and moves only once the reader says so, and a folder
 // dragged outside every group asks first, then is a group of its own, and an actor dragged there is on its own; an
-// app in a folder that moves goes with it, its pane opened again in its new group, unless it is its group's only one;
+// app in a folder that moves goes with it, its pane opened again in its new group, unless it is its group's only one
+// (an app's own agent takes that along: groups-app-agents.spec.ts);
 // with a database per gatherer, a drop into another group is refused, as every one was before.
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
