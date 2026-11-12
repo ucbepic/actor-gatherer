@@ -52,7 +52,7 @@ test("a DocWriter started from the menu: its page above, its actor below, one ta
   await expect(task.locator(".t-faces img.t-app")).toHaveAttribute("src", "/apps/mark/docwriter.svg");
   await expect(task.locator(".t-faces .t-face")).toHaveCount(1);
   await expect(page.locator("#panes > .pane")).toHaveCount(1);
-  const below = (await page.locator("#panes").boundingBox())!,
+  const below = (await page.locator("#panes > .pane").boundingBox())!,
     above = (await panel.boundingBox())!;
   expect(above.y + above.height).toBeLessThanOrEqual(below.y);
 

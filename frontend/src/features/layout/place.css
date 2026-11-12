@@ -1,0 +1,75 @@
+/* The work area placed (place.ts): one box, each panel at its own spot in it -- the apps' panels' row and the actors'
+   panes' row, as boxes, gone (their children stay theirs in the page, so their rules still hold) -- and the bars between
+   the panels over them, each a little wider than the room it takes, to be caught. Not placed (a phone's width, a pane's
+   own frame), the page's stylesheet lays them out as it always has. */
+.work.placed {
+  position: relative;
+  display: block;
+}
+.work.placed > :where(.top-row, .panes) {
+  display: contents;
+}
+.work.placed :where(#pane-here, .panes > .pane, .top-row > .app-pane) {
+  position: absolute;
+}
+.lay-bars {
+  display: none;
+}
+.work.placed > .lay-bars {
+  display: contents;
+}
+.lay-bar {
+  position: absolute;
+  z-index: 4;
+  touch-action: none;
+}
+.lay-bar[data-dir="row"] {
+  cursor: col-resize;
+}
+.lay-bar[data-dir="col"] {
+  cursor: row-resize;
+}
+.lay-bar.still {
+  pointer-events: none;
+}
+/* a line, the room it takes: darker as it is pointed at or dragged */
+.lay-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  background: var(--ring);
+}
+.lay-bar[data-dir="col"]::after {
+  inset: 2px 0;
+}
+.lay-bar:is(:hover, .on):not(.thick)::after {
+  inset: 0 1px;
+  background: var(--axis);
+}
+.lay-bar[data-dir="col"]:is(:hover, .on):not(.thick)::after {
+  inset: 1px 0;
+}
+/* a band (under the apps' panels): tinted as it is pointed at or dragged */
+.lay-bar.thick::after {
+  background: color-mix(in srgb, var(--ink) 14%, var(--page));
+}
+.lay-bar.thick:is(:hover, .on)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--s1) 35%, transparent);
+}
+/* a bar dragged: the frames let the pointer by, so it goes on over them */
+.work[data-resizing] {
+  user-select: none;
+}
+.work[data-resizing="row"] {
+  cursor: col-resize;
+}
+.work[data-resizing="col"] {
+  cursor: row-resize;
+}
+.work[data-resizing] iframe {
+  pointer-events: none;
+}

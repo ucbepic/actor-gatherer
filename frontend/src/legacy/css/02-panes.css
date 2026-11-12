@@ -1,6 +1,6 @@
 /* Panes: the actors open side by side (Ctrl/Cmd+click in the list), each with its head -- the actor, its
-   controls, a close -- the one in focus a shade darker; dividers between them to drag. The first is this
-   page's own view; the others are the page again in a frame, each its own actor's (PANE) */
+   controls, a close -- the one in focus a shade darker; bars between them to drag (features/layout/place.css). The
+   first is this page's own view; the others are the page again in a frame, each its own actor's (PANE) */
 .panes { display: flex; min-width: 0; min-height: 0; position: relative; }
 /* the column right of the list: the Editor (when open) above the panes */
 .work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -13,9 +13,6 @@
 .pane { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; container: pane / inline-size; }
 .pane > main { flex: 1 1 auto; }
 .pane > iframe { flex: 1 1 auto; display: block; width: 100%; min-height: 0; border: 0; background: var(--surface); }
-.pane-gutter { flex: none; width: 5px; margin: 0 -2px; position: relative; z-index: 4; cursor: col-resize; touch-action: none; }
-.pane-gutter::after { content: ""; position: absolute; inset: 0 2px; background: var(--ring); }
-.pane-gutter:hover::after, .panes.resizing .pane-gutter::after { inset: 0 1px; background: var(--axis); }
 /* A pane's top: its head, in the page's top row, as tall as the row (--top-h: the tallest of the page's name and
    the heads), so the rule under the row runs straight across. Alone, the head is one line: the actor's controls,
    at the right, as a header's; split, each pane's says whose it is and has its ×: who, the view's switch and Details,
@@ -85,7 +82,7 @@
 @media (max-width: 760px) { body { height: auto; display: block; } .layout { display: block; } .side { border-right: 0; } .side-grip { display: none; }
   #agents { max-height: 40vh; border-bottom: 1px solid var(--ring); }
   main { overflow: visible; }
-  .panes, .work { display: block; } .panes.split .pane:not(.focused), .pane-gutter { display: none; } .pane > iframe { height: 85vh; }
+  .panes, .work { display: block; } .panes.split .pane:not(.focused) { display: none; } .pane > iframe { height: 85vh; }
   .top-row { height: 70vh; } }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }

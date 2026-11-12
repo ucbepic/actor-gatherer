@@ -7,13 +7,17 @@ const topShown = () => PANE ? !!(window.parent.agTop && window.parent.agTop.show
 // Drawn with the main view: the column's chat minimized, or not.
 function topMount() {
   if (PANE || SNAPSHOT) return;
-  document.querySelector(".work").classList.toggle("chat-min", chatMin());
+  const work = document.querySelector(".work"), min = chatMin();
+  if (work.classList.contains("chat-min") === min) return;
+  work.classList.toggle("chat-min", min);
+  placeWork();                                       // the panes below as tall as their message boxes, or as before
 }
 // A panel opened or closed in the top row: the chat minimized under it shown again once the row is empty -- here and in
 // each pane's frame.
 let topWas = null;
 function topChanged() {
   if (PANE || SNAPSHOT) return;
+  placeWork();
   markSeen();                                        // an app's panel shown: its notifications seen
   const now = topShown();
   if (!now && state.chatMin) keepMin(false);
@@ -124,31 +128,22 @@ function setTopHeight(h) {
   if (!h) {
     top.style.removeProperty("--ed-h");
     try { localStorage.removeItem(ED_HEIGHT_KEY); } catch (e) { /* this page only */ }
+    placeWork();
     return;
   }
   const room = top.parentElement ? top.parentElement.getBoundingClientRect().height : 0;
   const to = Math.round(room > 360 ? Math.max(140, Math.min(h, room - 220)) : h);
   top.style.setProperty("--ed-h", `${to}px`);
   try { localStorage.setItem(ED_HEIGHT_KEY, String(to)); } catch (e) { /* this page only */ }
+  placeWork();
 }
-// The edge under the top row, dragged to resize it: its height kept in this browser.
-function topGrip(top) {
-  const grip = el("div", { class: "ed-grip", title: "Drag to resize", "aria-hidden": "true" });
+// The top row's height as it was dragged, kept in this browser: set as the page opens
+function keepTopHeight(top) {
   try { const h = Number(localStorage.getItem(ED_HEIGHT_KEY)); if (h > 0) top.style.setProperty("--ed-h", `${h}px`); } catch (e) { /* this page only */ }
-  grip.addEventListener("pointerdown", (ev) => {
-    ev.preventDefault();
-    grip.setPointerCapture(ev.pointerId);
-    grip.classList.add("on");
-    const at = top.getBoundingClientRect().top, room = top.parentElement.getBoundingClientRect().height;
-    let h = null;                                  // the panes below keep room for a view and its message box
-    const move = (e) => { h = Math.round(Math.max(140, Math.min(e.clientY - at, room - 220))); top.style.setProperty("--ed-h", `${h}px`); };
-    const up = () => {
-      grip.classList.remove("on");
-      grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
-      if (h !== null) try { localStorage.setItem(ED_HEIGHT_KEY, String(h)); } catch (e) { /* this page only */ }
-    };
-    grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up); grip.addEventListener("pointercancel", up);
-  });
-  return grip;
 }
-
+// The band under the top row dragged (07-panes.js's workResized): the row as tall as it puts it, kept once let go
+function dragTopHeight(h, done) {
+  topRowEl().style.setProperty("--ed-h", `${h}px`);
+  if (done) try { localStorage.setItem(ED_HEIGHT_KEY, String(h)); } catch (e) { /* this page only */ }
+  placeWork();
+}

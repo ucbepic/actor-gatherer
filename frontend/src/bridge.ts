@@ -21,6 +21,7 @@ import { markdown, unplanned } from "./core/ui/md";
 import * as apps from "./features/apps/host";
 import { drawTurns } from "./features/chat/mount";
 import { cidsOf } from "./features/chat/view";
+import { placer } from "./features/layout/place";
 import { useTurns } from "./features/chat/store";
 import { useSettings } from "./features/settings/store";
 
@@ -75,6 +76,9 @@ const agNext = Object.freeze({
     handler: apps.handler,
     pane: (app: apps.AppInfo, instance: apps.Instance, hooks: apps.PaneHooks) => new apps.AppPane(app, instance, hooks),
   }),
+  /** The work area's layout (features/layout/): its panels placed as the old page's tree of them says (src/legacy/07-panes.js's
+   * workTree), a bar dragged told back to it. */
+  layout: Object.freeze({ placer }),
 });
 
 declare global {

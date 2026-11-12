@@ -847,7 +847,7 @@ async function closeApp(gname, o) {
   unselectApp(o.id);
   for (const p of panes.apps.filter((q) => q.instance.id === o.id)) {
     panes.apps.splice(panes.apps.indexOf(p), 1);
-    p.panel.destroy(); p.gutter.remove(); p.node.remove();
+    p.panel.destroy(); p.node.remove();
     topRow(p, null);
   }
   appsOnlyLeft();

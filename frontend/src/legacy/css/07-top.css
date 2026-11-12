@@ -4,13 +4,11 @@
 /* the row above the panes: the apps' panels side by side (07-panes.js), as tall as it is dragged; not shown while none
    of them is */
 .top-row { flex: 0 0 var(--ed-h, 50%); min-height: 140px; display: flex; position: relative; min-width: 0;
-  background: var(--page); border-bottom: 5px solid color-mix(in srgb, var(--ink) 14%, var(--page)); }   /* the edge between it and the panes: a bar, its grip over it */
+  background: var(--page); border-bottom: 5px solid color-mix(in srgb, var(--ink) 14%, var(--page)); }   /* the edge between it and the panes (placed: a band to drag, place.css) */
 .top-row:not(:has(> section:not([hidden]))) { display: none; }
-.ed-grip { position: absolute; left: 0; right: 0; bottom: -7px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
 /* the chat minimized under the top row (setChatMin): the row the column's height but for the row of message boxes, each
    pane's as tall as what it shows -- a frame's told by its page (fitMini) -- and no head of its own */
 .work.chat-min > .top-row { flex: 1 1 0; }
-.work.chat-min > .top-row > .ed-grip { display: none; }
 .work.chat-min > .panes { flex: none; }
 .work.chat-min .pane > iframe { flex: none; margin-top: auto; }   /* the strips side by side, along the bottom */
 .pane:has(> main > .chat.mini) > .pane-top { display: none; }
@@ -50,8 +48,6 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .mini-st .chg-r { color: var(--term-err); }
 .mini-sh { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 10px 8px 10px 0; color: var(--ink-2); font-size: 12.5px; }
 .mini-sh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ed-grip:hover, .ed-grip.on { background: color-mix(in srgb, var(--s1) 35%, transparent); }
 /* A task of apps only shown (07-panes.js's appsOnly): its apps' panels take the room, the actors' panes out of sight */
 .work.apps-only > .panes { display: none; }
 .work.apps-only > .top-row { flex: 1 1 0; }
-.work.apps-only > .top-row > .ed-grip { display: none; }
