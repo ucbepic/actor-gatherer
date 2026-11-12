@@ -510,6 +510,12 @@ button.wk-text:hover { text-decoration: underline; }
 .pop .it.bad { color: var(--critical, #c53030); }
 .pop .sep { height: 1px; background: var(--grid); margin: 4px 2px; }
 .pop .none { padding: 6px 8px; color: var(--muted); }
+/* a misspelled word's fixes, under it: the words alone, then Add to dictionary */
+.pop.spell { min-width: 160px; max-width: 260px; }
+.pop.spell .it { padding: 5px 8px; gap: 8px; }
+.pop.spell .it .gl:empty { display: none; }
+.pop.spell .it .tt { font-weight: 500; }
+.pop.spell .it .gl.sm + .tt { font-weight: 400; color: var(--muted); }
 .pop.emoji { width: 286px; max-width: none; }
 .pop .grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 4px; }
 .pop .grid button { font-size: 20px; height: 32px; border-radius: 6px; }

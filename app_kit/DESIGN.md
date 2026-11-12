@@ -265,6 +265,7 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   | `selection` | the focused agent pane: its agent, and the turn, call or file selected in it (read-only) |
   | `theme` | light or dark, and the theme's colour tokens |
   | `native` | in the desktop app, a native web view at a rectangle of the panel (`native_view` capability) |
+  | `spelling` | in the desktop app, the system's spellchecker (the one underlining words): whether a word is misspelled, its fixes, and one added to the user's dictionary, only as they click |
 
 - **Intents separate agent views from apps.** A view raises an intent and the host sends it to the app that handles
   that kind, opening its panel in the row above the panes:

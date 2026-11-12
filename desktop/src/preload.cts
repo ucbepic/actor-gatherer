@@ -5,7 +5,11 @@
 // while something is over it (a native page would hide it), a still picture of the page in its place ("ag:still"),
 // handed back to the page for the panel to draw. The panel says once it is drawn ("ag:still-drawn"), so the page is
 // hidden only with its picture in its place.
-import { contextBridge, ipcRenderer } from "electron";
+//
+// It also lets the page ask the spellchecker of the user's system (the one drawing the red underline under a word in a
+// text box) about a word: whether it is misspelled, and its fixes (app_kit's ag.spelling, for apps' panels: a word
+// clicked in a Notes line), and add one to the user's dictionary.
+import { contextBridge, ipcRenderer, webFrame } from "electron";
 
 type Stage = { x: number; y: number; w: number; h: number; target: string; covered: boolean; app?: string; key?: string };
 type Still = { target: string; url: string | null };
@@ -22,6 +26,9 @@ ipcRenderer.on("ag:still", (_event, still: Still) => {
 });
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const WORD_MAX = 100; // characters: longer is no word
+const FIXES = 8; // the spellchecker's guesses given, at most
+const aWord = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 contextBridge.exposeInMainWorld("agApp", {
   native: true,
@@ -38,4 +45,11 @@ contextBridge.exposeInMainWorld("agApp", {
     if (typeof cb === "function") stills.add(cb);
   },
   stillDrawn: (target: unknown) => ipcRenderer.send("ag:still-drawn", String(target || "")),
+  spelling: (word: unknown) => {
+    const w = aWord(word);
+    if (!w || w.length > WORD_MAX || /\s/.test(w)) return null;
+    const misspelled = webFrame.isWordMisspelled(w);
+    return { misspelled, suggestions: misspelled ? webFrame.getWordSuggestions(w).slice(0, FIXES) : [] };
+  },
+  learn: (word: unknown) => ipcRenderer.send("ag:learn", aWord(word)),
 });
