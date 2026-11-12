@@ -700,7 +700,7 @@ class AppHost:
     def flush(self, timeout: float = 30.0) -> None:
         """Everything handed to be written, written (for tests, and before a read that needs it); at once, closed. A
         write held for a gatherer with no database yet (`_writing`) is not waited for: it can't be read either."""
-        if not self._writer.is_alive():
+        if not self._writer.is_alive() or threading.current_thread() is self._writer:   # its own: nothing to wait on
             return
         done = threading.Event()
         self._writes.put(done)
@@ -768,11 +768,14 @@ class AppHost:
                     break
 
     def _load(self, gatherer: str) -> None:
-        """The gatherer's apps' records read, once: its open instances and their agents."""
+        """The gatherer's apps' records read, once: its open instances and their agents. What the host handed its writer
+        is written first: in the home's one database every group's records are read (_host_records), and what is read
+        is added to what the host holds -- a detach or a close not yet written would come back."""
         with self.lock:
             if gatherer in self.loaded:
                 return
             self.loaded.add(gatherer)
+        self.flush()
         opened: Dict[str, Instance] = {}
         attached: Dict[str, Set[str]] = {}
         for kind, inst, channel, payload in _host_records(gatherer):

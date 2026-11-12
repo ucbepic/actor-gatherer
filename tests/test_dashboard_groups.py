@@ -4,6 +4,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 
@@ -323,6 +324,23 @@ class GroupAppsTest(GroupsTest):
         placed.start()
         self.addCleanup(placed.stop)
         self.folder = tempfile.mkdtemp(dir=self.tmp.name)
+
+    def test_a_group_read_first_after_a_change_has_it_though_its_record_is_still_being_written(self):
+        """In the one database a group's first read (`_load`) reads every group's app records: what the host let go of
+        just before -- an agent detached, an instance closed -- whose record its writer has not written yet, stays let
+        go (each write slowed here: on a slow machine, as on CI, the read came first and brought them back)."""
+        host = app_host.AppHost(0, write=lambda *a: (time.sleep(0.2), insert_here(*a)))
+        self.addCleanup(host.close)
+        page = host.open("pages", "a", self.folder)
+        shut = host.open("pages", "a", self.folder)
+        for c in ("c1", "c3"):
+            host.attach("a", page.id, c)
+        host.flush()
+        host.detach("a", page.id, "c3")
+        host.close_instance("a", shut.id)
+        self.assertEqual(host.instances_of("b"), [])                                  # b's first read: every record
+        self.assertEqual(host.agents_of(host.instance("a", page.id)), ["c1"])
+        self.assertEqual([i.id for i in host.instances_of("a")], [page.id])
 
     def test_an_app_of_a_task_that_moves_goes_with_it_and_its_actors_keep_it(self):
         page = self.host.open("pages", "a", self.folder)
