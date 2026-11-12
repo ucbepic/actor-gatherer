@@ -271,7 +271,7 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
             agents = kept.agents(conn, name, now) if kept is not None else _agents(conn, now, members(conn, name))
             if {s["session_id"] for s in started if s["gatherer"] == name} - {a["channel"] for a in agents}:
                 named[name] = _names(conn, _tables(conn))
-            apps = app_notices(conn)
+            apps = app_notices(conn, name)
         except sqlite3.Error as exc:
             gatherers.append({"name": name, "policy": _policy(name), "error": str(exc), "agents": [], "last": None})
             continue
@@ -651,15 +651,16 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
 
 
-def app_notices(conn) -> Dict[str, dict]:
+def app_notices(conn, gatherer: Optional[str] = None) -> Dict[str, dict]:
     """The gatherer's apps' ITEMS' status, as `_status` reads an agent's from its facts: each instance with
     notifications open -- sent by its app (the host's `app_notified` records: app_kit's notices.py), not settled since,
     its instance not closed -- {instance: {app, notices: [{id, key, title, text, show, where, at}, oldest first],
     last}}; `last` when the newest came, which the page compares with when the reader last looked at the instance
     (seen.py, its item "app:<id>"): newer, it shows NOTIFIED, as an agent done since is FINISHED. Read by type (its
-    index): few rows."""
+    index): few rows. In the home's one database, `gatherer`'s instances alone: those opened in it."""
     if CHANNEL not in _columns(conn, "events") or not {"p_app", "p_instance"} <= _columns(conn, "events"):
         return {}
+    mine = _instances_of(conn, gatherer) if gatherer is not None and paths.merged() else None
     kinds = (*app_kit.NOTICE_TYPES, "app_closed")
     rows = conn.execute(f"SELECT t.name, e.p_app, e.p_instance, e.payload_json FROM events e JOIN event_types t "
                         f"ON t.event_type_id = e.event_type_id WHERE t.name IN ({', '.join('?' * len(kinds))}) "
@@ -667,7 +668,18 @@ def app_notices(conn) -> Dict[str, dict]:
     app_of = {inst: app for _, app, inst, _ in rows if inst}
     found = app_kit.notices.still_open((kind, inst, _json(raw) or {}) for kind, _, inst, raw in rows)
     return {inst: {"app": app_of.get(inst), "notices": ns, "last": app_kit.notices.newest(ns)}
-            for inst, ns in found.items()}
+            for inst, ns in found.items() if mine is None or inst in mine}
+
+
+def _instances_of(conn, gatherer: str) -> set:
+    """The app instances opened in `gatherer` (their `app_opened` records say), by id."""
+    out = set()
+    for inst, raw in conn.execute("SELECT e.p_instance, e.payload_json FROM events e JOIN event_types t "
+                                  "ON t.event_type_id = e.event_type_id WHERE t.name = 'app_opened'"):
+        made = (_json(raw) or {}).get("instance") if isinstance(_json(raw), dict) else None
+        if inst and isinstance(made, dict) and made.get("gatherer") == gatherer:
+            out.add(inst)
+    return out
 
 
 def _status(conn, ch: str, a: dict, tables: set, now: float) -> None:
