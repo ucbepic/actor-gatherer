@@ -1014,6 +1014,54 @@ class PrivateTest(Base):
         self.assertIn("Stop editing x.py", "\n".join(self.texts(self.read())))
 
 
+
+def grouped(manager, gatherer, channel, group):
+    """A `group` record in `channel`, as the dashboard writes one: the channel is in `group` from then on."""
+    from replies import insert
+    insert(manager, gatherer, ch(channel), [{"type": "group", "id": f"group:{channel}:{group}", "payload": {"group": group}}])
+
+
+class GroupTest(Base):
+    """A channel shares only with the channels of its group: the latest `group` record in it names it, "" (the
+    gatherer's own) without one -- neither the requests nor the tasks of another group's channel are shown to it."""
+
+    def test_a_channel_is_shown_only_its_own_group_s_work(self):
+        self.cfg.keep_temporal_relevant_tokens = 0
+        grouped(self.m, "s", "c1", "a")
+        grouped(self.m, "s", "c2", "b")
+        grouped(self.m, "s", "c3", "a")
+        self.put(PREAMBLE + conversation(6, prefix="apart "), "c2")
+        self.run_build("s", channel_id="c2")
+        self.put(PREAMBLE + conversation(6, prefix="together "), "c3")
+        self.run_build("s", channel_id="c3")
+        self.put(PREAMBLE + conversation(8))
+        self.run_build("s", channel_id="c1")
+        self.put([user("apart late question", "late2")], "c2")      # after c1's build: parallel requests, if shown
+        self.put([user("together late question", "late3")], "c3")
+        self.put([user("mine", 99)])
+        mine = "\n".join(self.texts(self.read()))
+        self.assertNotIn("apart", mine)                            # another group's: not in the index, in place, nor tasks
+        self.assertIn("together question", mine)                   # its own group's: in the index
+        self.assertIn("together late question", mine)              # and in place
+
+    def test_without_a_record_a_channel_is_in_the_gatherer_s_own_group(self):
+        grouped(self.m, "s", "c2", "b")
+        self.put(PREAMBLE + conversation(3, prefix="apart "), "c2")
+        self.put(PREAMBLE + conversation(3, prefix="plain "), "c3")
+        self.put(PREAMBLE + [user("mine", 99)])
+        mine = "\n".join(self.texts(self.read()))
+        self.assertIn("plain question", mine)                      # neither has a record: the same group
+        self.assertNotIn("apart question", mine)
+
+    def test_the_latest_record_is_the_channel_s_group(self):
+        grouped(self.m, "s", "c2", "b")
+        self.put(PREAMBLE + conversation(3, prefix="moved "), "c2")
+        self.put(PREAMBLE + [user("mine", 99)])
+        self.assertNotIn("moved question", "\n".join(self.texts(self.read())))
+        grouped(self.m, "s", "c2", "")                              # moved into c1's group
+        self.put([user("mine again", 98)])
+        self.assertIn("moved question", "\n".join(self.texts(self.read())))
+
 class BackgroundTest(Base):
     def test_no_factory_never_spawns(self):
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])

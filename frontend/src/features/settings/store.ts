@@ -46,7 +46,7 @@ export const useSettings = create<SettingsState>()((set, getState) => ({
       pollers,
       gatherer,
     });
-    set((st) => ({ settings: got, said: "", savedDefaults: "Saved: new gatherers get these.", rev: st.rev + 1 }));
+    set((st) => ({ settings: got, said: "", savedDefaults: "Saved: new groups get these.", rev: st.rev + 1 }));
     return got;
   },
   openFile: async () => {

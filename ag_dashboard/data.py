@@ -139,7 +139,7 @@ MESSAGES_READ = 200            # the newest of its messages' facts read for what
 SENT_SECONDS = 30.0            # a message sent from the queue: shown as written until ag stores it, at most this long
 PROMPT_SECONDS = 120.0         # one sent between turns: the same
 CHAT_SECONDS = 60.0            # one sent from Chat the harness has not had: shown as pending at most this long
-COORDINATOR_NAME = "Gatherer agent"   # the name a gatherer agent (sessions.py's role) has, unless the reader gives one
+COORDINATOR_NAME = "Coordinator agent"   # the name a coordinator agent (sessions.py's role) has, unless the reader gives one
 #: The apps' records (app_kit's): the host's own of their instances and agents, and each app's own types, named
 #: `<app>.<what>` -- records like the harness's, never the conversation.
 APP_RECORDS = app_kit.HOST_RECORDS
