@@ -292,6 +292,26 @@ class WordsTest(unittest.TestCase):
             browser._url("javascript:alert(1)")
         with self.assertRaises(browser.BrowserError):
             browser._url("  ")
+        self.assertEqual(browser._url("example.com:8080/x"), "https://example.com:8080/x")   # a port, not a scheme
+        self.assertEqual(browser._url("10.0.0.2/x"), "https://10.0.0.2/x")
+        self.assertEqual(browser._url("Numpy.org."), "https://Numpy.org.")
+        self.assertEqual(browser._url("пример.рф"), "https://пример.рф")
+
+    def test_words_are_searched_for_as_chrome_does(self):
+        google = "https://www.google.com/search?q="
+        self.assertEqual(browser._typed("tau-bench: evaluating agents"),
+                         (google + "tau-bench%3A+evaluating+agents", "tau-bench: evaluating agents"))
+        self.assertEqual(browser._typed("Attention: is all you need")[1], "Attention: is all you need")   # no scheme
+        for words in ("numpy", "numpy.array", "README.txt", "me@example.com", "3+4", "what's c++?", "C:/x y"):
+            self.assertEqual(browser._typed(words)[1], words, words)
+        self.assertEqual(browser._typed("? example.com"), (google + "example.com", "example.com"))   # ? first: words
+        for address in ("numpy.org", "localhost", "en.wikipedia.org/wiki/A_B?x=1#y", "a.io"):
+            self.assertIsNone(browser._typed(address)[1], address)
+        with self.assertRaises(browser.BrowserError):
+            browser._typed("?")
+        self.assertEqual(browser._phrases(None, "navigate", {"url": "numpy array"}, None, {})[0],
+                         'Searching Google for "numpy array"')
+        self.assertEqual(browser._phrases(None, "navigate", {"url": "numpy.org"}, None, {})[0], "Opening numpy.org")
 
     def test_keys_as_chrome_takes_them(self):
         down = browser._key_event({"key": "a", "code": "KeyA", "keyCode": 65}, True, 0)
