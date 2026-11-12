@@ -99,11 +99,11 @@ def _check(gatherer: str, to: str) -> None:
 
 
 def plan(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[int] = None) -> dict:
-    """{actors, from, to, before: {group: actors}, after: {group: actors}} -- what `move` would do, nothing done."""
+    """{actors, from, to, folder, before: {group: actors}, after: {group: actors}} -- what `move` would do, nothing done."""
     _check(gatherer, to)
     moving = actors(gatherer, channels, folder)
     before = _sizes(gatherer, to)
-    return {"actors": moving, "from": gatherer, "to": to, "before": before,
+    return {"actors": moving, "from": gatherer, "to": to, "folder": folder, "before": before,
             "after": {gatherer: before[gatherer] - len(moving), to: before[to] + len(moving)}}
 
 

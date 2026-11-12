@@ -20,6 +20,7 @@
     "04-seen.js",
     "05-agent-list.js",
     "05-gatherer-folders.js",
+    "05-group-moves.js",
     "06-list-modes.js",
     "07-panes.js",
     "07-notices.js",

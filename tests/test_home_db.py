@@ -82,7 +82,9 @@ class MergedHomeTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(paths.TRACE_DIR, "b", "context.db")))
 
     def test_each_gatherer_lists_the_actors_of_its_group(self):
-        self.assertEqual(self.listed(data.home([])), {"a": ["c1", "c3"], "b": ["c2"]})
+        h = data.home([])
+        self.assertEqual(self.listed(h), {"a": ["c1", "c3"], "b": ["c2"]})
+        self.assertTrue(h["merged"])                              # the page lets actors move between groups
 
     def test_so_does_a_home_kept_between_reads(self):
         kept = data.Kept()

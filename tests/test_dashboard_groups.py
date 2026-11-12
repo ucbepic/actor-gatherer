@@ -51,7 +51,7 @@ class GroupsTest(unittest.TestCase):
 
     def test_a_plan_says_who_moves_and_changes_nothing(self):
         got = groups.plan("a", "b", ["c1"])
-        self.assertEqual(got["actors"], ["c1"])
+        self.assertEqual((got["actors"], got["folder"]), (["c1"], None))
         self.assertEqual((got["before"], got["after"]), ({"a": 2, "b": 1}, {"a": 1, "b": 2}))
         self.assertEqual((self.members("a"), self.members("b")), (["c1", "c3"], ["c2"]))
         self.assertEqual(self.events("group"), [])

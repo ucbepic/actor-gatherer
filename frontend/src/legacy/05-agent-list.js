@@ -1497,17 +1497,18 @@ function endDrag() {
   if (!d) return;
   listDrag = null;
   clearTimeout(d.spring); clearInterval(d.watch);
-  for (const n of document.querySelectorAll(":is(#agents, #rail) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on");
+  for (const n of document.querySelectorAll(":is(#agents, #rail) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
   if (d.later || d.revealed) renderAgents();         // the rail, its folders shown for the drag: as it was again
 }
 document.addEventListener("dragover", () => { if (listDrag) listDrag.seen = Date.now(); }, true);
 document.addEventListener("drop", () => { if (listDrag) setTimeout(endDrag, 0); }, true);   // anywhere: after the line's own
 // Whether what is dragged may go into folder `id` (null: the gatherer's top): of that gatherer; a folder, not into
 // itself nor one of its own, nor where it is; actors, one of them at least not there yet. A gatherer (`gs`) only into a
-// folder of gatherers (`g` GFS), or the list's top: not where it is.
+// folder of gatherers (`g` GFS), or the list's top: not where it is. From another group: as canCross says (asked first).
 function canDrop(g, id) {
   const d = listDrag;
-  if (!d || d.g !== g.name) return false;
+  if (!d) return false;
+  if (d.g !== g.name) return canCross(g);
   if (d.folder !== null) {
     const f = folderById(g.name, d.folder);
     return !!f && parentOf(g.name, f) !== id && !(id !== null && within(g.name, id, d.folder));
@@ -1522,9 +1523,10 @@ function dropOn(n, g, id, open) {
     if (!canDrop(g, id)) return;
     ev.preventDefault();
     n.classList.add("drop-on");
+    n.classList.toggle("drop-across", listDrag.g !== g.name);      // into another group: asked first
     clearTimeout(listDrag.spring);
     listDrag.spring = setTimeout(() => {
-      if (!listDrag || listDrag.g !== g.name) return;
+      if (!listDrag || !canDrop(g, id)) return;
       listDrag.force = true;
       try { open(); } finally { if (listDrag) listDrag.force = false; }
     }, DROP_OPEN_MS);
@@ -1532,7 +1534,7 @@ function dropOn(n, g, id, open) {
   n.addEventListener("dragover", (ev) => { if (canDrop(g, id)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } });
   n.addEventListener("dragleave", (ev) => {
     if (n.contains(ev.relatedTarget)) return;
-    n.classList.remove("drop-on");
+    n.classList.remove("drop-on", "drop-across");
     if (listDrag) clearTimeout(listDrag.spring);
   });
   n.addEventListener("drop", (ev) => {
@@ -1541,6 +1543,7 @@ function dropOn(n, g, id, open) {
     const d = listDrag, now = state.home.gatherers.find((x) => x.name === g.name) || g;
     d.later = false;                                 // drawn by the move, next
     endDrag();
+    if (d.g !== g.name) { askMove(d, g, id); return; }
     if (d.folder !== null) { moveFolder(g.name, d.folder, id); return; }
     if (d.gs) { gPicks.clear(); fileGatherers(d.gs.filter((name) => gfOf(name) !== id), id); return; }
     const items = withTasks(now, d.cs).filter((c) => (isAppItem(c) || !!actorOf(now, c)) && itemFolder(now, c) !== id);
