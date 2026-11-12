@@ -150,6 +150,41 @@ class GroupsTest(unittest.TestCase):
         made.assert_not_called()
         self.assertEqual(self.members("a"), ["c1", "c3"])
 
+    def test_an_actor_on_its_own_is_a_group_of_one(self):
+        saved.choose("a", "c1", True)
+        work = folders.make("a", "Work")
+        folders.file("a", ["c1"], work)
+        self.recorded.clear()
+        self.assertEqual(groups.alone("a", "c1"), {"group": "self:c1", "actors": ["c1"], "from": "a"})
+        [(via, [event])] = self.recorded                                   # one call to ag, as the group it leaves
+        self.assertEqual((via, event["properties"]), ("a", {"channel": "c1"}))
+        self.assertEqual({k: event["payload"][k] for k in ("group", "was", "folder")}, {"group": "self:c1", "was": "a", "folder": None})
+        self.assertEqual((self.members("a"), self.members("self:c1")), (["c3"], ["c1"]))
+        self.assertEqual(self.rows("saved"), [("self:c1", "c1")])
+        self.assertEqual(folders.of("a")["filed"], {})                     # out of its folder too
+        self.assertEqual(data.alone_names(), ["self:c1"])
+        listed = {g["name"]: (g.get("alone", False), [a["channel"] for a in g["agents"]]) for g in data.home([])["gatherers"]}
+        self.assertEqual(listed["self:c1"], (True, ["c1"]))
+        self.assertEqual(listed["a"], (False, ["c3"]))
+
+    def test_an_actor_on_its_own_runs_under_the_group_it_left_and_comes_back(self):
+        groups.alone("a", "c1")
+        self.assertEqual(groups.launch_group("c1", "self:c1"), "a")         # ag runs it in a group of the home
+        self.assertEqual(groups.launch_group("c3", "a"), "a")
+        groups.move("self:c1", "b", ["c1"])
+        self.assertEqual((self.members("b"), data.alone_names()), (["c1", "c2"], []))
+
+    def test_an_actor_is_not_taken_out_with_others_of_its_task_nor_the_coordinator(self):
+        tasks.add("a", "c1", ["c3"])
+        with self.assertRaises(groups.GroupError):
+            groups.alone("a", "c1")
+        with unittest.mock.patch.object(groups.sessions, "stored", return_value=[{"session_id": "c3", "role": "coordinator"}]):
+            with self.assertRaises(groups.GroupError):
+                groups.alone("a", "c3")
+        with self.assertRaises(groups.GroupError):
+            groups.alone("a", "c2")                                         # b's, not a's
+        self.assertEqual(self.members("a"), ["c1", "c3"])
+
     def test_refused_for_no_such_group_or_its_own(self):
         for to in ("a", "nowhere"):
             with self.assertRaises(groups.GroupError):
@@ -172,6 +207,8 @@ class FoldersInHomeTest(GroupsTest):
     test_refused_for_no_such_group_or_its_own = test_refused_with_a_database_per_gatherer = None
     test_a_folder_outside_every_group_is_a_group_of_its_own = test_a_new_group_s_name_is_one_no_group_has = None
     test_an_app_does_not_move_between_groups = None
+    test_an_actor_on_its_own_is_a_group_of_one = test_an_actor_on_its_own_runs_under_the_group_it_left_and_comes_back = None
+    test_an_actor_is_not_taken_out_with_others_of_its_task_nor_the_coordinator = None
 
     def kept_in_dashboard_db(self):
         if not os.path.exists(sessions.db_path()):

@@ -91,7 +91,8 @@ def folder(srv: Parts, body: Body) -> Response:
 def group(srv: Parts, body: Body) -> Response:
     """{gatherer, to, do, channels?, folder?, into?}: actors, or a folder with every actor in it, moved from one group
     to another (groups.py), in the home's one database -> plan: what it would do, for the page to ask first; move: it
-    done -> {moved, folders, tasks}. split {gatherer, folder}: the folder made a group of its own -> {split, ...}."""
+    done -> {moved, folders, tasks}. split {gatherer, folder}: the folder made a group of its own -> {split, ...}.
+    alone {gatherer, channel}: the actor taken out of every group, on its own -> {alone, ...}."""
     g, to, do = str(body.get("gatherer") or ""), str(body.get("to") or ""), str(body.get("do") or "")
     channels = body.get("channels") or []
     if not isinstance(channels, list):
@@ -100,6 +101,10 @@ def group(srv: Parts, body: Body) -> Response:
     folder, into = (None if folder in (None, "") else int(folder)), (None if into in (None, "") else int(into))
     if do == "plan":
         return answer(groups.plan(g, to, [str(c) for c in channels], folder))
+    if do == "alone":
+        alone = groups.alone(g, str(body.get("channel") or ""))
+        srv.hub.ring(None, what="list")
+        return answer({"alone": alone, "folders": folders.stored(), "tasks": tasks.stored()})
     if do == "split":
         if folder is None:
             raise ValueError("which folder?")
@@ -107,7 +112,7 @@ def group(srv: Parts, body: Body) -> Response:
         srv.hub.ring(None, what="list")
         return answer({"split": split, "folders": folders.stored(), "tasks": tasks.stored(), "titles": titles.stored()})
     if do != "move":
-        raise ValueError("do what? plan, move or split")
+        raise ValueError("do what? plan, move, split or alone")
     moved = groups.move(g, to, [str(c) for c in channels], folder, into)
     srv.hub.ring(None, what="list")
     return answer({"moved": moved, "folders": folders.stored(), "tasks": tasks.stored()})

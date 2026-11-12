@@ -12,7 +12,7 @@ const WORKING = new Set(["Running", "Waiting for you", "Background"]);     // gr
 // asked first (askMove)
 function canCross(g) {
   const d = listDrag;
-  if (!d || d.g === g.name || !state.home.merged || d.gs || !state.home.gatherers.some((x) => x.name === g.name)) return false;
+  if (!d || d.g === g.name || !state.home.merged || d.gs || g.alone || !state.home.gatherers.some((x) => x.name === g.name)) return false;
   const from = state.home.gatherers.find((x) => x.name === d.g);
   if (!from) return false;
   if (d.folder !== null) return !!folderById(d.g, d.folder) && !folderHasApps(d.g, d.folder);
@@ -146,13 +146,25 @@ async function followMoved(from, to, moved) {
   if (state.selected && state.selected[0] === from && gone.has(state.selected[1])) await select(to, state.selected[1]);
 }
 
-// ---- outside every group: a folder dropped there is made a group of its own (askSplit)
-// Whether what is dragged may go outside every group: in the home's one database, a folder with no app in it
+// ---- outside every group: a folder dropped there is made a group of its own (askSplit), an actor is on its own (askAlone)
+// Whether what is dragged may go outside every group: in the home's one database, from a group, a folder with no app
+// in it, or one actor -- not the coordinator agent, and not one of a task with others (a task moves whole)
 function canOutside() {
   const d = listDrag;
-  return !!d && !!state.home.merged && d.folder !== null && !d.gs && !!folderById(d.g, d.folder) && !folderHasApps(d.g, d.folder);
+  if (!d || !state.home.merged || d.gs) return false;
+  const from = state.home.gatherers.find((x) => x.name === d.g);
+  if (!from || from.alone) return false;
+  if (d.folder !== null) return !!folderById(d.g, d.folder) && !folderHasApps(d.g, d.folder);
+  const items = withTasks(from, d.cs || []), a = items.length === 1 ? actorOf(from, items[0]) : null;
+  return !!a && !isCoordinator(a);
 }
-// The place to drop it, under the list's head: shown while such a drag goes on (body.drag-out)
+// The place shown, while what is dragged may go there (startDrag's), saying what it does
+function showOutside() {
+  const can = canOutside(), n = document.querySelector(".outside-drop");
+  document.body.classList.toggle("drag-out", can);
+  if (n && can) n.textContent = listDrag.folder !== null ? "Outside every group: a group of its own" : "Outside every group: on its own";
+}
+// The place to drop it, over the list's head: shown while such a drag goes on (body.drag-out)
 function outsideDrop() {
   if (SNAPSHOT || !state.home.merged) return null;
   const n = el("div", { class: "outside-drop", text: "Outside every group: a group of its own" });
@@ -162,10 +174,41 @@ function outsideDrop() {
   n.addEventListener("drop", (ev) => {
     if (!canOutside()) return;
     ev.preventDefault();
+    ev.stopPropagation();                            // the list's head it is over: not dropped there too
     const d = listDrag;
     d.later = false;
     endDrag();
-    askSplit(d);
+    if (d.folder !== null) askSplit(d); else askAlone(d);
   });
   return n;
+}
+
+// ---- an actor on its own: a group of one (groups.py's `alone`, `self:<channel>`), listed as its row alone, marked so;
+// it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).
+const ALONE_SAYS = "On its own: it shares context with no other actor, and no other actor with it. Drag it into a group to bring it back.";
+function aloneBox(g) {
+  const a = g.agents.find((x) => !isCoordinator(x));
+  return el("div", { class: "gatherer alone" }, el("div", { class: "alone-head", title: ALONE_SAYS, text: "own context" }),
+    a ? agentRow(g, a, groupOf(g, a)) : null);
+}
+function railAlone(g) {
+  const a = g.agents.find((x) => !isCoordinator(x));
+  return el("section", { class: "r-gatherer r-alone", "aria-label": "On its own", title: ALONE_SAYS }, a ? railActor(g, a) : null);
+}
+// One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own
+function askAlone(d) {
+  const from = state.home.gatherers.find((x) => x.name === d.g), c = from && withTasks(from, d.cs || [])[0];
+  const a = c && actorOf(from, c);
+  if (!a) return;
+  const name = actorTitle(a), others = from.agents.filter((x) => !isCoordinator(x) && x.channel !== c).length;
+  const lines = [`${name} leaves the ${titleOf(from)} group (${mvCount(others, "other")}) and works on its own: it will share context `
+    + "with no other actor, and no other actor with it.", "It has no coordinator agent. Drag it into a group to bring it back.",
+  rebuildLine(from, [a])];
+  const shown = { title: "Take it out of every group?", lines, goLabel: "Take it out" };
+  mvOpen("An actor on its own");
+  const go = mvGo(shown, "Taking it out…", "Not taken out", async () => {
+    const got = await post("/api/groups", { gatherer: d.g, do: "alone", channel: c });
+    return { to: got.alone.group, actors: got.alone.actors, said: `${name} is on its own` };
+  }, d.g);
+  mvDraw({ ...shown, go });
 }

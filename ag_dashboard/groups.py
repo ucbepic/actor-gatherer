@@ -18,17 +18,23 @@ actor's group is its file, and none moves (GroupError).
 
     split(gatherer, folder)                 a folder dragged outside every group: made a group of its own, named after
                                             it (`ag new`, as "+ New group" makes one), what was in it at its top
+    alone(gatherer, channel)                an actor dragged outside every group: on its own, a group of one
+                                            (`self:<channel>`) -- it shares with no one, no one with it, and it has no
+                                            coordinator agent; `move` brings it back into a group
 
 Not yet: an app does not move between groups (GroupError), and the coordinator agent's watches of an actor stay
 where they were."""
 
+import os
 import re
 import secrets
+import sqlite3
 from typing import Dict, Iterable, List, Optional
 
 from . import actions, data, folders, home, sessions, tasks, titles
 
 GROUP = "group"
+ALONE = "self:"                 # an actor on its own: the group of one `self:<its channel>` (the policy's ALONE too)
 #: The dashboard's tables that name an actor's gatherer beside its channel (sessions apart: by its session_id).
 ACTOR_TABLES = ("saved", "seen", "avatars", "tasked")
 
@@ -211,3 +217,61 @@ def split(gatherer: str, folder: int) -> dict:
         titles.give(name, f["name"])
     moved = move(gatherer, name, folder=folder, into=None, dissolve=True)
     return {"group": name, "actors": moved["actors"], "from": gatherer}
+
+
+def is_alone(group: str) -> bool:
+    """Whether `group` is an actor's on its own (`alone`): a group of one, no group of the home's."""
+    return str(group or "").startswith(ALONE)
+
+
+def alone(gatherer: str, channel: str) -> dict:
+    """The actor `channel` of `gatherer` taken out of every group (module doc), in one call to ag: its `group` record,
+    {group: self:<channel>, was, name: "", was_name, folder: none}; then the dashboard's own rows of it under that
+    name. -> {group, actors, from}. GroupError: not on the home's one database, no such actor, the coordinator agent
+    (it stays with its group), or one working in a task with others (a task moves whole: out of it first)."""
+    if not home.merged():
+        raise GroupError("an actor on its own needs the home's one database: run `ag home merge` first")
+    channel = str(channel or "").strip()
+    if is_alone(gatherer):
+        raise GroupError("it is on its own already")
+    if channel not in _members(gatherer):
+        raise GroupError(f"{gatherer} has no actor {channel}")
+    if any(r.get("session_id") == channel and r.get("role") for r in sessions.stored()):
+        raise GroupError("the coordinator agent stays with its group")
+    if actors(gatherer, [channel]) != [channel]:
+        raise GroupError("it works in a task with others: take it out of the task first")
+    to = ALONE + channel
+    event = {"type": GROUP, "id": f"{GROUP}:{channel}:{secrets.token_hex(6)}", "properties": {"channel": channel},
+             "payload": {"group": to, "was": gatherer, "name": "", "was_name": _names(gatherer), "folder": None}}
+    try:
+        actions.insert(gatherer, [event])            # ag runs it under a group of the home's: the one it leaves
+    except (RuntimeError, OSError, ValueError) as exc:
+        raise GroupError(f"ag did not take it: {exc}; nothing else changed") from None
+    if channel not in _members(to):
+        raise GroupError(f"ag did not take it out of {gatherer}; nothing else changed")
+    _rows(gatherer, to, [channel])
+    return {"group": to, "actors": [channel], "from": gatherer}
+
+
+def launch_group(channel: str, group: str) -> str:
+    """The group a session's process starts under (`ag --gatherer`, sessions.py): its own -- or, for an actor on its
+    own, the group it left, as its latest `group` record says: ag runs a session in a group of the home, and what the
+    actor shares is its record's, no one's. Else the home's first group."""
+    if not is_alone(group):
+        return group
+    path = home.home_db()
+    if os.path.exists(path):
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
+        try:
+            row = conn.execute("SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                               "WHERE t.name = ? AND ifnull(e.p_channel, '') = ? ORDER BY e.row_id DESC LIMIT 1",
+                               (GROUP, channel)).fetchone()
+        except sqlite3.Error:
+            row = None
+        finally:
+            conn.close()
+        was = (folders._payload(row[0]) or {}).get("was") if row else None
+        if was and not is_alone(str(was)):
+            return str(was)
+    names = data.gatherer_names()
+    return names[0] if names else group

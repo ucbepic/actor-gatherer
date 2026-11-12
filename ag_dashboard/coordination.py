@@ -104,6 +104,7 @@ BUSY = (data.RUNNING, data.ASKING, data.BACKGROUND)
 DUE = "due "                     # a watch's outcome while its watcher's box could not take it: "due <status>: why"
 ACTOR_MESSAGE = "actor_message"
 ROLE = "role"                                       # the record that makes the gatherer agent's channel private
+ALONE = "self:"                                     # an actor on its own's group of one (groups.py): no coordinator
 CHANGES = {"edit", "write", "delete"}               # what a file in a turn's list was, when the turn changed it
 INSTRUCTIONS_FILE = "gatherer_agent.md"             # what the gatherer agent is told (`instructions`), beside this module
 INSTRUCTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), INSTRUCTIONS_FILE)
@@ -257,6 +258,8 @@ class Coordination:
                model: Optional[str] = None) -> dict:
         """The gatherer agent of `gatherer`, started if it has none: in `cwd` (else the user's home), on `harness` (else
         the first harness that can run here, in harness_kit's order) and `model`. As the dashboard's table has it."""
+        if gatherer.startswith(ALONE):
+            raise CoordinationError("an actor on its own has no coordinator agent")
         with self.lock:
             row = self.coordinator(gatherer)
             if row is not None:

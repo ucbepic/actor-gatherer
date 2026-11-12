@@ -423,6 +423,12 @@ def _why(session_id: str) -> Optional[str]:
     return said[-1] if said else None
 
 
+def _launch(s: dict) -> str:
+    """The group the session's process starts under: its own, or, an actor on its own, the one it left (groups.py)."""
+    from . import groups                              # here: groups.py imports this module
+    return groups.launch_group(s["session_id"], s["gatherer"])
+
+
 def ag_command() -> List[str]:
     """How ag is run: AG_COMMAND (split as a shell would), else `ag` on the PATH."""
     given = os.environ.get("AG_COMMAND")
@@ -1064,7 +1070,7 @@ class Sessions:
         h = harness_kit.get(s["harness"])
         if h is None or not h.headless:
             raise SessionError(f"{s['harness']} has no headless mode here: open it in a terminal")
-        return [*ag_command(), "--gatherer", s["gatherer"], s["harness"],
+        return [*ag_command(), "--gatherer", _launch(s), s["harness"],
                 *h.headless_args(s["session_id"], resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
                                  instructions=instructions(s), extra=tuple(extra_args(s)))]
 
@@ -1397,7 +1403,7 @@ class Sessions:
                 trusted = h.trust(s["cwd"], env)
             except (harness_kit.TrustError, OSError) as exc:
                 untrusted = str(exc)
-        argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"],     # quiet: ag's notes not on its screen
+        argv = [*ag_command(), "--quiet", "--gatherer", _launch(s), s["harness"],     # quiet: ag's notes not on its screen
                 *trusted, *extra_args(s), *h.command(sid, resume=resume, model=s.get("model"),
                                                      permission_mode=s["permission_mode"], fullscreen=fullscreen,
                                                      instructions=told, cwd=s["cwd"]), *first]
