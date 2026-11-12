@@ -417,17 +417,17 @@ function renderAgents() {
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
   // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (05-gatherer-folders.js)
   aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }),
-    SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new gatherer" }, "+ New gatherer"),
-    SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep gatherers in",
-      "aria-label": "New folder, to keep gatherers in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
+    SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new group" }, "+ New group"),
+    SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep groups in",
+      "aria-label": "New folder, to keep groups in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
   if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
-  if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
-  else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
+  if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No groups in this home yet." }));
+  else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every group is hidden." }));
   aside.append(...gfLevel(shown, null, gathererBox));   // its gatherers, in the folders the reader keeps them in, if any
   if (hidden.length) {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
-      el("summary", { text: `${hidden.length} hidden gatherer${hidden.length === 1 ? "" : "s"}` }));
+      el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));
     for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: titleOf(g) }),
       el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `nothing for ${ago(g.last).replace(" ago", "")}` }),
       el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
@@ -488,7 +488,7 @@ function gathererBox(g) {
 // blank line, then the message (or, as the list has it, its lines made one). Or the news of a watch the actor asked for
 // (coordination.py's `update`, UPDATE): which actor is done, and how, then what it was asked and said. null: neither.
 // Chat draws a message with its sender's avatar and name (src/features/chat/Bubble.tsx); the list, as a line (crewLine).
-const ENVELOPE = /^Message from (the gatherer agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)(?: \(answer it with: [^\n]*?\))?:\s+([\s\S]*)$/;
+const ENVELOPE = /^Message from (the (?:gatherer|coordinator) agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)(?: \(answer it with: [^\n]*?\))?:\s+([\s\S]*)$/;
 const UPDATE = /^Update \(you asked with `ag actors when`, watch (\d+)\): actor ([\w-]+)(?: \(("(?:[^"\\]|\\.)*")\))? is done: ([^\n]*?)\.(?:\s+([\s\S]*))?$/;
 function envelope(text) {
   const s = String(text ?? "");
@@ -496,7 +496,7 @@ function envelope(text) {
   let m = UPDATE.exec(s);
   if (m) return { from: "update", id: m[2], name: named(m[3]), how: m[4], watch: +m[1], text: m[5] || "" };
   m = ENVELOPE.exec(s);
-  return m && { from: m[1] === "the gatherer agent" ? "coordinator" : "actor", id: m[2] || null, name: named(m[3]), text: m[4] };
+  return m && { from: m[1].startsWith("the ") ? "coordinator" : "actor", id: m[2] || null, name: named(m[3]), text: m[4] };
 }
 const MANAGER = "roles/manager";             // the gatherer agent's picture (avatars.py's ROLES), before it has one
 // An actor's avatar, small, as the list draws it (actorLogo) less its harness's mark: `fallback`, the picture with none.
@@ -512,7 +512,7 @@ function crewFace(a, fallback = null) {
 const crewId = (id) => String(id || "").slice(0, 8);
 // in a line (the list's): who it is from, and its words
 const crewLine = (env) => env.from === "update" ? `${env.name || `Actor ${crewId(env.id)}`} is done: ${env.how}`
-  : `${env.from === "coordinator" ? "From the gatherer agent" : `From ${env.name || `actor ${crewId(env.id)}`}`}: ${env.text}`;
+  : `${env.from === "coordinator" ? "From the coordinator agent" : `From ${env.name || `actor ${crewId(env.id)}`}`}: ${env.text}`;
 const isCoordinator = (a) => !!a && a.role === "coordinator";
 // An actor is a TASK too (07-panes.js's taskKey): its row says how it stands at its left, its state in a word on its
 // meta line (none, idle), and shows its face at its right.
@@ -1013,8 +1013,8 @@ const rowButton = (cls, attrs, run, icon) => el("span", { class: cls, role: "but
 // Its bookmark: saved for later (filled), or to be, a press either way -- in a snapshot, filled if saved, and nothing to
 // press. The gatherer agent's, in its place: hidden from the list (its face on the gatherer's row shows it again).
 function saveButton(g, a) {
-  if (isCoordinator(a)) return SNAPSHOT ? null : rowButton("save-btn", { title: "Hide the gatherer agent from the list: its face on the gatherer's row shows it again, and opens it",
-    "aria-label": "Hide the gatherer agent" }, () => setCrewHidden(g.name, true), hideIcon());
+  if (isCoordinator(a)) return SNAPSHOT ? null : rowButton("save-btn", { title: "Hide the coordinator agent from the list: its face on the group's row shows it again, and opens it",
+    "aria-label": "Hide the coordinator agent" }, () => setCrewHidden(g.name, true), hideIcon());
   const saved = !!savedAs(g.name, a);
   if (SNAPSHOT) return saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null;
   return rowButton("save-btn" + (saved ? " on" : ""), { "aria-pressed": saved ? "true" : "false",
@@ -1075,7 +1075,7 @@ function nameBox() {
   const r = state.renaming;
   nameInput = el("input", { class: "name-box", type: "text", maxlength: "120", spellcheck: "false", autocomplete: "off",
     placeholder: r.c === null ? r.g : r.kind ? r.auto : "Name this actor",
-    "aria-label": r.c === null ? "This gatherer's name" : r.kind ? `This ${r.kind}'s name` : "This actor's name" });
+    "aria-label": r.c === null ? "This group's name" : r.kind ? `This ${r.kind}'s name` : "This actor's name" });
   nameInput.value = r.value;
   nameInput.addEventListener("input", () => { r.value = nameInput.value; });
   nameInput.addEventListener("keydown", (ev) => {
