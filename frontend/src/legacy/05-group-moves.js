@@ -253,15 +253,61 @@ function outsideDrop() {
 // ---- an actor on its own: a group of one (groups.py's `alone`, `self:<channel>`), listed as its row alone, marked so;
 // it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).
 const ALONE_SAYS = "On its own: it shares context with no other actor, and no other actor with it. Drag it into a group to bring it back.";
+const aloneActor = (g) => g.agents.find((x) => !isCoordinator(x));
 function aloneBox(g) {
-  const a = g.agents.find((x) => !isCoordinator(x));
+  const a = aloneActor(g);
   return el("div", { class: "gatherer alone" }, el("div", { class: "alone-head", title: ALONE_SAYS, text: "own context" }),
     ...(a ? rowsOf(g, a, groupOf(g, a)) : []), ...appRowsIn(g, null));   // its task, with its apps; its apps in none
 }
 function railAlone(g) {
-  const a = g.agents.find((x) => !isCoordinator(x));
+  const a = aloneActor(g);
   return el("section", { class: "r-gatherer r-alone", "aria-label": "On its own", title: ALONE_SAYS },
     ...(a ? railRowsOf(g, a) : []), ...railAppsIn(g, null));
+}
+// Once closed (groupOf's Closed; saved too, Saved), an actor on its own leaves the top of the list, as a group's closed
+// actors go into its closed line: every such one is in a line at the list's end -- "▸ N closed, on their own", and
+// "▸ N saved, on their own" -- opened again from there as any closed actor is (a message starts it, and it is back at
+// the top). Open or not kept in this browser (foldOpen, by ALONE_KEY); folded, those open in a pane in view under it. Never
+// hidden as a group is (isHidden): closed, it is in its line. The rail likewise (railAloneShut), its lines shown as its
+// foot says for its boxes' saved and closed lines (railShow), "▸ N closed" (the rest in its title: the rail is narrow).
+const ALONE_KEY = "\u0000alone";
+function aloneShut(g) {
+  const a = g.alone && aloneActor(g);
+  return !!a && ["Saved", "Closed"].includes(groupOf(g, a));
+}
+// [Saved | Closed, those of `gs` (each aloneShut) in it, the latest first], each with any
+function aloneFolds(gs) {
+  const latest = (x, y) => (aloneActor(y).last || 0) - (aloneActor(x).last || 0);
+  return ["Saved", "Closed"].map((name) => [name, gs.filter((g) => groupOf(g, aloneActor(g)) === name).sort(latest)])
+    .filter(([, list]) => list.length);
+}
+const aloneSays = (name, n) => `${n} ${name.toLowerCase()}, on ${n === 1 ? "its" : "their"} own`;
+const aloneInPane = (list) => list.filter((g) => inPane(g, aloneActor(g)));
+function aloneShutRows(gs) {
+  const out = [];
+  for (const [name, list] of aloneFolds(gs)) {
+    const shown = foldOpen[name].has(ALONE_KEY);
+    out.push(el("button", { class: "agent-group fold-line", type: "button", "aria-expanded": shown ? "true" : "false",
+      "data-key": `${ALONE_KEY}/${name}`, onclick: () => toggleFold(name, ALONE_KEY),
+      title: `${shown ? "Hide" : "Show"} the ${name === "Saved" ? "saved " : ""}actors on their own that are closed` },
+    `${shown ? "▾" : "▸"} `, aloneSays(name, list.length)));
+    if (shown) out.push(...list.flatMap((g) => rowsOf(g, aloneActor(g), name)));
+    else out.push(...aloneInPane(list).map((g) => agentRow(g, aloneActor(g), name)));
+  }
+  return out.length ? [el("div", { class: "gatherer alone shut" }, ...out)] : [];
+}
+function railAloneShut(gs) {
+  const out = [];
+  for (const [name, list] of aloneFolds(gs)) {
+    const what = name.toLowerCase(), unfolded = foldOpen[name].has(ALONE_KEY);
+    const peek = () => aloneInPane(list).map((g) => railActor(g, aloneActor(g)));
+    if (!railShow[what]) { out.push(...peek()); continue; }   // its line not shown: those open in a pane, in view
+    out.push(el("button", { class: "r-fold", type: "button", "aria-expanded": unfolded ? "true" : "false",
+      title: `${aloneSays(name, list.length)}: ${unfolded ? "hide" : "show"} ${list.length === 1 ? "it" : "them"}`,   // its words: too wide here
+      onclick: () => toggleFold(name, ALONE_KEY) }, `${unfolded ? "▾" : "▸"} ${list.length} ${what}`));
+    out.push(...(unfolded ? list.flatMap((g) => railRowsOf(g, aloneActor(g))) : peek()));
+  }
+  return out.length ? [el("section", { class: "r-gatherer r-alone shut", "aria-label": "Closed, on their own" }, ...out)] : [];
 }
 // One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own, with its task's apps and
 // its own window if it is an app's agent (withOwn)
