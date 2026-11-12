@@ -92,6 +92,44 @@ class MergedHomeTest(unittest.TestCase):
         kept.changed("a", "c2")                                  # told of another group's channel: not listed under a
         self.assertEqual(self.listed(data.home([], kept)), {"a": ["c1", "c3"], "b": ["c2"]})
 
+    def move(self, kept, channel, was, to, told):
+        """`channel` moved from group `was` to `to` as groups.py does it: its record, ag's word of it naming `told`."""
+        self.moves = getattr(self, "moves", 1) + 1
+        insert(self.m, told, ch(channel), [{"type": "group", "id": f"group:{channel}:{self.moves}",
+                                            "payload": {"group": to, "was": was}}])
+        kept.changed(told, channel)
+
+    def test_an_actor_moved_leaves_its_old_group_in_a_home_kept_between_reads(self):
+        kept = data.Kept()
+        data.home([], kept)
+        self.move(kept, "c3", "a", "b", told="b")                 # groups.move: ag told under the group it goes to
+        self.assertEqual(self.listed(data.home([], kept)), {"a": ["c1"], "b": ["c2", "c3"]})
+        self.move(kept, "c3", "b", "a", told="b")                 # ...or under another: its new group finds it all the same
+        self.assertEqual(self.listed(data.home([], kept)), {"a": ["c1", "c3"], "b": ["c2"]})
+
+    def test_an_actor_on_its_own_leaves_its_group_in_a_home_kept_between_reads(self):
+        kept = data.Kept()
+        data.home([], kept)
+        self.move(kept, "c3", "a", "self:c3", told="a")           # groups.alone: ag told under the group it leaves
+        self.assertEqual(self.listed(data.home([], kept)), {"a": ["c1"], "b": ["c2"], "self:c3": ["c3"]})
+        self.assertEqual(self.listed(data.home([], kept)), {"a": ["c1"], "b": ["c2"], "self:c3": ["c3"]})
+
+    def test_an_actor_on_its_own_again_is_listed_as_it_is_now(self):
+        kept = data.Kept()
+        data.home([], kept)
+        self.move(kept, "c3", "a", "self:c3", told="a")
+        data.home([], kept)
+        self.move(kept, "c3", "self:c3", "a", told="a")
+        data.home([], kept)
+        items = codex_items.CodexItems(self.m)
+        for item in conversation(1, prefix="c3 later "):         # asked while back in its group
+            items.insert("a", item, channel_id="c3")
+        kept.changed("a", "c3")
+        data.home([], kept)
+        self.move(kept, "c3", "a", "self:c3", told="a")
+        [g] = [g for g in data.home([], kept)["gatherers"] if g["name"] == "self:c3"]
+        self.assertIn("c3 later", g["agents"][0]["last_user_message"])
+
     def test_one_gatherer_read_alone(self):
         self.assertEqual(sorted(a["channel"] for a in data.gatherer_actors("b", [])), ["c2"])
 
