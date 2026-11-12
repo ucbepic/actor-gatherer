@@ -622,6 +622,22 @@ function addAppPane(app, instance, size = 1, held = false) {
   topChanged();
   return p;
 }
+// An app's pane shown again for `inst` -- the same instance, now of another group (05-group-moves.js's followMoved):
+// its panel opened anew in its place, as wide, held or not as it was; selected still, if it was (by its id)
+function swapAppPane(p, inst) {
+  const i = panes.apps.indexOf(p);
+  if (i < 0) return null;
+  const q = addAppPane(p.app, inst, p.size, p.held);  // made at the row's end: put where p was
+  topRowEl().insertBefore(q.gutter, p.gutter);
+  topRowEl().insertBefore(q.node, p.gutter);
+  panes.apps.splice(panes.apps.indexOf(q), 1);
+  panes.apps.splice(i, 1, q);
+  p.panel.destroy();
+  p.gutter.remove(); p.node.remove();
+  topRow(p, null);
+  markSelected(); topLayout(); saveAppPanes(); topChanged();
+  return q;
+}
 // A panel held out of sight shown (opened by the reader), or one shown held (closed while it is needed: appsAtWork).
 function holdAppPane(p, held) {
   p.held = held;
