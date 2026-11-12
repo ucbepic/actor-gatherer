@@ -86,7 +86,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import harness_kit
 from app_kit import AppError
 
-from . import actions, branches, data, files, folders, livedocs, naming, saved, sessions
+from . import actions, branches, data, files, folders, groups, livedocs, naming, saved, sessions
 
 COORDINATOR = sessions.COORDINATOR
 ALIASES = ("gatherer", "gatherer-agent", "coordinator")   # what `send`, `show` and `when` take for the gatherer agent
@@ -547,13 +547,24 @@ class Coordination:
         self._rang(g)
         return {"actor": self._view(a, me, _kept(g))}
 
-    def move(self, actor: str, refs: List[str], folder: Optional[str]) -> dict:
+    def move(self, actor: str, refs: List[str], folder: Optional[str], group: Optional[str] = None) -> dict:
         """The actors `refs` put in the folder at the path `folder` (made if new), or at the gatherer's top (none, or
-        folders.TOP) -> {actors, folder (its path; None: the top)}."""
+        folders.TOP) -> {actors, folder (its path; None: the top)}. `group`, another group: into its folder, the actors
+        then sharing with it (groups.py's `move`, each one's task with it) -> {..., group}."""
         if not refs:
             raise CoordinationError("which actors? Name one or more")
         g, me, agents = self._asker(actor)
         found = list({a["channel"]: a for a in (self._ownable(g, ref, agents) for ref in refs)}.values())
+        if group and group != g:
+            try:
+                target = folders.find_or_make(group, folder or "") if group in data.gatherer_names() else None
+                moved = groups.move(g, group, [a["channel"] for a in found], into=target)
+            except (folders.FolderError, groups.GroupError) as exc:
+                raise CoordinationError(str(exc)) from None
+            self._rang(g)
+            kept = _kept(group)
+            views = [self._view(a, me, kept) for a in found if a["channel"] in moved["actors"]]
+            return {"actors": views, "folder": folders.path(folders.of(group), target), "group": group}
         try:
             target = folders.find_or_make(g, folder or "")
             filed = _filed(g)
@@ -563,6 +574,18 @@ class Coordination:
         self._rang(g)
         kept = _kept(g)
         return {"actors": [self._view(a, me, kept) for a in found], "folder": folders.path(folders.of(g), target)}
+
+    def alone(self, actor: str, ref: str) -> dict:
+        """The actor `ref` taken out of every group (groups.py's `alone`): it works on its own, sharing context with no
+        one, and no one with it -> {actor, group}."""
+        g, me, agents = self._asker(actor)
+        a = self._ownable(g, ref, agents)
+        try:
+            made = groups.alone(g, a["channel"])
+        except groups.GroupError as exc:
+            raise CoordinationError(str(exc)) from None
+        self._rang(g)
+        return {"actor": self._view(a, me, _kept(g)), "group": made["group"]}
 
     def folders(self, actor: str) -> dict:
         """The gatherer's folders as a tree: {gatherer, folders: [{name, path, actors, closed, folders, shut}], actors,
@@ -587,11 +610,27 @@ class Coordination:
                 node["actors"].append(v)
         return top
 
-    def folder(self, actor: str, do: str, name: str, to: str = "") -> dict:
+    def folder(self, actor: str, do: str, name: str, to: str = "", group: Optional[str] = None) -> dict:
         """A folder, by its path, made (`new`: the folders of its path not there made too), renamed (`rename`: `to` its
-        new name), put in another (`move`: `to` the other's path; none, or folders.TOP: the top) or deleted (`delete`)
-        -> what `folders` says, after, and what was done."""
+        new name), put in another (`move`: `to` the other's path; none, or folders.TOP: the top -- of `group`, another
+        group, the folder's actors then sharing with it), made a group of its own (`split`) or deleted (`delete`) ->
+        what `folders` says, after, and what was done."""
         g, _, _ = self._asker(actor)
+        if do in ("split", "move") and (do == "split" or (group and group != g)):
+            try:
+                fid = self._folder_at(g, name)
+                if do == "split":
+                    made = groups.split(g, fid)
+                    done = {"done": do, "name": "/".join(folders._parts(name)), "group": made["group"]}
+                else:
+                    target = folders.find_or_make(group, to or "") if group in data.gatherer_names() else None
+                    groups.move(g, group, folder=fid, into=target)
+                    done = {"done": do, "name": "/".join(folders._parts(name)), "group": group,
+                            "to": folders.path(folders.of(group), target)}
+            except (folders.FolderError, groups.GroupError) as exc:
+                raise CoordinationError(str(exc)) from None
+            self._rang(g)
+            return {**self.folders(actor), **done}
         try:
             if do == "new":
                 folders.find_or_make(g, name)
@@ -602,7 +641,7 @@ class Coordination:
             elif do == "delete":
                 folders.delete(g, self._folder_at(g, name))
             else:
-                raise CoordinationError("`ag actors folder` new, rename, move or delete?")
+                raise CoordinationError("`ag actors folder` new, rename, move, split or delete?")
             done = {"done": do, "name": "/".join(folders._parts(name))}
             if do == "rename":
                 done["to"] = folders.folder_name(to)
@@ -688,7 +727,11 @@ class Coordination:
             except sqlite3.Error:                # not read: left as it is, till the next look
                 continue
         told = []
+        now_in = data.groups_now()           # the home's one database: where each actor is now (a move between groups)
         for w in waiting:
+            if self._regrouped(w, now_in.get(now_as.get(w["target"], w["target"])), now_in.get(w["watcher"]), now):
+                told.append(w["id"])
+                continue
             if w["gatherer"] not in by_gatherer:
                 continue
             a = by_gatherer[w["gatherer"]].get(now_as.get(w["target"], w["target"]))
@@ -711,6 +754,37 @@ class Coordination:
             told.append(w["id"])
         return told
 
+    def _regrouped(self, w: sqlite3.Row, target_in: Optional[str], watcher_in: Optional[str], now: float) -> bool:
+        """A watch whose target or watcher changed group since it was made (groups.py): both in one group again, the
+        watch goes with them (looked at in it next time); apart, it ends -- the watcher told only that, nothing of the
+        target's work, which is no longer its group's. -> whether the watcher was told."""
+        g = w["gatherer"]
+        target_in, watcher_in = target_in or g, watcher_in or g
+        if target_in == g and watcher_in == g:
+            return False
+        if target_in == watcher_in:
+            self._mark(w["id"], gatherer=target_in)
+            return False
+        how = "it left your group, so this watch has ended" if watcher_in == g else \
+            "you left its group, so this watch has ended"
+        self._mark(w["id"], fired=now, outcome="moved")
+        try:
+            self._deliver(watcher_in, self._watcher(w, watcher_in), update(w["id"], w["target"], None, how, ""))
+        except Exception as exc:  # noqa: BLE001 - one watcher's trouble is not the others'
+            self._mark(w["id"], outcome=f"moved, not told: {exc}"[:300])
+        return True
+
+    def _watcher(self, w: sqlite3.Row, g: str) -> dict:
+        """The watch's watcher, as an actor of `g`, else as the dashboard's table has it."""
+        rows = self.started.list()
+        watcher = next((x for x in data.gatherer_actors(g, rows) if x["channel"] == w["watcher"]), None)
+        if watcher is None:
+            row = next((r for r in rows if w["watcher"] in (r["session_id"], r.get("started_as"))), None)
+            if row is None:
+                raise CoordinationError(f"no actor {w['watcher']} to tell")
+            watcher = {"channel": row["session_id"], "session": row, "harness": row["harness"]}
+        return watcher
+
     def _tell(self, w: sqlite3.Row, a: Optional[dict], status: Optional[str] = None) -> None:
         g = w["gatherer"]
         status = status or (a or {}).get("status") or data.CLOSED
@@ -728,14 +802,7 @@ class Coordination:
             lines.append(f"It said last: {_clip(got['said'], SAID_CHARS)}")
         if w["note"]:
             lines.append(f"Your note: {w['note']}")
-        rows = self.started.list()
-        watcher = next((x for x in data.gatherer_actors(g, rows) if x["channel"] == w["watcher"]), None)
-        if watcher is None:
-            row = next((r for r in rows if w["watcher"] in (r["session_id"], r.get("started_as"))), None)
-            if row is None:
-                raise CoordinationError(f"no actor {w['watcher']} to tell")
-            watcher = {"channel": row["session_id"], "session": row, "harness": row["harness"]}
-        self._deliver(g, watcher, update(w["id"], target, name, how, "\n\n".join(lines)))
+        self._deliver(g, self._watcher(w, g), update(w["id"], target, name, how, "\n\n".join(lines)))
 
     def _mark(self, n: int, **values) -> None:
         conn = self._db()

@@ -147,12 +147,14 @@ def actors_op(crew: coordination.Coordination, op: str, body: dict):
     if op == "folders":
         return crew.folders(me)
     if op == "folder":
-        return crew.folder(me, s("do"), s("name"), s("to"))
+        return crew.folder(me, s("do"), s("name"), s("to"), opt("group"))
     if op == "move":
         refs = body.get("refs")
-        return crew.move(me, [str(r) for r in refs] if isinstance(refs, list) else [], s("folder"))
+        return crew.move(me, [str(r) for r in refs] if isinstance(refs, list) else [], s("folder"), opt("group"))
+    if op == "alone":
+        return crew.alone(me, s("ref"))
     raise coordination.CoordinationError(f"no `ag actors {op}`: one of list, show, who, send, new, when, watches, unwatch, "
-                                         "save, unsave, folders, folder, move")
+                                         "save, unsave, folders, folder, move, alone")
 
 
 @router.post("/api/actors/{op:path}")
@@ -162,6 +164,7 @@ def actors(srv: Parts, op: str, body: Body) -> Response:
 
     list {all?}, show {ref}, who {path}, send {ref, text}, new {text, cwd?, harness?, model?, like?, name?, folder?,
     <app>? (an app that starts an agent of its own: docwriter?, browser?), branch?, approve?}, when {ref, note?}, watches, unwatch {watch},
-    save {ref, folder?, unfiled?}, unsave {ref}, folders, folder {do: new | rename | move | delete, name, to?},
-    move {refs, folder} (folders: by path, "top" or none for the gatherer's top)."""
+    save {ref, folder?, unfiled?}, unsave {ref}, folders, folder {do: new | rename | move | split | delete, name, to?,
+    group?}, move {refs, folder, group?} (folders: by path, "top" or none for the gatherer's top; group: another one,
+    groups.py), alone {ref}."""
     return answer(actors_op(srv.crew, op, body))

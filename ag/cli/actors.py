@@ -150,6 +150,10 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("folders", help="the gatherer's folders, and what is in each")
     move = sub.add_parser("move", help="actors put in a folder (made if new), or at the gatherer's top")
     move.add_argument("actors", nargs="+", help="the actors, then the folder's path (or `top`)")
+    move.add_argument("--group", help="into another group (its folder, or `top`): they share with its actors then, "
+                                      "each with its task; only when the user asks")
+    sub.add_parser("alone", help="an actor taken out of every group: it works on its own, sharing context with no one; "
+                                 "only when the user asks").add_argument("actor")
     folder = sub.add_parser("folder", help="a folder made, renamed, moved or deleted")
     do = folder.add_subparsers(dest="do", required=True)
     do.add_parser("new", help="a new folder, empty").add_argument("name")
@@ -159,6 +163,10 @@ def parser() -> argparse.ArgumentParser:
     moved = do.add_parser("move", help="a folder, and all in it, put in another folder (or at the top)")
     moved.add_argument("name", help="its path")
     moved.add_argument("to", help="the other folder's path, or `top`")
+    moved.add_argument("--group", help="of another group: the folder's actors share with its actors then; only when "
+                                       "the user asks")
+    do.add_parser("split", help="a folder made a group of its own, named after it, what is in it at its top; only "
+                                "when the user asks").add_argument("name")
     do.add_parser("delete", help="a folder deleted: what was in it moves up into the folder it was in").add_argument("name")
     return ap
 
@@ -182,7 +190,7 @@ def main(argv: List[str]) -> int:
         body = {"actor": me}
         if op == "list":
             body["all"] = bool(opts.all)
-        elif op in ("show", "send", "when", "save", "unsave"):
+        elif op in ("show", "send", "when", "save", "unsave", "alone"):
             body["ref"] = opts.actor
         if op == "save":
             if opts.folder is not None:
@@ -190,11 +198,12 @@ def main(argv: List[str]) -> int:
             if opts.unfiled:
                 body["unfiled"] = True
         if op == "folder":
-            body.update({"do": opts.do, "name": opts.name, **({"to": opts.to} if opts.do in ("rename", "move") else {})})
+            body.update({"do": opts.do, "name": opts.name, **({"to": opts.to} if opts.do in ("rename", "move") else {}),
+                         **({"group": opts.group} if getattr(opts, "group", None) else {})})
         if op == "move":
             if len(opts.actors) < 2:
                 raise ActorsError("move which actors where? `ag actors move <actor>... <folder|top>`")
-            body.update({"refs": opts.actors[:-1], "folder": opts.actors[-1]})
+            body.update({"refs": opts.actors[:-1], "folder": opts.actors[-1], **({"group": opts.group} if opts.group else {})})
         if op == "who":
             body["path"] = os.path.abspath(os.path.expanduser(opts.file))
         if op in ("send", "new"):
@@ -320,13 +329,22 @@ def shown(op: str, got: dict) -> str:
             return f"{who} is no longer saved ({where})."
         return f"{who} is saved for later, {where}."
     if op == "move":
-        where = 'in the folder "%s"' % got["folder"] if got.get("folder") else "at the gatherer's top"
+        top = f"at the top of the group {got['group']}" if got.get("group") else "at the gatherer's top"
+        where = 'in the folder "%s"' % got["folder"] if got.get("folder") else top
+        if got.get("group") and got.get("folder"):
+            where += f" of the group {got['group']}"
         return "\n".join([f"Now {where}:"] + [f"- {_who({**a, 'folder': None})}" for a in got["actors"]])
+    if op == "alone":
+        return (f"{_who({**got['actor'], 'folder': None})} works on its own now: it shares context with no other actor, "
+                "and no other actor with it. Move it into a group (`ag actors move ... --group`) to bring it back.")
     if op in ("folders", "folder"):
         lines = []
         if op == "folder":
+            into = f" of the group {got['group']}" if got.get("group") else ""
             lines.append({"new": 'Folder "{name}" made.', "rename": 'Folder "{name}" renamed "{to}".',
-                          "move": 'Folder "{name}" put in "{to}".' if got.get("to") else 'Folder "{name}" put at the top.',
+                          "move": ('Folder "{name}" put in "{to}"' if got.get("to") else 'Folder "{name}" put at the top')
+                          + into + ".",
+                          "split": 'Folder "{name}" is a group of its own now: {group}, what was in it at its top.',
                           "delete": 'Folder "{name}" deleted: what was in it moved up a level.'}[got["done"]].format(**got))
         if not got["folders"] and not got["actors"] and not got["closed"]:
             lines.append(f"The gatherer {got['gatherer']} has no folders, and no actors but the gatherer agent.")
