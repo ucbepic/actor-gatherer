@@ -2,6 +2,7 @@
 record in each moved actor's channel, then the dashboard's own rows of them under the group's name."""
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,10 +13,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
 import app_kit  # noqa: E402
-from ag_dashboard import actions, app_host, data, folders, groups, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
+from ag_dashboard import actions, app_agents, app_host, data, folders, groups, naming, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
 from replies import insert  # noqa: E402
 from test_dashboard_app_host import NOTES, insert_here, write_app  # noqa: E402
 import test_home_db  # noqa: E402
+
+REAL_INSERT = actions.insert                                      # GroupsTest's tests have it run here instead
 
 
 class GroupsTest(unittest.TestCase):
@@ -159,7 +162,7 @@ class GroupsTest(unittest.TestCase):
         work = folders.make("a", "Work")
         folders.file("a", ["c1"], work)
         self.recorded.clear()
-        self.assertEqual(groups.alone("a", "c1"), {"group": "self:c1", "actors": ["c1"], "from": "a"})
+        self.assertEqual(groups.alone("a", "c1"), {"group": "self:c1", "actors": ["c1"], "apps": [], "from": "a"})
         [(via, [event])] = self.recorded                                   # one call to ag, as the group it leaves
         self.assertEqual((via, event["properties"]), ("a", {"channel": "c1"}))
         self.assertEqual({k: event["payload"][k] for k in ("group", "was", "folder")}, {"group": "self:c1", "was": "a", "folder": None})
@@ -188,6 +191,26 @@ class GroupsTest(unittest.TestCase):
         with self.assertRaises(groups.GroupError):
             groups.alone("a", "c2")                                         # b's, not a's
         self.assertEqual(self.members("a"), ["c1", "c3"])
+
+    def test_what_is_written_of_an_actor_on_its_own_goes_through_ag_as_the_group_it_left(self):
+        """ag keeps a config for the home's groups, and would make one -- a gatherer -- for `self:<channel>`."""
+        groups.alone("a", "c1")
+        self.assertEqual((groups.runs_under("self:c1"), groups.runs_under("b")), ("a", "b"))
+        ran = []
+
+        def run(argv, **kw):
+            ran.append(argv[argv.index("insert") + 1])
+            return subprocess.CompletedProcess(argv, 0, stdout='{"rows": [1]}', stderr="")
+        with unittest.mock.patch.object(subprocess, "run", side_effect=run), \
+                unittest.mock.patch.object(actions, "ENABLED", True):
+            REAL_INSERT("self:c1", [])
+            actions.record("self:c1", "c1", [{"type": "chat_sent", "payload": {}}], wait=True)
+            naming.record("self:c1", "c1", "Alone")
+        self.assertEqual(ran, ["a", "a", "a"])
+        host = app_host.AppHost(0, write=lambda g, *rest: ran.append(g))
+        self.addCleanup(host.close)
+        host._write_one(("self:c1", {}, [{"type": "app_attached"}], []))
+        self.assertEqual(ran[-1], "a")
 
     def test_refused_for_no_such_group_or_its_own(self):
         for to in ("a", "nowhere"):
@@ -306,12 +329,13 @@ if __name__ == "__main__":
 
 
 class GroupAppsTest(GroupsTest):
-    """Apps of a task or a folder that moves: `pages` (many instances) goes with it, `board` (one per group) stays."""
+    """Apps of a task or a folder that moves: `pages` (many instances) goes with it, `board` (one per group) stays;
+    `news` (one per group too) goes with its own agent, an actor it started."""
 
     def setUp(self):
         super().setUp()
         src = os.path.join(self.tmp.name, "apps-src")
-        for name, mode in (("pages", "many"), ("board", "one")):
+        for name, mode in (("pages", "many"), ("board", "one"), ("news", "one")):
             write_app(src, name, NOTES.replace("notes", name).replace('instances = "per-folder"', f'instances = "{mode}"'))
         for patch in (unittest.mock.patch.dict(os.environ, {app_host.PATH_ENV: src}),
                       unittest.mock.patch.object(app_kit.finding, "BUILTIN", os.path.join(self.tmp.name, "no-apps"))):
@@ -365,3 +389,81 @@ class GroupAppsTest(GroupsTest):
         groups.alone("a", "c3")
         self.assertEqual(self.host.agents_of(page), [])
         self.assertEqual([i.id for i in self.host.instances_of("a")], [page.id])     # the app stays where it was
+
+    def started(self, channel, gatherer, inst):
+        """`channel`, of `gatherer`, made the agent the app of `inst` started: its role names it, and it is attached."""
+        conn = sqlite3.connect(sessions.db_path())
+        try:
+            with conn:
+                conn.execute(sessions.SCHEMA)
+                conn.execute("INSERT INTO sessions (session_id, gatherer, harness, cwd, permission_mode, created_at, "
+                             "status, role) VALUES (?, ?, 'claude', '/', 'auto', 'now', 'idle', ?)",
+                             (channel, gatherer, app_agents.role(inst.app, inst.id)))
+        finally:
+            conn.close()
+        self.host.attach(gatherer, inst.id, channel)
+
+    def role(self, channel):
+        return next(app_agents.role_of(s) for s in sessions.stored() if s["session_id"] == channel)
+
+    def test_an_app_s_own_agent_and_its_window_go_together_whichever_is_dragged(self):
+        news = self.host.open("news", "a", self.folder)
+        self.started("c1", "a", news)                                     # in no task with it
+        for dragged in (["c1"], ["app:" + news.id]):
+            plan = groups.plan("a", "b", dragged)
+            self.assertEqual((plan["actors"], [x["id"] for x in plan["apps"]]), (["c1"], [news.id]))
+            self.assertNotIn("joins", plan["apps"][0])                    # b has no news of its own
+        board = self.host.open("board", "a", self.folder)                # one per group, with no agent of its own
+        with self.assertRaisesRegex(groups.GroupError, "the group's only one"):
+            groups.plan("a", "b", ["app:" + board.id])
+        got = groups.move("a", "b", ["app:" + news.id])
+        self.assertEqual((got["actors"], got["apps"], got["joined"]), (["c1"], [news.id], {}))
+        self.assertEqual([i.id for i in self.host.instances_of("b")], [news.id])
+        self.assertEqual(self.host.agents_of(self.host.instance("b", news.id)), ["c1"])
+        self.assertEqual([i.id for i in self.host.instances_of("a")], [board.id])
+
+    def test_into_a_group_with_its_own_one_the_window_closes_and_its_agent_works_with_that_one(self):
+        news, theirs = self.host.open("news", "a", self.folder), self.host.open("news", "b", self.folder)
+        self.started("c1", "a", news)
+        tasks.add("a", "c1", ["app:" + news.id])
+        [said] = groups.plan("a", "b", ["c1"])["apps"]
+        self.assertEqual(said["joins"]["id"], theirs.id)
+        got = groups.move("a", "b", ["c1"])
+        self.assertEqual((got["apps"], got["joined"]), ([], {news.id: theirs.id}))
+        self.assertEqual(self.host.instances_of("a"), [])                # closed: b's is the one
+        self.assertEqual([i.id for i in self.host.instances_of("b")], [theirs.id])
+        self.assertEqual(self.host.agents_of(theirs), ["c1"])
+        self.assertEqual(self.role("c1"), ("news", theirs.id))           # not the closed one, made again at a start
+        b = tasks.stored()["b"]["tasked"]
+        self.assertEqual(b["c1"], b["app:" + theirs.id])
+        self.assertNotIn("app:" + news.id, {**tasks.stored().get("a", {}).get("tasked", {}), **b})
+        self.host.flush()
+        again = app_host.AppHost(0, write=insert_here)                    # read back from the one database
+        self.addCleanup(again.close)
+        self.assertEqual([i.id for i in again.instances_of("b")], [theirs.id])
+        self.assertEqual(again.agents_of(again.instance("b", theirs.id)), ["c1"])
+
+    def test_an_app_s_agent_goes_on_its_own_with_its_window_and_its_task_s_apps_and_comes_back(self):
+        news, page = self.host.open("news", "a", self.folder), self.host.open("pages", "a", self.folder)
+        self.started("c1", "a", news)
+        tasks.add("a", "c1", ["app:" + page.id])
+        self.host.attach("a", page.id, "c1")
+        got = groups.alone("a", "c1")
+        self.assertEqual((got["group"], got["actors"], sorted(got["apps"])), ("self:c1", ["c1"], sorted([news.id, page.id])))
+        self.assertEqual(sorted(i.id for i in self.host.instances_of("self:c1")), sorted([news.id, page.id]))
+        self.assertEqual(self.host.agents_of(news), ["c1"])
+        self.assertEqual(self.host.instances_of("a"), [])
+        self.assertEqual(tasks.stored()["self:c1"]["tasked"]["app:" + page.id], tasks.stored()["self:c1"]["tasked"]["c1"])
+        self.host.flush()                                                 # its records written as the group it left:
+        self.assertEqual(sorted(os.listdir(paths.TRACE_DIR)), ["a", "b"])  # no gatherer made for its group of one
+        groups.move("self:c1", "b", ["c1"])
+        self.assertEqual(sorted(i.id for i in self.host.instances_of("b")), sorted([news.id, page.id]))
+        self.assertEqual(data.alone_names(), [])
+
+    def test_an_actor_on_its_own_is_not_one_with_an_actor_in_its_task_nor_a_window_it_can_t_take(self):
+        board = self.host.open("board", "a", self.folder)
+        tasks.add("a", "c1", ["app:" + board.id])
+        with self.assertRaisesRegex(groups.GroupError, "the group's only one"):
+            groups.alone("a", "c1")
+        self.assertEqual((self.members("a"), [i.id for i in self.host.instances_of("a")]), (["c1", "c3"], [board.id]))
+

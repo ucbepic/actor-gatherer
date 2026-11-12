@@ -18,16 +18,24 @@ actor's group is its file, and none moves (GroupError).
 
 An app in a task or a folder that moves goes with it, as its actors keep using it (`apps`): one with many instances
 (Browser, DocWriter, Editor) -- its `filed` record names the new group, and the host moves it (app_host.py's
-`regroup`). A group's only one of its app (Notes, Slack, Paper news: one per group) is its group's, and stays:
-a move that would take one is refused (GroupError). An attachment a move would leave across groups -- a moved actor
-to an app that stays, an actor that stays to an app that moves -- is dropped (`_unhook`), as attaching across groups
-is refused.
+`regroup`). An app's own agent (one it started: app_agents.py's `role_of`, its role naming the instance) and that
+instance go together, as a task does (`_own`): Paper news's agent and its Paper news. A group's only one of its app
+(Notes, Slack, Paper news: one per group) is its group's, and stays -- a move that would take one is refused
+(GroupError) -- unless its own agent goes with it: then it goes too, into a group that has none of that app; into one
+that has, it is closed, and its agents work with that group's instead (`_folds`: its role names that one from then on,
+as the host would open the old one again for it at its next start). An attachment a move would leave across groups --
+a moved actor to an app that stays, an actor that stays to an app that moves -- is dropped (`_unhook`), as attaching
+across groups is refused.
 
     split(gatherer, folder)                 a folder dragged outside every group: made a group of its own, named after
                                             it (`ag new`, as "+ New group" makes one), what was in it at its top
     alone(gatherer, channel)                an actor dragged outside every group: on its own, a group of one
                                             (`self:<channel>`) -- it shares with no one, no one with it, and it has no
-                                            coordinator agent; `move` brings it back into a group
+                                            coordinator agent -- with the apps of its task (none of its actors but it),
+                                            and its app's own window if it is an app's agent; `move` brings it back
+    runs_under(group)                       the group ag runs a write of `group`'s under: an actor on its own's, the
+                                            group it left (`launch_group`) -- ag keeps a config for the home's groups,
+                                            and would make one for a name it does not know
 
 A watch of the coordinator agent's on a moved actor goes as coordination.py's `check` says."""
 
@@ -80,10 +88,41 @@ def actors(gatherer: str, channels: Iterable[str] = (), folder: Optional[int] = 
         inside = set(_under(tree, int(folder)))
         out |= {c for c, f in tree["filed"].items() if f in inside}
     mine = (tasks.stored() or {}).get(gatherer) or {"tasks": [], "tasked": {}}
-    joined = {mine["tasked"][c] for c in out if c in mine["tasked"]}
-    out |= {c for c, t in mine["tasked"].items() if t in joined}
+    agents = _app_agents(gatherer)
+    while True:                                       # each one's task, and an app's own agent with its instance
+        joined = {mine["tasked"][c] for c in out if c in mine["tasked"]}
+        grown = out | {c for c, t in mine["tasked"].items() if t in joined} | _own(gatherer, out, agents)
+        if grown == out:
+            break
+        out = grown
     apps(gatherer, out)
     return sorted(out)
+
+
+def _app_agents(gatherer: str) -> Dict[str, List[str]]:
+    """The agents of `gatherer` an app started, by the instance their role names: {instance id: [channel]}."""
+    from . import app_agents                          # (it imports what imports this module)
+    out: Dict[str, List[str]] = {}
+    for s in sessions.stored():
+        got = app_agents.role_of(s)
+        if got is not None and s.get("gatherer") == gatherer:
+            out.setdefault(got[1], []).append(s["session_id"])
+    return out
+
+
+def _own(gatherer: str, items: set, agents: Dict[str, List[str]]) -> set:
+    """What an app's own agent and its instance bring along (module doc): of each agent among `items`, its instance,
+    open in `gatherer` (with no host to say, it all the same: `apps` refuses it then) -- of each instance among them,
+    its agents."""
+    host = _host()
+    here = None if host is None else {i.id for i in host.instances_of(gatherer)}
+    out = set()
+    for inst, channels in agents.items():
+        if folders.APP + inst in items:
+            out |= set(channels)
+        elif any(c in items for c in channels) and (here is None or inst in here):
+            out.add(folders.APP + inst)
+    return out
 
 
 def _host():
@@ -93,24 +132,72 @@ def _host():
 
 def apps(gatherer: str, items: Iterable[str]) -> list:
     """The app instances among `items` (APP + its id) -> [Instance]. GroupError: one not found, or one that can't move --
-    a group's only one of its app (one per group, folder, checkout or repository), which is its group's."""
-    ids = [str(c)[len(folders.APP):] for c in items if str(c).startswith(folders.APP)]
+    a group's only one of its app (one per group, folder, checkout or repository), which is its group's, unless its own
+    agent is among `items` too."""
+    items = [str(c) for c in items]
+    ids = [c[len(folders.APP):] for c in items if c.startswith(folders.APP)]
     if not ids:
         return []
     host = _host()
     if host is None:
         raise GroupError("an app moves between groups only where the dashboard runs its apps")
-    out = []
+    out, agents = [], _app_agents(gatherer)
     for i in ids:
         try:
             inst = host.instance(gatherer, i)
         except AppError:
             raise GroupError(f"{gatherer} has no app {i}") from None
-        if host.hosted(inst.app).manifest.instances != "many":
+        if host.hosted(inst.app).manifest.instances != "many" and not set(agents.get(i, ())) & set(items):
             raise GroupError(f"{inst.name or inst.title or inst.app} is its group's own (the group's only one): it stays "
                              "with its group -- take it out of the task or the folder first")
         out.append(inst)
     return out
+
+
+def _folds(to: str, moved: list) -> dict:
+    """Of the instances `moved` (`apps`), those a group has one of at most (its app not "many") that `to` has one of
+    already: {moved id: `to`'s one} -- it closed, and its agents that move work with `to`'s one (module doc)."""
+    host = _host()
+    out = {}
+    for inst in moved:
+        if host.hosted(inst.app).manifest.instances == "many":
+            continue
+        there = host.instances_of(to, inst.app)
+        if there:
+            out[inst.id] = there[0]
+    return out
+
+
+def _close(gatherer: str, inst, moving: List[str]) -> tuple:
+    """The instance `inst` of `gatherer` closed, as the group it goes to has its app's one (`_folds`), and out of its
+    task -- before the moving actors' rows move -> (the moving actors that used it, its own agents among them)."""
+    from . import task_links                          # (it imports what imports this module)
+    host = _host()
+    gone = set(moving)
+    own = [c for c in _app_agents(gatherer).get(inst.id, ()) if c in gone]
+    users = sorted({c for c in host.agents_of(inst) if c in gone} | set(own))
+    host.close_instance(gatherer, inst.id, by="group")
+    task_links.closed(gatherer, inst.id)
+    return users, own
+
+
+def _join(to: str, there, users: List[str], own: List[str]) -> None:
+    """The actors `users` of an instance closed for `to`'s own one, `there` (`_close`), attached to it, in its task as
+    an agent attached to an app is (task_links.py's `link`) -- once their rows are `to`'s -- and each of its own agents
+    `own` given a role naming `there` from now on, as the host would make the one it named again for it at its next
+    start (app_host.py's `adopt`)."""
+    from . import app_agents, task_links
+    if own:
+        conn = folders._write()
+        try:
+            with conn:
+                conn.executemany("UPDATE sessions SET role = ? WHERE session_id = ?",
+                                 [(app_agents.role(there.app, there.id), c) for c in own])
+        finally:
+            conn.close()
+    for c in users:
+        task_links.link(to, there.id, c)
+        _host().attach(to, there.id, c, by="group")
 
 
 def _unhook(gatherer: str, moving: List[str], moved_apps: List[str]) -> None:
@@ -162,20 +249,28 @@ def plan(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
     items = actors(gatherer, channels, folder)
     moving = [c for c in items if not c.startswith(folders.APP)]
     before = _sizes(gatherer, to)
+    moved = apps(gatherer, items)
+    folds = _folds(to, moved)
     return {"actors": moving, "from": gatherer, "to": to, "folder": folder, "before": before,
             "after": {gatherer: before[gatherer] - len(moving), to: before[to] + len(moving)},
-            "apps": [{"id": i.id, "app": i.app, "title": i.name or i.title} for i in apps(gatherer, items)]}
+            "apps": [{"id": i.id, "app": i.app, "title": i.name or i.title,
+                      **({"joins": {"id": folds[i.id].id, "title": folds[i.id].name or folds[i.id].title}}
+                         if i.id in folds else {})} for i in moved]}
 
 
 def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[int] = None,
          into: Optional[int] = None, dissolve: bool = False) -> dict:
-    """The move done (module doc): {actors, from, to}. GroupError: no such group or folder, a folder of that name in the
-    place it would go, or a record ag did not take -- nothing of the dashboard's then changed. `dissolve`: the folder
-    itself gone, what was in it at `into` instead (`split`'s)."""
+    """The move done (module doc): {actors, apps, joined, from, to} -- `apps` the instances moved, `joined` those closed
+    for `to`'s own one of their app, {id: its id} (`_folds`). GroupError: no such group or folder, a folder of that
+    name in the place it would go, or a record ag did not take -- nothing of the dashboard's then changed. `dissolve`:
+    the folder itself gone, what was in it at `into` instead (`split`'s)."""
     _check(gatherer, to)
     items = actors(gatherer, channels, folder)
     moving = [c for c in items if not c.startswith(folders.APP)]
-    moved_apps = [i.id for i in apps(gatherer, items)]
+    moved = apps(gatherer, items)
+    folds = _folds(to, moved)
+    moved_apps = [i.id for i in moved if i.id not in folds]
+    items = [c for c in items if not (c.startswith(folders.APP) and c[len(folders.APP):] in folds)]   # closed ones: none
     target = _tree(to)
     if into is not None and not any(f["id"] == int(into) for f in target["folders"]):
         raise GroupError(f"{to} has no folder {into}")
@@ -208,11 +303,15 @@ def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
     missed = [c for c in moving if c not in got]
     if missed:
         raise GroupError(f"ag did not take the move of {', '.join(missed)}; nothing else changed")
-    _unhook(gatherer, moving, moved_apps)
+    _unhook(gatherer, moving, [i.id for i in moved])  # one closed for `to`'s: its own let go of at its close
     for i in moved_apps:
         _host().regroup(gatherer, i, to)
+    closed = {inst.id: _close(gatherer, inst, moving) for inst in moved if inst.id in folds}
     _rows(gatherer, to, items)
-    return {"actors": moving, "apps": moved_apps, "from": gatherer, "to": to}
+    for i, (users, own) in closed.items():
+        _join(to, folds[i], users, own)
+    return {"actors": moving, "apps": moved_apps, "joined": {i: there.id for i, there in folds.items()},
+            "from": gatherer, "to": to}
 
 
 def _rows(gatherer: str, to: str, moving: List[str]) -> None:
@@ -283,9 +382,11 @@ def is_alone(group: str) -> bool:
 
 def alone(gatherer: str, channel: str) -> dict:
     """The actor `channel` of `gatherer` taken out of every group (module doc), in one call to ag: its `group` record,
-    {group: self:<channel>, was, name: "", was_name, folder: none}; then the dashboard's own rows of it under that
-    name. -> {group, actors, from}. GroupError: not on the home's one database, no such actor, the coordinator agent
-    (it stays with its group), or one working in a task with others (a task moves whole: out of it first)."""
+    {group: self:<channel>, was, name: "", was_name, folder: none}, and a `filed` record of each app that goes with it --
+    its task's, and its app's own window (`actors`) -- at that group's top; then the apps moved there (the host's
+    `regroup`), and the dashboard's own rows of them under that name. -> {group, actors, apps, from}. GroupError: not on
+    the home's one database, no such actor, the coordinator agent (it stays with its group), one working in a task
+    with other actors (a task moves whole: out of it first), or an app of its task that can't move (`apps`)."""
     if not home.merged():
         raise GroupError("an actor on its own needs the home's one database: run `ag home merge` first")
     channel = str(channel or "").strip()
@@ -293,22 +394,32 @@ def alone(gatherer: str, channel: str) -> dict:
         raise GroupError("it is on its own already")
     if channel not in _members(gatherer):
         raise GroupError(f"{gatherer} has no actor {channel}")
-    if any(r.get("session_id") == channel and r.get("role") for r in sessions.stored()):
+    if any(r.get("session_id") == channel and r.get("role") == sessions.COORDINATOR for r in sessions.stored()):
         raise GroupError("the coordinator agent stays with its group")
-    if actors(gatherer, [channel]) != [channel]:
+    items = actors(gatherer, [channel])
+    if [c for c in items if not c.startswith(folders.APP)] != [channel]:
         raise GroupError("it works in a task with others: take it out of the task first")
+    moved = [i.id for i in apps(gatherer, items)]
     to = ALONE + channel
     event = {"type": GROUP, "id": f"{GROUP}:{channel}:{secrets.token_hex(6)}", "properties": {"channel": channel},
              "payload": {"group": to, "was": gatherer, "name": "", "was_name": _names(gatherer), "folder": None}}
-    try:
-        actions.insert(gatherer, [event])            # ag runs it under a group of the home's: the one it leaves
+    try:                                              # ag runs it under a group of the home's: the one it leaves
+        actions.insert(gatherer, [event, *(folders._filed_event(to, folders.APP + i, None) for i in moved)])
     except (RuntimeError, OSError, ValueError) as exc:
         raise GroupError(f"ag did not take it: {exc}; nothing else changed") from None
     if channel not in _members(to):
         raise GroupError(f"ag did not take it out of {gatherer}; nothing else changed")
-    _unhook(gatherer, [channel], [])                  # the apps it used: their group's, not its own
-    _rows(gatherer, to, [channel])
-    return {"group": to, "actors": [channel], "from": gatherer}
+    _unhook(gatherer, [channel], moved)               # the apps it used that stay: their group's, not its own
+    for i in moved:
+        _host().regroup(gatherer, i, to)
+    _rows(gatherer, to, items)
+    return {"group": to, "actors": [channel], "apps": moved, "from": gatherer}
+
+
+def runs_under(group: str) -> str:
+    """The group ag runs a write of `group`'s under (`ag home insert`, module doc): `group` -- or, for an actor on its
+    own, the group it left (`launch_group`)."""
+    return launch_group(group[len(ALONE):], group) if is_alone(group) else group
 
 
 def launch_group(channel: str, group: str) -> str:

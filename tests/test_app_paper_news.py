@@ -583,6 +583,18 @@ class AgentTest(AppBase):
         self.app._send_later()
         self.assertTrue(self.host.sent[-1][1].startswith("(Paper news · Tue, Nov 10: pick the papers"))
 
+    def test_its_agent_is_found_on_the_window_it_works_with_now(self):
+        self.set_up_interests()
+        self.agent_call("profile", **PROFILE)
+        self.host.open.pop(0)                                   # its window closed, the agent attached to the other's
+        self.host.agents = {"b" * 16: ["ch1"]}
+        self.request("POST", "judge", body={"day": "2026-11-10"})
+        self.assertEqual(len(self.host.started), 1)             # no new agent: the same one, told
+        ch, text = self.host.sent[-1]
+        self.assertEqual(ch, "ch1")
+        self.assertTrue(text.startswith("(Paper news · Tue, Nov 10: pick the papers"))
+        self.assertEqual(self.request("GET", "state")[1]["interests"]["agent"], "ch1")
+
     def test_what_the_user_tells_it_is_checked(self):
         for bad in ({}, {"scholar": "my page"}, {"keywords": 3}):
             with self.subTest(bad=bad):

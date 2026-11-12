@@ -4,9 +4,11 @@
 // so (the Notes design "Groups: design", section 2): a dialog says who moves, from which group to which, how many
 // others each has, and how many of those moving are working now, which rebuild their context at their next call. Then
 // the server moves them (/api/groups, groups.py), and a pane showing one of them follows it. An app of a task or a
-// folder that moves goes with it, its actors keeping it -- one with many instances (Browser, DocWriter, Editor); a
-// group's only one of its app (Notes, Slack, Paper news) stays with its group, and a drag that would take one stays
-// in its group, as every drag did before.
+// folder that moves goes with it, its actors keeping it -- one with many instances (Browser, DocWriter, Editor). An
+// app's own agent (one it started: 19-app-actors.js's appRole) and its window go together, as a task does (withOwn):
+// so a group's only one of its app (Notes, Slack, Paper news) goes too when its own agent does -- into a group with one
+// of its own, it closes, and its agent works with that one -- and otherwise stays with its group, a drag that would
+// take it staying in its group, as every drag did before.
 const moveAsk = { dialog: null, busy: false };
 const WORKING = new Set(["Running", "Waiting for you", "Background"]);     // groupOf's: working now
 
@@ -18,25 +20,52 @@ function canCross(g) {
   const from = state.home.gatherers.find((x) => x.name === d.g);
   if (!from) return false;
   if (d.folder !== null) return folderCanMove(from, d.folder);
-  const items = withTasks(from, d.cs);
-  return items.length > 0 && items.every((c) => isAppItem(c) ? appCanMove(from.name, c) : !!actorOf(from, c) && !isCoordinator(actorOf(from, c)));
+  const items = withOwn(from, d.cs);
+  return items.length > 0 && items.every((c) => isAppItem(c) ? appCanMove(from.name, c, items) : !!actorOf(from, c) && !isCoordinator(actorOf(from, c)));
 }
-// whether the app item `k` (APP_ITEM + its id) of group `gname` may go to another group: one with many instances --
-// a group's only one of its app stays (groups.py's `apps`)
-const appCanMove = (gname, k) => ((o) => !!o && o.app.instances === "many")(appInfo(gname, String(k).slice(APP_ITEM.length)));
+// What dragging `cs` (items of group `g`) takes (groups.py's `actors`): each one's task, which moves whole, and an app's
+// own agent with its window, the window with its agents, as they are one task
+function withOwn(g, cs) {
+  let out = withTasks(g, cs);
+  for (;;) {
+    const more = new Set(out);
+    for (const a of g.agents) {
+      const r = appRole({ session: { role: a.role } });
+      if (!r) continue;
+      if (more.has(appItem(r.key))) more.add(a.channel);
+      else if (more.has(a.channel) && appInfo(g.name, r.key)) more.add(appItem(r.key));
+    }
+    const grown = withTasks(g, [...more]);
+    if (grown.length === out.length) return out;
+    out = grown;
+  }
+}
+// whether the app item `k` (APP_ITEM + its id) of group `gname` may go to another group with `items`: one with many
+// instances, or a group's only one of its app with its own agent among them (groups.py's `apps`) -- else it stays
+const appCanMove = (gname, k, items = []) => ((o) => !!o && (o.app.instances === "many" || ownAgentIn(gname, o.id, items)))(
+  appInfo(gname, String(k).slice(APP_ITEM.length)));
+const ownAgentIn = (gname, id, items) => ((g) => !!g && g.agents.some((a) => items.includes(a.channel)
+  && ((r) => !!r && r.key === id)(appRole({ session: { role: a.role } }))))(state.home.gatherers.find((x) => x.name === gname));
 // whether folder `id` of group `g` may go: it is there, and every app in it, or in its actors' tasks, may go too
 function folderCanMove(g, id) {
   if (!folderById(g.name, id)) return false;
   const filed = gathererApps(g.name).filter((o) => ((f) => f !== null && within(g.name, f, id))(appFolder(g.name, o.id)));
-  return filed.every((o) => o.app.instances === "many")
-    && withTasks(g, actorsWithin(g, id).map((a) => a.channel)).every((c) => !isAppItem(c) || appCanMove(g.name, c));
+  const items = withOwn(g, [...actorsWithin(g, id).map((a) => a.channel), ...filed.map((o) => appItem(o.id))]);
+  return items.every((c) => !isAppItem(c) || appCanMove(g.name, c, items));
 }
-// the apps a move takes (the server's plan: [{id, app, title}]), said: "The app Browser goes with it."
-function appsLine(apps, many) {
+// the apps a move takes (the server's plan: [{id, app, title, joins?}]), said: "The app Browser goes with it." -- and
+// one that closes for the group `to`'s own of its app (`joins`): "Its Paper news closes: it works with the lab group's."
+function appsLine(apps, many, to = null) {
   if (!apps || !apps.length) return null;
-  const named = apps.map((x) => ((a) => (a && a.label) || x.app)(window.agNext && window.agNext.apps.named(x.app)) + (x.title ? ` (${x.title})` : ""));
-  const list = named.length === 1 ? named[0] : `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
-  return `The ${apps.length === 1 ? "app" : "apps"} ${list} ${apps.length === 1 ? "goes" : "go"} with ${many ? "them" : "it"}.`;
+  const label = (x) => ((a) => (a && a.label) || x.app)(window.agNext && window.agNext.apps.named(x.app));
+  const named = (x) => label(x) + (x.title && x.title !== label(x) ? ` (${x.title})` : "");
+  const going = apps.filter((x) => !x.joins), joining = apps.filter((x) => x.joins);
+  const list = going.map(named), out = [];
+  if (list.length) out.push(`The ${list.length === 1 ? "app" : "apps"} ${list.length === 1 ? list[0] : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`} `
+    + `${list.length === 1 ? "goes" : "go"} with ${many ? "them" : "it"}.`);
+  for (const x of joining) out.push(`${many ? "Their" : "Its"} ${named(x)} closes, as the ${to ? titleOf(to) : "other"} group has its own: `
+    + `${many ? "they" : "it"} will work with that one.`);
+  return out.join(" ");
 }
 const mvCount = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
@@ -44,7 +73,7 @@ const mvCount = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 async function askMove(d, g, id) {
   const from = state.home.gatherers.find((x) => x.name === d.g);
   if (!from) return;
-  const body = { gatherer: d.g, to: g.name, ...(d.folder !== null ? { folder: d.folder } : { channels: withTasks(from, d.cs) }) };
+  const body = { gatherer: d.g, to: g.name, ...(d.folder !== null ? { folder: d.folder } : { channels: withOwn(from, d.cs) }) };
   const title = `Move to the ${titleOf(g)} group?`;
   mvOpen("Move to another group");
   mvDraw({ title, note: "Working out who moves…" });
@@ -53,7 +82,8 @@ async function askMove(d, g, id) {
   const shown = { title, lines: moveLines(from, g, plan), names: moveNames(from, plan.actors), goLabel: "Move" };
   const go = mvGo(shown, "Moving…", "Not moved", async () => {
     const got = await post("/api/groups", { ...body, do: "move", into: id });
-    return { to: g.name, actors: plan.actors, apps: (got.moved && got.moved.apps) || [], said: `Moved to the ${titleOf(g)} group` };
+    return { to: g.name, actors: plan.actors, apps: (got.moved && got.moved.apps) || [], joined: (got.moved && got.moved.joined) || {},
+      said: `Moved to the ${titleOf(g)} group` };
   }, d.g);
   mvDraw({ ...shown, go });
 }
@@ -110,7 +140,7 @@ function mvGo(shown, doing, failed, act, from) {
     moveAsk.busy = false;
     moveAsk.dialog.close();
     await loadHome();
-    await followMoved(from, got.to, got.actors, got.apps || []);
+    await followMoved(from, got.to, got.actors, got.apps || [], got.joined || {});
     renderAgents();
     setLive(got.said);
   };
@@ -144,7 +174,7 @@ function moveLines(from, g, plan) {
   if (!n) return out;
   out.push(`${one ? "It" : "They"} will share context with the actors of ${titleOf(g)}, and no longer with those of ${titleOf(from)}.`);
   out.push(rebuildLine(from, actors));
-  const apps = appsLine(plan.apps, !one);
+  const apps = appsLine(plan.apps, !one, g);
   if (apps) out.push(apps);
   return out;
 }
@@ -163,30 +193,37 @@ function moveNames(from, channels) {
     moving.length > shown.length ? el("li", { class: "more", text: `and ${moving.length - shown.length} more` }) : null);
 }
 // After a move: a pane showing an actor that moved shows it in its new group, and an app's that moved (`apps`, their
-// ids) is opened again there -- its panel was opened for its old group
-async function followMoved(from, to, moved, apps = []) {
+// ids) is opened again there -- its panel was opened for its old group -- and one closed for the new group's own one
+// (`joined`, {its id: that one's}) shows that one
+async function followMoved(from, to, moved, apps = [], joined = {}) {
   const gone = new Set(moved);
   for (const p of actorPanes()) if (p.g === from && gone.has(p.c)) { p.g = to; p.call("select", to, p.c, p.view); }
   savePanes(); connect();
-  if (apps.length) {
+  if (apps.length || Object.keys(joined).length) {
     await Promise.all([readApps(from, true), readApps(to, true)]);
     for (const p of panes.apps.filter((q) => apps.includes(q.instance.id) && q.instance.gatherer === from)) swapAppPane(p, { ...p.instance, gatherer: to });
+    for (const p of panes.apps.filter((q) => q.instance.id in joined && q.instance.gatherer === from)) {
+      const there = appInfo(to, joined[p.instance.id]);
+      if (there && panes.apps.some((q) => q.instance.id === there.id)) closeAppPane(p);   // shown already
+      else if (there) swapAppPane(p, there.inst);
+    }
   }
   if (state.selected && state.selected[0] === from && gone.has(state.selected[1])) await select(to, state.selected[1]);
 }
 
 // ---- outside every group: a folder dropped there is made a group of its own (askSplit), an actor is on its own (askAlone)
 // Whether what is dragged may go outside every group: in the home's one database, from a group, a folder whose apps
-// may go with it (folderCanMove), or one actor -- not the coordinator agent, and not one of a task with others (a task
-// moves whole)
+// may go with it (folderCanMove), or one actor -- not the coordinator agent, and not one of a task with other actors (a
+// task moves whole) -- with the apps of its task, and its window if it is an app's own agent, that may go (withOwn)
 function canOutside() {
   const d = listDrag;
   if (!d || !state.home.merged || d.gs) return false;
   const from = state.home.gatherers.find((x) => x.name === d.g);
   if (!from || from.alone) return false;
   if (d.folder !== null) return folderCanMove(from, d.folder);
-  const items = withTasks(from, d.cs || []), a = items.length === 1 ? actorOf(from, items[0]) : null;
-  return !!a && !isCoordinator(a);
+  const items = withOwn(from, d.cs || []), actors = items.filter((c) => !isAppItem(c));
+  const a = actors.length === 1 ? actorOf(from, actors[0]) : null;
+  return !!a && !isCoordinator(a) && items.every((c) => !isAppItem(c) || appCanMove(from.name, c, items));
 }
 // The place shown, while what is dragged may go there (startDrag's), saying what it does
 function showOutside() {
@@ -220,11 +257,12 @@ const aloneActor = (g) => g.agents.find((x) => !isCoordinator(x));
 function aloneBox(g) {
   const a = aloneActor(g);
   return el("div", { class: "gatherer alone" }, el("div", { class: "alone-head", title: ALONE_SAYS, text: "own context" }),
-    a ? agentRow(g, a, groupOf(g, a)) : null);
+    ...(a ? rowsOf(g, a, groupOf(g, a)) : []), ...appRowsIn(g, null));   // its task, with its apps; its apps in none
 }
 function railAlone(g) {
   const a = aloneActor(g);
-  return el("section", { class: "r-gatherer r-alone", "aria-label": "On its own", title: ALONE_SAYS }, a ? railActor(g, a) : null);
+  return el("section", { class: "r-gatherer r-alone", "aria-label": "On its own", title: ALONE_SAYS },
+    ...(a ? railRowsOf(g, a) : []), ...railAppsIn(g, null));
 }
 // Once closed (groupOf's Closed; saved too, Saved), an actor on its own leaves the top of the list, as a group's closed
 // actors go into its closed line: every such one is in a line at the list's end -- "▸ N closed, on their own", and
@@ -271,20 +309,23 @@ function railAloneShut(gs) {
   }
   return out.length ? [el("section", { class: "r-gatherer r-alone shut", "aria-label": "Closed, on their own" }, ...out)] : [];
 }
-// One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own
+// One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own, with its task's apps and
+// its own window if it is an app's agent (withOwn)
 function askAlone(d) {
-  const from = state.home.gatherers.find((x) => x.name === d.g), c = from && withTasks(from, d.cs || [])[0];
-  const a = c && actorOf(from, c);
+  const from = state.home.gatherers.find((x) => x.name === d.g), items = from ? withOwn(from, d.cs || []) : [];
+  const c = items.find((k) => !isAppItem(k)), a = c && actorOf(from, c);
   if (!a) return;
   const name = actorTitle(a), others = from.agents.filter((x) => !isCoordinator(x) && x.channel !== c).length;
+  const going = items.filter(isAppItem).map((k) => appInfo(d.g, k.slice(APP_ITEM.length))).filter(Boolean)
+    .map((o) => ({ id: o.id, app: o.app.name, title: o.name || o.title }));
   const lines = [`${name} leaves the ${titleOf(from)} group (${mvCount(others, "other")}) and works on its own: it will share context `
-    + "with no other actor, and no other actor with it.", "It has no coordinator agent. Drag it into a group to bring it back.",
-  rebuildLine(from, [a])];
+    + "with no other actor, and no other actor with it.", appsLine(going, false), "It has no coordinator agent. Drag it into a group to bring it back.",
+  rebuildLine(from, [a])].filter(Boolean);
   const shown = { title: "Take it out of every group?", lines, goLabel: "Take it out" };
   mvOpen("An actor on its own");
   const go = mvGo(shown, "Taking it out…", "Not taken out", async () => {
     const got = await post("/api/groups", { gatherer: d.g, do: "alone", channel: c });
-    return { to: got.alone.group, actors: got.alone.actors, said: `${name} is on its own` };
+    return { to: got.alone.group, actors: got.alone.actors, apps: got.alone.apps || [], said: `${name} is on its own` };
   }, d.g);
   mvDraw({ ...shown, go });
 }
