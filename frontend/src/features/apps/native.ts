@@ -33,6 +33,19 @@ export const desktop = (): Desktop | null => {
 
 export const nativePanes = new Set<AppPane>();
 const GRID = 5;
+// What floats over the panels, class "floats" -- the hover card of the rail and the list (06-list-modes.js): looked at
+// by its box, over a page's place while it shows. elementFromPoint looks past one the pointer passes through
+// (pointer-events: none, as an actor's card), and the grid's points past one over a corner of the place only.
+const floating = typeof document === "undefined" ? null : document.getElementsByClassName("floats");
+/** Whether something floating shows over the box from (x0, y0) to (x1, y1). */
+function floatsOver(x0: number, y0: number, x1: number, y1: number): boolean {
+  for (const n of floating || []) {
+    if (!n.checkVisibility()) continue;
+    const b = n.getBoundingClientRect();
+    if (b.left < x1 && b.right > x0 && b.top < y1 && b.bottom > y0) return true;
+  }
+  return false;
+}
 let nativeTold = "";
 let nativeLoop = 0; // the frame the next look is asked for: one at a time
 export function nativeSoon(): void {
@@ -59,7 +72,7 @@ function nativeFrame(): void {
     const x1 = Math.min(fx + f.clientWidth, fx + p.x + p.w),
       y1 = Math.min(fy + f.clientHeight, fy + p.y + p.h);
     if (x1 - x0 < 2 || y1 - y0 < 2) continue;
-    let covered = p.covered;
+    let covered = p.covered || floatsOver(x0, y0, x1, y1);
     for (let i = 0; i < GRID && !covered; i++)
       for (let j = 0; j < GRID && !covered; j++) {
         const hit = document.elementFromPoint(x0 + ((x1 - x0) * (i + 0.5)) / GRID, y0 + ((y1 - y0) * (j + 0.5)) / GRID);

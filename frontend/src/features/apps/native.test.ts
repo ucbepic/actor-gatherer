@@ -1,5 +1,5 @@
 // The look at where the native pages go (native.ts): one loop of looks, however it is asked for -- each frame, and
-// the 250 ms interval that keeps it going while frames stop.
+// the 250 ms interval that keeps it going while frames stop -- and what covers a page.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppPane } from "./host";
 
@@ -94,5 +94,27 @@ describe("native pages' look", () => {
     nativePanes.clear();
     frame();
     expect(waiting.size).toBe(0);
+  });
+
+  it("covers a page with a card floating over it, which no point's look finds: the pointer passing through it", async () => {
+    const { nativePanes, nativeSoon } = await import("./native");
+    const card = Object.assign(document.createElement("div"), { className: "floats" });
+    let showing = true;
+    card.checkVisibility = () => showing;
+    // over the page's corner only, between the grid's points (elementFromPoint finds nothing anywhere here)
+    card.getBoundingClientRect = () => ({ left: 380, top: 280, right: 680, bottom: 400 }) as DOMRect;
+    document.body.append(card);
+    const covered = () => (placed.at(-1) as { covered: boolean }[])[0].covered;
+    try {
+      nativePanes.add(pane());
+      nativeSoon();
+      frame();
+      expect(covered()).toBe(true);
+      showing = false; // the card put away
+      frame();
+      expect(covered()).toBe(false);
+    } finally {
+      card.remove();
+    }
   });
 });
