@@ -8,10 +8,11 @@
 const moveAsk = { dialog: null, busy: false };
 const WORKING = new Set(["Running", "Waiting for you", "Background"]);     // groupOf's: working now
 
-// Whether what is dragged (listDrag) may go into group `g` from another: asked first (askMove)
+// Whether what is dragged (listDrag) may go into group `g` from another -- a group, not the list's head (GFS) --
+// asked first (askMove)
 function canCross(g) {
   const d = listDrag;
-  if (!d || d.g === g.name || !state.home.merged || d.gs) return false;
+  if (!d || d.g === g.name || !state.home.merged || d.gs || !state.home.gatherers.some((x) => x.name === g.name)) return false;
   const from = state.home.gatherers.find((x) => x.name === d.g);
   if (!from) return false;
   if (d.folder !== null) return !!folderById(d.g, d.folder) && !folderHasApps(d.g, d.folder);

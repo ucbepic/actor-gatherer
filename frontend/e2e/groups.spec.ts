@@ -79,6 +79,10 @@ test("in the home's one database, an actor dragged onto another group asks first
   claude = (await row(page, CLAUDE).getAttribute("data-key"))!.slice(GATHERER.length + 1); // `${group}/${channel}`
   const dialog = page.locator("dialog.mv-dialog");
 
+  await row(page, CLAUDE).dragTo(page.locator(".aside-head")); // the list's head is no group: nothing asked
+  await expect(dialog).toHaveCount(0);
+  expect(asked).toEqual([]);
+
   await row(page, CLAUDE).dragTo(groupRow(page, LAB));
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("h3")).toHaveText(`Move to the ${LAB} group?`);
