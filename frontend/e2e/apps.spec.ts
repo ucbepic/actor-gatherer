@@ -37,7 +37,7 @@ test("an app opens above the panes, with no agent attached, its panel on an orig
   const { pane, panel } = await openNotepad(page);
   await expect(page.locator("#panes > .pane")).toHaveCount(1); // the actor's pane alone, below it
   const above = (await pane.boundingBox())!,
-    below = (await page.locator("#panes").boundingBox())!;
+    below = (await page.locator("#panes > .pane").boundingBox())!;
   expect(above.y + above.height).toBeLessThanOrEqual(below.y);
   await expect(pane.locator(".app-head")).toContainText("Notepad"); // the test home's actors name no folder: its one
   expect(await pane.locator("iframe").getAttribute("src")).toMatch(/^http:\/\/notepad\.localhost:\d+\/\?/);

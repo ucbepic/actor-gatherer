@@ -20,8 +20,8 @@ else {
 }
 refresh(true).then(connect).then(() => { if (PANE) paneReady(); }).then(loadOwnViews);
 if (!PANE && !SNAPSHOT) {
-  const row = $("top-row");                          // the row above the panes -- the apps' panels -- its height dragged
-  row.append(topGrip(row));
+  keepTopHeight($("top-row"));                       // the row above the panes -- the apps' panels -- as tall as it was dragged
+  startPlacing();                                    // the work area placed from now on (07-panes.js's workTree)
   window.agNext.apps.load().then(() => restoreAppPanes()).then(() => {
     if (state.selected) showActorsApp(...state.selected);   // an app's actor selected before the apps were known
     if (state.home) renderAgents();

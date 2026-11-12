@@ -61,6 +61,7 @@ function setAppsOnly(k) {
   appsOnly = k;
   const work = document.querySelector(".work");
   if (work) work.classList.toggle("apps-only", !!k);
+  placeWork();
 }
 let taskNow = null;                                  // the task last entered: what the apps opened for it wait on
 // Each task's LAYOUT, as it was left (`taskLayouts`, kept in this browser): its actors' panes, in order, the one in focus,
@@ -274,15 +275,12 @@ function addPane(g, c, view, at, size = 1) {
   const q = new URLSearchParams({ pane: "1", gatherer: g, channel: c, ...(view ? { view } : {}) });
   p.frame = el("iframe", { src: `/?${q}`, title: isShell(c) ? `Terminal in ${g}` : `Actor ${c} of ${g}` });
   p.node = el("section", { class: "pane" }, p.frame);
-  p.gutter = gutterFor(p);
   p.call = (what, ...args) => {                      // what the frame's page does when asked (agPane, its paneReady)
     let api = null;
     try { api = p.ready && p.frame.contentWindow && p.frame.contentWindow.agPane; } catch (e) { /* gone */ }
     return api && api[what] ? api[what](...args) : undefined;
   };
-  const before = panes.others[at] ? panes.others[at].gutter : null;
-  document.getElementById("panes").insertBefore(p.gutter, before);
-  document.getElementById("panes").insertBefore(p.node, before);
+  document.getElementById("panes").insertBefore(p.node, panes.others[at] ? panes.others[at].node : null);
   panes.others.splice(at, 0, p);
   return p;
 }
@@ -290,7 +288,7 @@ function closePane(p) {
   const i = panes.others.indexOf(p);
   if (i < 0) return;
   panes.others.splice(i, 1);
-  p.gutter.remove(); p.node.remove();                // its page goes, and its terminal's stream; the session stays
+  p.node.remove();                                   // its page goes, and its terminal's stream; the session stays
   topRow(p, null);
   if (panes.focus === p) focusPane(panes.others[i - 1] || panes.here);
   layout(); savePanes(); connect(); renderAgents();
@@ -300,7 +298,7 @@ async function closeHere() {
   const next = actorPanes()[0];
   if (!next) return;
   panes.others.splice(panes.others.indexOf(next), 1);
-  next.gutter.remove(); next.node.remove();
+  next.node.remove();
   topRow(next, null);
   panes.here.size = next.size;
   if (next.view) setViewHere(next.view);
@@ -354,12 +352,53 @@ if (!PANE && !SNAPSHOT) window.addEventListener("blur", () => setTimeout(() => {
   if (p && appSel !== p.instance.id) selectAppPane(p);
 }, 0));
 // The panes' widths (each its share, `size`), which is in focus, and whether the page is split at all: split,
-// each pane's head says whose it is, and has its ×.
+// each pane's head says whose it is, and has its ×. Placed so (workTree).
 function layout() {
   const split = panes.others.length > 0;
   document.getElementById("panes").classList.toggle("split", split);
   for (const p of allPanes()) { p.node.style.flexGrow = split ? String(p.size) : ""; p.node.classList.toggle("focused", p === panes.focus && !appSelected()); }
+  placeWork();
   drawn.who = null; drawWho();
+}
+// ------------------------------------------------------------------ the work area placed
+// The column right of the list as a tree (features/layout/tree.ts), for a box this size: the apps' panels above (the top
+// row), side by side, as tall as the row was dragged (else half the column, at least TOP_MIN), the band under them part
+// of that; the actors' panes below, side by side -- only as tall as their message boxes, the chat minimized under the
+// apps (18-top.js); none, a task of apps only shown (appsOnly). Placed there (window.agNext.layout), each bar dragged
+// telling its sizes back (workResized). None placed at a phone's width: the stylesheet lays them out, one under another.
+const TOP_BAND = 5, TOP_MIN = 140, BELOW_MIN = 220;  // the band under the top row; the room each keeps, a bar dragged
+let workPlacer = null;
+const workNodes = new Map();                         // each panel's element, by its id in the tree last made
+function workTree(box) {
+  workNodes.clear();
+  if (NARROW.matches) return null;
+  const leaf = (id, node) => { workNodes.set(id, node); return { id }; };
+  const side = (key, ps, idOf) => ps.length === 1 ? leaf(idOf(ps[0]), ps[0].node)
+    : { key, dir: "row", bar: 1, kids: ps.map((p) => leaf(idOf(p), p.node)), sizes: ps.map((p) => ({ share: p.size, min: MIN_PANE })) };
+  const above = panes.apps.filter((p) => !p.held);
+  const below = side("actors", allPanes(), (p) => (p === panes.here ? "here" : `actor:${p.g}\u0000${p.c}`));
+  if (!above.length) return below;
+  const top = side("apps", above, (p) => `app:${p.instance.id}`);
+  if (appsOnly) return top;
+  const min = chatMin(), h = Math.max(TOP_MIN, topHeight() || box.h / 2);
+  return { key: "work", dir: "col", bar: TOP_BAND, thick: true, still: min, kids: [top, below],
+    sizes: min ? [{ share: 1 }, { fit: true }] : [{ px: h - TOP_BAND, min: TOP_MIN - TOP_BAND }, { share: 1, min: BELOW_MIN }] };
+}
+// A bar dragged (`done`: let go) or double-clicked: the panes' or the panels' shares, or the top row's height, as it puts them
+function workResized(key, sizes, done) {
+  if (key === "work") { dragTopHeight(sizes[0].px + TOP_BAND, done); return; }
+  const ps = key === "apps" ? panes.apps.filter((p) => !p.held) : allPanes();
+  ps.forEach((p, i) => { if (sizes[i] && sizes[i].share > 0) p.size = sizes[i].share; });
+  if (key === "apps") { topLayout(); if (done) saveAppPanes(); }
+  else { layout(); if (done) savePanes(); }
+}
+function placeWork() { if (workPlacer) workPlacer.place(); }
+function startPlacing() {
+  if (PANE || SNAPSHOT || workPlacer) return;
+  workPlacer = window.agNext.layout.placer(document.querySelector(".work"),
+    { tree: workTree, node: (id) => workNodes.get(id) || null, resized: workResized });
+  NARROW.addEventListener("change", placeWork);
+  placeWork();
 }
 // The page's top row -- the page's name at the left, each pane's head -- as tall as the tallest of them, so the
 // rule under it runs straight across the page: each says how tall it is by itself (`tops`: the name's, this
@@ -404,34 +443,11 @@ function drawWho() {
   who.title = info ? [named, info.last_user_message, `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}`]
     .filter(Boolean).join("\n") : "";
 }
-// The bar at a pane's left: dragged, it gives the two panes beside it their widths, each at least MIN_PANE.
-function gutterFor(p) {
-  const bar = el("div", { class: "pane-gutter", role: "separator", "aria-orientation": "vertical", title: "Drag to resize · double-click: all the same width" });
-  bar.addEventListener("pointerdown", (ev) => {
-    const all = allPanes(), left = all[all.indexOf(p) - 1];
-    if (!left || ev.button !== 0) return;
-    ev.preventDefault();
-    bar.setPointerCapture(ev.pointerId);
-    const wl = left.node.getBoundingClientRect().width, wr = p.node.getBoundingClientRect().width, share = left.size + p.size, x0 = ev.clientX;
-    const box = document.getElementById("panes");
-    box.classList.add("resizing");                   // the frames let the pointer by while it drags
-    const move = (e) => {
-      const w = Math.min(Math.max(wl + e.clientX - x0, Math.min(MIN_PANE, wl)), wl + wr - Math.min(MIN_PANE, wr));
-      left.size = share * w / (wl + wr); p.size = share - left.size;
-      left.node.style.flexGrow = String(left.size); p.node.style.flexGrow = String(p.size);
-    };
-    const up = () => { bar.removeEventListener("pointermove", move); box.classList.remove("resizing"); savePanes(); };
-    bar.addEventListener("pointermove", move);
-    bar.addEventListener("pointerup", up, { once: true });
-    bar.addEventListener("pointercancel", up, { once: true });
-  });
-  bar.addEventListener("dblclick", () => { for (const q of allPanes()) q.size = 1; layout(); savePanes(); });
-  return bar;
-}
 // A line over the panes for a moment: why nothing opened.
 function paneNote(text) {
   const n = el("div", { class: "pane-note", role: "status", text });
   document.getElementById("panes").append(n);
+  if (document.querySelector(".work.placed")) n.style.top = `${panes.here.node.offsetTop + 12}px`;   // over the actors' panes
   setTimeout(() => n.remove(), 3500);
 }
 function savePanes() {
@@ -470,8 +486,8 @@ function panesTake(name, data) {
   for (const p of actorPanes()) if (!to || isAt(to, p.g, p.c)) p.call("take", name, data);
 }
 // ------------------------------------------------------------------ apps' panels
-// An app's panel (app_kit/DESIGN.md) is in the top row, above the actors' panes: the row as tall as it is dragged (its
-// grip, 18-top.js's topGrip), each panel's width its share (`size`, a gutter before it to drag). Opening
+// An app's panel (app_kit/DESIGN.md) is in the top row, above the actors' panes: the row as tall as it is dragged (the
+// band under it, workTree), each panel's width its share (`size`, the bar before it dragged). Opening
 // one opens the actor it is attached to below it, in the pane in focus (one open already: its pane focused). Its head
 // and its iframe are made by features/apps/host.ts (window.agNext.apps); what its panel asks goes through it to the
 // dashboard's /api/apps; the actor in focus (appsSelected) and the theme are told to it. The panels open are kept in
@@ -481,35 +497,7 @@ panes.apps = [];
 const topRowEl = () => document.getElementById("top-row");
 function topLayout() {
   for (const p of panes.apps) p.node.style.flexGrow = String(p.size);
-}
-// The bar before an app's panel, dragged: it and the panel shown before it resized.
-function topGutter(p) {
-  const bar = el("div", { class: "top-gutter", role: "separator", "aria-orientation": "vertical", title: "Drag to resize · double-click: all the same width" });
-  bar.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
-    const shown = [...topRowEl().children].filter((n) => n.matches("section:not([hidden])"));
-    const leftNode = shown[shown.indexOf(p.node) - 1];
-    if (!leftNode) return;
-    ev.preventDefault();
-    bar.setPointerCapture(ev.pointerId);
-    const left = panes.apps.find((q) => q.node === leftNode);
-    if (!left) return;
-    const wl = leftNode.getBoundingClientRect().width, wr = p.node.getBoundingClientRect().width, share = left.size + p.size, x0 = ev.clientX;
-    topRowEl().classList.add("resizing");             // the frames let the pointer by while it drags
-    const move = (e) => {
-      const w = Math.min(Math.max(wl + e.clientX - x0, Math.min(MIN_PANE, wl)), wl + wr - Math.min(MIN_PANE, wr));
-      const l = share * w / (wl + wr);
-      left.size = l;
-      p.size = share - l;
-      topLayout();
-    };
-    const up = () => { bar.removeEventListener("pointermove", move); topRowEl().classList.remove("resizing"); saveAppPanes(); };
-    bar.addEventListener("pointermove", move);
-    bar.addEventListener("pointerup", up, { once: true });
-    bar.addEventListener("pointercancel", up, { once: true });
-  });
-  bar.addEventListener("dblclick", () => { for (const q of panes.apps) q.size = 1; topLayout(); saveAppPanes(); });
-  return bar;
+  placeWork();
 }
 // An actor of the home (its gatherer, its channel), as the page has it now; a codex actor's thread it was renamed to.
 const appActor = (g, c) => {
@@ -612,9 +600,8 @@ function addAppPane(app, instance, size = 1, held = false) {
     named: (i) => readApps(i.gatherer, true),       // named in its head: the list's name for it too
   });
   p.node = p.panel.node; p.frame = p.panel.frame;
-  p.gutter = topGutter(p);
-  p.node.hidden = p.gutter.hidden = held;
-  topRowEl().append(p.gutter, p.node);
+  p.node.hidden = held;
+  topRowEl().append(p.node);
   panes.apps.push(p);
   watchTop(p.node.querySelector(".app-head"), p);
   topLayout();
@@ -628,12 +615,11 @@ function swapAppPane(p, inst) {
   const i = panes.apps.indexOf(p);
   if (i < 0) return null;
   const q = addAppPane(p.app, inst, p.size, p.held);  // made at the row's end: put where p was
-  topRowEl().insertBefore(q.gutter, p.gutter);
-  topRowEl().insertBefore(q.node, p.gutter);
+  topRowEl().insertBefore(q.node, p.node);
   panes.apps.splice(panes.apps.indexOf(q), 1);
   panes.apps.splice(i, 1, q);
   p.panel.destroy();
-  p.gutter.remove(); p.node.remove();
+  p.node.remove();
   topRow(p, null);
   markSelected(); topLayout(); saveAppPanes(); topChanged();
   return q;
@@ -642,7 +628,7 @@ function swapAppPane(p, inst) {
 function holdAppPane(p, held) {
   p.held = held;
   if (held) unselectApp(p.instance.id);
-  p.node.hidden = p.gutter.hidden = held;
+  p.node.hidden = held;
   if (held) topRow(p, null);
   topLayout(); saveAppPanes(); topChanged();
 }
@@ -653,7 +639,7 @@ function closeAppPane(p) {
   panes.apps.splice(i, 1);
   unselectApp(p.instance.id);
   p.panel.destroy();                                 // its streams go; the instance stays open
-  p.gutter.remove(); p.node.remove();
+  p.node.remove();
   topRow(p, null);
   appsOnlyLeft();
   saveAppPanes(); renderAgents(); topChanged();
@@ -691,7 +677,7 @@ async function appsAtWork() {
   }
   for (const p of [...panes.apps]) if (p.held && !appNeeded(p)) {     // its agents done: it goes
     panes.apps.splice(panes.apps.indexOf(p), 1);
-    p.panel.destroy(); p.gutter.remove(); p.node.remove();
+    p.panel.destroy(); p.node.remove();
   }
 }
 function saveAppPanes() {

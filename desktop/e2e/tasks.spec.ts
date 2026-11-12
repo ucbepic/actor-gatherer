@@ -368,7 +368,7 @@ test("a hover card in the rail over the Browsers: the pages under it covered whi
     await until(async () => (await shown()).length === 2, 30_000);
     await page.locator("#agents .lb-fold").click(); // the list folded into the rail
     const card = page.locator("#actor-card:not([hidden])");
-    const panels = (await page.locator("#top-row").boundingBox())!;
+    const panels = (await page.locator("#top-row .app-pane[data-app=browser]").first().boundingBox())!;
     const hovered = async (tile: ReturnType<Page["locator"]>, what: string) => {
       await tile.hover();
       await expect(card).toBeVisible();
