@@ -109,7 +109,10 @@ test("⌘Z takes back a picture's width, its caption, and the picture pasted", a
   await paste(panel, 200, 100);
   await expect.poll(() => types(panel)).toEqual(["text", "image", "text"]);
   await panel.locator(".blk[data-type=image] .pic-tools button", { hasText: "Caption" }).click({ force: true });
+  const caption = panel.locator(".blk[data-type=image] .tx.cap");
+  await expect(caption).toBeFocused(); // typed only once there: a slow page took it into another line before
   await page.keyboard.type("A plot");
+  await expect(caption).toHaveText("A plot");
   const fig = panel.locator(".blk[data-type=image] .pic");
   await fig.hover();
   const r = (await panel.locator(".blk[data-type=image] .hdl.r").boundingBox())!;
@@ -122,7 +125,7 @@ test("⌘Z takes back a picture's width, its caption, and the picture pasted", a
   await page.keyboard.press("ControlOrMeta+z"); // the width
   await expect.poll(() => fig.evaluate((n) => (n as HTMLElement).style.width)).toBe("");
   await page.keyboard.press("ControlOrMeta+z"); // the caption
-  await expect(panel.locator(".blk[data-type=image] .tx.cap")).toHaveText("");
+  await expect(caption).toHaveText("");
   await page.keyboard.press("ControlOrMeta+z"); // the picture
   await expect.poll(() => types(panel)).toEqual(["text", "text"]);
   await binPage(panel, "Undone");

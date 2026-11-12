@@ -646,6 +646,9 @@ same ops (`notebook.py`), one batch at a time; the backend tells every open pane
 Agents get `notes_read`, `notes_add` and `notes_change` (offer `always`), and read and write pages as markdown with
 each block's id. The test app it took the name of is now Notepad (`tests/apps/notepad/`). An app's mark now shows
 on its "+ ⋯" menu entry too.
+The pages' list (2026-11-12) hides by its own « button or ⌘\ (the bar's button shows it again, and is there only
+while it is hidden), and its right edge drags its width (160-520 px, double-click for the usual 236); both are kept in
+the browser, per instance. Narrow (≤600 px) it opens over the page instead, as before.
 
 **Notes and the actors** (2026-11-08): the user works with the gatherer's actors from the notebook.
 - **Sending a line:** `@` typed in a block (or its Assign / Ask button) picks an actor, the gatherer agent, or a new
