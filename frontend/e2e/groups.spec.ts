@@ -1,6 +1,7 @@
 // Moves between groups (05-group-moves.js; groups.py): in the home's one database, an actor dragged onto another
-// group asks first -- who moves, from which group to which -- and moves only once the reader says so; with a database
-// per gatherer, a drop into another group is refused, as every one was before.
+// group asks first -- who moves, from which group to which -- and moves only once the reader says so, and a folder
+// dragged outside every group asks first, then is a group of its own; with a database per gatherer, a drop into
+// another group is refused, as every one was before.
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, GATHERER, open } from "./home";
@@ -119,4 +120,57 @@ test("with a database per gatherer, a drop into another group is refused, as bef
   await expect(page.locator("dialog.mv-dialog")).toHaveCount(0);
   await expect(inGroup(page, GATHERER, CLAUDE)).toBeVisible();
   expect(asked).toBe(0);
+});
+
+test("in the home's one database, a folder dragged outside every group asks first, then is a group of its own", async ({
+  page,
+}) => {
+  const state = { split: false, claude: "" };
+  await page.route("**/api/home", async (route) => {
+    const home = await (await route.fetch()).json();
+    const demo = home.gatherers.find((x: Group) => x.name === GATHERER) as Group;
+    const claude = demo.agents.find((a) => a.harness === "claude")!;
+    state.claude = claude.channel;
+    if (state.split) {
+      home.gatherers.push({ ...demo, name: "Work", agents: [claude] });
+      demo.agents = demo.agents.filter((a) => a.channel !== claude.channel);
+    } else
+      home.folders = {
+        [GATHERER]: { folders: [{ id: 7, parent: null, name: "Work" }], filed: { [claude.channel]: 7 } },
+      };
+    home.merged = true;
+    await route.fulfill({ json: home });
+  });
+  await streamsAsRequests(page);
+  await page.route("**/api/stream*", (route) => route.abort());
+  const asked: Record<string, unknown>[] = [];
+  await page.route("**/api/groups", async (route) => {
+    asked.push(route.request().postDataJSON());
+    state.split = true;
+    await route.fulfill({
+      json: { split: { group: "Work", actors: [state.claude], from: GATHERER }, folders: {}, tasks: {}, titles: {} },
+    });
+  });
+  await open(page);
+  const outside = page.locator(".outside-drop");
+  await expect(outside).toBeHidden(); // shown only while a folder is dragged
+  const work = page.locator("#agents .folder-line", { hasText: "Work" }); // by hand: the place shows once a drag starts
+  await work.hover();
+  await page.mouse.down();
+  const at = (await work.boundingBox())!;
+  await page.mouse.move(at.x + 20, at.y + at.height + 12, { steps: 4 });
+  await expect(outside).toBeVisible();
+  await outside.hover();
+  await page.mouse.up();
+  const dialog = page.locator("dialog.mv-dialog");
+  await expect(dialog.locator("h3")).toHaveText("Make Work a group of its own?");
+  await expect(dialog.locator(".mv-line").first()).toHaveText(
+    "The folder Work becomes a group of its own, Work, and what is in it goes to the new group's top. " +
+      `Its actor leaves the ${GATHERER} group (1 other) for it.`,
+  );
+  await dialog.getByRole("button", { name: "Make a group" }).click();
+  await expect(dialog).toBeHidden();
+  expect(asked).toEqual([{ gatherer: GATHERER, do: "split", folder: 7 }]);
+  await expect(inGroup(page, "Work", CLAUDE)).toBeVisible();
+  await expect(outside).toBeHidden();
 });
