@@ -734,8 +734,8 @@ class AppHost:
     def _write_one(self, item: tuple) -> bool:
         """One write; False if its gatherer has no database yet (held, then)."""
         gatherer, props, events, types = item
-        try:
-            self._write_fn(gatherer, props, events, types)
+        try:                                          # an actor on its own's: as the group it left (groups.py)
+            self._write_fn(_runs_under(gatherer), props, events, types)
         except Exception as exc:  # noqa: BLE001 - a lost record is a line in the log, never the reader's
             if NO_DATABASE in str(exc):
                 self._hold(item)
@@ -922,6 +922,13 @@ def _import(m: Manifest) -> App:
 def _type_json(t) -> dict:
     return {"name": t.name, "properties": [{"name": p.name, "required": p.required, "identifies": p.identifies}
                                            for p in t.properties]}
+
+
+def _runs_under(group: str) -> str:
+    """The group ag runs a write of `group`'s under (groups.py's `runs_under`): ag keeps a config for the home's groups
+    alone, and would make one for an actor on its own's, `self:<channel>`."""
+    from . import groups                                            # (it imports what imports this module)
+    return groups.runs_under(group)
 
 
 def _ag_insert(gatherer: str, properties: dict, events: List[dict], types: List[dict]) -> None:

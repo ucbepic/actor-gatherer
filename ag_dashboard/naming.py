@@ -37,8 +37,9 @@ def record(gatherer: str, channel: str, name: str) -> None:
     if not gatherer or not channel:
         raise NamingError("which actor?")
     event = {"type": "name", "payload": {"text": clean(name), "by": BY}}
+    from . import groups                              # (it imports what imports this module)
     try:
-        done = subprocess.run([*sessions.ag_command(), "home", "insert", gatherer, "--properties",
+        done = subprocess.run([*sessions.ag_command(), "home", "insert", groups.runs_under(gatherer), "--properties",
                                json.dumps({"channel": channel}), "--events", json.dumps([event])],
                               env=sessions.agent_env(), capture_output=True, text=True, timeout=60,
                               stdin=subprocess.DEVNULL)

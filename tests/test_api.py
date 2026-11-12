@@ -41,8 +41,15 @@ class ApiTest(unittest.TestCase):
     def test_db_path(self):
         gatherers = os.path.join(paths.AG_HOME, "gatherers")                     # ~/.ag/gatherers, or AG_HOME's
         self.assertEqual(paths.TRACE_DIR, gatherers)
-        self.assertEqual(ag.ag_harness.db_path("a/b c"), os.path.join(gatherers, "a_b_c", "context.db"))
-        self.assertEqual(ag.ag_harness.db_path(""), os.path.join(gatherers, "unknown", "context.db"))
+        saved = paths.TRACE_DIR, paths.AG_HOME
+        with tempfile.TemporaryDirectory() as tmp:                               # a home with a database per gatherer:
+            paths.AG_HOME = os.path.join(tmp, "ag")                              # not the reader's, which may be merged
+            paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
+            try:
+                self.assertEqual(ag.ag_harness.db_path("a/b c"), os.path.join(paths.TRACE_DIR, "a_b_c", "context.db"))
+                self.assertEqual(ag.ag_harness.db_path(""), os.path.join(paths.TRACE_DIR, "unknown", "context.db"))
+            finally:
+                paths.TRACE_DIR, paths.AG_HOME = saved
 
     def test_logs_follow_the_gatherers(self):
         saved = paths.TRACE_DIR

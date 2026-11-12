@@ -253,15 +253,15 @@ class PaperNewsApp(App):
     # -- its agent
 
     def _agent(self):
-        """(instance, channel) of its agent: the one it started, while that instance is open and the agent attached to
-        it; None: none."""
+        """(instance, channel) of its agent: the one it started, while it is attached to an instance open -- the one it
+        was started in, or another it works with now (the dashboard's: one of a group the agent moved to, which had
+        its own); None: none."""
         a = self.store.get("agent")
         if not a or self.host is None:
             return None
-        inst = next((i for i in self.host.instances() if i.id == a.get("instance")), None)
-        if inst is None or a.get("channel") not in self.host.attached(inst):
-            return None
-        return inst, a["channel"]
+        found = [i for i in self.host.instances() if a.get("channel") in self.host.attached(i)]
+        inst = next((i for i in found if i.id == a.get("instance")), found[0] if found else None)
+        return (inst, a["channel"]) if inst is not None else None
 
     def _tell_agent(self, text: str, instance: Optional[Instance] = None) -> bool:
         """`text` to its agent -- one started with it, in `instance` (else the first open), if it has none. A terminal

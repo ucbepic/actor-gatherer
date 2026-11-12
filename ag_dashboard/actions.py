@@ -44,8 +44,9 @@ def insert(gatherer: str, events: List[dict]) -> List[Optional[int]]:
     """`events` put in by ag in one call, waited for, whether or not a page is served -- each in the channel its own
     `properties` name ({"channel": ...}; none: no channel's) -> each one's row (None: stored already). RuntimeError if
     ag did not take them: what keeps state in the gatherer (folders.py's records) needs to know."""
-    from . import sessions                            # sessions.py records through here
-    done = subprocess.run([*sessions.ag_command(), "home", "insert", gatherer, "--events", json.dumps(events)],
+    from . import groups, sessions                    # sessions.py records through here
+    done = subprocess.run([*sessions.ag_command(), "home", "insert", groups.runs_under(gatherer), "--events",
+                           json.dumps(events)],
                           env=sessions.agent_env(), capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
     if done.returncode:
         raise RuntimeError((done.stderr or done.stdout).strip()[-300:] or f"ag exited {done.returncode}")
@@ -61,11 +62,11 @@ def record(gatherer: Optional[str], channel: Optional[str], events: List[dict], 
         return
 
     def put() -> None:
-        from . import sessions                        # sessions.py records through here
+        from . import groups, sessions                # sessions.py records through here
         end = time.time() + NEW_GATHERER_SECONDS
         while True:
             try:
-                done = subprocess.run([*sessions.ag_command(), "home", "insert", gatherer, "--properties",
+                done = subprocess.run([*sessions.ag_command(), "home", "insert", groups.runs_under(gatherer), "--properties",
                                        json.dumps({"channel": channel}), "--events", json.dumps(events)],
                                       env=sessions.agent_env(), capture_output=True, text=True, timeout=60,
                                       stdin=subprocess.DEVNULL)
