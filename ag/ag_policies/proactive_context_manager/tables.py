@@ -185,9 +185,10 @@ BUILD_COLUMNS = ("build_id, status, started_at, finished_at, through_row, open_f
 #: history (a build that closes the running task, as `limit` does, and is adopted whatever its size); a
 #: channel with no build of its own joined a gatherer where another channel has one (`joinable`): it
 #: starts from their work, its own history all the running task; a reader asked for one from outside
-#: any call (the dashboard's History view: `requested`), an ordinary build.
+#: any call (the dashboard's History view: `requested`), an ordinary build; the channel's group changed since the
+#: build its context comes from (`regrouped`): an ordinary build, adopted whatever its size, mid-turn too.
 LIMIT, BOUNDARY, REQUEST, DIRECT, COMPACTION = "limit", "boundary", "request", "direct", "compaction"
-JOIN, ASKED = "join", "asked"
+JOIN, ASKED, REGROUPED = "join", "asked", "regrouped"
 
 
 def _build(row) -> Optional[dict]:
@@ -287,12 +288,15 @@ def build_for(conn, channel_id) -> Optional[dict]:
     return latest_build(conn, None)
 
 
-def joinable(conn, channel_id) -> bool:
+def joinable(conn, channel_id, keep=None) -> bool:
     """Whether a channel with no build of its own can start from the gatherer's other channels:
-    another channel (not the no-channel pool) has a ready build."""
-    return channel_id is not None and conn.execute(
-        "SELECT 1 FROM _builds WHERE status = 'ready' AND channel_key NOT IN (?, '') LIMIT 1",
-        (key(channel_id),)).fetchone() is not None
+    another channel (not the no-channel pool) has a ready build -- one `keep(channel)` keeps, given one
+    (the policy's: one of its group)."""
+    if channel_id is None:
+        return False
+    others = conn.execute("SELECT DISTINCT channel_key FROM _builds WHERE status = 'ready' AND channel_key NOT IN (?, '')",
+                          (key(channel_id),)).fetchall()
+    return any(keep is None or keep(k) for (k,) in others)
 
 
 def get_build(conn, build_id: int) -> Optional[dict]:
