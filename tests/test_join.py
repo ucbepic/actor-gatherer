@@ -196,6 +196,19 @@ class JoinTest(JoinBase):
         self.assertEqual(again[:len(joined)], self.texts(joined))             # a prefix: the context only grew
         self.assertEqual(self.jobs.started, [("c2", "build")])               # no second join
 
+    def test_a_new_channel_joins_only_its_own_group(self):
+        from test_core import grouped
+        grouped(self.m, "w", "c1", "a")
+        self.other_session()
+        grouped(self.m, "w", "c2", "b")
+        self.put(PREAMBLE + [user("new work", 100)], channel="c2")
+        self.assertNotIn(JOINED, self.sections(self.read("c2")))           # c1's build is another group's
+        self.assertEqual(self.jobs.started, [])
+        grouped(self.m, "w", "c3", "a")
+        self.put(PREAMBLE + [user("more work", 101)], channel="c3")
+        self.assertIn(JOINED, self.sections(self.read("c3")))
+        self.assertEqual(self.jobs.started, [("c3", "build")])
+
     def test_nothing_to_join_without_another_channel_s_build(self):
         self.put(PREAMBLE + conversation(3, prefix="c1 "))
         self.put(PREAMBLE + [user("new work", 100)], channel="c2")

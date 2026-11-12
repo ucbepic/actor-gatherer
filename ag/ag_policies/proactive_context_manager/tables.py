@@ -287,12 +287,15 @@ def build_for(conn, channel_id) -> Optional[dict]:
     return latest_build(conn, None)
 
 
-def joinable(conn, channel_id) -> bool:
+def joinable(conn, channel_id, keep=None) -> bool:
     """Whether a channel with no build of its own can start from the gatherer's other channels:
-    another channel (not the no-channel pool) has a ready build."""
-    return channel_id is not None and conn.execute(
-        "SELECT 1 FROM _builds WHERE status = 'ready' AND channel_key NOT IN (?, '') LIMIT 1",
-        (key(channel_id),)).fetchone() is not None
+    another channel (not the no-channel pool) has a ready build -- one `keep(channel)` keeps, given one
+    (the policy's: one of its group)."""
+    if channel_id is None:
+        return False
+    others = conn.execute("SELECT DISTINCT channel_key FROM _builds WHERE status = 'ready' AND channel_key NOT IN (?, '')",
+                          (key(channel_id),)).fetchall()
+    return any(keep is None or keep(k) for (k,) in others)
 
 
 def get_build(conn, build_id: int) -> Optional[dict]:
