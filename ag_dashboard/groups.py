@@ -16,13 +16,17 @@ actor's group is its file, and none moves (GroupError).
                                             actors moved to the group's name, in one transaction -- the session's, its
                                             saved mark, what was seen of it, its avatar, its task
 
+    split(gatherer, folder)                 a folder dragged outside every group: made a group of its own, named after
+                                            it (`ag new`, as "+ New group" makes one), what was in it at its top
+
 Not yet: an app does not move between groups (GroupError), and the coordinator agent's watches of an actor stay
 where they were."""
 
+import re
 import secrets
 from typing import Dict, Iterable, List, Optional
 
-from . import actions, data, folders, home, tasks, titles
+from . import actions, data, folders, home, sessions, tasks, titles
 
 GROUP = "group"
 #: The dashboard's tables that name an actor's gatherer beside its channel (sessions apart: by its session_id).
@@ -108,29 +112,35 @@ def plan(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
 
 
 def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[int] = None,
-         into: Optional[int] = None) -> dict:
+         into: Optional[int] = None, dissolve: bool = False) -> dict:
     """The move done (module doc): {actors, from, to}. GroupError: no such group or folder, a folder of that name in the
-    place it would go, or a record ag did not take -- nothing of the dashboard's then changed."""
+    place it would go, or a record ag did not take -- nothing of the dashboard's then changed. `dissolve`: the folder
+    itself gone, what was in it at `into` instead (`split`'s)."""
     _check(gatherer, to)
     moving = actors(gatherer, channels, folder)
     target = _tree(to)
     if into is not None and not any(f["id"] == int(into) for f in target["folders"]):
         raise GroupError(f"{to} has no folder {into}")
-    if folder is not None:
+    if folder is not None and not dissolve:
         name = next(f["name"] for f in _tree(gatherer)["folders"] if f["id"] == int(folder))
         if any(f.get("parent") == into and f["name"].lower() == name.lower() for f in target["folders"]):
             raise GroupError(f'{to} has a folder "{name}" there already')
     said = {"group": to, "was": gatherer, "name": _names(to), "was_name": _names(gatherer)}
     tree = _tree(gatherer)
     under = _under(tree, int(folder)) if folder is not None else []
-    there = {c: tree["filed"][c] if tree["filed"].get(c) in under else into for c in moving}   # in the folder: still
+    gone = int(folder) if dissolve and folder is not None else None
+    there = {c: tree["filed"][c] if tree["filed"].get(c) in under and tree["filed"][c] != gone else into
+             for c in moving}                         # in a folder moved: still in it
     events = [{"type": GROUP, "id": f"{GROUP}:{c}:{secrets.token_hex(6)}", "properties": {"channel": c},
                "payload": {**said, "folder": there[c]}} for c in moving]
     kept = folders._records()[0]
     for fid in under:                                 # the folder at `into`, those in it where they were
         f = kept[fid]
-        events.append(folders._folder_event(fid, (to, into if fid == int(folder) else f["parent"], f["name"], f["at"],
-                                                  f["closed"])))
+        if fid == gone:
+            events.append(folders._folder_event(fid, None))
+            continue
+        parent = into if fid == int(folder) or f["parent"] == gone else f["parent"]
+        events.append(folders._folder_event(fid, (to, parent, f["name"], f["at"], f["closed"])))
     try:
         actions.insert(to, events)                    # ag first: what the policy reads, and where the folders are
     except (RuntimeError, OSError, ValueError) as exc:
@@ -169,3 +179,35 @@ def _rows(gatherer: str, to: str, moving: List[str]) -> None:
         raise
     finally:
         conn.close()
+
+
+def _group_name(title: str) -> str:
+    """A new group's name, from `title`: what ag takes of it (letters, digits, '.', '_', '-'), one no group has."""
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", title).strip("._-")[:60] or "group"
+    taken = {n.lower() for n in data.gatherer_names()}
+    name, n = base, 1
+    while name.lower() in taken:
+        n += 1
+        name = f"{base}_{n}"
+    return name
+
+
+def split(gatherer: str, folder: int) -> dict:
+    """The folder `folder` of `gatherer` made a group of its own (module doc): a new group named after it -- its exact
+    name its title, where ag takes another -- and what was in it, actors and folders, at the new group's top; the folder
+    itself gone. -> {group, actors, from}. GroupError: no such folder, an app in it, or the move not taken."""
+    if not home.merged():
+        raise GroupError("a new group from a folder needs the home's one database: run `ag home merge` first")
+    f = next((x for x in _tree(gatherer)["folders"] if x["id"] == int(folder)), None)
+    if f is None:
+        raise GroupError(f"{gatherer} has no folder {folder}")
+    actors(gatherer, (), folder)                      # an app in it: refused before anything is made
+    name = _group_name(f["name"])
+    try:
+        sessions.new_gatherer(name)
+    except sessions.SessionError as exc:
+        raise GroupError(str(exc)) from None
+    if name != f["name"]:
+        titles.give(name, f["name"])
+    moved = move(gatherer, name, folder=folder, into=None, dissolve=True)
+    return {"group": name, "actors": moved["actors"], "from": gatherer}
