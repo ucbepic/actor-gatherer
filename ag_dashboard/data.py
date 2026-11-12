@@ -290,7 +290,7 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
     for g in gatherers:                  # when it was made: its first event, else its config's time
         g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None) or _made(g["name"])
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
-    return {"home": paths.HOME, "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
+    return {"home": paths.HOME, "merged": paths.merged(), "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
             "hook_servers": _hook_servers(), "hiding": hiding.stored(), "titles": titles.stored(), "saved": saved.stored(),
             "folders": folders.stored(), "gatherer_folders": gatherer_folders.stored(), "tasks": tasks.stored(),
             "seen": looked.stored(), "harness_info": harness_info(), "harness_default": harness_kit.DEFAULT}
