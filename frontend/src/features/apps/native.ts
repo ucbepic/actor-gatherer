@@ -21,6 +21,10 @@ interface Desktop {
   onStill?: (cb: (still: { target: string; url: string | null }) => void) => void;
   stillDrawn?: (target: string) => void;
   focusDashboard?: () => void;
+  /** The system's spellchecker on a word (the one underlining words in text boxes): null for no word. */
+  spelling?: (word: string) => { misspelled: boolean; suggestions: string[] } | null;
+  /** A word added to the user's dictionary, the system's. */
+  learn?: (word: string) => void;
 }
 export const desktop = (): Desktop | null => {
   const d = (window as unknown as { agApp?: Desktop }).agApp;

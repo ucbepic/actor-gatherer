@@ -246,6 +246,80 @@ test("in the home's one database, an actor dragged outside every group asks firs
   });
 });
 
+// An actor on its own (05-group-moves.js's aloneShut): open, its row at the top with its ×; closed, it leaves the top for
+// a line at the list's end, "1 closed, on its own", folded till opened (kept in this browser) -- never "hidden" as a
+// group is; in the rail, that line only once its foot shows the closed ones
+test("an actor on its own, closed, goes from the top of the list into a closed line at its end", async ({ page }) => {
+  const state = { closed: false, claude: "" };
+  await page.route("**/api/home", async (route) => {
+    const home = await (await route.fetch()).json();
+    const demo = home.gatherers.find((x: Group) => x.name === GATHERER) as Group;
+    const claude = demo.agents.find((a) => a.harness === "claude")!;
+    state.claude = claude.channel;
+    const name = `self:${claude.channel}`;
+    const lone = state.closed
+      ? { ...claude, status: "closed", running: false, session: null, last: 0 } // seen since: not "Finished"
+      : {
+          ...claude,
+          status: "idle",
+          running: false,
+          chattable: true,
+          session: { session_id: claude.channel, gatherer: name, status: "idle", pid: 4242, terminal: false, kept: 0 },
+        };
+    // a week and more since it did anything: a group so old is hidden, an actor on its own never
+    home.gatherers.push({ ...demo, name, alone: true, agents: [lone], last: home.now - 30 * 86400 });
+    demo.agents = demo.agents.filter((a) => a.channel !== claude.channel);
+    home.merged = true;
+    await route.fulfill({ json: home });
+  });
+  await streamsAsRequests(page);
+  await page.route("**/api/stream*", (route) => route.abort());
+  const stopped: string[] = [];
+  await page.route("**/api/stop", async (route) => {
+    stopped.push(route.request().postDataJSON().session_id);
+    state.closed = true;
+    await route.fulfill({ json: { stopped: true } });
+  });
+  await open(page);
+  const top = page.locator("#agents .gatherer.alone:not(.shut)");
+  const shut = page.locator("#agents .gatherer.alone.shut");
+  await expect(top.locator(".alone-head")).toHaveText("own context");
+  await expect(shut).toHaveCount(0);
+  await top.locator("button.agent", { hasText: CLAUDE }).hover();
+  await top.locator(".close-btn").click();
+  expect(stopped).toEqual([state.claude]);
+
+  await page.reload();
+  await expect(page.locator("#agents")).toContainText(GATHERER);
+  await expect(top).toHaveCount(0);
+  await expect(page.locator("#hidden-gatherers")).toHaveCount(0);
+  const line = shut.locator(".fold-line");
+  await expect(line).toHaveText("▸ 1 closed, on its own");
+  await expect(shut.locator("button.agent")).toHaveCount(0);
+  await line.click();
+  await expect(line).toHaveText("▾ 1 closed, on its own");
+  await expect(shut.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
+  const order = await page
+    .locator("#agents")
+    .evaluate((n) =>
+      [...n.querySelectorAll(".gatherer")].map((g) => (g.classList.contains("shut") ? "shut" : "group")),
+    );
+  expect(order.at(-1)).toBe("shut"); // at the list's end
+  await page.reload();
+  await expect(shut.locator("button.agent", { hasText: CLAUDE })).toBeVisible(); // kept open in this browser
+
+  // the rail: nothing of it till the foot shows the closed ones; then its line, open as the list's is
+  await page.locator("#agents .lb-fold").click();
+  const rail = page.locator("#rail");
+  await expect(rail.locator(".r-alone")).toHaveCount(0);
+  await expect(rail.locator(".r-actor", { hasText: CLAUDE })).toHaveCount(0);
+  await rail.locator(".r-show-hd").hover();
+  await rail.locator(".r-check", { hasText: "closed" }).click();
+  await expect(rail.locator(".r-alone.shut .r-fold")).toHaveText("▾ 1 closed");
+  await expect(rail.locator(".r-alone.shut .r-fold")).toHaveAttribute("title", "1 closed, on its own: hide it");
+  await expect(rail.locator(".r-alone.shut .r-actor", { hasText: CLAUDE })).toBeVisible();
+});
+
 // The home of twoGroups, merged, with a folder Work in demo holding Claude Code and a Notepad, "Shopping list" (n1),
 // listed as an app of `mode` instances; once `state.moved`, Work's actor and app are lab's
 async function appInFolder(page: Page, mode: string, state: { moved: boolean; claude: string }) {

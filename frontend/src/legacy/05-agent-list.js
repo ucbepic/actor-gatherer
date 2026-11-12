@@ -44,7 +44,9 @@ const HIDDEN_KEY = "ag-dashboard-hidden-gatherers";   // where this browser kept
 const STALE_SECONDS = 7 * 86400;
 const choiceOf = (g) => (state.home.hiding || {})[g.name] || "";
 const stale = (g) => !!g.last && (state.home.now || Date.now() / 1000) - g.last > STALE_SECONDS;
-const isHidden = (g) => choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown" && !g.agents.some((a) => savedAs(g.name, a)));
+// An actor on its own never: closed, it is in its line at the list's end (05-group-moves.js's aloneShut).
+const isHidden = (g) => !g.alone
+  && (choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown" && !g.agents.some((a) => savedAs(g.name, a))));
 async function keepChoice(name, choice) {
   state.home.hiding = { ...(state.home.hiding || {}) };
   if (choice) state.home.hiding[name] = choice; else delete state.home.hiding[name];
@@ -424,7 +426,8 @@ function renderAgents() {
   if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No groups in this home yet." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every group is hidden." }));
-  aside.append(...gfLevel(shown, null, gathererBox));   // its gatherers, in the folders the reader keeps them in, if any
+  // its gatherers, in the folders the reader keeps them in, if any; then the actors on their own closed, in their lines
+  aside.append(...gfLevel(shown.filter((g) => !aloneShut(g)), null, gathererBox), ...aloneShutRows(shown.filter(aloneShut)));
   if (hidden.length) {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
       el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));

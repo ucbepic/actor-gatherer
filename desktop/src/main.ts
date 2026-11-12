@@ -1,12 +1,13 @@
 // The ag desktop app (desktop/DESIGN.md): the dashboard in a window of its own. It works exactly as the dashboard in a
 // browser does -- the same page, from the same server -- but for the Browser, whose tabs are native pages placed over
 // its pane (browsers.ts). It finds or starts that server, holds its window, and keeps the Browsers' pages.
-import { app, BrowserWindow, ipcMain, nativeTheme, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, shell } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { appToken, Link, Pages, type Dialog, type Stage } from "./browsers.ts";
 import { connect, DEFAULT_PORT, homeOf, loginEnv } from "./dashboard.ts";
+import { editItems, spellingItems, tidy } from "./menu.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const log = (...parts: unknown[]) => console.log(new Date().toISOString(), ...parts);
@@ -90,6 +91,12 @@ function wire(w: BrowserWindow): void {
     return { action: "deny" };
   });
   w.webContents.on("did-create-window", (child) => wire(child));
+  // Right-click: a browser's menu (Electron shows none of its own), with the spellchecker's fixes for a misspelled word
+  // -- in any text box of the page, its apps' panels' too. Where the page has a menu of its own, it shows that instead.
+  w.webContents.on("context-menu", (_e, p) => {
+    const items = tidy([...spellingItems(w.webContents, p), ...editItems(p)]);
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: w });
+  });
   w.webContents.on("will-navigate", (event, url) => {
     if (url.startsWith(RETRY)) {
       event.preventDefault();
@@ -177,6 +184,13 @@ ipcMain.on("ag:still-drawn", (event, target: unknown) => {
 ipcMain.on("ag:dialog", (event, d: Dialog) => {
   if (pages) pages.dialog(event, d);
   else event.returnValue = d.type === "confirm" ? false : null;
+});
+// A word added to the user's dictionary, from the dashboard's page (an app's panel offering a misspelled word's fixes:
+// the page asks it only as the user clicks): the system's own, as Add to Dictionary in the right-click menu adds it.
+ipcMain.on("ag:learn", (event, word: unknown) => {
+  if (!win || event.sender !== win.webContents || typeof word !== "string") return;
+  const w = word.trim();
+  if (w && w.length <= 100 && !/\s/.test(w)) win.webContents.session.addWordToSpellCheckerDictionary(w);
 });
 // The dashboard's page asking for the keys back from a native page (a pick made: the message box next).
 ipcMain.on("ag:focus", (event) => {
