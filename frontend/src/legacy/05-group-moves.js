@@ -28,49 +28,83 @@ async function askMove(d, g, id) {
   const from = state.home.gatherers.find((x) => x.name === d.g);
   if (!from) return;
   const body = { gatherer: d.g, to: g.name, ...(d.folder !== null ? { folder: d.folder } : { channels: withTasks(from, d.cs) }) };
+  const title = `Move to the ${titleOf(g)} group?`;
+  mvOpen("Move to another group");
+  mvDraw({ title, note: "Working out who moves…" });
+  let plan;
+  try { plan = await post("/api/groups", { ...body, do: "plan" }); } catch (err) { mvDraw({ title, note: `Can't move: ${err.message}` }); return; }
+  const shown = { title, lines: moveLines(from, g, plan), names: moveNames(from, plan.actors), goLabel: "Move" };
+  const go = mvGo(shown, "Moving…", "Not moved", async () => {
+    await post("/api/groups", { ...body, do: "move", into: id });
+    return { to: g.name, actors: plan.actors, said: `Moved to the ${titleOf(g)} group` };
+  }, d.g);
+  mvDraw({ ...shown, go });
+}
+// A folder dropped outside every group (`d`, listDrag's): the dialog, then the folder made a group of its own (groups.py's
+// `split`) -- the server's, named after it
+function askSplit(d) {
+  const from = state.home.gatherers.find((x) => x.name === d.g), f = from && folderById(d.g, d.folder);
+  if (!f) return;
+  const inside = withTasks(from, actorsWithin(from, d.folder).map((a) => a.channel)).filter((c) => !isAppItem(c));
+  const actors = from.agents.filter((a) => inside.includes(a.channel)), n = actors.length;
+  const others = from.agents.filter((a) => !isCoordinator(a) && !inside.includes(a.channel)).length;
+  const lines = [`The folder ${f.name} becomes a group of its own, ${f.name}, and what is in it goes to the new group's top.`
+    + (n ? ` ${n === 1 ? "Its actor leaves" : `Its ${n} actors leave`} the ${titleOf(from)} group (${mvCount(others, "other")}) for it.`
+      : ` It leaves the ${titleOf(from)} group.`)];
+  if (n) lines.push(`${n === 1 ? "It" : "They"} will no longer share context with the actors of ${titleOf(from)}`
+    + `${n === 1 ? "" : ", only with each other"}.`, rebuildLine(from, actors));
+  const shown = { title: `Make ${f.name} a group of its own?`, lines, names: moveNames(from, inside), goLabel: "Make a group" };
+  mvOpen("A folder made a group of its own");
+  const go = mvGo(shown, "Making the group…", "Not made", async () => {
+    const got = await post("/api/groups", { gatherer: d.g, do: "split", folder: d.folder });
+    return { to: got.split.group, actors: got.split.actors, said: `${f.name} is a group of its own` };
+  }, d.g);
+  mvDraw({ ...shown, go });
+}
+// The dialog, made once, opened
+function mvOpen(label) {
   if (!moveAsk.dialog) {
-    moveAsk.dialog = el("dialog", { class: "br-dialog mv-dialog", "aria-label": "Move to another group" });
+    moveAsk.dialog = el("dialog", { class: "br-dialog mv-dialog" });
     moveAsk.dialog.addEventListener("click", (ev) => { if (ev.target === moveAsk.dialog && !moveAsk.busy) moveAsk.dialog.close(); });
     moveAsk.dialog.addEventListener("cancel", (ev) => { if (moveAsk.busy) ev.preventDefault(); });
     document.body.append(moveAsk.dialog);
   }
+  moveAsk.dialog.setAttribute("aria-label", label);
   moveAsk.busy = false;
-  mvRender(g, null, "Working out who moves…");
   if (!moveAsk.dialog.open) moveAsk.dialog.showModal();
-  let plan;
-  try { plan = await post("/api/groups", { ...body, do: "plan" }); } catch (err) { mvRender(g, null, `Can't move: ${err.message}`); return; }
+}
+// What its button does: `act()` (-> {to, actors, said}), the dialog busy meanwhile; then the home read again, the panes
+// that show an actor moved following it (from group `from`)
+function mvGo(shown, doing, failed, act, from) {
   const go = async () => {
     moveAsk.busy = true;
-    mvRender(g, plan, "Moving…");
-    try {
-      await post("/api/groups", { ...body, do: "move", into: id });
-    } catch (err) {
+    mvDraw({ ...shown, note: doing });
+    let got;
+    try { got = await act(); } catch (err) {
       moveAsk.busy = false;
-      mvRender(g, plan, `Not moved: ${err.message}`, go);
+      mvDraw({ ...shown, note: `${failed}: ${err.message}`, go });
       return;
     }
     moveAsk.busy = false;
     moveAsk.dialog.close();
     await loadHome();
-    await followMoved(d.g, g.name, plan.actors);
+    await followMoved(from, got.to, got.actors);
     renderAgents();
-    setLive(`Moved to the ${titleOf(g)} group`);
+    setLive(got.said);
   };
-  mvRender(g, plan, "", go);
+  return go;
 }
-// The dialog drawn: what moves where (`plan`: /api/groups's; null: not known yet), then `note`, then Move (`go`) and Cancel
-function mvRender(g, plan, note, go = null) {
-  const box = moveAsk.dialog, from = plan ? state.home.gatherers.find((x) => x.name === plan.from) : null;
-  const lines = plan && from ? moveLines(from, g, plan) : [];
-  const busy = moveAsk.busy ? { disabled: "" } : {};
+// The dialog drawn: its title, `lines`, the actors `names`, `note`, then Cancel and `goLabel` (`go`; none: not yet)
+function mvDraw({ title, lines = [], names = null, note = "", go = null, goLabel = "" }) {
+  const box = moveAsk.dialog, busy = moveAsk.busy ? { disabled: "" } : {};
   const form = el("form", { class: "newform", method: "dialog" },
-    el("div", { class: "br-title" }, el("h3", { text: `Move to the ${titleOf(g)} group?` }),
+    el("div", { class: "br-title" }, el("h3", { text: title }),
       el("button", { type: "button", class: "x", "aria-label": "Close", ...busy, onclick: () => box.close() }, "×")),
     ...lines.map((t) => el("p", { class: "mv-line", text: t })),
-    plan && from ? moveNames(from, plan) : null,
+    names,
     note ? el("p", { class: "mv-note", role: "status", text: note }) : null,
     el("div", { class: "row" }, el("button", { type: "button", ...busy, onclick: () => box.close() }, "Cancel"),
-      go ? el("button", { type: "submit", class: "primary", ...busy }, "Move") : null));
+      go ? el("button", { type: "submit", class: "primary", ...busy }, goLabel) : null));
   form.addEventListener("submit", (ev) => { ev.preventDefault(); if (go && !moveAsk.busy) go(); });
   box.replaceChildren(form);
   const submit = box.querySelector("button[type=submit]");
@@ -87,14 +121,18 @@ function moveLines(from, g, plan) {
     + `to the ${titleOf(g)} group (${mvCount(others(g), "other")}).`];
   if (!n) return out;
   out.push(`${one ? "It" : "They"} will share context with the actors of ${titleOf(g)}, and no longer with those of ${titleOf(from)}.`);
-  const working = actors.filter((a) => WORKING.has(groupOf(from, a))).length;
-  out.push(working ? `${mvCount(working, "of them is", "of them are")} working now, and ${working === 1 ? "rebuilds its" : "rebuild their"} `
-    + "context at the next call; the others when they next run." : `${one ? "It rebuilds its" : "Each rebuilds its"} context when it next runs.`);
+  out.push(rebuildLine(from, actors));
   return out;
 }
-// the actors that move, by name: those pulled along by a task marked so
-function moveNames(from, plan) {
-  const moving = from.agents.filter((a) => plan.actors.includes(a.channel));
+// how many of `actors` (of group `from`) rebuild their context at their next call, working now
+function rebuildLine(from, actors) {
+  const working = actors.filter((a) => WORKING.has(groupOf(from, a))).length, one = actors.length === 1;
+  return working ? `${mvCount(working, "of them is", "of them are")} working now, and ${working === 1 ? "rebuilds its" : "rebuild their"} `
+    + "context at the next call; the others when they next run." : `${one ? "It rebuilds its" : "Each rebuilds its"} context when it next runs.`;
+}
+// the actors that move (by their channels), by name, when more than one
+function moveNames(from, channels) {
+  const moving = from.agents.filter((a) => channels.includes(a.channel));
   if (moving.length < 2) return null;
   const shown = moving.slice(0, 6);
   return el("ul", { class: "mv-names" }, ...shown.map((a) => el("li", { text: actorTitle(a) })),
@@ -106,4 +144,28 @@ async function followMoved(from, to, moved) {
   for (const p of actorPanes()) if (p.g === from && gone.has(p.c)) { p.g = to; p.call("select", to, p.c, p.view); }
   savePanes(); connect();
   if (state.selected && state.selected[0] === from && gone.has(state.selected[1])) await select(to, state.selected[1]);
+}
+
+// ---- outside every group: a folder dropped there is made a group of its own (askSplit)
+// Whether what is dragged may go outside every group: in the home's one database, a folder with no app in it
+function canOutside() {
+  const d = listDrag;
+  return !!d && !!state.home.merged && d.folder !== null && !d.gs && !!folderById(d.g, d.folder) && !folderHasApps(d.g, d.folder);
+}
+// The place to drop it, under the list's head: shown while such a drag goes on (body.drag-out)
+function outsideDrop() {
+  if (SNAPSHOT || !state.home.merged) return null;
+  const n = el("div", { class: "outside-drop", text: "Outside every group: a group of its own" });
+  n.addEventListener("dragenter", (ev) => { if (canOutside()) { ev.preventDefault(); n.classList.add("drop-on"); } });
+  n.addEventListener("dragover", (ev) => { if (canOutside()) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } });
+  n.addEventListener("dragleave", (ev) => { if (!n.contains(ev.relatedTarget)) n.classList.remove("drop-on"); });
+  n.addEventListener("drop", (ev) => {
+    if (!canOutside()) return;
+    ev.preventDefault();
+    const d = listDrag;
+    d.later = false;
+    endDrag();
+    askSplit(d);
+  });
+  return n;
 }

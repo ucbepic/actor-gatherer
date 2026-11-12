@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
-from ag_dashboard import actions, data, folders, groups, saved, sessions, tasks  # noqa: E402
+from ag_dashboard import actions, data, folders, groups, saved, sessions, tasks, titles  # noqa: E402
 from replies import insert  # noqa: E402
 import test_home_db  # noqa: E402
 
@@ -111,11 +111,43 @@ class GroupsTest(unittest.TestCase):
             groups.move("a", "b", folder=work)
         self.assertEqual((self.events("group"), self.members("a")), ([], ["c1", "c3"]))
 
+    def made(self, name):
+        """sessions.new_gatherer, as `ag new` makes a group here: its config."""
+        os.makedirs(os.path.join(paths.TRACE_DIR, name))
+        with open(os.path.join(paths.TRACE_DIR, name, "gatherer.toml"), "w") as fh:
+            fh.write('policy = "proactive_context_manager"\n')
+        return {"name": name}
+
+    def test_a_folder_outside_every_group_is_a_group_of_its_own(self):
+        work = folders.make("a", "Work: notes")
+        inner = folders.make("a", "Inner", work)
+        folders.file("a", ["c1"], work)
+        folders.file("a", ["c3"], inner)
+        with unittest.mock.patch.object(groups.sessions, "new_gatherer", side_effect=self.made):
+            got = groups.split("a", work)
+        self.assertEqual(got, {"group": "Work_notes", "actors": ["c1", "c3"], "from": "a"})
+        self.assertEqual(titles.stored()["Work_notes"], "Work: notes")          # named as the folder was
+        self.assertEqual((self.members("a"), self.members("Work_notes")), ([], ["c1", "c3"]))
+        self.assertEqual(folders.of("Work_notes"), {"folders": [{"id": inner, "parent": None, "name": "Inner", "closed": None}],
+                                                    "filed": {"c3": inner}})   # the folder gone, what was in it at the top
+        self.assertEqual(folders.of("a"), {"folders": [], "filed": {}})
+        [moved] = [e for e in self.events("group") if e["payload"]["group"] != e["payload"]["was"]
+                   and e["properties"]["channel"] == "c1"]
+        self.assertEqual(moved["payload"]["group"], "Work_notes")
+
+    def test_a_new_group_s_name_is_one_no_group_has(self):
+        self.assertEqual(groups._group_name("b"), "b_2")
+        self.assertEqual(groups._group_name("  ***  "), "group")
+
     def test_an_app_does_not_move_between_groups(self):
         work = folders.make("a", "Work")
         folders.file("a", ["c1", "app:x1"], work)
-        with self.assertRaises(groups.GroupError):
-            groups.move("a", "b", folder=work)
+        with unittest.mock.patch.object(groups.sessions, "new_gatherer", side_effect=self.made) as made:
+            with self.assertRaises(groups.GroupError):
+                groups.split("a", work)
+            with self.assertRaises(groups.GroupError):
+                groups.move("a", "b", folder=work)
+        made.assert_not_called()
         self.assertEqual(self.members("a"), ["c1", "c3"])
 
     def test_refused_for_no_such_group_or_its_own(self):
@@ -138,6 +170,7 @@ class FoldersInHomeTest(GroupsTest):
     test_a_task_moves_whole = test_nothing_of_the_dashboard_s_changes_when_ag_did_not_take_the_record = None
     test_a_folder_named_as_one_where_it_would_go_is_refused_before_anything = None
     test_refused_for_no_such_group_or_its_own = test_refused_with_a_database_per_gatherer = None
+    test_a_folder_outside_every_group_is_a_group_of_its_own = test_a_new_group_s_name_is_one_no_group_has = None
     test_an_app_does_not_move_between_groups = None
 
     def kept_in_dashboard_db(self):

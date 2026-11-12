@@ -421,6 +421,8 @@ function renderAgents() {
     SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep groups in",
       "aria-label": "New folder, to keep groups in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
+  const outside = outsideDrop();                     // a folder dragged outside every group (05-group-moves.js)
+  if (outside) aside.append(outside);
   if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No groups in this home yet." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every group is hidden." }));
@@ -1415,6 +1417,7 @@ function startDrag(ev, g, what) {
   markDragged();
   cardHide();
   railDragged();
+  setTimeout(() => document.body.classList.toggle("drag-out", canOutside()), 0);   // after dragstart: the page unmoved till then
 }
 // what is dragged, shown so -- again after the list, or the rail, is drawn mid-drag (the rail's by their data-card, its
 // \u0000 one CSS.escape cannot write)
@@ -1497,6 +1500,7 @@ function endDrag() {
   if (!d) return;
   listDrag = null;
   clearTimeout(d.spring); clearInterval(d.watch);
+  document.body.classList.remove("drag-out");
   for (const n of document.querySelectorAll(":is(#agents, #rail) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
   if (d.later || d.revealed) renderAgents();         // the rail, its folders shown for the drag: as it was again
 }
