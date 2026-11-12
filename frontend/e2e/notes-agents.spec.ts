@@ -27,7 +27,7 @@ test("a to-do sent to an actor with @ goes as the user's message, says who it we
   await page.keyboard.type("[] Fix the parser @");
   const pop = panel.locator(".pop.at-pop");
   await expect(pop).toBeVisible();
-  await expect(pop.locator(".it", { hasText: "Gatherer agent" })).toHaveCount(1);
+  await expect(pop.locator(".it", { hasText: "Coordinator agent" })).toHaveCount(1);
   await expect(pop.locator(".it", { hasText: CLAUDE })).toHaveCount(1);
   await expect(pop.locator(".at-foot")).toHaveAttribute("aria-checked", "true"); // a report asked for, as it starts
   await page.keyboard.type("pars"); // narrowed to the actor so named

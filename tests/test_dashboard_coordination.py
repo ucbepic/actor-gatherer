@@ -682,7 +682,7 @@ class RealGathererTest(unittest.TestCase):
     def test_the_gatherer_agent_is_named_by_its_role_and_the_others_as_they_were(self):
         got = {a["channel"]: a for a in data.gatherer_actors("g", [self.row("c1", sessions.COORDINATOR), self.row("new")])}
         self.assertEqual(set(got), {"c1", "c2", "new"})                           # one with no message yet too
-        self.assertEqual((got["c1"]["role"], got["c1"]["name"]), (sessions.COORDINATOR, {"text": "Gatherer agent", "by": "dashboard"}))
+        self.assertEqual((got["c1"]["role"], got["c1"]["name"]), (sessions.COORDINATOR, {"text": "Coordinator agent", "by": "dashboard"}))
         self.assertNotIn("role", got["c2"])
 
     def test_chat_shows_what_an_actor_sent_in_the_turn_it_sent_it(self):
