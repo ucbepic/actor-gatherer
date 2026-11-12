@@ -82,7 +82,7 @@ function gfLine(f) {
   if (edit && edit.g === GF && edit.id === f.id) return el("div", { class: "folder-line gf-line editing", "data-key": k }, folderBox());
   const toggle = () => toggleFolder(GF, f.id);
   const line = el("div", { class: "folder-line gf-line", "data-key": k },
-    el("button", { class: "fbtn", type: "button", "aria-expanded": open ? "true" : "false", title: `${f.name}: a folder of gatherers`,
+    el("button", { class: "fbtn", type: "button", "aria-expanded": open ? "true" : "false", title: `${f.name}: a folder of groups`,
       onclick: toggle, onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startFolderEdit(GF, f.id); } } },
       el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "fname", text: f.name })),
     el("span", { class: "fill", onclick: toggle },
@@ -100,7 +100,7 @@ function railGfLevel(shown, id, draw) {
   for (const f of kidFolders(GF, id)) {
     const open = isOpenFolder(GF, f.id);
     const name = el("button", { class: open ? "r-fhead" : "r-fname", type: "button", "aria-expanded": open ? "true" : "false",
-      title: `${f.name}: a folder of gatherers · ${open ? "fold it" : "open it"}`, onclick: () => { cardHide(); toggleFolder(GF, f.id); } },
+      title: `${f.name}: a folder of groups · ${open ? "fold it" : "open it"}`, onclick: () => { cardHide(); toggleFolder(GF, f.id); } },
       el("span", { class: "tx" }, el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "nm", text: f.name })));
     if (open) {
       const kids = railGfLevel(shown, f.id, draw);

@@ -901,8 +901,8 @@ function gathererForm() {
     spellcheck: "false", autocomplete: "off" });
   const err = el("div", { class: "err", role: "alert" });
   const make = el("button", { type: "submit", class: "primary" }, "Create");
-  const form = el("form", { class: "newform", "aria-label": "New gatherer" },
-    el("label", {}, "Gatherer name", name),
+  const form = el("form", { class: "newform", "aria-label": "New group" },
+    el("label", {}, "Group name", name),
     el("div", { class: "desc", text: "Made with ag's default policy and pollers. Agents in it share context with each other." }),
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), make));
@@ -939,7 +939,7 @@ const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a sessio
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 // Its gatherer agent's button, first (CREW_START): the agent shown, started for the gatherer if it has none -- on the
 // first harness a session can run on here, in the directory a new session would start in (coordination.py's `ensure`).
-const CREW_START = "crew", CREW_GROUP = "Gatherer agent";
+const CREW_START = "crew", CREW_GROUP = "Coordinator agent";
 async function openCoordinator(g) {
   if (crewHidden.has(g.name)) setCrewHidden(g.name, false);
   const there = g.agents.find(isCoordinator);
@@ -965,10 +965,10 @@ function crewButton(g) {
   const busy = state.starting && state.starting.gatherer === g.name && state.starting.harness === CREW_START;
   return el("button", { class: "act start crew" + (busy ? " busy" : "") + (crew ? " on" : ""), type: "button",
     ...(state.starting ? { disabled: "" } : {}),
-    title: hidden ? `The gatherer agent (${label.toLowerCase()}), hidden from the list: click to show it and open it`
-      : crew ? "The gatherer agent: it coordinates this gatherer's actors -- tell it what to arrange"
-      : "Start the gatherer agent: it coordinates this gatherer's actors, settles their conflicts, and arranges their work for you",
-    "aria-label": crew ? `The gatherer agent of ${g.name}` : `Start the gatherer agent of ${g.name}`, onclick: () => openCoordinator(g) },
+    title: hidden ? `The coordinator agent (${label.toLowerCase()}), hidden from the list: click to show it and open it`
+      : crew ? "The coordinator agent: it coordinates this group's actors -- tell it what to arrange"
+      : "Start the coordinator agent: it coordinates this group's actors, settles their conflicts, and arranges their work for you",
+    "aria-label": crew ? `The coordinator agent of ${g.name}` : `Start the coordinator agent of ${g.name}`, onclick: () => openCoordinator(g) },
     crewFace(crew, MANAGER), hidden ? el("i", { class: `crew-dot ${cls}`, "aria-hidden": "true" }) : null);
 }
 // A gatherer row's start buttons -- and a folder's line's (`folder`: what they start goes in it, folders.py), shown, on

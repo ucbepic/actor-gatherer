@@ -12,16 +12,18 @@
     <div class="side-top">
       <input id="find" class="find" type="search" placeholder="Search" aria-label="Search the pages" autocomplete="off">
       <button id="new-page" class="icon-btn" type="button" title="New page" aria-label="New page"></button>
+      <button id="side-hide" class="icon-btn" type="button" aria-label="Hide the pages"></button>
     </div>
     <nav id="tree" class="tree" role="tree" aria-label="Pages"></nav>
     <div class="side-foot">
       <button id="trash-btn" class="side-btn" type="button" aria-expanded="false"></button>
       <div id="trash" class="trash" hidden></div>
     </div>
+    <div id="side-grip" class="side-grip" role="separator" aria-orientation="vertical" aria-label="The pages' width" tabindex="0"></div>
   </aside>
   <main class="main">
     <div class="bar">
-      <button id="side-toggle" class="icon-btn" type="button" title="Show or hide the pages" aria-label="Show or hide the pages"></button>
+      <button id="side-toggle" class="icon-btn" type="button" aria-label="Show the pages"></button>
       <nav id="crumbs" class="crumbs" aria-label="Where this page is"></nav>
       <button id="done-btn" class="done-btn" type="button" aria-pressed="false" hidden></button>
       <span id="who" class="who" aria-live="polite"></span>
@@ -54,6 +56,7 @@
   <div id="pop" class="pop" hidden></div>
   <div id="drop" class="drop" hidden></div>
   <div id="band" class="band" hidden></div>
+  <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Full size" hidden></div>
 </div>
 <script src="/_ag/lib/purify.min.js"></script>
 <script src="/_ag/app.js"></script>

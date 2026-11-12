@@ -115,7 +115,7 @@ INSTRUCTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), INSTRUCT
 # actor watched, then what it was asked and said last, and the watcher's note (UPDATE reads it back).
 FROM_COORDINATOR = 'Message from the gatherer agent (answer it with: ag actors send gatherer "..."):'
 FROM_ACTOR = 'Message from actor {id}{name} (answer it with: ag actors send {id} "..."):'
-ENVELOPE = re.compile(r'^Message from (the gatherer agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)'
+ENVELOPE = re.compile(r'^Message from (the (?:gatherer|coordinator) agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)'
                       r'(?: \(answer it with: [^\n]*?\))?:\s+([\s\S]*)$')
 UPDATE_HEAD = "Update (you asked with `ag actors when`, watch {n}): actor {id}{name} is done: {how}."
 UPDATE = re.compile(r'^Update \(you asked with `ag actors when`, watch (\d+)\): actor ([\w-]+)(?: \(("(?:[^"\\]|\\.)*")\))?'
@@ -168,7 +168,7 @@ def opened(text: str) -> Optional[dict]:
     m = ENVELOPE.match(text or "")
     if m is None:
         return None
-    who = "coordinator" if m.group(1) == "the gatherer agent" else "actor"
+    who = "coordinator" if m.group(1).startswith("the ") else "actor"      # its old name, or the one it is told by
     try:
         name = json.loads(m.group(3)) if m.group(3) else None
     except ValueError:

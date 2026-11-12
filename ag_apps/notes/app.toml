@@ -15,6 +15,12 @@ rewrite or delete it), or a page's title, with notes_change. Change the notebook
 see your changes at once. A line can link to another page, as `[its title](page:<its id>)` (the id from notes_read):
 the user clicks it to open that page, and it follows the page's renames. When a line names one of the pages, link it.
 
+A page can hold pictures: notes_read shows each as `![caption](image:<file>)` -- or, for a frame of Figma the page
+shows live, `[Figma: its name](its link) -- caption` -- and gives you the pictures themselves after the page's words
+(a Figma frame's as a snapshot). To put a picture you made (a plot, a rendered figure) on a page, add the line
+`![caption](<its path>)`, absolute or from your folder: the notes keep a copy. A link to a Figma file alone on a line
+shows that frame or board live.
+
 When what you write sums up what came out of your own conversation with the user -- what you found, worked out,
 answered or decided with them -- pass `from_conversation` true to notes_add or notes_change: the lines then name you as
 their source, and the user can follow up on them with you from the page. Leave it out when you only put down what the
@@ -36,8 +42,9 @@ report goes into that line's conversation, beside the page, not on the page: it 
 Your answer itself goes as always.
 
 A line sent to you is one of the user's work items, and only the user says when one is done: they review your report
-and accept it, or send it back with what is left (a reply). Never tick or end a work item yourself. A note saying the
-user canceled a line means: stop any work on it, and don't report on it."""
+and accept it, or send it back with what is left (a reply). Never tick or end a work item yourself. A line may go to
+other agents too: report on your part of it. A note saying the user canceled a line, or took it back from you, means:
+stop any work on it, and don't report on it."""
 
 [asked]
 when = 'my Notes, page "'
@@ -56,12 +63,12 @@ entry = "panel/index.html"
 
 [[tools]]
 name = "read"
-description = "The notebook's pages (no `page`), or one page: its blocks as markdown, each line its block's id first, as [id]."
+description = "The notebook's pages (no `page`), or one page: its blocks as markdown, each line its block's id first, as [id]; then the page's pictures."
 input_schema = { type = "object", properties = { page = { type = "string", description = "a page's id or title" } } }
 
 [[tools]]
 name = "add"
-description = "Add markdown to a page (each line a block: `- [ ] ` to-do, `- ` or `1. ` list, `# ` heading, `> ` quote, ``` code, `---`; two spaces in, a level in; a link to another page: `[its title](page:<its id>)`), or make a new page with `title`."
+description = "Add markdown to a page (each line a block: `- [ ] ` to-do, `- ` or `1. ` list, `# ` heading, `> ` quote, ``` code, `---`; two spaces in, a level in; a link to another page: `[its title](page:<its id>)`; a picture: `![caption](<a file's path>)`; a Figma frame, shown live: its link alone on a line), or make a new page with `title`."
 input_schema = { type = "object", properties = { markdown = { type = "string", description = "the blocks to add, as markdown lines" }, page = { type = "string", description = "the page to add to: its id or title" }, title = { type = "string", description = "instead of `page`: a new page with this title" }, parent = { type = "string", description = "for a new page: the page it goes under (id or title)" }, icon = { type = "string", description = "for a new page: an emoji" }, after = { type = "string", description = "the block's id to add after, or \"start\"; default the end" }, from_conversation = { type = "boolean", description = "true when the lines sum up what came out of your own conversation with the user (not words they told you to put down): they then name you as their source" } }, required = ["markdown"] }
 
 [[tools]]
