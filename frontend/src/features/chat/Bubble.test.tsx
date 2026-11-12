@@ -56,7 +56,7 @@ describe("Bubble", () => {
     const bubble = band.querySelector(":scope > .fl-user")!;
     expect(bubble.className).toBe("fl-user crew");
     expect(bubble.querySelector(".crew-face")!.getAttribute("src")).toBe("/avatars/roles/manager.svg");
-    expect(bubble.querySelector(".crew-from")!.textContent).toBe("Gatherer agent");
+    expect(bubble.querySelector(".crew-from")!.textContent).toBe("Coordinator agent");
     expect(bubble.querySelector(".crew-text")!.textContent).toBe("Run the tests.");
     const more = band.querySelector<HTMLButtonElement>(":scope > .crew-more")!;
     expect(more.textContent).toBe("Show all");
@@ -96,14 +96,14 @@ describe("Bubble", () => {
   it("draws what the actor sent another, with its receiver's face and name", () => {
     const sent = [
       { text: "Please review.", kind: "send", to: "abc12345-6789", to_name: null },
-      { text: "Coordinate.", kind: "send", to: "x", to_name: "Gatherer agent" },
+      { text: "Coordinate.", kind: "send", to: "x", to_name: "Coordinator agent" },
       { text: "Start here.", kind: "new", to: "ffff0000-1", to_name: null },
     ];
     const node = drawn("Ask", { sent }, [ACTOR, HELPER, COORDINATOR]).node;
     const bubbles = [...node.querySelectorAll("#fl-turn-0 > .fl-sent")];
     expect(bubbles.map((b) => b.querySelector(".crew-from")!.textContent)).toEqual([
       "To Fixer",
-      "To the gatherer agent",
+      "To the coordinator agent",
       "Started actor ffff0000",
     ]);
     expect(bubbles.map((b) => b.getAttribute("title"))).toEqual([
