@@ -34,7 +34,7 @@ def parse(argv: List[str]):
     while i < len(argv):
         a = argv[i]
         name, eq, value = a.partition("=")
-        if name in ("--gatherer", "--policy", "--poller"):
+        if name in ("--gatherer", "--group", "--policy", "--poller"):
             if not eq:
                 if i + 1 >= len(argv):
                     raise AgError(f"{name} takes a value")
@@ -42,7 +42,7 @@ def parse(argv: List[str]):
             if name == "--poller":
                 opts["pollers"].append(value)
             else:
-                opts[name[2:]] = value
+                opts["gatherer" if name == "--group" else name[2:]] = value     # --group: a gatherer is a group
         elif a == "--no-pollers":
             opts["no_pollers"] = True
         elif a == "--dry-run":

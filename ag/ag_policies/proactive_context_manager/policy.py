@@ -460,7 +460,7 @@ class ProactiveContextManager(Policy):
                                         cfg.keep_pinned_tokens)
             tail = [r for r in body if r.row_id >= cut]
             made_items = conn.made_items(made)
-        guide = self.guide_item(conn, channel_of(read))
+        guide = self.guide_item(conn, channel_of(read), types)
         before, since = self.requests_before(conn, types, rows, channel_of(read)) if build is None else ([], 0)
         items = ([r.payload for r in preamble] + [g[1] for g in guide] + [b[1] for b in before]
                  + [made_items[m][1] for m in made] + [r.payload for r in pinned])
@@ -492,11 +492,13 @@ class ProactiveContextManager(Policy):
                 refs.insert(at, Ref(made_id=made_id))
         return items, refs, tokens, tokens - outside
 
-    def guide_item(self, conn, channel_id) -> List[tuple]:
+    def guide_item(self, conn, channel_id, types: Optional[TypeIds] = None) -> List[tuple]:
         """[(made_id, item, tokens)] of the gatherer guide for the channel's reads, or [] with none
         configured. One made item while its text stays the same: the last one made for the channel,
-        if it is that text, else a new one."""
-        text = layout.guide(self.config, conn.path)
+        if it is that text, else a new one. A database whose channels have groups (`group` records:
+        the home's one) has its hint say how to keep to the channel's own."""
+        seen = self.unseen(conn, types, channel_id) if types is not None and types.of(GROUP) else None
+        text = layout.guide(self.config, conn.path, seen.own if seen is not None and seen.groups else None)
         if not text:
             return []
         item = self.format.make_section(text, GUIDE)

@@ -4,7 +4,8 @@ them (docs_build/hooks.py)."""
 
 #: (option, what it does), in the order `ag --help` and the docs list them.
 OPTIONS = (
-    ("--gatherer NAME", "Join the named gatherer, created if it does not exist. Overrides `[cli] gatherer`."),
+    ("--group NAME", "Join the named group (a gatherer), created if it does not exist. Overrides `[cli] gatherer`. "
+                     "--gatherer NAME is the same."),
     ("--gatherer .", "Give each session a new gatherer of its own, named after the session."),
     ("--policy P", "Create the gatherer with policy `P`. Refused if it exists with another policy."),
     ("--poller X", "Create the gatherer with poller `X` (repeatable)."),

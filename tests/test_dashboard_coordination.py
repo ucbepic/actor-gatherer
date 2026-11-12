@@ -84,7 +84,7 @@ class EnvelopeTest(unittest.TestCase):
     def test_the_answer_it_names_is_a_command_the_receiver_can_run(self):
         text = coordination.envelope({"kind": "actor", "id": "1a2b3c4d-0000", "name": "x"}, "hi")
         self.assertIn('ag actors send 1a2b3c4d-0000 "..."', text.split("\n")[0])
-        self.assertIn('ag actors send gatherer "..."', coordination.envelope({"kind": "coordinator"}, "hi").split("\n")[0])
+        self.assertIn('ag actors send coordinator "..."', coordination.envelope({"kind": "coordinator"}, "hi").split("\n")[0])
 
 
 class InstructionsTest(unittest.TestCase):
@@ -101,7 +101,7 @@ class InstructionsTest(unittest.TestCase):
 
     def test_the_gatherer_agent_is_told_its_gatherer_and_the_commands(self):
         text = coordination.instructions("making_ag")
-        self.assertIn('gatherer agent of the gatherer "making_ag"', text)
+        self.assertIn('coordinator agent of the group "making_ag"', text)
         for command in ("ag actors send", "ag actors new", "ag actors when", "ag actors who", "ag actors show"):
             self.assertIn(command, text)
 
@@ -120,7 +120,7 @@ class InstructionsTest(unittest.TestCase):
         from ag.ag_policies.proactive_context_manager.config import ProactiveContextManagerConfig
         guide = ProactiveContextManagerConfig().gatherer_guide
         self.assertIn("`ag actors`", guide)
-        self.assertIn('ag actors send gatherer', guide)
+        self.assertIn('ag actors send coordinator', guide)
         self.assertIn(coordination.FROM_COORDINATOR.split(" (")[0], guide)      # how its messages start
         self.assertIn('"Message from actor <id>"', guide)
         self.assertIn('sandbox_permissions "require_escalated" from the first try', guide)     # Codex's sandbox
@@ -536,7 +536,7 @@ class CommandTest(CoordinationBase):
         code, out, err = self.run_cli()
         self.assertEqual((code, err), (0, ""))
         self.assertIn(f'{self.a} "Fix the editor" (you) -- idle, claude, in', out)
-        self.assertIn("no gatherer agent yet", out)
+        self.assertIn("no coordinator agent yet", out)
         code, out, _ = self.run_cli("send", self.b[:8], "hello", "there")
         self.assertEqual(code, 0)
         self.assertIn(f'Sent to actor {self.b} ("Write the docs")', out)
@@ -617,7 +617,7 @@ class CommandTest(CoordinationBase):
         where = lambda: cli._short(self.work)                                           # noqa: E731
         code, out, err = self.run_cli("folder", "new", "Paper/Figures")                 # the folders of its path made
         self.assertEqual((code, err), (0, ""))
-        self.assertEqual(out.splitlines()[:4], ['Folder "Paper/Figures" made.', "Folders of the gatherer g:",
+        self.assertEqual(out.splitlines()[:4], ['Folder "Paper/Figures" made.', "Folders of the group g:",
                                                 '- folder "Paper"', '  - folder "Paper/Figures" (empty)'])
         code, out, err = self.run_cli("move", self.b[:8], "paper/FIGURES")              # by path, whatever its case
         self.assertEqual((code, err, out.splitlines()[0]), (0, "", 'Now in the folder "Paper/Figures":'))
@@ -631,7 +631,7 @@ class CommandTest(CoordinationBase):
         self.assertEqual(out.strip(), f'Actor {self.b} ("Write the docs") is saved for later, in the folder "Paper/Figures".')
         self.assertEqual(sorted(saved.stored()["g"]), sorted([self.a, self.b]))
         code, out, _ = self.run_cli("folders")
-        self.assertEqual(out.splitlines(), ["Folders of the gatherer g:",
+        self.assertEqual(out.splitlines(), ["Folders of the group g:",
                                             '- folder "Ideas"', f'    {self.a} "Fix the editor" (saved, you) -- idle, claude, in {where()}',
                                             '- folder "Paper"',
                                             '  - folder "Paper/Figures"', f'      {self.b} "Write the docs" (saved) -- idle, claude, in {where()}'])
@@ -651,9 +651,9 @@ class CommandTest(CoordinationBase):
         self.assertEqual(folders.path(folders.of("g"), folders.of("g")["filed"][self.b]), "Plots")
         self.assertNotIn(self.a, folders.of("g")["filed"])
         code, out, _ = self.run_cli("save", self.b, "--no-folder")
-        self.assertEqual(out.strip(), f'Actor {self.b} ("Write the docs") is saved for later, at the gatherer\'s top.')
+        self.assertEqual(out.strip(), f'Actor {self.b} ("Write the docs") is saved for later, at the group\'s top.')
         code, out, _ = self.run_cli("move", self.a, self.b, "top")
-        self.assertEqual(out.splitlines()[0], "Now at the gatherer's top:")
+        self.assertEqual(out.splitlines()[0], "Now at the group's top:")
         code, _, err = self.run_cli("folder", "delete", "Nope")
         self.assertEqual((code, err.strip()), (1, 'ag actors: no folder "Nope" in g'))
         code, _, err = self.run_cli("folder", "rename", "top", "x")
@@ -661,12 +661,12 @@ class CommandTest(CoordinationBase):
         code, _, err = self.run_cli("move", self.b)
         self.assertEqual((code, err.strip()), (1, "ag actors: move which actors where? `ag actors move <actor>... <folder|top>`"))
         code, _, err = self.run_cli("save", "gatherer")
-        self.assertEqual((code, err.strip()), (1, "ag actors: the gatherer has no gatherer agent yet"))
+        self.assertEqual((code, err.strip()), (1, "ag actors: the group has no coordinator agent yet"))
 
     def test_its_errors_are_said_plainly(self):
         code, _, err = self.run_cli("send", "nobody", "hi")
         self.assertEqual(code, 1)
-        self.assertEqual(err.strip(), "ag actors: no actor nobody in the gatherer")
+        self.assertEqual(err.strip(), "ag actors: no actor nobody in the group")
         code, _, err = self.run_cli("list", env={"CLAUDE_CODE_SESSION_ID": ""})
         self.assertIn("which actor asks?", err)
         code, _, err = self.run_cli("list", env={"AG_DASHBOARD": "http://127.0.0.1:1"})

@@ -166,7 +166,7 @@ class ShownTest(ParallelBase):
         self.assertEqual(len(shown), 1)
         self.assertTrue(shown[0].startswith("The user sent this to another session working in parallel with you:\n"
                                             "their task\n\nThis is how the gatherer shows you what the user asks "
-                                            "its other sessions, where it arrived in your conversation. It is "
+                                            "your group's other sessions, where it arrived in your conversation. It is "
                                             "not addressed to you: do not answer it or take it up, and carry on with "
                                             "your own task. "))
         self.assertTrue(shown[0].endswith(os.path.join("w", "context.db") + ", table events, where p_channel = 'c2'."))

@@ -120,10 +120,10 @@ class ProactiveContextManagerConfig:
     gatherer_guide: str = (
         "About this context, from the gatherer.\n\n"
         "This session runs inside a gatherer: it puts your context together on every call, and "
-        "other sessions may be working in the same gatherer, in parallel or before you, for the same "
+        "other sessions of your group may be working with you, in parallel or before you, for the same "
         "user. Besides the conversation itself, your context may hold these messages from the "
         "gatherer:\n\n"
-        "- **History sections**: earlier history, of this session or of the gatherer's other "
+        "- **History sections**: earlier history, of this session or of your group's other "
         "sessions, put together to fit. The first of them says how they are organised and how to "
         "read them.\n"
         "- **Requests made in parallel** (\"The user sent this to another session working in parallel "
@@ -139,7 +139,7 @@ class ProactiveContextManagerConfig:
         "dropped to keep the context within its limit; they name the rows to read them from.\n\n"
         "None of these is the user speaking to you in this session: the user's own messages are the "
         "requests you answer.\n\n"
-        "**Other actors, and the gatherer agent.** The other sessions of this gatherer are actors like you -- "
+        "**Other actors, and the coordinator agent.** The other sessions of your group are actors like you -- "
         "Claude Code, Codex and other agents -- often working in the same directories at the same time. Each is "
         "known by its session id (the one a request made in parallel names), or its first characters. Run "
         "`ag actors` in your shell to list them -- their ids, names, status, directories and what each was last "
@@ -149,12 +149,12 @@ class ProactiveContextManagerConfig:
         "`ag actors` talks to the dashboard on this machine. Under Codex, run every `ag actors` command with "
         "sandbox_permissions \"require_escalated\" from the first try: Codex's sandbox has no network, even to this "
         "machine, so it always fails inside it.\n\n"
-        "The gatherer agent coordinates the actors for the user. If you find work conflicting with yours -- another "
+        "The coordinator agent coordinates your group's actors for the user. If you find work conflicting with yours -- another "
         "actor changing files you are working on (a file-change notice for one of them; `ag actors who <file>` "
         "names who), or working on the same task or one that overlaps it -- don't settle it with the other actor "
-        "yourself, and don't undo its changes: stop changing what the conflict touches, tell the gatherer agent with "
-        "`ag actors send gatherer \"<the conflict, the other actor's id, and how you found it>\"`, and end your turn "
-        "saying so. Its answer comes as a new message. A message starting \"Message from the gatherer agent\" is "
+        "yourself, and don't undo its changes: stop changing what the conflict touches, tell the coordinator agent with "
+        "`ag actors send coordinator \"<the conflict, the other actor's id, and how you found it>\"`, and end your turn "
+        "saying so. Its answer comes as a new message. A message starting \"Message from the coordinator agent\" is "
         "from it: it acts for the user, so listen to it and do as it says, as you would the user's own request -- "
         "unless the user tells you otherwise. Message it back only when it asks you to, or when you can't do what "
         "it says: each message costs it a turn.\n\n"
@@ -206,7 +206,7 @@ class ProactiveContextManagerConfig:
     # newest that fit (policy.requests_before).
     parallel_message: str = (
         "The user sent this to another session working in parallel with you:\n{text}\n\n"
-        "This is how the gatherer shows you what the user asks its other sessions, where it arrived in "
+        "This is how the gatherer shows you what the user asks your group's other sessions, where it arrived in "
         "your conversation. It is not addressed to you: do not answer it or take it up, and carry on with "
         "your own task. But a definition, convention, correction or exclusion the user states in it "
         "applies to your work too. That session's work is in {db_path}, table events, where "
@@ -232,7 +232,7 @@ class ProactiveContextManagerConfig:
     # shown to this one (policy.py's `shared`): a message the actors of the gatherer sent each other through the
     # dashboard (`ag actors`, ag_dashboard/coordination.py's envelopes), the receiver's to act on, not a request of the
     # user's. () = every one shown.
-    unshared_openings: Tuple[str, ...] = ("Message from the gatherer agent", "Message from actor ",
+    unshared_openings: Tuple[str, ...] = ("Message from the coordinator agent", "Message from the gatherer agent", "Message from actor ",
                                           "Update (you asked with `ag actors when`")
 
     def __post_init__(self):
