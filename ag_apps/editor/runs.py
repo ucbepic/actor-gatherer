@@ -239,6 +239,7 @@ class Run:
         self.stopping: Optional[str] = None
         self.out, self.dropped = bytearray(), 0
         self.proc: Optional[subprocess.Popen] = None
+        self.reader: Optional[threading.Thread] = None     # its output read, then its end told (`_read`)
         self.over = threading.Event()
         self.changed = threading.Condition()
         self.unwatched: Optional[float] = None
@@ -323,7 +324,8 @@ class Runs:
             self._tell(r, "ended", r.view())
             return r
         self._tell(r, "run", r.view())
-        threading.Thread(target=self._read, args=(r,), name="preview-run", daemon=True).start()
+        r.reader = threading.Thread(target=self._read, args=(r,), name="preview-run", daemon=True)
+        r.reader.start()
         if r.url:
             threading.Thread(target=self._ready, args=(r,), name="preview-ready", daemon=True).start()
         else:
@@ -452,6 +454,9 @@ class Runs:
             t.start()
         for t in threads:
             t.join(STOP_WAIT + 2.5)
+        for r in runs:                                      # its end told, `over` already set: nothing of it after this
+            if r.reader is not None and r.reader is not threading.current_thread():
+                r.reader.join(STOP_WAIT + 2.5)
 
 
 def problems(r: Run, code: Optional[int] = None) -> Optional[dict]:

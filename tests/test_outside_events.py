@@ -105,6 +105,17 @@ class TypesTest(OutsideBase):
 
 
 class StreamTest(OutsideBase):
+    def test_a_message_with_no_channel_for_one_group_is_shown_only_to_it(self):
+        from test_core import grouped
+        grouped(self.m, "w", "c2", "b")
+        self.put(PREAMBLE + [user("what was Q2 revenue?", 1)])
+        self.put(PREAMBLE + [user("and Q3?", 2)], channel="c2")
+        e = context_stream(self.ids["context_stream"], "#analytics", "alice", "for group b only", 10)
+        e.payload["group"] = "b"
+        self.m.insert("w", on(e, None))
+        self.assertEqual(self.shown(self.read()), [])
+        self.assertEqual(self.shown(self.read("c2")), ["@#analytics alice: for group b only"])
+
     def test_a_message_is_shown_at_its_place(self):
         self.put(PREAMBLE + [user("what was Q2 revenue?", 1), agent("which region?", 1), user("just the number", 2)])
         self.post("APAC only this week", 10)                     # polled at the read, after the request

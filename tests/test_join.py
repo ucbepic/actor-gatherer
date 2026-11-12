@@ -196,6 +196,19 @@ class JoinTest(JoinBase):
         self.assertEqual(again[:len(joined)], self.texts(joined))             # a prefix: the context only grew
         self.assertEqual(self.jobs.started, [("c2", "build")])               # no second join
 
+    def test_a_new_channel_joins_only_its_own_group(self):
+        from test_core import grouped
+        grouped(self.m, "w", "c1", "a")
+        self.other_session()
+        grouped(self.m, "w", "c2", "b")
+        self.put(PREAMBLE + [user("new work", 100)], channel="c2")
+        self.assertNotIn(JOINED, self.sections(self.read("c2")))           # c1's build is another group's
+        self.assertEqual(self.jobs.started, [])
+        grouped(self.m, "w", "c3", "a")
+        self.put(PREAMBLE + [user("more work", 101)], channel="c3")
+        self.assertIn(JOINED, self.sections(self.read("c3")))
+        self.assertEqual(self.jobs.started, [("c3", "build")])
+
     def test_nothing_to_join_without_another_channel_s_build(self):
         self.put(PREAMBLE + conversation(3, prefix="c1 "))
         self.put(PREAMBLE + [user("new work", 100)], channel="c2")
@@ -265,6 +278,127 @@ class JoinTest(JoinBase):
         line = tok.count("[id 99999] USER: c1 question 999  (channel c1)")
         self.assertGreater(shown * line, self.cfg.parallel_index_tokens)
 
+
+
+class RegroupTest(JoinBase):
+    """When a channel's group changes, its next read builds its sections again from its group's work, and waits for it:
+    a `regrouped` build for a channel with a build of its own in use, a `join` again for one that joined."""
+
+    moves = 0
+
+    def moved(self, channel, group, was=None, **names):
+        """A `group` record in `channel`, as the dashboard writes one when the actor's folder moves to another group;
+        without `was`, the actor's first."""
+        from replies import insert
+        RegroupTest.moves += 1
+        payload = ({"group": group} if was is None else {"group": group, "was": was}) | names
+        insert(self.m, "w", ch(channel), [{"type": "group", "id": f"group:{channel}:{RegroupTest.moves}", "payload": payload}])
+
+    def adopted(self):
+        """c1, built and taken up at its next user message, its sections made from c2's work too."""
+        self.put(PREAMBLE + conversation(12, prefix="c2 "), channel="c2")
+        self.built("c2")
+        self.put(PREAMBLE + conversation(12, prefix="c1 "))
+        self.built("c1")
+        self.put([user("mine", 200)])
+        self.assertIn("c2 question", self.sections(self.read()))
+
+    def test_a_channel_s_sections_are_built_again_without_the_group_it_left(self):
+        self.adopted()
+        self.moved("c2", "b", "")
+        self.put([agent("working on it", 200)])                       # mid-turn: no user message
+        sections = self.sections(self.read())
+        self.assertNotIn("c2 question", sections)
+        self.assertEqual(self.jobs.started, [("c1", "build")])
+        self.assertEqual(tables.latest_build(self.m._conn("w"), "c1")["reason"], tables.REGROUPED)
+
+    def test_a_joined_folder_s_requests_come_in_the_index_not_one_by_one(self):
+        self.moved("c2", "b")
+        self.adopted_apart()
+        self.moved("c2", "", "b")
+        context = self.read()
+        self.assertIn("c2 question", self.sections(context))
+        self.assertEqual(self.parallel(context), [])
+
+    def adopted_apart(self):
+        """c1 built and taken up, c2 (of another group) with work of its own."""
+        self.put(PREAMBLE + conversation(12, prefix="c2 "), channel="c2")
+        self.put(PREAMBLE + conversation(12, prefix="c1 "))
+        self.built("c1")
+        self.put([user("mine", 200)])
+        self.assertNotIn("c2 question", "\n".join(self.texts(self.read())))
+
+    def test_an_actor_s_first_record_rebuilds_no_one(self):
+        self.adopted()
+        self.moved("c3", "")
+        self.put([agent("working on it", 200)])
+        self.read()
+        self.assertEqual(self.jobs.started, [])
+
+    def test_a_channel_that_joined_joins_its_new_group(self):
+        self.moved("c3", "b")
+        self.put(PREAMBLE + conversation(12, prefix="c3 "), channel="c3")
+        self.built("c3")
+        self.put(PREAMBLE + conversation(12, prefix="c1 "))
+        self.built("c1")
+        self.put(PREAMBLE + [user("new work", 300)], channel="c2")
+        joined = self.sections(self.read("c2"))
+        self.assertIn("c1 question", joined)
+        self.assertNotIn("c3 question", joined)
+        self.moved("c2", "b", "")
+        self.put([agent("ok", 300)], channel="c2")
+        again = self.sections(self.read("c2"))
+        self.assertIn("c3 question", again)
+        self.assertNotIn("c1 question", again)
+        self.assertEqual(self.jobs.started, [("c2", "build"), ("c2", "build")])
+        self.assertEqual(tables.latest_build(self.m._conn("w"), "c2")["reason"], tables.JOIN)
+
+    def said(self, context):
+        return [t for t in self.texts(context) if "your group" in t.lower()]
+
+    def test_an_actor_is_told_its_group_changed(self):
+        self.adopted()
+        self.moved("c1", "b", "", name="Editor")
+        self.put([agent("working on it", 200)])
+        said = self.said(self.read())
+        self.assertEqual(len(said), 1)
+        self.assertIn("the sessions of Editor, no longer with those of this gatherer's own group", said[0])
+        self.put([agent("still working", 201)])
+        self.assertEqual(self.said(self.read()), said)                    # the same message, kept in its place
+
+    def test_the_others_are_told_who_joined_their_group_in_one_message(self):
+        self.adopted()
+        self.moved("c3", "b")
+        self.moved("c4", "b")
+        self.moved("c3", "", "b")                                         # a folder of two moved in
+        self.moved("c4", "", "b")
+        self.put([agent("working on it", 200)])
+        said = self.said(self.read())
+        self.assertEqual(len(said), 1)
+        self.assertIn("in your group now", said[0])
+        self.assertIn("c3, c4", said[0])
+
+    def test_an_actor_on_its_own_is_told_so_and_again_when_it_is_back(self):
+        self.adopted()
+        self.moved("c1", "self:c1", "", was_name="Editor")
+        self.put([agent("working on it", 200)])
+        own = [t for t in self.texts(self.read()) if "on your own" in t]
+        self.assertEqual(len(own), 1)
+        self.assertIn("You work on your own now", own[0])
+        self.assertIn("no longer with those of Editor", own[0])
+        self.moved("c1", "", "self:c1", name="Editor")
+        self.put([agent("back", 201)])
+        back = [t for t in self.texts(self.read()) if "Until now you worked on your own" in t]
+        self.assertEqual(len(back), 1)
+        self.assertIn("the sessions of Editor", back[0])
+
+    def test_a_move_between_two_other_groups_says_nothing(self):
+        self.adopted()
+        self.moved("c3", "b")
+        self.moved("c3", "x", "b")
+        self.put([agent("working on it", 200)])
+        self.assertEqual(self.said(self.read()), [])
+        self.assertEqual(self.jobs.started, [])
 
 if __name__ == "__main__":
     unittest.main()
