@@ -167,3 +167,40 @@ test("a block dragged by its grip moves, and what one window types shows in anot
   await other.close();
   await binPage(panel, "Order");
 });
+
+test("the pages' list hides and shows again, and its edge dragged sets its width, kept after a reload", async ({
+  page,
+}) => {
+  await open(page);
+  const { panel } = await openNotes(page);
+  const side = panel.locator("#side");
+  await expect(side).toBeVisible();
+  await expect(panel.locator("#side-toggle")).toBeHidden(); // the bar's button only while the list is hidden
+  await panel.locator("#side-hide").click();
+  await expect(side).toBeHidden();
+  await panel.locator("#side-toggle").click();
+  await expect(side).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Backslash");
+  await expect(side).toBeHidden();
+  await page.keyboard.press("ControlOrMeta+Backslash");
+  await expect(side).toBeVisible();
+  const width = async () => (await side.boundingBox())!.width;
+  const before = await width();
+  const grip = (await panel.locator("#side-grip").boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 90, grip.y + 200, { steps: 6 });
+  await page.mouse.up();
+  const after = await width();
+  expect(after).toBeGreaterThan(before + 60);
+  await page.reload();
+  const again = page.locator("#top-row > .app-pane[data-app=notes]").frameLocator("iframe");
+  await expect(again.locator("body[data-ready='1']")).toHaveCount(1);
+  await expect
+    .poll(async () => Math.round((await again.locator("#side").boundingBox())!.width))
+    .toBe(Math.round(after));
+  await again.locator("#side-grip").dblclick(); // the usual width again
+  await expect
+    .poll(async () => Math.round((await again.locator("#side").boundingBox())!.width))
+    .toBe(Math.round(before));
+});
