@@ -63,7 +63,8 @@ CONTEXT_TYPES = ("context_stream", "environment_update")
 HOST_TYPES = (EventType("app_opened", HOST_PROPERTIES), EventType("app_closed", HOST_PROPERTIES),
               EventType("app_attached", HOST_PROPERTIES), EventType("app_detached", HOST_PROPERTIES),
               EventType("app_call", HOST_PROPERTIES), EventType("app_notified", HOST_PROPERTIES),
-              EventType("app_notice_settled", HOST_PROPERTIES), EventType("app_named", HOST_PROPERTIES))
+              EventType("app_notice_settled", HOST_PROPERTIES), EventType("app_named", HOST_PROPERTIES),
+              EventType("app_regrouped", HOST_PROPERTIES))
 HOST_RECORDS = tuple(t.name for t in HOST_TYPES)
 #: A NOTIFICATION an app sends the user, as an agent's `asked` is: open until settled, as `ask_settled` settles that.
 #:     app_notified        {id, key, title, text, show, where}: listed by the dashboard, and where it pops up too

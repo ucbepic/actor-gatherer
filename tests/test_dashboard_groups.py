@@ -3,6 +3,7 @@ record in each moved actor's channel, then the dashboard's own rows of them unde
 import os
 import sqlite3
 import sys
+import tempfile
 import unittest
 import unittest.mock
 
@@ -10,8 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
-from ag_dashboard import actions, data, folders, groups, saved, sessions, tasks, titles  # noqa: E402
+import app_kit  # noqa: E402
+from ag_dashboard import actions, app_host, data, folders, groups, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
 from replies import insert  # noqa: E402
+from test_dashboard_app_host import NOTES, insert_here, write_app  # noqa: E402
 import test_home_db  # noqa: E402
 
 
@@ -22,9 +25,10 @@ class GroupsTest(unittest.TestCase):
         test_home_db.MergedHomeTest.setUp(self)
         self.addCleanup(test_home_db.MergedHomeTest.tearDown, self)
         self.recorded = []
-        put = unittest.mock.patch.object(actions, "insert", side_effect=self.insert)
-        put.start()
-        self.addCleanup(put.stop)
+        for patch in (unittest.mock.patch.object(actions, "insert", side_effect=self.insert),
+                      unittest.mock.patch.object(tool_gateway, "HOST", None)):           # no apps run here
+            patch.start()
+            self.addCleanup(patch.stop)
 
     def insert(self, gatherer, events):
         """actions.insert, in this process: each event in the channel its own properties name."""
@@ -125,7 +129,7 @@ class GroupsTest(unittest.TestCase):
         folders.file("a", ["c3"], inner)
         with unittest.mock.patch.object(groups.sessions, "new_gatherer", side_effect=self.made):
             got = groups.split("a", work)
-        self.assertEqual(got, {"group": "Work_notes", "actors": ["c1", "c3"], "from": "a"})
+        self.assertEqual(got, {"group": "Work_notes", "actors": ["c1", "c3"], "apps": [], "from": "a"})
         self.assertEqual(titles.stored()["Work_notes"], "Work: notes")          # named as the folder was
         self.assertEqual((self.members("a"), self.members("Work_notes")), ([], ["c1", "c3"]))
         self.assertEqual(folders.of("Work_notes"), {"folders": [{"id": inner, "parent": None, "name": "Inner", "closed": None}],
@@ -139,7 +143,7 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual(groups._group_name("b"), "b_2")
         self.assertEqual(groups._group_name("  ***  "), "group")
 
-    def test_an_app_does_not_move_between_groups(self):
+    def test_an_app_moves_only_where_its_host_runs(self):
         work = folders.make("a", "Work")
         folders.file("a", ["c1", "app:x1"], work)
         with unittest.mock.patch.object(groups.sessions, "new_gatherer", side_effect=self.made) as made:
@@ -299,3 +303,65 @@ class FoldersInHomeTest(GroupsTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GroupAppsTest(GroupsTest):
+    """Apps of a task or a folder that moves: `pages` (many instances) goes with it, `board` (one per group) stays."""
+
+    def setUp(self):
+        super().setUp()
+        src = os.path.join(self.tmp.name, "apps-src")
+        for name, mode in (("pages", "many"), ("board", "one")):
+            write_app(src, name, NOTES.replace("notes", name).replace('instances = "per-folder"', f'instances = "{mode}"'))
+        for patch in (unittest.mock.patch.dict(os.environ, {app_host.PATH_ENV: src}),
+                      unittest.mock.patch.object(app_kit.finding, "BUILTIN", os.path.join(self.tmp.name, "no-apps"))):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.host = app_host.AppHost(0, write=insert_here)
+        self.addCleanup(self.host.close)
+        placed = unittest.mock.patch.object(tool_gateway, "HOST", self.host)
+        placed.start()
+        self.addCleanup(placed.stop)
+        self.folder = tempfile.mkdtemp(dir=self.tmp.name)
+
+    def test_an_app_of_a_task_that_moves_goes_with_it_and_its_actors_keep_it(self):
+        page = self.host.open("pages", "a", self.folder)
+        for c in ("c1", "c3"):
+            self.host.attach("a", page.id, c)                             # c3: using it, in no task with it
+        tasks.add("a", "c1", ["app:" + page.id])
+        work = folders.make("a", "Work")
+        folders.file("a", ["c1", "app:" + page.id], work)
+        plan = groups.plan("a", "b", ["c1"])
+        self.assertEqual((plan["actors"], [x["id"] for x in plan["apps"]]), (["c1"], [page.id]))
+        self.assertEqual(groups.move("a", "b", folder=work)["apps"], [page.id])
+        self.assertEqual([i.id for i in self.host.instances_of("b")], [page.id])     # listed and reached in b
+        self.assertEqual(self.host.instances_of("a"), [])
+        self.assertEqual([i.id for i in self.host.attached_to("b", "c1")], [page.id])
+        self.assertEqual(self.host.agents_of(self.host.instance("b", page.id)), ["c1"])   # c3, staying, let go
+        self.assertEqual(folders.of("b")["filed"].get("app:" + page.id), work)        # still in its folder
+        self.assertEqual(tasks.stored()["b"]["tasked"]["app:" + page.id], tasks.stored()["b"]["tasked"]["c1"])
+        self.host.flush()
+        again = app_host.AppHost(0, write=insert_here)                    # read back from the one database
+        self.addCleanup(again.close)
+        self.assertEqual([i.id for i in again.instances_of("b")], [page.id])
+        self.assertEqual(again.agents_of(again.instance("b", page.id)), ["c1"])
+
+    def test_a_group_s_only_one_of_an_app_stays_and_a_move_taking_it_is_refused(self):
+        board = self.host.open("board", "a", self.folder)
+        tasks.add("a", "c1", ["app:" + board.id])
+        with self.assertRaisesRegex(groups.GroupError, "the group's only one"):
+            groups.plan("a", "b", ["c1"])
+        with self.assertRaises(groups.GroupError):
+            groups.move("a", "b", ["c1"])
+        self.assertEqual((self.members("a"), [i.id for i in self.host.instances_of("a")]), (["c1", "c3"], [board.id]))
+
+    def test_an_actor_that_moves_or_goes_alone_lets_go_of_the_apps_that_stay(self):
+        page = self.host.open("pages", "a", self.folder)
+        for c in ("c1", "c3"):
+            self.host.attach("a", page.id, c)
+        groups.move("a", "b", ["c1"])
+        self.assertEqual(self.host.agents_of(page), ["c3"])
+        self.assertEqual(self.host.attached_to("b", "c1"), [])
+        groups.alone("a", "c3")
+        self.assertEqual(self.host.agents_of(page), [])
+        self.assertEqual([i.id for i in self.host.instances_of("a")], [page.id])     # the app stays where it was
