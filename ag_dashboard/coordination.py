@@ -114,7 +114,7 @@ INSTRUCTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), INSTRUCT
 # the page's `envelope` does, the same pattern) -- also with its lines made one, as data.py's `last_user_message` has
 # a message. A watch's news (`update`) is no one's message: its first line says which watch and what became of the
 # actor watched, then what it was asked and said last, and the watcher's note (UPDATE reads it back).
-FROM_COORDINATOR = 'Message from the gatherer agent (answer it with: ag actors send gatherer "..."):'
+FROM_COORDINATOR = 'Message from the coordinator agent (answer it with: ag actors send coordinator "..."):'
 FROM_ACTOR = 'Message from actor {id}{name} (answer it with: ag actors send {id} "..."):'
 ENVELOPE = re.compile(r'^Message from (the (?:gatherer|coordinator) agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)'
                       r'(?: \(answer it with: [^\n]*?\))?:\s+([\s\S]*)$')
@@ -187,7 +187,7 @@ def instructions(gatherer: str) -> str:
                 return fh.read().replace("{gatherer}", gatherer)
         except OSError:
             continue
-    raise CoordinationError(f"no instructions for the gatherer agent: {INSTRUCTIONS} is missing")
+    raise CoordinationError(f"no instructions for the coordinator agent: {INSTRUCTIONS} is missing")
 
 
 
@@ -282,7 +282,7 @@ class Coordination:
         -- {cwd, harness} -- says to start it), an id or its start, the id it was started under, or a name."""
         ref = (ref or "").strip()
         if not ref:
-            raise CoordinationError("which actor? Give its id (`ag actors` lists them), or `gatherer` for the gatherer agent")
+            raise CoordinationError("which actor? Give its id (`ag actors` lists them), or `coordinator` for the coordinator agent")
         if ref.lower() in ALIASES:
             found = next((a for a in agents if self._is_coordinator(a)), None)
             if found is not None or start is None:
@@ -305,7 +305,7 @@ class Coordination:
         named = [a for a in agents if _name(a) and _name(a).lower() == ref.lower()]
         if len(named) == 1:
             return named[0]
-        raise CoordinationError(f"no actor {ref} in the gatherer" + (f" ({len(named)} have that name)" if named else ""))
+        raise CoordinationError(f"no actor {ref} in the group" + (f" ({len(named)} have that name)" if named else ""))
 
     def _sender(self, me: dict) -> dict:
         return {"kind": "coordinator"} if self._is_coordinator(me) else {"kind": "actor", "id": me["channel"], "name": _name(me)}
@@ -341,7 +341,7 @@ class Coordination:
         g, me, agents = self._asker(actor)
         a = self._find(g, ref, agents)
         if a is None:
-            raise CoordinationError("the gatherer has no gatherer agent yet")
+            raise CoordinationError("the group has no coordinator agent yet")
         got = _latest(g, a["channel"], a.get("cwd"))
         return {**self._view(a, me, _kept(g)), "said": _clip(got.get("said"), SAID_CHARS),
                 "asked": _clip(_unwrapped(got.get("asked")), SAID_CHARS) or self._view(a, me)["asked"], "turns": got.get("turns", 0),
@@ -469,7 +469,7 @@ class Coordination:
         g, me, agents = self._asker(actor)
         to = self._find(g, ref, agents)
         if to is None:
-            raise CoordinationError("the gatherer has no gatherer agent yet")
+            raise CoordinationError("the group has no coordinator agent yet")
         if to["channel"] == me["channel"]:
             raise CoordinationError("that is you: your turn is over when you end it")
         note = (note or "").strip()[:NOTE_CHARS]
@@ -522,9 +522,9 @@ class Coordination:
     def _ownable(self, g: str, ref: str, agents: List[dict]) -> dict:
         a = self._find(g, ref, agents)
         if a is None:
-            raise CoordinationError("the gatherer has no gatherer agent yet")
+            raise CoordinationError("the group has no coordinator agent yet")
         if self._is_coordinator(a):
-            raise CoordinationError("the gatherer agent is not saved or put in a folder: it is always at the top of its gatherer")
+            raise CoordinationError("the coordinator agent is not saved or put in a folder: it is always at the top of its group")
         return a
 
     def save(self, actor: str, ref: str, folder: Optional[str] = None, unfiled: bool = False) -> dict:

@@ -130,20 +130,37 @@ here is worth looking for there before concluding it did not happen:
     sqlite3 {db_path} "SELECT e.row_id, t.name, coalesce(e.text, e.payload_json) FROM events e JOIN event_types t USING (event_type_id) WHERE e.row_id BETWEEN A AND B ORDER BY e.row_id;\""""
 
 
+# A database every group's sessions share (the home's one, `ag home merge`'s): how to keep to one's own. A query, not a
+# view: a view naming a column the events table does not have yet breaks a later ALTER TABLE ... RENAME.
+DB_GROUP_HINT = """
+
+That database holds the sessions of every group, not only yours: keep to your group's, `{group}`, by
+putting this before a query
+
+    WITH mine AS (SELECT {channel_column} AS ch, json_extract(payload_json, '$.group') AS grp, max(row_id)
+                  FROM events JOIN event_types USING (event_type_id) WHERE name = 'group' GROUP BY {channel_column})
+
+and `AND (e.{channel_column} IS NULL OR e.{channel_column} IN (SELECT ch FROM mine WHERE grp = '{group}'))` in its WHERE:
+a session's group is the one its latest `group` event names."""
+
+
 def overview(cfg: ProactiveContextManagerConfig, joined: bool = False) -> str:
     """The sections' fixed preamble: how they are organised. `joined`: for a session that started
     from the gatherer's other sessions (a `join` build), which has no earlier history of its own."""
     return f"{OVERVIEW_HEADER}\n\n{JOINED_OPENING if joined else OPENING}\n\n{OVERVIEW}"
 
 
-def guide(cfg: ProactiveContextManagerConfig, db_path: Optional[str]) -> str:
+def guide(cfg: ProactiveContextManagerConfig, db_path: Optional[str], group: Optional[str] = None) -> str:
     """The gatherer guide that opens every context (`config.gatherer_guide`), with where the full
-    history is when db_hint is set; "" for none."""
+    history is when db_hint is set -- and, `group` given (a database every group's sessions share), how
+    to keep to the session's own group there; "" for none."""
     if not cfg.gatherer_guide:
         return ""
     text = cfg.gatherer_guide.format(db_path=db_path or "", channel_column=property_column(CHANNEL))
     if cfg.db_hint and db_path:
         text += DB_HINT.format(db_path=db_path, channel_column=property_column(CHANNEL))
+        if group is not None:
+            text += DB_GROUP_HINT.format(group=group.replace("'", "''"), channel_column=property_column(CHANNEL))
     return text
 
 

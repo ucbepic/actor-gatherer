@@ -1,15 +1,15 @@
-"""`ag actors`: the other actors of this session's gatherer, and the gatherer agent that coordinates them -- asked of
+"""`ag actors`: the other actors of this session's group, and the coordinator agent that coordinates them -- asked of
 the dashboard that runs them (ag_dashboard/coordination.py), over its local API (POST /api/actors/<op>).
 
-    ag actors [--all]                   the actors of the gatherer that are not closed (--all: every one): each one's
+    ag actors [--all]                   the actors of the group that are not closed (--all: every one): each one's
                                         id, name, status, harness, directory, what it was last asked and its recap
     ag actors show <actor>              one actor: that, what it said last, the files its latest turn changed
-    ag actors who <file>                which actors of the gatherer changed the file in the last day, the latest first
-    ag actors send <actor> <message>    a message to the actor (`gatherer`: the gatherer agent; - for the message: read
+    ag actors who <file>                which actors of the group changed the file in the last day, the latest first
+    ag actors send <actor> <message>    a message to the actor (`coordinator`: the coordinator agent; - for the message: read
                                         from stdin), which it gets in its conversation now -- as a new turn, or in the
                                         one it is running -- saying who it is from
     ag actors new [--like A] [--cwd D] [--harness H] [--model M] [--name N] [--folder F] [--docwriter | --browser | --branch [--approve]] <message>
-                                        a new actor in the gatherer, started with the message: in D, on H and M, as given,
+                                        a new actor in the group, started with the message: in D, on H and M, as given,
                                         else as actor A has them, else as this one; in the dashboard's list, in folder F
                                         (a path, made if new). --docwriter: a DocWriter's actor,
                                         writing with the user on D's documents in DocWriter, in the dashboard, where its
@@ -21,19 +21,19 @@ the dashboard that runs them (ag_dashboard/coordination.py), over its local API 
     ag actors watches | unwatch <n>     what this actor asked to be told and has not been; one of them dropped
     ag actors save <actor> [--folder F | --no-folder]
                                         the actor saved for later, as the bookmark in the dashboard's list saves one;
-                                        put in folder F too (made if new), or at the gatherer's top (--no-folder)
+                                        put in folder F too (made if new), or at the group's top (--no-folder)
     ag actors unsave <actor>            no longer saved (it stays in its folder)
-    ag actors folders                   the gatherer's folders, as the dashboard's list has them: the actors in each,
-                                        the folders in each, and the actors at the gatherer's top
+    ag actors folders                   the group's folders, as the dashboard's list has them: the actors in each,
+                                        the folders in each, and the actors at the group's top
     ag actors folder new <F> | rename <F> <name> | move <F> <G|top> | delete <F>
                                         a folder made (empty), renamed, put in folder G (or at the top), or deleted
                                         (what was in it moved up into the folder it was in)
-    ag actors move <actor>... <F|top>   actors put in folder F (made if new), or at the gatherer's top
+    ag actors move <actor>... <F|top>   actors put in folder F (made if new), or at the group's top
 
 A folder is named by its path: its name after those of the folders it is in, joined by "/" (`Harnesses/Codex`).
-Folders only organise the dashboard's list: an actor shares the gatherer's context whatever folder it is in.
+Folders only organise the dashboard's list: an actor shares the group's context whatever folder it is in.
 
-An actor is named by its id (or its first characters), its name, or `gatherer` for the gatherer agent. Who asks is the
+An actor is named by its id (or its first characters), its name, or `coordinator` for the coordinator agent. Who asks is the
 session the command runs in, as its harness says (CLAUDE_CODE_SESSION_ID, CODEX_THREAD_ID), else AG_ACTOR (which the
 dashboard sets in the sessions it starts), else `--as <id>`. The dashboard is AG_DASHBOARD's (which it sets too), else
 the one the home names (<home>/dashboard/address.json). `--json` prints its answer as JSON. Standard library only."""
@@ -104,20 +104,20 @@ def ask(url: str, op: str, body: dict, api: str = "actors") -> dict:
 
 
 def parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="ag actors", description="The other actors of this session's gatherer, and the "
-                                 "gatherer agent that coordinates them.")
+    ap = argparse.ArgumentParser(prog="ag actors", description="The other actors of this session's group, and the "
+                                 "coordinator agent that coordinates them.")
     ap.add_argument("--as", dest="who", help="ask as this actor (its id), not the session the command runs in")
     ap.add_argument("--json", action="store_true", help="print the answer as JSON")
     ap.add_argument("--all", action="store_true", help="with no command (a list): closed actors too")
     sub = ap.add_subparsers(dest="op")
-    ls = sub.add_parser("list", help="the actors of the gatherer that are not closed")
+    ls = sub.add_parser("list", help="the actors of the group that are not closed")
     ls.add_argument("--all", action="store_true", help="closed ones too")
     sub.add_parser("show", help="one actor: what it was asked, said last, and changed").add_argument("actor")
     sub.add_parser("who", help="which actors changed a file in the last day").add_argument("file")
-    send = sub.add_parser("send", help="a message to an actor (`gatherer`: the gatherer agent)")
+    send = sub.add_parser("send", help="a message to an actor (`coordinator`: the coordinator agent)")
     send.add_argument("actor")
     send.add_argument("message", nargs="+", help="its words (- reads them from stdin)")
-    new = sub.add_parser("new", help="a new actor in the gatherer, started with a message")
+    new = sub.add_parser("new", help="a new actor in the group, started with a message")
     new.add_argument("--like", help="in the directory, harness and model of this actor")
     new.add_argument("--cwd", help="the directory it works in")
     new.add_argument("--harness", choices=harness_kit.runnable(), help="the harness it runs on (default: the --like actor's, else yours)")
@@ -145,10 +145,10 @@ def parser() -> argparse.ArgumentParser:
     save.add_argument("actor")
     where = save.add_mutually_exclusive_group()
     where.add_argument("--folder", help="put in this folder (a path, made if new)")
-    where.add_argument("--no-folder", dest="unfiled", action="store_true", help="put at the gatherer's top, in no folder")
+    where.add_argument("--no-folder", dest="unfiled", action="store_true", help="put at the group's top, in no folder")
     sub.add_parser("unsave", help="an actor no longer saved for later").add_argument("actor")
-    sub.add_parser("folders", help="the gatherer's folders, and what is in each")
-    move = sub.add_parser("move", help="actors put in a folder (made if new), or at the gatherer's top")
+    sub.add_parser("folders", help="the group's folders, and what is in each")
+    move = sub.add_parser("move", help="actors put in a folder (made if new), or at the group's top")
     move.add_argument("actors", nargs="+", help="the actors, then the folder's path (or `top`)")
     move.add_argument("--group", help="into another group (its folder, or `top`): they share with its actors then, "
                                       "each with its task; only when the user asks")
@@ -239,8 +239,8 @@ def _place(cwd: Optional[str]) -> str:
 
 
 def _who(a: dict) -> str:
-    """An actor in a line: its id, its name, whether it is the gatherer agent or the asker, its status, harness, place."""
-    marks = [m for m in ("the gatherer agent" if a.get("gatherer_agent") else None, "a DocWriter" if a.get("docwriter") else None,
+    """An actor in a line: its id, its name, whether it is the coordinator agent or the asker, its status, harness, place."""
+    marks = [m for m in ("the coordinator agent" if a.get("gatherer_agent") else None, "a DocWriter" if a.get("docwriter") else None,
                          "a Browser" if a.get("browser") else None,
                          "saved" if a.get("saved") else None, 'in "%s"' % a["folder"] if a.get("folder") else None,
                          "you" if a.get("you") else None) if m]
@@ -259,7 +259,7 @@ def _ago(at) -> str:
 
 def shown(op: str, got: dict) -> str:
     if op == "list":
-        lines = [f'Actors of the gatherer {got["gatherer"]} (you are {got["you"]}):']
+        lines = [f'Actors of the group {got["gatherer"]} (you are {got["you"]}):']
         for a in got["actors"]:
             lines.append(f"- {_who(a)}")
             if a.get("asked"):
@@ -267,7 +267,7 @@ def shown(op: str, got: dict) -> str:
             if a.get("recap"):
                 lines.append(f"    recap: {a['recap']}")
         if not any(a.get("gatherer_agent") for a in got["actors"]):
-            lines.append("The gatherer has no gatherer agent yet: `ag actors send gatherer ...` starts one.")
+            lines.append("The group has no coordinator agent yet: `ag actors send coordinator ...` starts one.")
         if got.get("closed"):
             lines.append(f"({got['closed']} closed, not listed: --all lists them.)")
         return "\n".join(lines)
@@ -284,12 +284,12 @@ def shown(op: str, got: dict) -> str:
         return "\n".join(lines)
     if op == "who":
         if not got["actors"]:
-            return f"No actor of the gatherer changed {got['path']} in the last day."
+            return f"No actor of the group changed {got['path']} in the last day."
         return "\n".join([f"Actors that changed {got['path']} in the last day, the latest first:"]
                          + [f"- {_who(a)}: {a['how']} it {_ago(a['at'])}" for a in got["actors"]])
     if op == "send":
         to = got["to"]
-        who = "the gatherer agent" if to.get("gatherer_agent") else "actor %s" % to["id"] + (' ("%s")' % to["name"] if to.get("name") else "")
+        who = "the coordinator agent" if to.get("gatherer_agent") else "actor %s" % to["id"] + (' ("%s")' % to["name"] if to.get("name") else "")
         return f"Sent to {who}: it gets your message now, as a new turn or during the one it is running."
     if op == "new":
         a = got["actor"]
@@ -324,12 +324,12 @@ def shown(op: str, got: dict) -> str:
     if op in ("save", "unsave"):
         a = got["actor"]
         who = "Actor %s" % a["id"] + (' ("%s")' % a["name"] if a.get("name") else "")
-        where = 'in the folder "%s"' % a["folder"] if a.get("folder") else "at the gatherer's top"
+        where = 'in the folder "%s"' % a["folder"] if a.get("folder") else "at the group's top"
         if not a.get("saved"):
             return f"{who} is no longer saved ({where})."
         return f"{who} is saved for later, {where}."
     if op == "move":
-        top = f"at the top of the group {got['group']}" if got.get("group") else "at the gatherer's top"
+        top = f"at the top of the group {got['group']}" if got.get("group") else "at the group's top"
         where = 'in the folder "%s"' % got["folder"] if got.get("folder") else top
         if got.get("group") and got.get("folder"):
             where += f" of the group {got['group']}"
@@ -347,9 +347,9 @@ def shown(op: str, got: dict) -> str:
                           "split": 'Folder "{name}" is a group of its own now: {group}, what was in it at its top.',
                           "delete": 'Folder "{name}" deleted: what was in it moved up a level.'}[got["done"]].format(**got))
         if not got["folders"] and not got["actors"] and not got["closed"]:
-            lines.append(f"The gatherer {got['gatherer']} has no folders, and no actors but the gatherer agent.")
+            lines.append(f"The group {got['gatherer']} has no folders, and no actors but the coordinator agent.")
             return "\n".join(lines)
-        lines.append(f"Folders of the gatherer {got['gatherer']}:" if got["folders"] else f"The gatherer {got['gatherer']} has no folders.")
+        lines.append(f"Folders of the group {got['gatherer']}:" if got["folders"] else f"The group {got['gatherer']} has no folders.")
 
         def tree(node: dict, depth: int) -> None:
             pad = "  " * depth
@@ -361,7 +361,7 @@ def shown(op: str, got: dict) -> str:
                 tree(f, depth + 1)
         tree(got, 0)
         if got["actors"] or got["closed"]:
-            lines.append("- at the gatherer's top" + (f" ({got['closed']} closed)" if got["closed"] else ""))
+            lines.append("- at the group's top" + (f" ({got['closed']} closed)" if got["closed"] else ""))
             lines.extend(f"    {_who({**a, 'folder': None})}" for a in got["actors"])
         return "\n".join(lines)
     return json.dumps(got, indent=2)

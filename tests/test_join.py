@@ -354,7 +354,7 @@ class RegroupTest(JoinBase):
         self.assertEqual(tables.latest_build(self.m._conn("w"), "c2")["reason"], tables.JOIN)
 
     def said(self, context):
-        return [t for t in self.texts(context) if "your group" in t.lower()]
+        return [t for t in self.texts(context) if "your group" in t.lower() and not t.startswith("About this context")]
 
     def test_an_actor_is_told_its_group_changed(self):
         self.adopted()
@@ -391,6 +391,26 @@ class RegroupTest(JoinBase):
         back = [t for t in self.texts(self.read()) if "Until now you worked on your own" in t]
         self.assertEqual(len(back), 1)
         self.assertIn("the sessions of Editor", back[0])
+
+    def test_in_a_database_of_groups_the_guide_says_how_to_keep_to_one_s_own(self):
+        import re
+        import sqlite3
+        self.put(PREAMBLE + [user("my task", 1)])
+        self.assertNotIn("sessions of every group", self.texts(self.read())[len(PREAMBLE)])     # no groups: no word of them
+        self.moved("c1", "a")
+        self.moved("c2", "b")
+        self.put(PREAMBLE + [user("theirs", 2)], channel="c2")
+        self.put([agent("ok", 1), user("more", 3)])
+        guide = next(t for t in self.texts(self.read()) if t.startswith(GUIDE_START))
+        self.assertIn("keep to your group's, `a`", guide)
+        mine = re.search(r"\n\n( +WITH mine AS .*?)\n\nand `(AND .*?)` in its WHERE", guide, re.S)
+        sql = f"{mine.group(1)} SELECT DISTINCT e.p_channel FROM events e WHERE 1 {mine.group(2)}"   # as an actor would
+        conn = sqlite3.connect(db_path("w"))
+        try:
+            got = {r[0] for r in conn.execute(sql)}
+        finally:
+            conn.close()
+        self.assertEqual(got - {None}, {"c1"})                            # c2, of group b, left out
 
     def test_a_move_between_two_other_groups_says_nothing(self):
         self.adopted()
