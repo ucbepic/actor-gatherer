@@ -125,7 +125,7 @@ CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.t
 RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "harness", "session_file", "asked",
            "ask_settled", "turn_stopped", "task_started", "task_ended", "task_activity", "message_queued", "message_sent",
            "message_withdrawn", "file_touched", "chat_sent", "answer_given", "terminal_input", "actor_message", "role",
-           "group", "folder")
+           "group", "folder", "filed")
 #: What the harness's own record of a session says (its file: Claude Code's under its projects folder, codex's
 #: rollout), as the hook records it while it follows the record (ag's session_files.py; harness_kit's Facts): the
 #: record followed (`session_file`), then a fact per thing the record says that no model call carries.

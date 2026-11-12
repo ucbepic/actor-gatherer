@@ -7,17 +7,19 @@ actor's group is its file, and none moves (GroupError).
                                             group -- those named, every one in the folder and the folders in it, and
                                             the others of each one's task, which moves whole -- and how many actors each
                                             of the two groups has before and after
-    move(gatherer, to, channels, folder, into)   it done: a `group` record in each actor's channel ({group, was, name,
-                                            was_name}: its id names the channel and the move, as a read returns an id
-                                            once, whatever its channel), then the dashboard's own rows of them moved
-                                            to the group's name, in one transaction -- the session's, its saved mark,
-                                            what was seen of it, its avatar, its folder (`into`: one of the group's;
-                                            none, its top), its task; the folder, and every folder in it, with them
+    move(gatherer, to, channels, folder, into)   it done, in one call to ag: a `group` record in each actor's channel
+                                            ({group, was, name, was_name, folder}: its id names the channel and the
+                                            move, as a read returns an id once, whatever its channel) -- its folder
+                                            `into` (one of the group's; none, its top), or the one it was in, inside
+                                            the folder moved -- and a `folder` record of the folder and each folder in
+                                            it, now the group's (folders.py); then the dashboard's own rows of the
+                                            actors moved to the group's name, in one transaction -- the session's, its
+                                            saved mark, what was seen of it, its avatar, its task
 
-Not yet: an actor's apps' attachments and the gatherer agent's watches of it stay where they were."""
+Not yet: an app does not move between groups (GroupError), and the coordinator agent's watches of an actor stay
+where they were."""
 
 import secrets
-import sqlite3
 from typing import Dict, Iterable, List, Optional
 
 from . import actions, data, folders, home, tasks, titles
@@ -62,6 +64,8 @@ def actors(gatherer: str, channels: Iterable[str] = (), folder: Optional[int] = 
     mine = (tasks.stored() or {}).get(gatherer) or {"tasks": [], "tasked": {}}
     joined = {mine["tasked"][c] for c in out if c in mine["tasked"]}
     out |= {c for c, t in mine["tasked"].items() if t in joined}
+    if any(c.startswith(folders.APP) for c in out):
+        raise GroupError("an app does not move between groups yet: take it out of the folder or the task first")
     return sorted(out)
 
 
@@ -117,50 +121,47 @@ def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
         if any(f.get("parent") == into and f["name"].lower() == name.lower() for f in target["folders"]):
             raise GroupError(f'{to} has a folder "{name}" there already')
     said = {"group": to, "was": gatherer, "name": _names(to), "was_name": _names(gatherer)}
-    for c in moving:                                 # ag first: what the policy reads
-        event = {"type": GROUP, "id": f"{GROUP}:{c}:{secrets.token_hex(6)}", "payload": said}
-        actions.record(to, c, [event], wait=True)
+    tree = _tree(gatherer)
+    under = _under(tree, int(folder)) if folder is not None else []
+    there = {c: tree["filed"][c] if tree["filed"].get(c) in under else into for c in moving}   # in the folder: still
+    events = [{"type": GROUP, "id": f"{GROUP}:{c}:{secrets.token_hex(6)}", "properties": {"channel": c},
+               "payload": {**said, "folder": there[c]}} for c in moving]
+    kept = folders._records()[0]
+    for fid in under:                                 # the folder at `into`, those in it where they were
+        f = kept[fid]
+        events.append(folders._folder_event(fid, (to, into if fid == int(folder) else f["parent"], f["name"], f["at"],
+                                                  f["closed"])))
+    try:
+        actions.insert(to, events)                    # ag first: what the policy reads, and where the folders are
+    except (RuntimeError, OSError, ValueError) as exc:
+        raise GroupError(f"ag did not take the move: {exc}; nothing else changed") from None
     got = _members(to)
     missed = [c for c in moving if c not in got]
     if missed:
         raise GroupError(f"ag did not take the move of {', '.join(missed)}; nothing else changed")
-    _rows(gatherer, to, moving, folder, into)
+    _rows(gatherer, to, moving)
     return {"actors": moving, "from": gatherer, "to": to}
 
 
-def _rows(gatherer: str, to: str, moving: List[str], folder: Optional[int], into: Optional[int]) -> None:
-    """The dashboard's own rows of the moved actors (and of the folder, with every folder in it) moved to `to`'s name,
-    in one transaction."""
-    under = _under(_tree(gatherer), int(folder)) if folder is not None else []
-    filed = _tree(gatherer)["filed"]
+def _rows(gatherer: str, to: str, moving: List[str]) -> None:
+    """The dashboard's own rows of the moved actors moved to `to`'s name, in one transaction: their folders are the
+    records' (folders.py)."""
+    if not moving:
+        return
     marks = ", ".join("?" * len(moving))
     conn = folders._write()
     try:
         conn.execute("BEGIN IMMEDIATE")
-        if moving and folders._has(conn, "sessions"):
+        if folders._has(conn, "sessions"):
             conn.execute(f"UPDATE sessions SET gatherer = ? WHERE gatherer = ? AND session_id IN ({marks})",
                          (to, gatherer, *moving))
-        if moving:
-            for table in ACTOR_TABLES:
-                if folders._has(conn, table):
-                    conn.execute(f"UPDATE {table} SET gatherer = ? WHERE gatherer = ? AND channel IN ({marks})",
-                                 (to, gatherer, *moving))
-            if folders._has(conn, "tasks"):
-                conn.execute(f"UPDATE tasks SET gatherer = ? WHERE id IN (SELECT task FROM tasked WHERE gatherer = ? "
-                             f"AND channel IN ({marks}))", (to, to, *moving))
-        if under:
-            ids = ", ".join("?" * len(under))
-            conn.execute(f"UPDATE folders SET gatherer = ? WHERE id IN ({ids})", (to, *under))
-            conn.execute("UPDATE folders SET parent = ? WHERE id = ?", (into, int(folder)))
-        loose = [c for c in moving if filed.get(c) not in under]               # moved by themselves: into `into`
-        for c in moving:
-            if c in loose:
-                conn.execute("DELETE FROM filed WHERE gatherer = ? AND channel = ?", (gatherer, c))
-                if into is not None:
-                    conn.execute("INSERT OR REPLACE INTO filed (gatherer, channel, folder, at) VALUES (?, ?, ?, ?)",
-                                 (to, c, int(into), folders._now()))
-            else:
-                conn.execute("UPDATE filed SET gatherer = ? WHERE gatherer = ? AND channel = ?", (to, gatherer, c))
+        for table in ACTOR_TABLES:
+            if folders._has(conn, table):
+                conn.execute(f"UPDATE {table} SET gatherer = ? WHERE gatherer = ? AND channel IN ({marks})",
+                             (to, gatherer, *moving))
+        if folders._has(conn, "tasks"):
+            conn.execute(f"UPDATE tasks SET gatherer = ? WHERE id IN (SELECT task FROM tasked WHERE gatherer = ? "
+                         f"AND channel IN ({marks}))", (to, to, *moving))
         conn.execute("COMMIT")
     except BaseException:
         if conn.in_transaction:

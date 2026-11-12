@@ -34,15 +34,33 @@ reopens it, and the closed folders it is in.
 
 THE FOLDERS OF SAVED ACTORS that saved.py kept before this module (table `saved_folders`, column `saved.folder`) are
 copied here once, when this module first makes its tables: each one a folder at its gatherer's top level, each saved
-actor in one filed in it (and still saved). saved.py's are left as they were, no longer read."""
+actor in one filed in it (and still saved). saved.py's are left as they were, no longer read.
 
+IN THE HOME'S ONE DATABASE (home.py's `merged`: `ag home merge`'s), where a gatherer is a GROUP of its channels, the
+tree is kept there instead, as records ag reads and never shows an agent (the Notes design "Groups: design", section 3):
+
+    folder      no channel's: {id, group, parent, name, at, closed} -- the folder as it is now, in the group `group`;
+                {id, gone: true}, deleted. The latest of an id wins.
+    group       in each actor's channel (the one it is filed as): {group, was, folder} -- `folder` its folder's id, none
+                at its group's top. One that only files it has `was` its `group`: no move, nothing rebuilt
+                (groups.py's are the moves).
+    filed       no channel's: {item, group, folder} -- an app's instance ("app:<id>", as the list has it) in a folder;
+                an app is no conversation, so it has no `group` record. The latest of an item wins.
+
+A change is made as in dashboard.db -- on a copy of the tree in memory, by the same code -- and what it changed put in
+by ag at once (actions.py's `insert`): a FolderError, and nothing kept, if ag did not take it. dashboard.db's folders
+are copied in once, at the first read or change there (`_copy_in`); its tables are left as they were, no longer read."""
+
+import json
 import os
+import secrets
 import sqlite3
+import sys
 import time
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional
 
-from . import saved, sessions
+from . import actions, saved, sessions
 
 FOLDER_CHARS = 60               # the longest name a folder takes
 TOP = ("", "/", "top")          # what names the gatherer's top level, where a folder is asked for by path
@@ -119,6 +137,182 @@ def _with_closed(conn: sqlite3.Connection) -> None:
             raise
 
 
+FOLDER, GROUP, FILED = "folder", "group", "filed"
+APP = "app:"                    # an app's instance in a folder (the list's item), kept by a FILED record
+COPIED = "folders_in_home"      # dashboard.db's: when its folders were copied into the home's one database
+_copied: set = set()            # the dashboard.db paths whose folders are copied in, as seen by this process
+
+
+def _in_home() -> bool:
+    return sessions.home.merged()
+
+
+def _payload(raw) -> Optional[dict]:
+    try:
+        got = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return None
+    return got if isinstance(got, dict) else None
+
+
+def _records() -> tuple:
+    """Of the home's one database: ({id: {id, group, parent, name, at, closed}} the folders there are, {channel: (group,
+    folder id or None)} each one's latest `group` record's, the highest folder id ever kept, gone or not)."""
+    kept: Dict[int, dict] = {}
+    placed: Dict[str, tuple] = {}
+    top = 0
+    path = sessions.home.home_db()
+    if not os.path.exists(path):
+        return kept, placed, top
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
+    try:
+        for kind in (FOLDER, GROUP, FILED):
+            for ch, raw in conn.execute("SELECT e.p_channel, e.payload_json FROM events e JOIN event_types t "
+                                        "ON t.event_type_id = e.event_type_id WHERE t.name = ? ORDER BY e.row_id", (kind,)):
+                p = _payload(raw)
+                if p is None:
+                    continue
+                if kind == FOLDER and ch is None and isinstance(p.get("id"), int):
+                    top = max(top, p["id"])
+                    if p.get("gone"):
+                        kept.pop(p["id"], None)
+                    else:
+                        kept[p["id"]] = {k: p.get(k) for k in ("id", "group", "parent", "name", "at", "closed")}
+                elif kind == GROUP and ch is not None:
+                    folder = p.get("folder")
+                    placed[ch] = (str(p.get("group") or ""), folder if isinstance(folder, int) else None)
+                elif kind == FILED and ch is None and str(p.get("item") or "").startswith(APP):
+                    folder = p.get("folder")
+                    placed[p["item"]] = (str(p.get("group") or ""), folder if isinstance(folder, int) else None)
+    except sqlite3.OperationalError:                    # no events yet, or no channel's column
+        pass
+    finally:
+        conn.close()
+    return kept, placed, top
+
+
+def _filed(kept: Dict[int, dict], placed: Dict[str, tuple]) -> List[tuple]:
+    """(group, channel, folder id) of each actor in a folder of its own group."""
+    return [(g, ch, f) for ch, (g, f) in placed.items() if f in kept and kept[f]["group"] == g]
+
+
+def _stored_in_home() -> Dict[str, dict]:
+    _copy_in()
+    kept, placed, _ = _records()
+    found: Dict[str, dict] = {}
+    for f in sorted(kept.values(), key=lambda f: (str(f["group"]), str(f["name"]).lower(), str(f["name"]))):
+        found.setdefault(str(f["group"]), {"folders": [], "filed": {}})["folders"].append(
+            {"id": f["id"], "parent": f["parent"], "name": f["name"], "closed": f["closed"]})
+    for g, ch, f in _filed(kept, placed):
+        found.setdefault(g, {"folders": [], "filed": {}})["filed"][ch] = f
+    return found
+
+
+def _tree(conn: sqlite3.Connection) -> tuple:
+    """({id: (group, parent, name, at, closed)}, {(group, channel): folder id}) as `conn` has them."""
+    return ({r[0]: tuple(r[1:]) for r in conn.execute("SELECT id, gatherer, parent, name, at, closed FROM folders")},
+            {(g, c): f for g, c, f in conn.execute("SELECT gatherer, channel, folder FROM filed")})
+
+
+def _put(gatherer: str, events: List[dict]) -> None:
+    """`events` put in by ag (actions.py's `insert`); FolderError if it did not take them."""
+    if not events:
+        return
+    try:
+        actions.insert(gatherer, events)
+    except (RuntimeError, OSError, ValueError) as exc:
+        raise FolderError(f"not kept: {exc}") from None
+
+
+def _folder_event(fid: int, row: Optional[tuple], tag: Optional[str] = None) -> dict:
+    payload = ({"id": fid, "gone": True} if row is None else
+               {"id": fid, "group": row[0], "parent": row[1], "name": row[2], "at": row[3], "closed": row[4]})
+    return {"type": FOLDER, "id": f"{FOLDER}:{fid}:{tag or secrets.token_hex(6)}", "payload": payload}
+
+
+def _filed_event(group: str, item: str, folder: Optional[int], tag: Optional[str] = None) -> dict:
+    return {"type": FILED, "id": f"{FILED}:{item}:{tag or secrets.token_hex(6)}",
+            "payload": {"item": item, "group": group, "folder": folder}}
+
+
+def _placed_event(group: str, key: str, folder: Optional[int], tag: Optional[str] = None) -> dict:
+    """Where an item of the list is: an actor's `group` record, an app's `filed` one."""
+    return (_filed_event if key.startswith(APP) else _group_event)(group, key, folder, tag)
+
+
+def _group_event(group: str, channel: str, folder: Optional[int], tag: Optional[str] = None) -> dict:
+    # its id names the channel: a read returns an id once, whatever its channel
+    return {"type": GROUP, "id": f"{GROUP}:{channel}:{tag or secrets.token_hex(6)}", "properties": {"channel": channel},
+            "payload": {"group": group, "was": group, "folder": folder}}
+
+
+def _change_in_home(gatherer: str, do):
+    """`do(conn)` on the home's tree, copied into memory, and what it changed put in by ag (module doc)."""
+    _copy_in()
+    kept, placed, top = _records()
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    try:
+        for statement in SCHEMA:
+            if not statement.lstrip().upper().startswith("CREATE UNIQUE INDEX"):   # names are checked by `_beside`
+                conn.execute(statement)
+        conn.executemany("INSERT INTO folders (id, gatherer, parent, name, at, closed) VALUES (?, ?, ?, ?, ?, ?)",
+                         [(f["id"], str(f["group"]), f["parent"], str(f["name"]), f["at"] or _now(), f["closed"])
+                          for f in kept.values()])
+        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'folders'")               # an id is never used again
+        conn.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('folders', ?)", (max([top, *kept]),))
+        conn.executemany("INSERT INTO filed (gatherer, channel, folder, at) VALUES (?, ?, ?, '')",
+                         _filed(kept, placed))
+        before = _tree(conn)
+        conn.execute("BEGIN")
+        got = do(conn)
+        conn.execute("COMMIT")
+        after = _tree(conn)
+    finally:
+        conn.close()
+    events = [_folder_event(fid, after[0].get(fid)) for fid in sorted(set(before[0]) | set(after[0]))
+              if before[0].get(fid) != after[0].get(fid)]
+    events += [_placed_event(g, c, after[1].get((g, c))) for g, c in sorted(set(before[1]) | set(after[1]))
+               if before[1].get((g, c)) != after[1].get((g, c))]
+    _put(gatherer, events)
+    return got
+
+
+def _copy_in() -> None:
+    """dashboard.db's folders and filed actors copied into the home's one database as records, once (module doc). An
+    actor whose channel has a folder there already, or is in another group there now, is left as the records have it.
+    Each record's id is the copy's, so a copy made twice keeps nothing new."""
+    if sessions.db_path() in _copied or not os.path.exists(sessions.db_path()):
+        return
+    conn = _write()
+    try:
+        if _has(conn, COPIED):
+            _copied.add(sessions.db_path())
+            return
+        rows = conn.execute("SELECT id, gatherer, parent, name, at, closed FROM folders").fetchall()
+        filed = conn.execute("SELECT gatherer, channel, folder FROM filed").fetchall()
+    finally:
+        conn.close()
+    kept, placed, _ = _records()
+    by: Dict[str, List[dict]] = {}
+    for fid, g, parent, name, at, closed in rows:
+        if fid not in kept:
+            by.setdefault(g, []).append(_folder_event(fid, (g, parent, name, at, closed), tag="copied"))
+    known = {r[0] for r in rows}
+    for g, ch, fid in filed:
+        now, there = placed.get(ch, (g, None))
+        if fid in known and now == g and there is None:
+            by.setdefault(g, []).append(_placed_event(g, ch, fid, tag="folder-copied"))
+    for g, events in by.items():
+        _put(g, events)
+    conn = _write()
+    try:
+        conn.execute(f"CREATE TABLE IF NOT EXISTS {COPIED} (at TEXT NOT NULL)")
+        conn.execute(f"INSERT INTO {COPIED} (at) VALUES (?)", (_now(),))
+    finally:
+        conn.close()
+    _copied.add(sessions.db_path())
+
+
 def _write() -> sqlite3.Connection:
     """The dashboard's database, for a change: this module's tables made the first time, saved.py's folders copied in."""
     os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
@@ -146,13 +340,25 @@ def _write() -> sqlite3.Connection:
 
 
 def ensure() -> None:
-    """The tables made, and saved.py's folders copied in, if not yet: at the dashboard's start."""
+    """The tables made, and saved.py's folders copied in, if not yet: at the dashboard's start -- and, in the home's one
+    database, dashboard.db's copied there (`_copy_in`)."""
     _write().close()
+    if _in_home():
+        try:
+            _copy_in()
+        except (FolderError, sqlite3.Error) as exc:     # tried again at the first read
+            print(f"dashboard: folders not copied into the home's database yet: {exc}", file=sys.stderr, flush=True)
 
 
 def stored() -> Dict[str, dict]:
     """{gatherer: {folders: [{id, parent, name, closed}] (by name, whatever its case), filed: {channel: folder id}}}, of
-    every gatherer with a folder: {} when there is none yet."""
+    every gatherer with a folder: {} when there is none yet. In the home's one database, its records' (module doc)."""
+    if _in_home():
+        try:
+            return _stored_in_home()
+        except (FolderError, sqlite3.Error) as exc:
+            print(f"dashboard: folders not read: {exc}", file=sys.stderr, flush=True)
+            return {}
     if not os.path.exists(sessions.db_path()):
         return {}
     conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
@@ -186,6 +392,8 @@ def _change(gatherer: str, do) -> sqlite3.Connection:
     """`do(conn)` in a transaction of its own (BEGIN IMMEDIATE), rolled back if it raises."""
     if not gatherer:
         raise FolderError("which gatherer?")
+    if _in_home():
+        return _change_in_home(gatherer, do)
     conn = _write()
     try:
         conn.execute("BEGIN IMMEDIATE")
