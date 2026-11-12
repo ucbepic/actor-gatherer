@@ -40,6 +40,21 @@ def _event(kind: str, **payload) -> dict:
     return {"type": kind, "id": f"{kind}:{uuid.uuid4().hex}", "payload": {"at": time.time(), **payload}}
 
 
+def insert(gatherer: str, events: List[dict]) -> List[Optional[int]]:
+    """`events` put in by ag in one call, waited for, whether or not a page is served -- each in the channel its own
+    `properties` name ({"channel": ...}; none: no channel's) -> each one's row (None: stored already). RuntimeError if
+    ag did not take them: what keeps state in the gatherer (folders.py's records) needs to know."""
+    from . import sessions                            # sessions.py records through here
+    done = subprocess.run([*sessions.ag_command(), "home", "insert", gatherer, "--events", json.dumps(events)],
+                          env=sessions.agent_env(), capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    if done.returncode:
+        raise RuntimeError((done.stderr or done.stdout).strip()[-300:] or f"ag exited {done.returncode}")
+    try:
+        return list(json.loads(done.stdout).get("rows") or [])
+    except (ValueError, AttributeError):
+        raise RuntimeError(f"ag answered {done.stdout.strip()[-200:]!r}") from None
+
+
 def record(gatherer: Optional[str], channel: Optional[str], events: List[dict], wait: bool = False) -> None:
     """`events` put in the actor's channel by ag (`ag home insert`), in the background (`wait`: before returning)."""
     if not ENABLED or not gatherer or not channel or not events:

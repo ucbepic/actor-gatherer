@@ -11,7 +11,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
 from ag_dashboard import actions, data, folders, groups, saved, sessions, tasks  # noqa: E402
-from channels import ch  # noqa: E402
 from replies import insert  # noqa: E402
 import test_home_db  # noqa: E402
 
@@ -23,13 +22,18 @@ class GroupsTest(unittest.TestCase):
         test_home_db.MergedHomeTest.setUp(self)
         self.addCleanup(test_home_db.MergedHomeTest.tearDown, self)
         self.recorded = []
-        record = unittest.mock.patch.object(actions, "record", side_effect=self.record)
-        record.start()
-        self.addCleanup(record.stop)
+        put = unittest.mock.patch.object(actions, "insert", side_effect=self.insert)
+        put.start()
+        self.addCleanup(put.stop)
 
-    def record(self, gatherer, channel, events, wait=False):
-        self.recorded.append((gatherer, channel, events))
-        insert(self.m, gatherer, ch(channel), events)
+    def insert(self, gatherer, events):
+        """actions.insert, in this process: each event in the channel its own properties name."""
+        self.recorded.append((gatherer, events))
+        insert(self.m, gatherer, {}, events)
+        return [None] * len(events)
+
+    def events(self, kind):
+        return [e for _, events in self.recorded for e in events if e["type"] == kind]
 
     def members(self, group):
         conn = data._connect(group)
@@ -50,16 +54,23 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual(got["actors"], ["c1"])
         self.assertEqual((got["before"], got["after"]), ({"a": 2, "b": 1}, {"a": 1, "b": 2}))
         self.assertEqual((self.members("a"), self.members("b")), (["c1", "c3"], ["c2"]))
-        self.assertEqual(self.recorded, [])
+        self.assertEqual(self.events("group"), [])
+
+    def test_a_move_is_one_call_to_ag(self):
+        work = folders.make("a", "Work")
+        folders.file("a", ["c1", "c3"], work)
+        self.recorded.clear()
+        groups.move("a", "b", folder=work)
+        self.assertEqual(len(self.recorded), 1)
 
     def test_an_actor_moved_is_in_its_new_group_with_its_rows(self):
         saved.choose("a", "c1", True)
         into = folders.make("b", "Inbox")
         groups.move("a", "b", ["c1"], into=into)
         self.assertEqual((self.members("a"), self.members("b")), (["c3"], ["c1", "c2"]))
-        [(_, channel, [event])] = self.recorded
-        self.assertEqual((channel, event["type"]), ("c1", "group"))
-        self.assertEqual({k: event["payload"][k] for k in ("group", "was")}, {"group": "b", "was": "a"})
+        [event] = [e for e in self.events("group") if e["payload"]["was"] == "a"]
+        self.assertEqual(event["properties"], {"channel": "c1"})
+        self.assertEqual({k: event["payload"][k] for k in ("group", "was", "folder")}, {"group": "b", "was": "a", "folder": into})
         self.assertIn("c1", event["id"])                          # a read returns an id once, whatever its channel
         self.assertEqual(self.rows("saved"), [("b", "c1")])
         self.assertEqual(folders.of("b")["filed"], {"c1": into})
@@ -88,7 +99,7 @@ class GroupsTest(unittest.TestCase):
 
     def test_nothing_of_the_dashboard_s_changes_when_ag_did_not_take_the_record(self):
         saved.choose("a", "c1", True)
-        with unittest.mock.patch.object(actions, "record"):           # ag kept nothing
+        with unittest.mock.patch.object(actions, "insert", side_effect=RuntimeError("no")):     # ag kept nothing
             with self.assertRaises(groups.GroupError):
                 groups.move("a", "b", ["c1"])
         self.assertEqual(self.rows("saved"), [("a", "c1")])
@@ -98,7 +109,7 @@ class GroupsTest(unittest.TestCase):
         folders.make("b", "work")
         with self.assertRaises(groups.GroupError):
             groups.move("a", "b", folder=work)
-        self.assertEqual((self.recorded, self.members("a")), ([], ["c1", "c3"]))
+        self.assertEqual((self.events("group"), self.members("a")), ([], ["c1", "c3"]))
 
     def test_refused_for_no_such_group_or_its_own(self):
         for to in ("a", "nowhere"):
@@ -109,6 +120,93 @@ class GroupsTest(unittest.TestCase):
         os.remove(paths.home_db())
         with self.assertRaises(groups.GroupError):
             groups.plan("a", "b", ["c1"])
+
+
+
+class FoldersInHomeTest(GroupsTest):
+    """The folder tree kept in the home's one database (folders.py), as `folder` and `group` records."""
+
+    test_a_plan_says_who_moves_and_changes_nothing = test_a_move_is_one_call_to_ag = None     # GroupsTest's, run there
+    test_an_actor_moved_is_in_its_new_group_with_its_rows = test_a_folder_moves_with_its_folders_and_every_actor_in_them = None
+    test_a_task_moves_whole = test_nothing_of_the_dashboard_s_changes_when_ag_did_not_take_the_record = None
+    test_a_folder_named_as_one_where_it_would_go_is_refused_before_anything = None
+    test_refused_for_no_such_group_or_its_own = test_refused_with_a_database_per_gatherer = None
+
+    def kept_in_dashboard_db(self):
+        if not os.path.exists(sessions.db_path()):
+            return 0, 0
+        conn = sqlite3.connect(sessions.db_path())
+        try:
+            if not folders._has(conn, "folders"):
+                return 0, 0
+            return tuple(conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ("folders", "filed"))
+        finally:
+            conn.close()
+
+    def test_the_tree_is_kept_as_records_not_in_dashboard_db(self):
+        work = folders.make("a", "Work")
+        inner = folders.make("a", "Inner", work)
+        folders.file("a", ["c1"], inner)
+        folders.rename("a", work, "Jobs")
+        self.assertEqual(folders.of("a"), {"folders": [{"id": inner, "parent": work, "name": "Inner", "closed": None},
+                                                       {"id": work, "parent": None, "name": "Jobs", "closed": None}],
+                                           "filed": {"c1": inner}})
+        self.assertEqual(folders.of("b"), {"folders": [], "filed": {}})
+        self.assertEqual(self.kept_in_dashboard_db(), (0, 0))
+        self.assertEqual([e["payload"]["name"] for e in self.events("folder")], ["Work", "Inner", "Jobs"])
+
+    def test_filing_an_actor_keeps_its_group(self):
+        work = folders.make("a", "Work")
+        folders.file("a", ["c1"], work)
+        [event] = self.events("group")
+        self.assertEqual(event["payload"], {"group": "a", "was": "a", "folder": work})   # no move: nothing rebuilt
+        self.assertEqual(self.members("a"), ["c1", "c3"])
+        folders.file("a", ["c1"], None)
+        self.assertEqual(self.events("group")[-1]["payload"]["folder"], None)
+        self.assertEqual(folders.of("a")["filed"], {})
+
+    def test_a_folder_deleted_moves_its_actors_up_and_its_id_is_not_used_again(self):
+        work = folders.make("a", "Work")
+        inner = folders.make("a", "Inner", work)
+        folders.file("a", ["c1"], inner)
+        folders.delete("a", inner)
+        self.assertEqual(folders.of("a"), {"folders": [{"id": work, "parent": None, "name": "Work", "closed": None}],
+                                           "filed": {"c1": work}})
+        self.assertGreater(folders.make("a", "Next"), inner)
+
+    def test_a_folder_closed_and_reopened(self):
+        work = folders.make("a", "Work")
+        folders.mark("a", work, True)
+        self.assertIsNotNone(folders.of("a")["folders"][0]["closed"])
+        folders.reopen("a", work)
+        self.assertIsNone(folders.of("a")["folders"][0]["closed"])
+
+    def test_nothing_is_kept_when_ag_does_not_take_a_change(self):
+        work = folders.make("a", "Work")
+        with unittest.mock.patch.object(actions, "insert", side_effect=RuntimeError("no")):
+            with self.assertRaises(folders.FolderError):
+                folders.rename("a", work, "Jobs")
+            with self.assertRaises(folders.FolderError):
+                folders.make("a", "Other")
+        self.assertEqual([f["name"] for f in folders.of("a")["folders"]], ["Work"])
+
+    def test_dashboard_db_s_folders_come_in_once(self):
+        with unittest.mock.patch.object(folders.sessions.home, "merged", return_value=False):    # before the merge
+            work = folders.make("a", "Work")
+            other = folders.make("b", "Other")
+            folders.file("a", ["c1"], work)
+            folders.file("b", ["c2"], other)
+            folders.file("a", ["c3"], work)
+        insert(self.m, "b", {}, [{"type": "group", "id": "group:c3:moved", "properties": {"channel": "c3"},
+                                  "payload": {"group": "b", "was": "a"}}])          # moved to b since: left as it is
+        self.assertEqual(folders.of("a"), {"folders": [{"id": work, "parent": None, "name": "Work", "closed": None}],
+                                           "filed": {"c1": work}})
+        self.assertEqual(folders.of("b")["filed"], {"c2": other})
+        self.assertEqual(self.kept_in_dashboard_db(), (2, 3))                     # left as they were
+        copied = len(self.recorded)
+        folders._copied.clear()
+        folders.stored()
+        self.assertEqual(len(self.recorded), copied)                                # once
 
 
 if __name__ == "__main__":
