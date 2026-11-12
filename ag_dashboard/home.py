@@ -3,6 +3,8 @@ lays it out -- the dashboard's only knowledge of ag, which it never imports:
 
     gatherers/<gatherer>/context.db      the gatherer's database (read-only)
     gatherers/<gatherer>/gatherer.toml   its config: the policy
+    context.db                           the home's one database, once `ag home merge` made it: every gatherer's
+                                         (`merged`), a gatherer then the group of its channels (data.py's `members`)
     logs/llm/*.json                      the Gatherer's model calls, one file each
     hook_server/<port>.json              each hook server ag started: pid, port, upstream
 
@@ -43,8 +45,18 @@ def gatherer_dir(gatherer: str) -> str:
     return os.path.join(gatherers_dir(), "unknown" if key in ("", ".", "..") else key)
 
 
+def home_db() -> str:
+    """The home's one database, as ag names it (its paths.home_db)."""
+    return os.path.join(HOME, "context.db")
+
+
+def merged() -> bool:
+    """Whether every gatherer's work is in the home's one database (ag's paths.merged)."""
+    return os.path.isfile(home_db())
+
+
 def db_path(gatherer: str) -> str:
-    return os.path.join(gatherer_dir(gatherer), "context.db")
+    return home_db() if merged() else os.path.join(gatherer_dir(gatherer), "context.db")
 
 
 def llm_log_dir() -> str:

@@ -124,7 +124,8 @@ CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.t
 #: as the conversation.
 RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "harness", "session_file", "asked",
            "ask_settled", "turn_stopped", "task_started", "task_ended", "task_activity", "message_queued", "message_sent",
-           "message_withdrawn", "file_touched", "chat_sent", "answer_given", "terminal_input", "actor_message", "role")
+           "message_withdrawn", "file_touched", "chat_sent", "answer_given", "terminal_input", "actor_message", "role",
+           "group", "folder")
 #: What the harness's own record of a session says (its file: Claude Code's under its projects folder, codex's
 #: rollout), as the hook records it while it follows the record (ag's session_files.py; harness_kit's Facts): the
 #: record followed (`session_file`), then a fact per thing the record says that no model call carries.
@@ -158,6 +159,21 @@ def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def members(conn, gatherer: str) -> Optional[set]:
+    """The channels of `gatherer` in its database: None -- every one -- while each gatherer has a database of its own;
+    in the home's one database (ag's `paths.merged`), those whose latest `group` record names it."""
+    if not paths.merged():
+        return None
+    latest: Dict[str, Any] = {}
+    for ch, raw in conn.execute(f"SELECT e.{CHANNEL}, e.payload_json FROM events e JOIN event_types t "
+                                f"ON t.event_type_id = e.event_type_id WHERE t.name = 'group' AND e.{CHANNEL} IS NOT NULL "
+                                "ORDER BY e.row_id"):
+        payload = _json(raw)
+        if isinstance(payload, dict):
+            latest[ch] = payload.get("group")
+    return {ch for ch, group in latest.items() if group == gatherer}
 
 
 def _columns(conn, table: str) -> set:
@@ -252,7 +268,7 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
             gatherers.append({"name": name, "policy": _policy(name), "agents": [], "last": None})
             continue
         try:
-            agents = kept.agents(conn, name, now) if kept is not None else _agents(conn, now)
+            agents = kept.agents(conn, name, now) if kept is not None else _agents(conn, now, members(conn, name))
             if {s["session_id"] for s in started if s["gatherer"] == name} - {a["channel"] for a in agents}:
                 named[name] = _names(conn, _tables(conn))
             apps = app_notices(conn)
@@ -335,7 +351,7 @@ def gatherer_actors(gatherer: str, started: List[dict]) -> List[dict]:
     conn = _connect(gatherer)
     named: Dict[str, Dict[str, dict]] = {}
     try:
-        agents = _agents(conn, now) if conn is not None else []
+        agents = _agents(conn, now, members(conn, gatherer)) if conn is not None else []
         mine = [s for s in started if s["gatherer"] == gatherer]
         if conn is not None and {s["session_id"] for s in mine} - {a["channel"] for a in agents}:
             named[gatherer] = _names(conn, _tables(conn))
@@ -410,8 +426,9 @@ class Kept:
         if due:
             self.refreshing[gatherer].start()
         try:
+            mine = members(conn, gatherer)
             if whole:
-                got, opens = _agents(conn, now), self._open(conn)
+                got, opens = _agents(conn, now, mine), self._open(conn)
                 with self.lock:
                     self.kept[gatherer], self.open[gatherer], self.read[gatherer] = {a["channel"]: a for a in got}, opens, now
                     self.at[gatherer] = {a["channel"]: now for a in got}
@@ -427,6 +444,8 @@ class Kept:
                         before, self.open[gatherer] = self.open.get(gatherer, {}), after
                     told.update(ch for ch in set(before) | set(after) if before.get(ch) != after.get(ch))
                 told.discard("")
+                if mine is not None:
+                    told &= mine
                 got = _agents(conn, now, told) if told else []
                 with self.lock:
                     self.kept[gatherer] = {**self.kept[gatherer], **{a["channel"]: a for a in got}}
@@ -445,7 +464,7 @@ class Kept:
         began = time.time()
         conn = _connect(gatherer)
         try:
-            got, opens = (_agents(conn, began), self._open(conn)) if conn is not None else (None, None)
+            got, opens = (_agents(conn, began, members(conn, gatherer)), self._open(conn)) if conn is not None else (None, None)
         except sqlite3.Error:
             got = None
         finally:
