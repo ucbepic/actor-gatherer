@@ -177,6 +177,21 @@ class RunTest(RunsBase):
         r = self.run_now("echo half; exit 3")
         self.assertEqual((r.state, r.code, r.text()), ("failed", 3, "half\n"))
 
+    def test_closed_it_waits_for_a_run_s_end_to_be_told(self):
+        """A run over, its `ended` may still be being told -- a host writes it in the home -- when the Editor is closed:
+        `close` waits for it, so nothing of a run comes after (a test's home removed, the dashboard stopped)."""
+        heard = []
+
+        def tell(run, name, value):
+            if name == "ended":
+                time.sleep(0.5)
+                heard.append(name)
+        runs = R.Runs(tell, env=lambda: dict(os.environ))
+        r = runs.start(self.repo, self.repo, "true", "", None, "")
+        runs.wait(r, 20)                                    # over: its end not told yet
+        runs.close()
+        self.assertEqual(heard, ["ended"])
+
     def test_a_long_command_is_stopped_and_a_new_run_stops_the_one_before(self):
         with mock.patch.object(R, "TIMEOUT", 0.5):
             r = self.run_now("sleep 30", wait=8)

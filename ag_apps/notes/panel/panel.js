@@ -20,7 +20,11 @@ Several lines can be picked at once (whole lines, as Notion's block selection): 
 turned into another type or sent to an agent together, as one message naming each of them.
 
 ⌘Z takes back the reader's own changes to the page open, one at a time, and ⌘⇧Z does them again (see "undo"): never the
-browser's own undo, which knows nothing of the ops. */
+browser's own undo, which knows nothing of the ops.
+
+A page can hold pictures (see "pictures"): an image pasted, dropped or picked from the / menu, kept by the backend, and a
+Figma frame or board shown live from its link, with a snapshot the backend keeps of it -- shown when Figma can't show it,
+and what agents see of it. The words under either are its caption. */
 (async function () {
   "use strict";
   const ag = await AgApp.connect();
@@ -33,7 +37,8 @@ browser's own undo, which knows nothing of the ops. */
   const LISTS = ["todo", "bullet", "number"];
   const MAX_INDENT = 6;
   const PH = { text: "Type ‘/’ for commands", h1: "Heading 1", h2: "Heading 2", h3: "Heading 3", todo: "To-do", bullet: "List",
-    number: "List", quote: "Quote", code: "Code" };
+    number: "List", quote: "Quote", code: "Code", image: "Add a caption", figma: "Add a caption" };
+  const MEDIA = ["image", "figma"];                        // blocks that show a picture: their words, its caption
   const KINDS = [                                          // the / menu, and a block's "Turn into"
     { type: "text", label: "Text", note: "Just writing", glyph: "Aa", words: "text plain paragraph" },
     { type: "h1", label: "Heading 1", note: "A big section heading", glyph: "H1", words: "h1 heading title" },
@@ -50,6 +55,8 @@ browser's own undo, which knows nothing of the ops. */
   ];
   const PAGE_KIND = { type: "page-new", label: "Page", note: "A new page inside this one", glyph: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M8.25 7.6v4.2M6.15 9.7h4.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', words: "page subpage new child doc document" };   // in the / menu too, not a block's type
   const LINK_KIND = { type: "page-link", label: "Link to a page", note: "Or type [[", glyph: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M6 8.2h4.5M6 10.8h4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', words: "link page mention reference subpage" };   // in the / menu, not a block's type
+  const IMAGE_KIND = { type: "image-new", label: "Image", note: "Upload, paste or drop a picture", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M2.3 11l3.4-3.4 2.8 2.8 1.8-1.8 3.4 3.4" stroke-linecap="round"/><circle cx="10.6" cy="6" r="1.1"/></svg>', words: "image picture photo png jpg screenshot figure upload" };   // in the / menu, not a block's type
+  const FIGMA_KIND = { type: "figma-new", label: "Figma", note: "A frame or board, kept live", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M5.5 2v12M10.5 2v12M2 5.5h12M2 10.5h12"/></svg>', words: "figma figjam design frame board embed diagram drawing" };
   const ICONS = ["📄", "📝", "✅", "📌", "📚", "💡", "🎯", "🚀", "🛒", "🏠", "💼", "🧪", "🐛", "🔧", "📅", "⭐", "❤️", "🔥", "🌱", "🎨",
     "🎵", "✈️", "🍳", "💰", "📈", "🧠", "☕", "🗂️", "🔖", "🧩", "🏃", "📖", "🎓", "🧾", "📦", "⚙️", "🗒️", "🌟", "🍀", "🐣"];
   const SVG = {
@@ -59,9 +66,11 @@ browser's own undo, which knows nothing of the ops. */
     more: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg>',
     doc: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M6 8.2h4.5M6 10.8h4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
     side: '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="1.8" y="2.5" width="12.4" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 2.8v10.4" stroke="currentColor" stroke-width="1.3"/></svg>',
+    hide: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4L4 8l4 4M12.5 4l-4 4 4 4"/></svg>',
     trash: '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     restore: '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M3.5 6.5A5 5 0 1 1 4 11M3.2 3v3.7h3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     x: '<svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    full: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6V2.5H6M13.5 6V2.5H10M2.5 10v3.5H6M13.5 10v3.5H10"/></svg>',
     check: '<svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 6.2l2.4 2.4 4.6-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     people: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="6" cy="5.5" r="2.2"/><circle cx="11.5" cy="6.2" r="1.7"/><path d="M2 13c.5-2.3 2-3.4 4-3.4s3.5 1.1 4 3.4M10 9.9c.5-.3 1-.4 1.5-.4 1.5 0 2.5.9 2.9 2.6"/></svg>',
     at: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.4"/><path d="M10.4 8v1.1a1.7 1.7 0 0 0 3.4 0V8A5.8 5.8 0 1 0 11.5 12.6"/></svg>',
@@ -104,7 +113,7 @@ browser's own undo, which knows nothing of the ops. */
   const AGENTS = "@agents";                              // the Agents page (no page of the notebook: never an id)
   const WORK = "@work", LOG = "@logbook";                // the Work page, the Logbook (nor these)
   const SPECIAL = [WORK, LOG, AGENTS];
-  const UNSENT = ["divider", "agents", "work"];          // blocks with nothing in them to send
+  const UNSENT = ["divider", "agents", "work", "image", "figma"];   // blocks with nothing in them to send (a caption is no line of work)
   const short = (ch) => String(ch || "").slice(0, 8);
   const since = (t) => { const d = Math.max(0, now() - (t || now())); return d < 60 ? "just now" : d < 3600 ? `${Math.round(d / 60)}m`
     : d < 86400 ? `${Math.round(d / 3600)}h` : `${Math.round(d / 86400)}d`; };
@@ -278,7 +287,7 @@ browser's own undo, which knows nothing of the ops. */
   // or restored. One history per page, for as long as the panel is open.
   const PAUSE = 1000;                                      // a run of typing ends after this long without a key
   const LINE = ["type", "text", "checked", "indent"];      // what tells whether a line changed since
-  const BLANK = { type: "text", text: "", checked: false, indent: 0, to: "", sent: "", extra: "", group: "", work: false, ended: "", ended_at: "" };
+  const BLANK = { type: "text", text: "", checked: false, indent: 0, calls: [], work: false, ended: "", ended_at: "" };
   const histories = new Map();                             // page id -> {done: [step], undone: [step]}
   let run = null, replaying = false;                       // run: the step keys typed are adding to {step, key, page, at}
   const historyOf = (id) => { if (!histories.has(id)) histories.set(id, { done: [], undone: [] }); return histories.get(id); };
@@ -471,7 +480,7 @@ browser's own undo, which knows nothing of the ops. */
       }
       if (current && !pages.has(current)) current = null;
       drawSide(m.agent ? touched : null);
-      if (current && touched.has(current)) drawPage(blocks);
+      if (current && touched.has(current)) drawPage(m.quiet ? null : blocks);   // (a snapshot fetched again: no flash)
       else if (!current || SPECIAL.includes(current) || linksTo(pages.get(current), retitled)) drawPage();
       if (m.agent) told(m.agent, [...touched].map((id) => pages.get(id)).filter(Boolean));
     }
@@ -563,15 +572,66 @@ browser's own undo, which knows nothing of the ops. */
   $("new-page").addEventListener("click", () => newPage(null));
   $("empty-new").addEventListener("click", () => newPage(null));
   document.querySelector(".empty-mark").innerHTML = SVG.book;
-  $("side-toggle").innerHTML = SVG.side;
+  // -- the pages' list: hidden by its own button (or ⌘\), shown by the bar's, and as wide as its edge is dragged
+  // (both kept in this browser). Narrow, it opens over the page instead and is never kept open.
   const narrow = () => matchMedia("(max-width: 600px)").matches;
-  const app = $("app");
+  const app = $("app"), sideEl = $("side"), sideGrip = $("side-grip");
+  const SIDE_KEY = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘\\" : "Ctrl+\\";
+  $("side-toggle").innerHTML = SVG.side;
+  $("side-toggle").title = `Show the pages (${SIDE_KEY})`;
+  $("side-hide").innerHTML = SVG.hide;
+  $("side-hide").title = `Hide the pages (${SIDE_KEY})`;
   document.querySelector(".main").addEventListener("mousedown", (ev) => { if (!ev.target.closest("#side-toggle")) app.classList.remove("side-on"); });
   if (store.get("side", true) === false) app.classList.add("side-off");
-  $("side-toggle").addEventListener("click", () => {
-    if (narrow()) return app.classList.toggle("side-on");
-    app.classList.toggle("side-off");
-    store.set("side", !app.classList.contains("side-off"));
+  const sideShown = () => (narrow() ? app.classList.contains("side-on") : !app.classList.contains("side-off"));
+  function showSide(on) {
+    if (narrow()) return app.classList.toggle("side-on", on);
+    app.classList.toggle("side-off", !on);
+    store.set("side", on);
+  }
+  $("side-toggle").addEventListener("click", () => showSide(!sideShown()));
+  $("side-hide").addEventListener("click", () => { showSide(false); $("side-toggle").focus(); });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "\\" || !(ev.metaKey || ev.ctrlKey) || ev.altKey || ev.shiftKey || ev.isComposing) return;
+    ev.preventDefault();
+    showSide(!sideShown());
+  });
+  const SIDE_W = 236, SIDE_MIN = 160, SIDE_MAX = 520;
+  const fitW = (w) => Math.round(Math.max(SIDE_MIN, Math.min(SIDE_MAX, w)));
+  function sideWidth(w) {                                // null: back to the default
+    if (w === null) app.style.removeProperty("--side-w"); else app.style.setProperty("--side-w", `${fitW(w)}px`);
+    sideGrip.setAttribute("aria-valuenow", w === null ? SIDE_W : fitW(w));
+    return w === null ? null : fitW(w);
+  }
+  sideGrip.setAttribute("aria-valuemin", SIDE_MIN);
+  sideGrip.setAttribute("aria-valuemax", SIDE_MAX);
+  sideGrip.title = "Drag to change the width, double-click for the usual one";
+  sideWidth(typeof store.get("side-w", null) === "number" ? store.get("side-w", null) : null);
+  sideGrip.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    sideGrip.setPointerCapture(ev.pointerId);
+    const x0 = ev.clientX, w0 = sideEl.getBoundingClientRect().width;
+    let w = null;
+    app.classList.add("sizing");
+    const move = (e) => { w = sideWidth(w0 + e.clientX - x0); };
+    const up = () => {
+      sideGrip.removeEventListener("pointermove", move);
+      sideGrip.removeEventListener("pointerup", up);
+      sideGrip.removeEventListener("pointercancel", up);
+      app.classList.remove("sizing");
+      if (w !== null) store.set("side-w", w);
+    };
+    sideGrip.addEventListener("pointermove", move);
+    sideGrip.addEventListener("pointerup", up);
+    sideGrip.addEventListener("pointercancel", up);
+  });
+  sideGrip.addEventListener("dblclick", () => { sideWidth(null); store.set("side-w", null); });
+  sideGrip.addEventListener("keydown", (ev) => {
+    const step = { ArrowLeft: -16, ArrowRight: 16 }[ev.key];
+    if (!step) return;
+    ev.preventDefault();
+    store.set("side-w", sideWidth(sideEl.getBoundingClientRect().width + step));
   });
 
   function newPage(parent) {
@@ -683,6 +743,7 @@ browser's own undo, which knows nothing of the ops. */
     if (b.type === "divider") n.append(el("div", { class: "hr", tabindex: "0", role: "separator" }));
     else if (b.type === "agents") n.append(el("div", { class: "agt", tabindex: "0", role: "group", "aria-label": "The gatherer's actors" }));
     else if (b.type === "work") n.append(el("div", { class: "agt wkb", tabindex: "0", role: "group", "aria-label": "Your open work items" }));
+    else if (MEDIA.includes(b.type)) n.append(el("div", { class: "fig", tabindex: "0", role: "figure" }), el("div", { class: "tx cap", spellcheck: "true" }));
     else n.append(el("div", { class: "mk" }), el("div", { class: "tx", spellcheck: "true" }),
       el("button", { class: "to-btn", type: "button", tabindex: "-1", title: "Send it to an agent (or type @)", html: SVG.at }));
     return n;
@@ -692,7 +753,7 @@ browser's own undo, which knows nothing of the ops. */
     n.style.setProperty("--ind", b.indent || 0);
     n.classList.toggle("done", b.type === "todo" && !!b.checked);
     n.classList.toggle("ended", crossed(b));
-    n.classList.toggle("is-sent", !!b.to || outgoing.has(b.id));
+    n.classList.toggle("is-sent", onIt(b).length > 0 || outgoing.has(b.id));
     n.classList.toggle("ro", !!ro);
     if (b.type === "agents") return drawAgentsBlock(n);
     if (b.type === "work") return drawWorkBlock(n);
@@ -708,6 +769,7 @@ browser's own undo, which knows nothing of the ops. */
       if (b.type === "code") { if (tx.textContent !== b.text) tx.textContent = b.text; }
       else { const h = withLinks(clean(b.text)); if (tx.innerHTML !== h) tx.innerHTML = h; }
     } else if (b.type !== "code") drawLinks(tx);
+    if (MEDIA.includes(b.type)) return drawMedia(n, b, ro);
     const mk = n.querySelector(".mk");
     const want = b.type === "todo" ? `todo:${!!b.checked}` : b.type === "bullet" ? `bullet:${(b.indent || 0) % 3}` : b.type;
     if (mk.dataset.is !== want) {
@@ -729,7 +791,7 @@ browser's own undo, which knows nothing of the ops. */
     const at = focus && focus.classList.contains("tx") ? caretIn(focus) : null;
     for (const [id, n] of have) if (!want.has(id)) n.remove();
     let prev = null;
-    const shape = (t) => (t === "divider" || t === "agents" || t === "work" ? t : "tx");
+    const shape = (t) => (["divider", "agents", "work", ...MEDIA].includes(t) ? t : "tx");
     for (const b of p.blocks) {
       if (foldedNow.has(b.id)) continue;
       let n = have.get(b.id);
@@ -892,14 +954,14 @@ browser's own undo, which knows nothing of the ops. */
     const n = rowOf(id);
     if (!n) return;
     const tx = n.querySelector(".tx");
-    if (!tx) return n.querySelector(".hr, .agt").focus();
+    if (!tx) return n.querySelector(".hr, .agt, .fig").focus();
     tx.focus();
     const len = tx.textContent.length;
     setCaret(tx, where === "end" ? len : where === "start" ? 0 : Math.min(where, len));
   }
   const empty = (tx) => tx.textContent.replace(/\u200b/g, "") === "" && !tx.querySelector("br, a");
   const textOf = (n, b) => (b.type === "code" ? n.querySelector(".tx").textContent : clean(n.querySelector(".tx").innerHTML));
-  const editable = (b) => !UNSENT.includes(b.type);
+  const editable = (b) => !UNSENT.includes(b.type) || MEDIA.includes(b.type);   // (a picture's caption: typed in)
 
   // ---------------------------------------------------------------- typing
   box.addEventListener("input", (ev) => {
@@ -911,6 +973,7 @@ browser's own undo, which knows nothing of the ops. */
     if (shortcut(n, tx, b, ev)) return;
     b.text = textOf(n, b);
     typed(current, b.id, b.text);
+    if (MEDIA.includes(b.type)) return pageInput(n, tx, b, ev);   // a caption: words and links to pages, no / or @
     slashInput(n, tx, b, ev);
     atInput(n, tx, b, ev);
     pageInput(n, tx, b, ev);
@@ -977,7 +1040,7 @@ browser's own undo, which knows nothing of the ops. */
 
   box.addEventListener("keydown", (ev) => {
     if (ev.isComposing) return;
-    const hr = ev.target.closest && ev.target.closest(".hr, .agt");
+    const hr = ev.target.closest && ev.target.closest(".hr, .agt, .fig");
     if (hr && ev.target === hr) return dividerKey(ev, hr.closest(".blk"));
     const tx = ev.target.closest && ev.target.closest(".tx");
     if (!tx) return;
@@ -987,7 +1050,9 @@ browser's own undo, which knows nothing of the ops. */
     if (menu && menu.kind === "slash" && slashKey(ev)) return;
     if (menu && menu.kind === "at" && atKey(ev)) return;
     if (menu && menu.kind === "page" && pageKey(ev)) return;
+    if (menu && menu.kind === "figma" && figmaKey(ev)) return;
     const mod = ev.metaKey || ev.ctrlKey, k = ev.key;
+    if (MEDIA.includes(b.type) && !mod && captionKey(ev, p, i, n, tx)) return;
     if (k === "Escape" && !mod && !ev.shiftKey) { ev.preventDefault(); pickRange(b.id, b.id); return holdKeys(); }   // the line picked
     if (ev.shiftKey && !mod && !ev.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
       const c = caretIn(tx), up = k === "ArrowUp", t = tx.textContent;   // its text selected to an end already: the lines
@@ -1063,6 +1128,9 @@ browser's own undo, which knows nothing of the ops. */
       change([{ op: "block.delete", page: p.id, block: n.dataset.id }]);
       drawPage();
       if (near) focusBlock(near.id, "end");
+    } else if (ev.key === "ArrowDown" && MEDIA.includes(p.blocks[i].type)) {   // a picture: down to its caption
+      ev.preventDefault();
+      focusBlock(p.blocks[i].id, "start");
     } else if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
       const to = ev.key === "ArrowUp" ? p.blocks[i - 1] : p.blocks[i + 1];
       if (to) { ev.preventDefault(); focusBlock(to.id, ev.key === "ArrowUp" ? "end" : "start"); }
@@ -1110,6 +1178,10 @@ browser's own undo, which knows nothing of the ops. */
     if (b.indent > 0) return indent(b, -1);
     if (!i) return;
     const prev = p.blocks[i - 1];
+    if (MEDIA.includes(prev.type)) {                       // a picture above: never joined; an empty line goes
+      if (empty(tx)) { forget(b.id); change([{ op: "block.delete", page: p.id, block: b.id }]); drawPage(); }
+      return focusFig(prev.id);
+    }
     if (prev.type === "divider") {
       change([{ op: "block.delete", page: p.id, block: prev.id }]);
       drawPage();
@@ -1126,6 +1198,7 @@ browser's own undo, which knows nothing of the ops. */
   }
   function joinNext(p, i, n, tx) {
     const b = p.blocks[i], next = p.blocks[i + 1];
+    if (MEDIA.includes(next.type)) return focusFig(next.id);
     if (next.type === "divider") { change([{ op: "block.delete", page: p.id, block: next.id }]); drawPage(); return; }
     const at = tx.textContent.length;
     const joined = b.type === "code" ? tx.textContent + plainOf(next.text) : clean(clean(tx.innerHTML) + (next.type === "code" ? esc(next.text) : next.text));
@@ -1265,7 +1338,7 @@ browser's own undo, which knows nothing of the ops. */
   $("convo").addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && !menu && !ev.target.closest(".reply")) { ev.preventDefault(); closeConvo(); }
   });
-  $("scroll").addEventListener("scroll", () => { if (menu && menu.kind !== "slash" && menu.kind !== "page" && !(menu.kind === "at" && menu.tx)) closePop(); });
+  $("scroll").addEventListener("scroll", () => { if (menu && !["slash", "page", "figma"].includes(menu.kind) && !(menu.kind === "at" && menu.tx)) closePop(); });
 
   function slashInput(n, tx, b, ev) {
     if (menu && menu.kind === "slash") {
@@ -1288,7 +1361,7 @@ browser's own undo, which knows nothing of the ops. */
   }
   function drawSlash(q) {
     const words = q.trim().toLowerCase();
-    const items = [...KINDS, PAGE_KIND, LINK_KIND].filter((k) => !words || k.label.toLowerCase().includes(words) || k.words.includes(words));
+    const items = [...KINDS, PAGE_KIND, LINK_KIND, IMAGE_KIND, FIGMA_KIND].filter((k) => !words || k.label.toLowerCase().includes(words) || k.words.includes(words));
     menu.items = items;
     menu.on = Math.min(menu.on || 0, Math.max(0, items.length - 1));
     const pop = menu.el;
@@ -1333,6 +1406,8 @@ browser's own undo, which knows nothing of the ops. */
     tx.focus();
     setCaret(tx, m.from);
     if (type === LINK_KIND.type) return void document.execCommand("insertText", false, "[[");   // the pages, as "[[" opens them
+    if (type === IMAGE_KIND.type) return pickPictures(b);
+    if (type === FIGMA_KIND.type) return figmaBox(b, tx);
     if (type === PAGE_KIND.type) {                         // a page made inside this one, linked here, and opened
       const id = subpage("");
       putLink(tx, m.from, m.from, id);
@@ -1491,6 +1566,8 @@ browser's own undo, which knows nothing of the ops. */
 
   // ---------------------------------------------------------------- the gutter: + and the grip (drag, or its menu)
   box.addEventListener("click", (ev) => {
+    const act = ev.target.closest(".fig [data-do]");
+    if (act) return figAct(act);
     const to = ev.target.closest(".to-btn");
     if (to) {
       const b = blockOf(to.closest(".blk").dataset.id);
@@ -1574,9 +1651,9 @@ browser's own undo, which knows nothing of the ops. */
       for (const k of KINDS) if (!UNSENT.includes(k.type) || b.type === k.type)
         pop.append(item({ ...k, note: "", sm: true, cur: k.type === b.type }, () => { if (k.type !== b.type) { retype(b, k.type); focusBlock(b.id); } }));
       pop.append(el("div", { class: "sep" }),
-        ...(UNSENT.includes(b.type) ? [] : b.to ? [
-          item({ glyph: SVG.at, sm: true, label: "Open its Chat" }, () => ag.actors.show(b.to).catch((e) => say(e.message, true))),
-          item({ glyph: SVG.x, sm: true, label: "Forget who it went to", note: "Still a work item" }, () => { change([{ op: "block.put", page: current, block: { id: b.id, to: "", work: true } }], false); drawPage(); }),
+        ...(UNSENT.includes(b.type) ? [] : onIt(b).length ? [
+          item({ glyph: SVG.at, sm: true, label: "Send to another agent…" }, () => openPicker(b.id, n.getBoundingClientRect())),
+          ...viewsOn(b).map((v) => item({ glyph: SVG.x, sm: true, label: `Remove ${nameOf(actorOf(v.to), v.to)}`, note: "from this line" }, () => drop(v))),
         ] : [item({ glyph: SVG.at, sm: true, label: "Send to an agent…" }, () => openPicker(b.id, n.getBoundingClientRect())),
           b.work ? item({ glyph: SVG.x, sm: true, label: "Not a work item" }, () => markWork([b], false))
             : item({ glyph: SVG.work, sm: true, label: "Mark as a work item", note: "Tracked on the Work page" }, () => markWork([b], true))]),
@@ -1670,7 +1747,7 @@ browser's own undo, which knows nothing of the ops. */
     bar.style.left = `${box.offsetLeft + box.offsetWidth - bar.offsetWidth}px`;
   }
   // a line as its copy has it: a new id, and nothing of whom it was sent to or how it was ended
-  const copyOf = ({ to: _to, sent: _sent, thread: _thread, extra: _extra, group: _group, work: _work, ended: _ended, ended_at: _at,
+  const copyOf = ({ calls: _calls, to: _to, sent: _sent, thread: _thread, extra: _extra, group: _group, work: _work, ended: _ended, ended_at: _at,
     source: _source, source_at: _sourceAt, ...rest }) => ({ ...rest, id: rid() });
   // lines with words to send (no divider, no agents table)
   const sendable = (bs) => bs.filter((b) => !UNSENT.includes(b.type) && plainOf(b.type === "code" ? esc(b.text) : b.text).trim());
@@ -1810,7 +1887,9 @@ browser's own undo, which knows nothing of the ops. */
       if (b.type === "number") counts.set(k, (counts.get(k) || 0) + 1); else counts.delete(k);
       if (b.type === "code") { out.push("```", ...String(b.text).split("\n"), "```"); continue; }
       if (b.type === "divider") { out.push("---"); continue; }
-      if (b.type === "agents") continue;
+      if (b.type === "agents" || b.type === "work") continue;
+      if (b.type === "image") { out.push(`![${mdInline(b.text)}](image:${b.file})`); continue; }
+      if (b.type === "figma") { out.push(`[Figma: ${b.title || figmaTitle(b.url) || "a frame"}](${b.url})${b.text ? ` -- ${mdInline(b.text)}` : ""}`); continue; }
       const pad = "  ".repeat(k), mark = { text: "", h1: "# ", h2: "## ", h3: "### ", bullet: "- ", quote: "> ",
         todo: b.checked ? "- [x] " : "- [ ] ", number: `${counts.get(k)}. ` }[b.type] || "";
       out.push(pad + mark + mdInline(b.text).replace(/\n/g, `\n${pad}${" ".repeat(mark.length)}`));
@@ -1875,7 +1954,7 @@ browser's own undo, which knows nothing of the ops. */
 
   // -- the drags that pick: a sweep from a line's words, a box from beside the lines
   let sweep = null, band = null, eatMouse = false;
-  const BAND_NOT = ".tx, button, input, textarea, a, .pg-title, .pg-icon, .pg-tools, .agt, .hr, .sent, .fold, .fold-all, .gut, .chk, .banner, .empty, .pk-bar";
+  const BAND_NOT = ".tx, button, input, textarea, a, .pg-title, .pg-icon, .pg-tools, .agt, .hr, .fig, .sent, .fold, .fold-all, .gut, .chk, .banner, .empty, .pk-bar";
   function rowAt(y) {                                     // the line at a height (above the first: it; below the last: it)
     const rows = [...box.children];
     return rows.find((r) => y < r.getBoundingClientRect().bottom) || rows[rows.length - 1] || null;
@@ -2043,9 +2122,13 @@ browser's own undo, which knows nothing of the ops. */
     const text = (ev.clipboardData.getData("text/plain") || "").replace(/\r\n?/g, "\n");
     const ours = clipBlocks(ev.clipboardData);
     const n = tx.closest(".blk"), b = blockOf(n.dataset.id);
+    const pics = [...(ev.clipboardData.files || [])].filter((f) => f.type.startsWith("image/"));
+    if (b && pics.length && !ours && b.type !== "code" && !page().deleted) return void putPictures(pics, b);
     if (!b || (!text && !ours)) return;
     if (b.type === "code" || (!ours && !text.trim().includes("\n"))) {
+      const alone = b.type === "text" && empty(tx) && FIGMA_URL.test(text.trim());
       document.execCommand("insertText", false, b.type === "code" ? text : text.replace(/\n+/g, " "));
+      if (alone) figmaChoice(b, tx, text.trim());           // a Figma link alone on a line: the frame, or a link?
       return;
     }
     let got = ours || [];
@@ -2075,6 +2158,398 @@ browser's own undo, which knows nothing of the ops. */
     return after;
   }
 
+  // ---------------------------------------------------------------- pictures
+  // An image block shows a picture the backend keeps (POST image: pasted, dropped, or picked from the / menu), as wide as
+  // the reader drags its sides (`width`, a percent of the page's). A figma block shows a frame or board of Figma live, in
+  // Figma's own embed, over the snapshot the backend keeps of it (POST figma/snap: asked for as the page shows it, at
+  // most every SNAP_EVERY; fetched again only when Figma changed it). The snapshot shows while Figma loads, when it
+  // can't (offline), or when the reader picks it; it is what agents are given. Signing in to Figma, or a file the reader
+  // can't open, is for Figma's embed to say.
+  const FIGMA_URL = /^https:\/\/(?:www\.)?figma\.com\/(design|file|board|proto|slides|deck)\/([A-Za-z0-9]{6,64})(?:\/([^/?#\s]*))?[^\s<>"']*$/;
+  const SNAP_EVERY = 600;
+  const LOAD_WAIT = 25000;                                 // ms: Figma's embed not loaded by then, the snapshot shown
+  let figmaToken = { token: false, who: "" };
+  const figView = new Map();                               // block id -> "snap" | "live": as the reader picked
+  const snapAsked = new Map(), snapErr = new Map(), unloaded = new Set();
+  let sizing = null, dropAt = null;
+  const dark = () => !!(ag.theme.current && ag.theme.current.mode === "dark");
+  const fileUrl = (name) => `/api/file/${encodeURIComponent(name)}?${new URLSearchParams({ gatherer: ag.gatherer, instance: ag.instance })}`;
+  function figmaTitle(url) {
+    const m = FIGMA_URL.exec(url || "");
+    try { return m && m[3] ? decodeURIComponent(m[3]).replace(/-/g, " ").replace(/\s+/g, " ").trim() : ""; } catch { return ""; }
+  }
+  function embedUrl(url) {                                 // Figma's Embed Kit 2.0: the link, `embed` for `www`
+    const m = FIGMA_URL.exec(url), node = (new URL(url).searchParams.get("node-id") || "").replace(/:/g, "-");
+    const q = new URLSearchParams({ "embed-host": "ag", footer: "false", theme: dark() ? "dark" : "light" });
+    if (node) { q.set("node-id", node); q.set("page-selector", "false"); }
+    return `https://embed.figma.com/${m[1] === "file" ? "design" : m[1]}/${m[2]}/${m[3] || ""}?${q}`;
+  }
+  const figViewOf = (b) => (navigator.onLine === false || unloaded.has(b.id) ? "snap" : figView.get(b.id) || "live");
+  const focusFig = (id) => { const n = rowOf(id), f = n && n.querySelector(".fig"); if (f) f.focus(); };
+
+  function drawMedia(n, b, ro) {
+    const f = n.querySelector(".fig");
+    f.setAttribute("aria-label", b.type === "image" ? `Picture${b.text ? `: ${plainOf(b.text)}` : ""}` : `Figma: ${b.title || figmaTitle(b.url) || "a frame"}`);
+    if (b.type === "image") drawImage(f, b, ro);
+    else drawFigma(f, b, ro);
+  }
+  function drawImage(f, b, ro) {
+    const sig = JSON.stringify([b.file, b.w, b.h, b.width, ro]);
+    if (f.dataset.sig === sig) return;
+    f.dataset.sig = sig;
+    f.dataset.kind = "image";
+    let pic = f.querySelector(".pic");
+    if (!pic) {
+      pic = el("div", { class: "pic" }, el("img", { draggable: "false", alt: "" }),
+        el("div", { class: "pic-tools" },
+          el("button", { type: "button", "data-do": "caption", text: "Caption" }),
+          el("button", { type: "button", "data-do": "replace", text: "Replace" }),
+          el("button", { type: "button", "data-do": "open", text: "Open" }),
+          el("button", { type: "button", "data-do": "delete", title: "Delete the picture", "aria-label": "Delete the picture", html: SVG.trash })),
+        el("span", { class: "hdl l", "data-side": "l", title: "Drag to resize" }), el("span", { class: "hdl r", "data-side": "r", title: "Drag to resize" }));
+      f.replaceChildren(pic);
+    }
+    const img = pic.querySelector("img");
+    if (img.getAttribute("src") !== fileUrl(b.file)) img.src = fileUrl(b.file);
+    if (b.w && b.h) { img.width = b.w; img.height = b.h; } else { img.removeAttribute("width"); img.removeAttribute("height"); }
+    pic.style.width = b.width ? `${b.width}%` : "";
+    pic.style.maxWidth = !b.width && b.w ? `min(100%, ${b.w}px)` : "";
+    pic.classList.toggle("ro", ro);
+  }
+  function drawFigma(f, b, ro) {
+    const view = figViewOf(b), live = view === "live", err = snapErr.get(b.id) || "";
+    const title = b.title || figmaTitle(b.url) || "Figma";
+    const sig = JSON.stringify([b.url, title, b.snap, b.snap_at, b.w, b.h, ro, view, err, figmaToken.token, dark(), unloaded.has(b.id)]);
+    snapSoon(b);
+    if (f.dataset.sig === sig) return;
+    f.dataset.sig = sig;
+    f.dataset.kind = "figma";
+    let head = f.querySelector(".fg-head"), band = f.querySelector(".fg-band"), body = f.querySelector(".fg-body");
+    if (!head) {
+      head = el("div", { class: "fg-head" });
+      band = el("div", { class: "fg-band" });
+      body = el("div", { class: "fg-body" }, el("img", { class: "fg-snap", alt: "", draggable: "false" }), el("div", { class: "fg-none" }));
+      f.replaceChildren(head, band, body);
+    }
+    const state = live ? "Live" : b.snap ? `Snapshot · ${when(b.snap_at)}` : "No snapshot";
+    head.replaceChildren(
+      el("span", { class: "fg-mark", html: FIGMA_KIND.glyph }),
+      el("b", { class: "fg-name", text: title, title }),
+      el("span", { class: `fg-state ${live ? "live" : "snap"}`, text: state }),
+      el("span", { class: "fg-gap" }),
+      navigator.onLine === false ? null : el("button", { type: "button", class: "fg-btn", "data-do": "view", text: live ? "Snapshot" : "Live",
+        title: live ? "Show the snapshot kept of it" : "Show it live, from Figma" }),
+      el("a", { class: "fg-btn", href: b.url, target: "_blank", rel: "noopener", text: "Open in Figma" }),
+      el("button", { type: "button", class: "fg-btn icon", "data-do": "open", title: "Show it full size", "aria-label": "Show it full size", html: SVG.full }),
+      ro ? null : el("button", { type: "button", class: "fg-btn icon", "data-do": "more", title: "More", "aria-label": "More", text: "⋯" }));
+    const said = !live ? (unloaded.has(b.id) ? "Figma didn't load here, so this is the snapshot kept of it." : navigator.onLine === false
+      ? "Offline: this is the snapshot kept of it." : b.snap ? "" : err || "No snapshot of it yet.")
+      : !b.snap && err ? `Your agents can't see this frame: ${err.replace(/\.$/, "")}.` : "";
+    band.hidden = !said;
+    band.replaceChildren(el("span", { text: said }),
+      !ro && !figmaToken.token && /token|public/.test(said) ? el("button", { type: "button", class: "fg-btn", "data-do": "token", text: "Add a Figma token" }) : null,
+      unloaded.has(b.id) ? el("button", { type: "button", class: "fg-btn", "data-do": "retry", text: "Try again" }) : null);
+    const snap = body.querySelector(".fg-snap"), none = body.querySelector(".fg-none");
+    if (b.snap && snap.getAttribute("src") !== fileUrl(b.snap)) snap.src = fileUrl(b.snap);
+    snap.hidden = !b.snap;
+    none.hidden = !!b.snap || live;
+    none.textContent = "No snapshot";
+    body.style.aspectRatio = b.w && b.h ? `${b.w} / ${b.h}` : "";
+    let frame = body.querySelector("iframe");
+    if (!live) { if (frame) frame.remove(); return; }
+    const src = embedUrl(b.url);
+    if (!frame) {
+      frame = el("iframe", { class: "fg-live", allowfullscreen: true, referrerpolicy: "no-referrer-when-downgrade", title: `${title}, live from Figma` });
+      body.append(frame);
+    }
+    if (frame.getAttribute("src") !== src) {
+      clearTimeout(frame._wait);
+      frame.addEventListener("load", () => clearTimeout(frame._wait), { once: true });
+      frame._wait = setTimeout(() => { if (frame.isConnected) { unloaded.add(b.id); redrawFig(b.id); } }, LOAD_WAIT);
+      frame.src = src;
+    }
+  }
+  function redrawFig(id) {
+    const n = rowOf(id), b = blockOf(id), p = page();
+    if (n && b && MEDIA.includes(b.type)) drawMedia(n, b, !!(p && p.deleted));
+  }
+  // its snapshot asked for: when it has none, or it is SNAP_EVERY old (Figma's file unchanged: the backend keeps it)
+  function snapSoon(b, force = false, tell = false) {
+    const p = page(), t = now();
+    if (!p || p.deleted || b.type !== "figma") return;
+    if (!force && (t - (snapAsked.get(b.id) || 0) < SNAP_EVERY || (b.snap && t - (b.snap_at || 0) < SNAP_EVERY))) return;
+    snapAsked.set(b.id, t);
+    ag.api("figma/snap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ block: b.id }) })
+      .then((r) => r.json()).then((got) => {
+        if (got.error) snapErr.set(b.id, got.error); else snapErr.delete(b.id);
+        if (tell) say(got.error ? `No snapshot: ${got.error}` : "The snapshot is up to date", !!got.error);
+        redrawFig(b.id);
+      }).catch(() => {});
+  }
+  ag.api("figma").then((r) => r.json()).then((t) => { figmaToken = t; if (page()) drawPage(); }).catch(() => {});
+  ag.theme.on(() => { if (page()) drawPage(); });
+  for (const e of ["online", "offline"]) addEventListener(e, () => { if (page()) drawPage(); });
+
+  // -- keys in a caption: Enter a line below, Backspace (or ↑) at its start the picture
+  function captionKey(ev, p, i, n, tx) {
+    const b = p.blocks[i], k = ev.key;
+    if (k === "Enter" && !ev.shiftKey) { ev.preventDefault(); addAfter(b, "text"); return true; }
+    if ((k === "Backspace" && edge(tx, false)) || (k === "ArrowUp" && onLine(tx, false)) || (k === "ArrowLeft" && edge(tx, false))) {
+      ev.preventDefault();
+      focusFig(b.id);
+      return true;
+    }
+    if ((k === "Delete" && edge(tx, true)) || k === "Tab") { ev.preventDefault(); return true; }
+    return false;
+  }
+
+  // -- pictures added: kept by the backend, then put on the page as blocks -- into the empty line they came from, or
+  // after `at` ("": first) -- with a line to type in after them if they end the page; one step for ⌘Z
+  async function upload(file) {
+    const r = await ag.api("image", { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+    const got = await r.json().catch(() => ({}));
+    if (!r.ok || got.error) throw new Error(got.error || `not kept (${r.status})`);
+    return got;
+  }
+  async function putPictures(files, at) {
+    say(files.length > 1 ? `Adding ${files.length} pictures…` : "Adding the picture…");
+    const made = [];
+    for (const f of files) {
+      try { made.push({ type: "image", text: "", checked: false, indent: 0, ...(await upload(f)) }); }
+      catch (e) { return say(`${f.name || "The picture"}: ${e.message}`, true); }
+    }
+    say(made.length > 1 ? `${made.length} pictures added` : "Picture added");
+    putMedia(made, at && blockOf(at.id));
+  }
+  function putMedia(made, at, into = null) {
+    const p = page();
+    if (!p || p.deleted || !made.length) return;
+    const tx = at && rowOf(at.id) && rowOf(at.id).querySelector(".tx");
+    if (into === null) into = !!(at && at.type === "text" && tx && empty(tx));
+    const i = at ? p.blocks.findIndex((x) => x.id === at.id) : -1, ops = [];
+    let after = at ? at.id : "", next = p.blocks[i + 1];
+    made.forEach((m, j) => {
+      const id = j === 0 && into ? at.id : rid();
+      if (j === 0 && into) forget(at.id);
+      ops.push({ op: "block.put", page: p.id, block: { ...m, id }, ...(j === 0 && into ? {} : { after }) });
+      after = id;
+    });
+    if (!next) { next = { id: rid(), type: "text", text: "", checked: false, indent: 0 }; ops.push({ op: "block.put", page: p.id, block: next, after }); }
+    change(ops);
+    drawPage();
+    focusBlock(next.id, "start");
+  }
+  function pickFiles(then, many = true) {
+    const input = el("input", { type: "file", accept: "image/png,image/jpeg,image/gif,image/webp,image/svg+xml", multiple: many });
+    input.addEventListener("change", () => { if (input.files.length) then([...input.files]); });
+    input.click();
+  }
+  const pickPictures = (b) => pickFiles((fs) => putPictures(fs, blockOf(b.id) || b));
+  function replacePicture(b) {
+    pickFiles(async ([f]) => {
+      try {
+        const got = await upload(f);
+        change([{ op: "block.put", page: current, block: { id: b.id, ...got } }]);
+        drawPage();
+      } catch (e) { say(`${f.name || "The picture"}: ${e.message}`, true); }
+    }, false);
+  }
+  function dropBlock(b) {
+    const p = shown(), i = p.blocks.findIndex((x) => x.id === b.id), near = p.blocks[i + 1] || p.blocks[i - 1];
+    forget(b.id);
+    change([{ op: "block.delete", page: current, block: b.id }]);
+    drawPage();
+    if (near) focusBlock(near.id, "start");
+  }
+
+  // -- a Figma link: pasted alone on a line (shown live, or kept a link?), or given to the / menu's Figma
+  function makeFigma(b, url, into) {
+    const at = blockOf(b.id);
+    if (at) putMedia([{ type: "figma", url, title: figmaTitle(url), text: "", checked: false, indent: 0 }], at, into);
+  }
+  function figmaChoice(b, tx, url) {
+    const m = popUp(tx.getBoundingClientRect(), (pop) => pop.append(el("div", { class: "hd", text: "Show it as" }),
+      item({ glyph: FIGMA_KIND.glyph, label: "The frame, live", note: figmaTitle(url) || "From Figma" }, () => makeFigma(b, url, true)),
+      item({ glyph: "↗", label: "A link", note: "Keep it as words" }, () => linkIt(b, url))), null, "figma");
+    m.on = 0;
+    m.el.querySelector(".it").classList.add("on");
+  }
+  function figmaKey(ev) {
+    const its = [...menu.el.querySelectorAll(".it")];
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      menu.on = (menu.on + 1) % its.length;
+      its.forEach((x, j) => x.classList.toggle("on", j === menu.on));
+      return true;
+    }
+    if (ev.key === "Enter") { ev.preventDefault(); its[menu.on].click(); return true; }
+    if (ev.key === "Escape") { ev.preventDefault(); closePop(); return true; }
+    closePop();                                            // typing on: the link stays as it was pasted
+    return false;
+  }
+  function linkIt(b, url) {
+    const x = blockOf(b.id), tx = rowOf(b.id) && rowOf(b.id).querySelector(".tx");
+    if (!x || !tx) return;
+    const h = clean(`<a href="${url.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}">${esc(url)}</a>`);
+    forget(x.id);
+    x.text = h;
+    tx.innerHTML = withLinks(h);
+    change([{ op: "block.put", page: current, block: { id: x.id, text: h } }]);
+    focusBlock(x.id, "end");
+  }
+  function figmaBox(b, tx) {
+    const m = popUp(tx.getBoundingClientRect(), (pop) => {
+      const input = el("input", { class: "fg-input", type: "url", placeholder: "Paste the link to a frame or board", "aria-label": "The Figma link", autocomplete: "off" });
+      const bad = el("div", { class: "fg-bad", hidden: true });
+      const go = () => {
+        const url = input.value.trim();
+        if (!FIGMA_URL.test(url)) { bad.textContent = "That isn't a link to a Figma file: figma.com/design/…, /board/…, /proto/…"; bad.hidden = false; return; }
+        closePop();
+        const at = blockOf(b.id), t = rowOf(b.id) && rowOf(b.id).querySelector(".tx");
+        if (at) makeFigma(at, url, !!(t && empty(t) && at.type === "text"));
+      };
+      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); go(); } });
+      pop.append(el("div", { class: "hd", text: "Figma" }),
+        el("div", { class: "fg-row" }, input, el("button", { type: "button", class: "primary", text: "Show it", onclick: go })), bad,
+        el("p", { class: "fg-note", text: "In Figma, right-click a frame and pick Copy link to selection, or use Share, Copy link for the whole file." }));
+    }, null, "figma-box", "fg-pop");
+    setTimeout(() => { const i = m.el.querySelector("input"); if (i) i.focus(); });
+  }
+  function tokenBox(rect) {
+    const m = popUp(rect, (pop) => {
+      const input = el("input", { class: "fg-input", type: "password", placeholder: "figd_…", "aria-label": "Your Figma personal access token", autocomplete: "off" });
+      const bad = el("div", { class: "fg-bad", hidden: true });
+      const send = async (token) => {
+        bad.hidden = true;
+        let got;
+        try { got = await (await ag.api("figma/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) })).json(); }
+        catch { got = { error: "the dashboard didn't answer" }; }
+        if (got.error) { bad.textContent = got.error; bad.hidden = false; return; }
+        figmaToken = { token: !!token, who: got.who || "" };
+        closePop();
+        say(token ? `Figma token saved${got.who ? ` (${got.who})` : ""}` : "Figma token forgotten");
+        snapErr.clear();
+        const p = page();
+        if (p && token) for (const x of p.blocks) if (x.type === "figma") snapSoon(x, true);
+        drawPage();
+      };
+      const save = () => { if (input.value.trim()) send(input.value.trim()); };
+      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); save(); } });
+      pop.append(el("div", { class: "hd", text: "A Figma token" }),
+        el("p", { class: "fg-note", text: "With one, Notes keeps a snapshot of any frame you can open in Figma: it shows when Figma can't, and it is what your agents see. Without one, only a public file's cover." }),
+        el("p", { class: "fg-note" }, "Make one in Figma's ", el("a", { href: "https://www.figma.com/settings", target: "_blank", rel: "noopener", text: "Settings" }),
+          ": Security, Personal access tokens, with read access to file content. It stays on this computer."),
+        el("div", { class: "fg-row" }, input, el("button", { type: "button", class: "primary", text: "Save", onclick: save })), bad,
+        figmaToken.token ? el("button", { type: "button", class: "fg-forget", text: `Forget the token${figmaToken.who ? ` of ${figmaToken.who}` : ""}`, onclick: () => send("") }) : null);
+    }, null, "token", "fg-pop");
+    setTimeout(() => { const i = m.el.querySelector("input"); if (i) i.focus(); });
+  }
+  function figmaMenu(b, rect) {
+    popUp(rect, (pop) => pop.append(
+      item({ glyph: SVG.restore, sm: true, label: "Fetch the snapshot again" }, () => { unloaded.delete(b.id); snapSoon(b, true, true); }),
+      item({ glyph: "⚿", sm: true, label: figmaToken.token ? "Figma token…" : "Add a Figma token…", note: figmaToken.who || "" }, () => tokenBox(rect)),
+      item({ glyph: "⧉", sm: true, label: "Copy the link" }, () => navigator.clipboard.writeText(b.url).then(() => say("Link copied"), () => say("Couldn't copy the link", true))),
+      el("div", { class: "sep" }),
+      item({ glyph: SVG.trash, sm: true, label: "Delete", bad: true }, () => dropBlock(b))));
+  }
+
+  // -- a picture's buttons, its sides dragged, and full size
+  function figAct(btn) {
+    const n = btn.closest(".blk"), b = n && blockOf(n.dataset.id);
+    if (!b) return;
+    const what = btn.dataset.do, ro = !!page().deleted;
+    if (what === "open") return showFull(b);
+    if (what === "view") { figView.set(b.id, figViewOf(b) === "live" ? "snap" : "live"); unloaded.delete(b.id); return redrawFig(b.id); }
+    if (what === "retry") { unloaded.delete(b.id); figView.set(b.id, "live"); return redrawFig(b.id); }
+    if (ro) return;
+    if (what === "caption") return focusBlock(b.id, "end");
+    if (what === "replace") return replacePicture(b);
+    if (what === "delete") return dropBlock(b);
+    if (what === "token") return tokenBox(btn.getBoundingClientRect());
+    if (what === "more") return figmaMenu(b, btn.getBoundingClientRect());
+  }
+  box.addEventListener("dblclick", (ev) => {
+    const img = ev.target.closest(".fig .pic img, .fig .fg-snap");
+    const b = img && blockOf(img.closest(".blk").dataset.id);
+    if (b) showFull(b);
+  });
+  box.addEventListener("pointerdown", (ev) => {
+    const h = ev.target.closest(".fig .hdl");
+    if (!h || ev.button !== 0 || !page() || page().deleted) return;
+    ev.preventDefault();
+    const n = h.closest(".blk"), pic = h.closest(".pic");
+    sizing = { id: n.dataset.id, pic, col: n.querySelector(".fig").getBoundingClientRect().width, x: ev.clientX,
+      w: pic.getBoundingClientRect().width, side: h.dataset.side, pct: null };
+    h.setPointerCapture(ev.pointerId);
+    document.body.classList.add("sizing");
+  });
+  box.addEventListener("pointermove", (ev) => {
+    if (!sizing) return;
+    const dx = (ev.clientX - sizing.x) * (sizing.side === "r" ? 1 : -1);   // (at the left edge: the side dragged moves)
+    sizing.pct = Math.max(10, Math.min(100, ((sizing.w + dx) / sizing.col) * 100));
+    sizing.pic.style.width = `${sizing.pct}%`;
+    sizing.pic.style.maxWidth = "";
+  });
+  const endSize = () => {
+    if (!sizing) return;
+    const s = sizing;
+    sizing = null;
+    document.body.classList.remove("sizing");
+    if (s.pct === null) return;
+    change([{ op: "block.put", page: current, block: { id: s.id, width: Math.round(s.pct) } }]);
+    drawPage();
+  };
+  box.addEventListener("pointerup", endSize);
+  box.addEventListener("pointercancel", endSize);
+  function showFull(b) {
+    const lb = $("lightbox");
+    let inner;
+    if (b.type === "image") inner = el("img", { src: fileUrl(b.file), alt: plainOf(b.text) });
+    else if (figViewOf(b) === "live") inner = el("iframe", { src: embedUrl(b.url), allowfullscreen: true, title: `${b.title || figmaTitle(b.url) || "Figma"}, live from Figma` });
+    else inner = b.snap ? el("img", { src: fileUrl(b.snap), alt: b.title || "" }) : el("p", { class: "lb-none", text: "No snapshot of it yet." });
+    lb.replaceChildren(el("div", { class: `lb-in ${b.type}` }, inner),
+      el("button", { type: "button", class: "lb-x", title: "Close (Esc)", "aria-label": "Close", html: SVG.x, onclick: hideFull }));
+    lb.dataset.block = b.id;
+    lb.hidden = false;
+    lb.querySelector(".lb-x").focus();
+  }
+  function hideFull() {
+    const lb = $("lightbox"), id = lb.dataset.block;
+    lb.hidden = true;
+    lb.replaceChildren();
+    if (id) focusFig(id);
+  }
+  $("lightbox").addEventListener("click", (ev) => { if (ev.target === $("lightbox") || ev.target.classList.contains("lb-in")) hideFull(); });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("lightbox").hidden) { ev.preventDefault(); ev.stopPropagation(); hideFull(); } }, true);
+
+  // -- pictures dropped on the page: put where the line shows, between lines
+  const filesIn = (ev) => !!ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
+  document.addEventListener("dragover", (ev) => { if (filesIn(ev)) ev.preventDefault(); });   // (never the file opened in the panel)
+  document.addEventListener("drop", (ev) => { if (filesIn(ev)) { ev.preventDefault(); $("drop").hidden = true; } });
+  $("scroll").addEventListener("dragover", (ev) => {
+    const p = page();
+    if (!filesIn(ev) || !p || p.deleted || SPECIAL.includes(current)) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = "copy";
+    const rows = [...box.children], before = rows.find((r) => { const b = r.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; }) || null;
+    const k = before ? rows.indexOf(before) : rows.length;
+    dropAt = k ? rows[k - 1].dataset.id : "";
+    const at = (before || rows[rows.length - 1] || box).getBoundingClientRect(), left = box.getBoundingClientRect(), line = $("drop");
+    line.hidden = false;
+    Object.assign(line.style, { left: `${left.left}px`, width: `${left.width}px`, top: `${(before ? at.top : at.bottom) - 2}px` });
+  });
+  $("scroll").addEventListener("dragleave", (ev) => { if (!ev.relatedTarget || !$("scroll").contains(ev.relatedTarget)) $("drop").hidden = true; });
+  $("scroll").addEventListener("drop", (ev) => {
+    const p = page();
+    if (!filesIn(ev) || !p || p.deleted || SPECIAL.includes(current)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    $("drop").hidden = true;
+    const pics = [...ev.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
+    if (!pics.length) return say("Only pictures can be dropped into the notes", true);
+    putPictures(pics, dropAt ? p.blocks.find((x) => x.id === dropAt) : null);
+  });
+
   // ---------------------------------------------------------------- the gatherer's actors (ag.actors), to send blocks to
   let crew = { agents: [], harnesses: [], start: "", home: "" };
   let crewSig = "", crewKnown = false;                    // (not yet: an actor not found is not known gone)
@@ -2097,7 +2572,7 @@ browser's own undo, which knows nothing of the ops. */
   const actorOf = (ch) => (ch === "gatherer" ? crew.agents.find(isLead)
     : crew.agents.find((a) => a.channel === ch || a.started_as === ch)) || null;
   const byOf = (a, by) => !!a && (by === `agent:${a.channel}` || (!!a.started_as && by === `agent:${a.started_as}`));
-  const nameOf = (a, ch) => isLead(a) || ch === "gatherer" ? "Gatherer agent"
+  const nameOf = (a, ch) => isLead(a) || ch === "gatherer" ? "Coordinator agent"
     : (a && a.name && a.name.text) || `Actor ${short(ch || (a && a.channel))}`;
   const tilde = (path) => (crew.home && path && path.startsWith(crew.home) ? `~${path.slice(crew.home.length)}` : path || "");
   function face(a, size = 18, lead = false) {
@@ -2119,26 +2594,61 @@ browser's own undo, which knows nothing of the ops. */
   // The lines an actor is on now: the ones its latest message is about (ag.actors' `asked_of`, a line of this notebook's,
   // or several sent together: their ids, ", " between), or none -- its latest message came from elsewhere (Chat, another app).
   const linesOn = (a) => (a && a.asked_of && a.asked_of.app === ag.app ? String(a.asked_of.item || "").split(/,\s*/).filter(Boolean) : []);
-  // when a line last went to its actor: sent, or the user's latest message about it
-  const lastSent = (b) => Math.max(b.sent || 0, ...(b.thread || []).filter((l) => l.by === "user").map((l) => l.at || 0));
+  // -- who a line went to (notebook.py): its calls, one an agent, in the order sent -- {to, sent, extra?, group?,
+  // dropped?}; `dropped`: the reader took it back from that agent. (A notebook kept before a line could go to several
+  // said its one agent as the line's own `to`, `sent`, `extra`, `group`: read as its one call, as the notebook reads it.)
+  const callsOf = (b) => (!b ? [] : Array.isArray(b.calls) ? b.calls : b.to ? [{ to: b.to, sent: b.sent, extra: b.extra, group: b.group }] : []);
+  const onIt = (b) => callsOf(b).filter((c) => !c.dropped);
+  // whether a call went to this actor (a codex actor's thread, the channel it became; the gatherer agent, however named)
+  const callTo = (c, ch) => c.to === ch || (!!actorOf(c.to) && actorOf(c.to) === actorOf(ch));
+  const byCall = (c, by) => by === `agent:${c.to}` || byOf(actorOf(c.to), by);
+  // whether a line of a block's thread is of its conversation with this call's agent: the reader's messages to it, its
+  // reports -- and what no call claims: a message from before a line could go to several, its first agent's; a report by
+  // an agent the line never went to (one its agent handed it to), the first's it is with now
+  function claims(calls, c, l) {
+    const own = (x) => (l.by === "user" ? !!l.to && callTo(x, l.to) : byCall(x, l.by));
+    if (calls.some(own)) return own(c);
+    const home = l.by === "user" ? calls[0] : calls.find((x) => !x.dropped) || calls[0];
+    return !!home && c.to === home.to;
+  }
+  // A line as one of its agents has it: the line, with that call's `to`, `sent`, `extra`, `group` and `dropped`, and
+  // their conversation as its `thread`. Its status, its chip and the conversation beside the page are drawn from it.
+  function viewOf(b, c) {
+    const calls = callsOf(b);
+    return { ...b, to: c.to, sent: c.sent || 0, extra: c.extra || "", group: c.group || "", dropped: c.dropped || 0,
+      thread: (b.thread || []).filter((l) => claims(calls, c, l)) };
+  }
+  const viewsOf = (b) => callsOf(b).map((c) => viewOf(b, c));
+  const viewsOn = (b) => viewsOf(b).filter((v) => !v.dropped);
+  const viewFor = (b, ch) => { const c = ch ? callsOf(b).find((x) => callTo(x, ch)) : null; return c ? viewOf(b, c) : null; };
+  // a line's calls with one more: to the agent it just went to -- in the place of the one to that agent before, if any
+  function withCall(b, call, asked = "") {
+    const calls = callsOf(b).map((c) => ({ ...c })), i = calls.findIndex((c) => callTo(c, call.to) || (!!asked && callTo(c, asked)));
+    if (i < 0) calls.push(call); else calls[i] = call;
+    return calls;
+  }
+  // when a line last went to its actor (a view's: its call's), or to its agents: sent, or the user's latest message about it
+  const sentOf = (b) => ("sent" in b ? b.sent || 0 : Math.max(0, ...onIt(b).map((c) => c.sent || 0)));
+  const lastSent = (b) => Math.max(sentOf(b), ...(b.thread || []).filter((l) => l.by === "user").map((l) => l.at || 0));
   // -- work items (notebook.py): lines sent to an agent, or marked as one; only the reader ends one
-  const isWork = (b) => !!b && !UNSENT.includes(b.type) && !!(b.to || b.work);
+  const isWork = (b) => !!b && !UNSENT.includes(b.type) && !!(onIt(b).length || b.work);
   // how the reader ended one -- "done", "canceled" -- or "": a to-do one is done as it is ticked
   const endedOf = (b) => (!isWork(b) ? "" : b.ended || (b.type === "todo" && b.checked ? "done" : ""));
   // crossed out, and folded away on its page: a work item the reader ticked (a to-do, done so). Ending one -- accepting
   // or canceling it -- changes no line: the page stays as the reader wrote it, the line's chip saying how its work ended.
   const crossed = (b) => isWork(b) && b.type === "todo" && !!b.checked;
-  const endedAt = (b) => b.ended_at || Math.max(b.sent || 0, ...(b.thread || []).map((l) => l.at || 0)) || 0;
+  const endedAt = (b) => b.ended_at || Math.max(sentOf(b), ...(b.thread || []).map((l) => l.at || 0)) || 0;
   const pageOf = (b) => { const f = findLine(b.id); return f ? f.p : null; };
   const SETTLE = 15;                                       // s: a line just sent to an actor not busy yet: not taken up yet
-  // How a work item stands, {key, cls, word} -- its own state, not its actor's alone: ended (done, canceled); sent to no
-  // one (new); its actor on it now (run; ask: it asks about it, errs on it, or is gone); reported on since it was last
-  // sent, or its actor took it up and stopped without a report (review: the reader's to accept, or send back); sent,
-  // its actor on something before it (queue).
+  // How a work item stands with one of its agents (`b`, its view), {key, cls, word} -- its own state, not its actor's
+  // alone: ended (done, canceled); sent to no one (new); taken back from that agent (dropped); its actor on it now (run;
+  // ask: it asks about it, errs on it, or is gone); reported on since it was last sent, or its actor took it up and
+  // stopped without a report (review: the reader's to accept, or send back); sent, its actor on something before it (queue).
   function itemStands(b) {
     const e = endedOf(b);
     if (e) return e === "done" ? { key: "done", cls: "done", word: "Done" } : { key: "canceled", cls: "gone", word: "Canceled" };
     if (!b.to) return { key: "new", cls: "new", word: "Not started" };
+    if (b.dropped) return { key: "dropped", cls: "gone", word: "Removed" };
     const a = actorOf(b.to), [cls, word] = stands(a);
     if (cls === "gone") return crewKnown ? { key: "ask", cls: "bad", word: "Agent gone" } : { key: "queue", cls: "wait", word: "Sent" };
     const busy = cls === "work" || cls === "ask" || cls === "bad";
@@ -2148,8 +2658,18 @@ browser's own undo, which knows nothing of the ops. */
     if (busy ? waiting(a, b) : now() - lastSent(b) < SETTLE) return { key: "queue", cls: "wait", word: busy ? "Queued" : "Sent" };
     return { key: "review", cls: "review", word: "To review" };
   }
-  // what to say of a work item beside how it stands: what it asks, what it waits for, its latest report
+  // How a work item stands, as one: ended; sent to no one now (new) -- else as the most pressing of its agents: one
+  // asking about it, one on it, one it is to review from, one it waits for (`v`: that agent's view of it).
+  function lineStands(b) {
+    const vs = endedOf(b) ? [] : viewsOn(b);
+    if (!vs.length) return itemStands(endedOf(b) ? b : { ...b, to: "" });
+    const all = vs.map((v) => ({ ...itemStands(v), v }));
+    return ["ask", "run", "review", "queue"].map((k) => all.find((s) => s.key === k)).find(Boolean) || all[0];
+  }
+  // what to say of a work item beside how it stands (`b`: the view of it its status is from): what it asks, what it
+  // waits for, its latest report
   function itemSaid(b, s = itemStands(b)) {
+    if (s.v) b = s.v;
     const a = b.to ? actorOf(b.to) : null;
     if (s.key === "new") return "Sent to no one yet";
     if (s.key === "ask") return s.word === "Agent gone" ? "Its agent is not here now: send it to another, or cancel it"
@@ -2190,14 +2710,14 @@ browser's own undo, which knows nothing of the ops. */
   // Work items canceled: ended so, and an agent still to finish one (on it, or yet to take it up) told to leave it, in
   // a message of the user's -- it reads one sent mid-turn at its next step, as Chat's.
   async function cancel(bs) {
-    bs = bs.filter((b) => isWork(b) && !endedOf(b));
+    bs = [...new Map(bs.filter((b) => isWork(b) && !endedOf(b)).map((b) => [b.id, (findLine(b.id) || {}).b || b])).values()];
     if (!bs.length) return;
     const tell = new Map();                                 // per actor and page: its lines
-    for (const b of bs) {
-      const s = itemStands(b), p = pageOf(b);
-      if (!b.to || !p || !["run", "queue", "ask"].includes(s.key) || s.word === "Agent gone") continue;
-      const k = `${b.to} ${p.id}`;
-      if (!tell.has(k)) tell.set(k, { to: b.to, p, them: [] });
+    for (const b of bs) for (const v of viewsOn(b)) {
+      const s = itemStands(v), p = pageOf(b);
+      if (!p || !["run", "queue", "ask"].includes(s.key) || s.word === "Agent gone") continue;
+      const k = `${v.to} ${p.id}`;
+      if (!tell.has(k)) tell.set(k, { to: v.to, p, them: [] });
       tell.get(k).them.push(b);
     }
     change(endOps(bs, "canceled"), false);                 // (its agent told to stop: not to be undone)
@@ -2223,7 +2743,7 @@ browser's own undo, which knows nothing of the ops. */
   // a line sent to a busy actor after the one it is on (or while it is on something else): not taken up yet
   function waiting(a, b) {
     const on = linesOn(a)[0], found = on ? findLine(on) : null;
-    return !found || lastSent(b) >= lastSent(found.b);       // (sent with it, or after: not taken up yet)
+    return !found || lastSent(b) >= lastSent(viewFor(found.b, a.channel) || found.b);   // (sent with it, or after: not taken up yet)
   }
   function findLine(id) {
     for (const p of live()) { const b = p.blocks.find((x) => x.id === id); if (b) return { p, b }; }
@@ -2231,13 +2751,14 @@ browser's own undo, which knows nothing of the ops. */
   }
   // what an actor asks, if it asks it about this line (the line it is on now)
   const askedOn = (a, b) => (a && a.asking && stands(a)[0] === "ask" && linesOn(a).includes(b.id) ? a.asking : null);
-  // The lines sent together with one -- to the same actor, as one message: the same `group` -- in the page's order; just
-  // it, sent alone. They show once, at the last of them: how they stand together, and one conversation.
+  // The lines sent together with one (`b`, its view for one of its agents) -- to that agent, as one message: the same
+  // `group` -- in the page's order, as that agent has each; just it, sent alone. They show once for that agent, at the
+  // last of them: how they stand together, and one conversation.
   function sentWith(b) {
     const p = pageOf(b);
     if (!p || !b.to || !b.group) return [b];
-    const g = p.blocks.filter((x) => x.to === b.to && x.group === b.group);
-    return g.includes(b) ? g : [b];
+    const g = p.blocks.map((x) => { const c = callsOf(x).find((y) => y.to === b.to && y.group === b.group); return c ? viewOf(x, c) : null; }).filter(Boolean);
+    return g.some((x) => x.id === b.id) ? g : [b];
   }
   // How lines sent together stand: their open ones as one -- asking or working before all else; some to review, how
   // many of them; then queued, not started; all of them to review: to review. Every one ended: as the last.
@@ -2271,8 +2792,9 @@ browser's own undo, which knows nothing of the ops. */
   const quiet = new Set();                                 // ... with others, not the last of them: no status of its own
   // A block's words sent to an actor, as the user's message: an actor there (`channel`; "gatherer", its gatherer agent),
   // or a new one (`harness`, `folder`), with what the user added (`extra`: instructions beyond the line). The block then
-  // says who it went to, and with what. The note at its start says where it is from (the Notes app's [asked] reads it
-  // back: first, so a message the list cuts short keeps it) and asks for a report on it, if the reader wants one.
+  // says it went to that one too, and with what (a call of its own: sent to it before, the call to it now). The note at
+  // its start says where it is from (the Notes app's [asked] reads it back: first, so a message the list cuts short keeps
+  // it) and asks for a report on it, if the reader wants one.
   async function sendBlock(id, who, extra = "") {
     flushTyped();
     pump();
@@ -2282,7 +2804,7 @@ browser's own undo, which knows nothing of the ops. */
     if (!words) return say("Write what to ask first, then send it.", true);
     const report = store.get("report", true);
     extra = extra.trim();
-    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, block ${b.id}.`
+    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, block ${b.id}.${alsoWith([b], who)}`
       + `${report ? " When you're done, report back with notes_report, in one to three lines." : ""})`
       + `\n\n${words}${extra ? `\n\n${extra}` : ""}`;
     outgoing.add(id);
@@ -2290,7 +2812,8 @@ browser's own undo, which knows nothing of the ops. */
     try {
       const got = who.harness ? await ag.actors.start({ harness: who.harness, folder: who.folder, text })
         : await ag.actors.send(who.channel, text);
-      change([{ op: "block.put", page: p.id, block: { id, to: got.channel, sent: now(), extra: esc(extra).replace(/\n/g, "<br>"), group: "", work: true, ended: "" } }], false);
+      const line = (findLine(id) || {}).b || b, call = { to: got.channel, sent: now(), ...(extra ? { extra: esc(extra).replace(/\n/g, "<br>") } : {}) };
+      change([{ op: "block.put", page: p.id, block: { id, calls: withCall(line, call, who.channel), work: true, ended: "" } }], false);
       say(`Sent to ${nameOf(actorOf(got.channel), who.channel || got.channel)}${who.harness ? ", a new actor" : ""}`);
     } catch (e) {
       say(`Not sent: ${e.message}`, true);
@@ -2300,8 +2823,8 @@ browser's own undo, which knows nothing of the ops. */
     }
   }
   // Several lines sent together, as one message: the note names each line (in the order they follow it) and asks for a
-  // report on each; the lines as markdown, then what the user added. Each line then says who it went to, as one sent alone,
-  // and the `group` they share (`sentWith` finds them by it).
+  // report on each; the lines as markdown, then what the user added. Each line then says it went to that one, as one sent
+  // alone, and the `group` its calls to it share (`sentWith` finds them by it).
   async function sendBlocks(ids, who, extra = "") {
     flushTyped();
     pump();
@@ -2311,7 +2834,7 @@ browser's own undo, which knows nothing of the ops. */
     if (bs.length < 2) return bs.length ? sendBlock(bs[0].id, who, extra) : say("Write what to ask first, then send it.", true);
     const report = store.get("report", true);
     extra = extra.trim();
-    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, blocks ${bs.map((b) => b.id).join(", ")}: the lines below, in that order.`
+    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, blocks ${bs.map((b) => b.id).join(", ")}: the lines below, in that order.${alsoWith(bs, who)}`
       + `${report ? " When you're done, report back on each with notes_report, in one to three lines." : ""})`
       + `\n\n${mdLines(bs).join("\n")}${extra ? `\n\n${extra}` : ""}`;
     for (const b of bs) { outgoing.add(b.id); if (b !== bs[bs.length - 1]) quiet.add(b.id); }
@@ -2320,7 +2843,10 @@ browser's own undo, which knows nothing of the ops. */
       const got = who.harness ? await ag.actors.start({ harness: who.harness, folder: who.folder, text })
         : await ag.actors.send(who.channel, text);
       const at = now(), more = esc(extra).replace(/\n/g, "<br>"), group = rid();
-      change(bs.map((b) => ({ op: "block.put", page: p.id, block: { id: b.id, to: got.channel, sent: at, extra: more, group, work: true, ended: "" } })), false);
+      change(bs.map((b) => {
+        const line = (findLine(b.id) || {}).b || b, call = { to: got.channel, sent: at, ...(more ? { extra: more } : {}), group };
+        return { op: "block.put", page: p.id, block: { id: b.id, calls: withCall(line, call, who.channel), work: true, ended: "" } };
+      }), false);
       unpick();
       say(`Sent ${bs.length} lines to ${nameOf(actorOf(got.channel), who.channel || got.channel)}${who.harness ? ", a new actor" : ""}`);
     } catch (e) {
@@ -2331,12 +2857,21 @@ browser's own undo, which knows nothing of the ops. */
     }
   }
   const sendTo = (ids, who, extra) => (ids.length > 1 ? sendBlocks(ids, who, extra) : sendBlock(ids[0], who, extra));
-  // A reply on a block sent to an actor: sent to that actor, then a line of the block's thread. On lines sent together,
-  // about them all, and kept on the last of them.
-  async function reply(id, words) {
-    const f = findLine(id), p = f && f.p, b = f && f.b;
+  // Lines sent to an agent while others are on them: the note says so, and that this message is the one's it goes to --
+  // else an agent of this gatherer, shown the other's message as a request made to another session in parallel, takes
+  // its own, the same words, for that one too, and leaves it. (No ")" in it: the [asked] pattern reads the note to its end.)
+  function alsoWith(bs, who) {
+    const others = [...new Set(bs.flatMap((b) => onIt(b).filter((c) => !(who.channel && callTo(c, who.channel))).map((c) => short(c.to))))];
+    if (!others.length) return "";
+    const them = `${others.length > 1 ? "actors" : "actor"} ${others.join(", ")}`;
+    return bs.length > 1 ? ` Some of them went to ${them} too; this message is for you.` : ` I sent this line to ${them} too; this message is for you.`;
+  }
+  // A reply on a block sent to an actor (`to`: which of its agents): sent to that actor, then a line of the block's
+  // thread, saying it went to that one. On lines sent together, about them all, and kept on the last of them.
+  async function reply(id, words, to = null) {
+    const f = findLine(id), p = f && f.p, b = f && ((to && viewFor(f.b, to)) || f.b);
     words = words.trim();
-    if (!p || !b || !(b.to || b.source) || !words) return false;
+    if (!p || !b || !(b.to || b.source) || b.dropped || !words) return false;
     const g = linesOf(b);
     const text = b.to ? `(A reply in my Notes, page ${JSON.stringify(p.title || "Untitled")}, ${g.length > 1 ? `blocks ${g.map((x) => x.id).join(", ")}` : `block ${b.id}`}.`
       + ` Report back with notes_report when you're done.)\n\n${words}` : followUpText(p, g, words);
@@ -2346,47 +2881,84 @@ browser's own undo, which knows nothing of the ops. */
       say(`Not sent: ${e.message}`, true);
       return false;
     }
-    change([{ op: "thread.add", page: p.id, block: id, line: { id: rid(), by: "user", text: esc(words).replace(/\n/g, "<br>"), at: now() } }]);
+    change([{ op: "thread.add", page: p.id, block: id, line: { id: rid(), by: "user", ...(b.to ? { to: b.to } : {}), text: esc(words).replace(/\n/g, "<br>"), at: now() } }]);
     redraw();
     return true;
   }
-  // What a block sent to an actor shows under its words, at the line's end: who it went to (its avatar) and how the
-  // line stands (its chip -- the actor's name and its latest report, or what it asks, on hover), and a button that opens
-  // the conversation about it beside the page -- "Answer" while it asks the user. Neither the conversation nor a
-  // preview of it is on the page.
+  // One of a line's agents taken off it (`v`, its view): its call kept, `dropped` -- what was said stays, its reports on
+  // the line refused since -- on the lines sent to it with this one as one message too, which show as one; and the
+  // agent, if it is on them or yet to take them up, told to leave them, as a cancel tells it. Taken off every agent, a
+  // line is still a work item: sent to no one now (send it again, and the call is that agent's again).
+  async function drop(v) {
+    const g = sentWith(v), s = groupStands(g), p = pageOf(v), name = nameOf(actorOf(v.to), v.to);
+    if (!p || v.dropped) return;
+    const at = now();
+    change(g.map((x) => (findLine(x.id) || {}).b).filter(Boolean).map((line) => ({ op: "block.put", page: p.id,
+      block: { id: line.id, calls: callsOf(line).map((c) => (c.to === v.to && !c.dropped ? { ...c, dropped: at } : c)), work: true } })), false);
+    redraw();
+    if (["run", "queue", "ask"].includes(s.key) && s.word !== "Agent gone") {
+      const many = g.length > 1, it = many ? "them" : "it";
+      const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, ${many ? `blocks ${g.map((x) => x.id).join(", ")}` : `block ${v.id}`}.`
+        + ` The user took ${many ? "these lines" : "this line"} back from you: stop any work on ${it}, and don't report on ${it}.)`
+        + `\n\nTaken back: ${g.map((x) => oneLine(x.type === "code" ? esc(x.text) : x.text, 200)).join("; ")}`;
+      try { await ag.actors.send(v.to, text); } catch (e) { return say(`Removed ${name}, but it was not told: ${e.message}`, true); }
+    }
+    say(`Removed ${name} from ${g.length > 1 ? `these ${g.length} lines` : "this line"}`);
+  }
+  // What a block sent to agents shows under its words, at the line's end: each agent it is with now (its avatar) and how
+  // the line stands with that one (its chip -- the agent's name and its latest report, or what it asks, on hover -- which
+  // opens their conversation beside the page); "Answer" while one asks the reader about it, "Accept" while it is to
+  // review; a button that opens the conversation about it (how many messages); and, on hover, one that sends it to
+  // another agent too. An agent it went to with other lines, as one message, shows once, at the last of them. Sent to no
+  // one now: how it stands, as one. Neither a conversation nor a preview of one is on the page.
   function sentPart(n, b, ro) {
     n.classList.remove("has-src");
     if (!isWork(b) && b.source && !outgoing.has(b.id)) return sourcePart(n, b, ro);   // written by an agent: who, not a status
     let part = n.querySelector(":scope > .sent");
-    const g = sentWith(b), tail = [...g].reverse().find((x) => !foldedNow.has(x.id)) || g[g.length - 1];   // sent with others: shown once, at the last of them shown
-    const has = isWork(b) || (b.thread && b.thread.length) || outgoing.has(b.id);
-    const open = !!convo && g.some((x) => x.id === convo.block);
-    n.classList.toggle("convo-on", !!has && open);
-    if (!has || b !== tail || (quiet.has(b.id) && !b.to)) { if (part) part.remove(); return; }
+    const tailOf = (g) => [...g].reverse().find((x) => !foldedNow.has(x.id)) || g[g.length - 1];   // sent with others: shown at the last of them shown
+    const groups = viewsOf(b).map((v) => ({ v, g: sentWith(v) }));
+    const open = !!convo && (convo.block === b.id || groups.some(({ v, g }) => v.to === convo.to && g.some((x) => x.id === convo.block)));
+    n.classList.toggle("convo-on", open && (isWork(b) || groups.length > 0 || !!(b.thread && b.thread.length)));
+    const here = groups.filter(({ g }) => tailOf(g).id === b.id), on = here.filter(({ v }) => !v.dropped);
+    const sending = outgoing.has(b.id) && !quiet.has(b.id), none = !onIt(b).length;
+    if (!(on.length || sending || (none && !quiet.has(b.id) && (isWork(b) || here.length || (b.thread && b.thread.length))))) { if (part) part.remove(); return; }
     if (!part) { part = el("div", { class: "sent" }); n.append(part); }
-    const a = b.to ? actorOf(b.to) : null;
-    const sendingNow = outgoing.has(b.id) && !b.to;
-    const s = sendingNow ? { key: "run", cls: "work", word: "Sending…" } : isWork(b) ? groupStands(g) : { key: "none", cls: "idle", word: "Sent to no one now" };
-    const cls = s.cls, word = s.word, name = b.to ? nameOf(a, b.to) : "";
-    const asks = !!askedAll(a, g);
-    const latest = [...threadOf(g)].reverse().find((l) => l.by !== "user");
-    const said = asks ? `Asks: ${askLine(a.asking)}` : g.length > 1 ? (latest ? oneLine(latest.text, 240) : "") : isWork(b) ? itemSaid(b, s) : "";
-    const count = (b.sent ? 1 : 0) + g.reduce((k, x) => k + (x.thread || []).length, 0);
-    const review = s.key === "review" && !ro, talks = !sendingNow && (!!b.to || count > 0);
-    const sig = JSON.stringify([cls, word, name, a && a.avatar, said, count, asks, open, ro, g.length, review, talks]);
+    const items = on.map(({ v, g }) => {
+      const a = actorOf(v.to), s = groupStands(g), asks = !!askedAll(a, g);
+      const latest = [...threadOf(g)].reverse().find((l) => l.by !== "user");
+      const said = asks ? `Asks: ${askLine(a.asking)}` : g.length > 1 ? (latest ? oneLine(latest.text, 240) : "") : itemSaid(v, s);
+      const told = `${nameOf(a, v.to)}: ${s.word}${g.length > 1 ? ` (${g.length} lines sent together)` : ""}${said ? `\n${said}` : ""}`;   // on hover, not on the page
+      return { v, g, a, s, asks, told, open: open && convo.to === v.to };
+    });
+    const alone = none && !sending ? (isWork(b) ? lineStands(b) : { key: "none", cls: "idle", word: "Sent to no one now" }) : null;
+    const first = ["ask", "run", "review", "queue"].map((k) => items.find((x) => x.s.key === k)).find(Boolean) || items[0] || null;
+    const ended = items.length > 1 && endedOf(b) ? items[0].s : null;   // ended: how, once, with every agent's avatar
+    const review = !ro && !!first && first.s.key === "review";
+    const asking = items.find((x) => x.asks && !x.open);
+    const count = here.reduce((k, { v, g }) => k + (v.sent ? 1 : 0) + g.reduce((j, x) => j + (x.thread || []).length, 0), 0)
+      + (none && !here.length ? (b.thread || []).length : 0);
+    const talks = count > 0 && !(sending && !items.length), add = !ro && items.length > 0 && !sending;
+    const sig = JSON.stringify([items.map((x) => [x.v.to, x.s.cls, x.s.word, x.a && x.a.avatar, x.told, x.open, x.g.length]), alone, sending,
+      count, !!asking, open, ro, review, talks, add, !!ended]);
     if (part.dataset.sig === sig) return;
     part.dataset.sig = sig;
-    const talk = () => toggleConvo(b.id);
-    const told = `${name ? `${name}: ` : ""}${word}${g.length > 1 ? ` (${g.length} lines sent together)` : ""}${said ? `\n${said}` : ""}`;   // on hover, not on the page
+    const chip = (x) => el("button", { type: "button", class: `chip ${x.s.cls}`, title: `${x.told}\n(${x.open ? "close" : "open"} the conversation)`,
+      "aria-label": x.told, onclick: () => toggleConvo(tailOf(x.g).id, x.v.to) }, face(x.a, 16), el("span", { text: x.s.word }));
+    const talkTo = (asking || first || {}).v;
     part.replaceChildren(...[                              // (the slots left empty: none drawn, not "null")
-      b.to ? el("button", { type: "button", class: `chip ${cls}`, title: `${told}\n(${open ? "close" : "open"} the conversation)`,
-        "aria-label": told, onclick: talk }, face(a, 16), el("span", { text: word }))
-        : el("span", { class: `chip ${cls}`, title: told, "aria-label": told }, el("span", { text: word })),
-      review ? el("button", { type: "button", class: "accept", text: "Accept", title: "Accept it as done", onclick: () => accept(g) }) : null,
-      !talks ? null : asks && !open ? el("button", { type: "button", class: "talk answer", text: "Answer", onclick: () => openConvo(b.id) })
+      ...(ended ? [el("button", { type: "button", class: `chip ${ended.cls}`, title: `${items.map((x) => x.told).join("\n")}\n(${open ? "close" : "open"} the conversation)`,
+        "aria-label": items.map((x) => x.told).join("\n"), onclick: () => toggleConvo(b.id) }, ...items.map((x) => face(x.a, 16)), el("span", { text: ended.word }))]
+        : items.map(chip)),
+      alone ? el("span", { class: `chip ${alone.cls}`, title: alone.word, "aria-label": alone.word }, el("span", { text: alone.word })) : null,
+      sending ? el("span", { class: "chip work", title: "Sending…", "aria-label": "Sending…" }, el("span", { text: "Sending…" })) : null,
+      review ? el("button", { type: "button", class: "accept", text: "Accept", title: "Accept it as done",
+        onclick: () => accept([...new Map(items.flatMap((x) => x.g).map((x) => [x.id, x])).values()]) }) : null,
+      !talks ? null : asking ? el("button", { type: "button", class: "talk answer", text: "Answer", onclick: () => openConvo(b.id, asking.v.to) })
         : el("button", { type: "button", class: `talk${open ? " on" : ""}`, title: open ? "Close the conversation" : "Open the conversation",
-          "aria-label": `${open ? "Close" : "Open"} the conversation: ${count} message${count === 1 ? "" : "s"}`, onclick: talk },
-          el("span", { html: SVG.bubble }), el("span", { text: String(count) }))].filter(Boolean));
+          "aria-label": `${open ? "Close" : "Open"} the conversation: ${count} message${count === 1 ? "" : "s"}`, onclick: () => toggleConvo(b.id, open ? undefined : talkTo && talkTo.to) },
+          el("span", { html: SVG.bubble }), el("span", { text: String(count) })),
+      add ? el("button", { type: "button", class: "add-agent", title: "Send it to another agent too", "aria-label": "Send it to another agent too", html: SVG.plus,
+        onclick: (ev) => openPicker(b.id, ev.currentTarget.getBoundingClientRect()) }) : null].filter(Boolean));
   }
   // ---------------------------------------------------------------- lines an agent wrote from its conversation
   // Lines an agent wrote from its own conversation with the user (`source`, `source_at`: notes_add or notes_change with
@@ -2455,13 +3027,15 @@ browser's own undo, which knows nothing of the ops. */
   }
 
   // ---------------------------------------------------------------- the conversation about a line, beside the page
-  // Opened from a sent line's status: the line as it was sent, then its thread -- the user's messages (each sent to the
-  // actor too) and the actor's reports -- as bubbles; what it asks, answered there; a box to message it. One at a time,
-  // on the page shown; another line's status shows that one's instead. Three parts, each drawn again only when it
-  // changed: the message typed is never drawn over.
-  let convo = null;                                       // {page, block}: the line whose conversation is open
-  function openConvo(id) {
-    convo = { page: current, block: id };
+  // Opened from a sent line's status: the line as it was sent to one of its agents, then their thread -- the user's
+  // messages (each sent to that actor too) and its reports -- as bubbles; what it asks, answered there; a box to message
+  // it. Its head names the line's agents, one a tab (those it was taken back from too: what was said is kept), with a
+  // button that sends the line to another agent too, and one that takes it back from this one. One at a time, on the page
+  // shown; another line's status shows that one's instead. Three parts, each drawn again only when it changed: the
+  // message typed is never drawn over.
+  let convo = null;                                       // {page, block, to}: the line whose conversation is open, and with which agent
+  function openConvo(id, to = null) {
+    convo = { page: current, block: id, to };
     drawPage();
     const input = $("convo").querySelector(".reply input");
     if (input && !input.disabled) input.focus();
@@ -2471,13 +3045,22 @@ browser's own undo, which knows nothing of the ops. */
     convo = null;
     drawPage();
   }
-  const toggleConvo = (id) => (convo && convo.block === id ? closeConvo() : openConvo(id));
+  // (`to` left out: the line's conversation, whichever agent it is with)
+  const toggleConvo = (id, to = undefined) => (convo && convo.block === id && (to === undefined || convo.to === to) ? closeConvo() : openConvo(id, to || null));
   function drawConvo() {
     const box = $("convo");
     const p = convo && current === convo.page ? pages.get(convo.page) : null;
-    let b = p && p.blocks.find((x) => x.id === convo.block);
+    let line = p && p.blocks.find((x) => x.id === convo.block);
+    // with the agent asked for, else the most pressing of those it is with now, else the first it went to
+    const pick = (x) => { const vs = viewsOf(x); return vs.find((v) => v.to === convo.to) || lineStands(x).v || vs.find((v) => !v.dropped) || vs[0] || x; };
+    let b = line ? pick(line) : null;
     const g = b ? linesOf(b) : [];
-    if (b && g[g.length - 1] !== b) { b = g[g.length - 1]; convo.block = b.id; }   // lines sent together: one conversation, the last's
+    if (b && g[g.length - 1].id !== b.id) {                // lines sent together: one conversation, the last's
+      line = p.blocks.find((x) => x.id === g[g.length - 1].id) || line;
+      b = viewFor(line, b.to) || line;
+      convo.block = line.id;
+    }
+    if (convo && b) convo.to = b.to || null;
     if (!b || !(b.to || b.source || (b.thread && b.thread.length))) {
       convo = null;
       box.hidden = true;
@@ -2493,15 +3076,26 @@ browser's own undo, which knows nothing of the ops. */
       box.replaceChildren(el("div", { class: "cv-head" }), el("div", { class: "cv-list", role: "log", "aria-live": "polite" }), el("div", { class: "cv-foot" }));
     }
     const who = b.to || b.source || "", a = who ? actorOf(who) : null, name = who ? nameOf(a, who) : "", ro = !!p.deleted;
-    const s = isWork(b) ? groupStands(g) : b.source ? srcStands(a, g) : { key: "none", cls: "idle", word: "Sent to no one now" }, cls = s.cls, word = s.word;
+    const s = b.to || isWork(b) ? groupStands(g) : b.source ? srcStands(a, g) : { key: "none", cls: "idle", word: "Sent to no one now" }, cls = s.cls, word = s.word;
     const words = (x) => (x.type === "code" ? esc(x.text) : x.text);
     const about = g.length > 1 ? `${g.length} lines: ${g.map((x) => oneLine(words(x), 60)).join(" · ")}` : oneLine(words(b), 160);
+    // its agents, one a tab: how the line stands with each
+    const tabs = b.to ? viewsOf(line).map((v) => { const x = actorOf(v.to); return { to: v.to, x, name: nameOf(x, v.to), s: v.to === b.to ? s : groupStands(sentWith(v)) }; }) : [];
+    const add = !ro && !!b.to, canDrop = !ro && !!b.to && !b.dropped;
     const head = box.querySelector(".cv-head");
-    const headSig = JSON.stringify([cls, word, name, a && a.avatar, about, !!a, b.source, b.source_at]);
+    const headSig = JSON.stringify([cls, word, name, a && a.avatar, about, !!a, b.source, b.source_at, b.to,
+      tabs.length > 1 ? tabs.map((t) => [t.to, t.name, t.x && t.x.avatar, t.s.cls, t.s.word]) : 0, add, canDrop]);
     if (head.dataset.sig !== headSig) {
       head.dataset.sig = headSig;
+      const tab = (t) => el("button", { type: "button", class: `cv-tab${t.to === b.to ? " on" : ""}`, role: "tab", "aria-selected": String(t.to === b.to),
+        title: `${t.name}: ${t.s.word}`, onclick: () => { if (convo && t.to !== convo.to) { convo.to = t.to; drawPage(); } } },
+        face(t.x, 18), el("b", { text: t.name }), el("span", { class: `pill ${t.s.cls}`, text: t.s.word }));
       head.replaceChildren(
-        el("div", { class: "cv-who" }, who ? face(a, 22) : null, el("b", { text: name || "No one" }), el("span", { class: `pill ${cls}`, text: word }),
+        el("div", { class: "cv-who" },
+          ...(tabs.length > 1 ? [el("div", { class: "cv-tabs", role: "tablist", "aria-label": "Its agents" }, ...tabs.map(tab))]
+            : [who ? face(a, 22) : null, el("b", { text: name || "No one" }), el("span", { class: `pill ${cls}`, text: word })]),
+          add ? el("button", { type: "button", class: "cv-add", title: "Send it to another agent too", "aria-label": "Send it to another agent too", html: SVG.plus,
+            onclick: (ev) => openPicker(line.id, ev.currentTarget.getBoundingClientRect()) }) : null,
           el("button", { type: "button", class: "cv-x", title: "Close", "aria-label": "Close the conversation", html: SVG.x, onclick: () => closeConvo() })),
         el("button", { type: "button", class: "cv-about", title: `${g.map((x) => oneLine(words(x), 400)).join("\n")}\n(show ${g.length > 1 ? "them" : "it"} on the page)`, onclick: () => {
           const rs = g.map((x) => rowOf(x.id)).filter(Boolean);
@@ -2509,12 +3103,15 @@ browser's own undo, which knows nothing of the ops. */
           for (const r of rs) { r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash"); }
         } }, el("span", { class: "dim", text: "About: " }), about || "(empty)"),
         b.source ? el("div", { class: "cv-src", text: wroteLine(b) }) : "",
-        a ? el("button", { type: "button", class: "cv-chat", text: "Open its Chat", onclick: () => ag.actors.show(who).catch((e) => say(e.message, true)) }) : "");
+        a || canDrop ? el("div", { class: "cv-links" },
+          a ? el("button", { type: "button", class: "cv-chat", text: "Open its Chat", onclick: () => ag.actors.show(who).catch((e) => say(e.message, true)) }) : null,
+          canDrop ? el("button", { type: "button", class: "cv-drop", text: "Remove from this line", title: `Take the line back from ${name}${["run", "queue", "ask"].includes(s.key) ? ", and tell it to stop" : ""}`,
+            onclick: () => drop(b) }) : null) : "");
     }
     const list = box.querySelector(".cv-list");
     const lines = b.to ? threadOf(g) : threadOf(g).map((l) => ({ ...l, verb: "replied" }));
-    const ask = askedAll(a, g);
-    const listSig = JSON.stringify([g.map((x) => [x.id, x.text]), b.sent, b.extra, b.to ? 0 : b.source_at, lines.map((l) => [l.id, l.by === "user" ? "" : (actorOf(l.by.slice(6)) || {}).avatar || ""]),
+    const ask = b.dropped ? null : askedAll(a, g);
+    const listSig = JSON.stringify([g.map((x) => [x.id, x.text]), b.to, b.sent, b.extra, b.to ? 0 : b.source_at, lines.map((l) => [l.id, l.by === "user" ? "" : (actorOf(l.by.slice(6)) || {}).avatar || ""]),
       ask && ask.id, a && a.answerable, ro]);
     if (list.dataset.sig !== listSig) {
       const fresh = list.dataset.sig === undefined, atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
@@ -2531,15 +3128,18 @@ browser's own undo, which knows nothing of the ops. */
     const foot = box.querySelector(".cv-foot");
     let end = foot.querySelector(".cv-end");
     if (!end) { end = el("div", { class: "cv-end" }); foot.prepend(end); }
-    drawEnd(end, g, s, ro);
+    drawEnd(end, g, s, ro || !!b.dropped);
     let r = foot.querySelector(".reply");
-    if ((b.to || b.source) && !ro) {
+    const none = ro ? "This page is in the trash." : b.dropped ? `Removed from this line: send it to ${name} again to talk about it.`
+      : !(b.to || b.source) ? "Sent to no one now: send the line to an agent again to talk about it." : "";
+    if (!none) {
       if (!r) { r = replyBox(b.id); for (const x of foot.querySelectorAll(".cv-none")) x.remove(); foot.append(r); }
       r.querySelector("input").placeholder = !b.to ? `Follow up with ${name}` : s.key === "review" ? `Send it back to ${name}: what's left` : `Message ${name}`;
-    } else if (r || !foot.querySelector(".cv-none")) {
+    } else {
       if (r) r.remove();
-      foot.append(el("div", { class: "cv-none", text: ro ? "This page is in the trash."
-        : "Sent to no one now: send the line to an agent again to talk about it." }));
+      let x = foot.querySelector(".cv-none");
+      if (!x) { x = el("div", { class: "cv-none" }); foot.append(x); }
+      if (x.textContent !== none) x.textContent = none;
     }
   }
   // Above the message box, whether it is done -- the reader's to say: to review, Accept or Cancel (or a message sending
@@ -2584,7 +3184,7 @@ browser's own undo, which knows nothing of the ops. */
     const go = async () => {
       if (!input.value.trim() || input.disabled) return;
       input.disabled = true;
-      if (await reply(id, input.value)) input.value = "";
+      if (await reply(id, input.value, convo && convo.block === id ? convo.to : null)) input.value = "";
       input.disabled = false;
       input.focus();
     };
@@ -2635,7 +3235,7 @@ browser's own undo, which knows nothing of the ops. */
       if (!n) continue;
       if (b.type === "agents") drawAgentsBlock(n);
       else if (b.type === "work") drawWorkBlock(n);
-      else if (isWork(b) || b.source || (b.thread && b.thread.length)) sentPart(n, b, !!p.deleted);
+      else if (isWork(b) || b.source || callsOf(b).length || (b.thread && b.thread.length)) sentPart(n, b, !!p.deleted);
     }
     drawConvo();
   }
@@ -2674,7 +3274,8 @@ browser's own undo, which knows nothing of the ops. */
         placeholder: m.tx ? "Add instructions (optional): Tab to type here" : "Add instructions (optional)" });
       extra.addEventListener("input", () => { extra.style.height = "auto"; extra.style.height = `${Math.min(extra.scrollHeight, 140)}px`; });
       extra.addEventListener("keydown", (ev) => extraKey(ev, extra));
-      pop.append(el("div", { class: "hd lead", text: many ? `Send ${many} lines to an agent, as one message of yours` : "Send it to an agent, as your message" }), extra,
+      const also = !many && onIt((findLine(m.block) || {}).b).length > 0;
+      pop.append(el("div", { class: "hd lead", text: many ? `Send ${many} lines to an agent, as one message of yours` : also ? "Send it to another agent too, as your message" : "Send it to an agent, as your message" }), extra,
         el("div", { class: "at-list", role: "group", "aria-label": "Agents" }), el("div", { class: "at-end" }));
       menu.extra = extra;
     }, null, "at", "at-pop");
@@ -2686,12 +3287,15 @@ browser's own undo, which knows nothing of the ops. */
     const hit = (...xs) => !words || xs.some((x) => String(x || "").toLowerCase().includes(words));
     const out = [];
     const lead = crew.agents.find(isLead);
-    if (hit("gatherer agent", "coordinator", "manager"))
-      out.push({ kind: "lead", group: "Coordinator", channel: lead ? lead.channel : "gatherer", a: lead, label: "Gatherer agent",
+    // the agents a line is with now: not offered again (lines sent together: any agent, the call to it sent again)
+    const line = menu && !menu.blocks ? (findLine(menu.block) || {}).b : null;
+    const taken = (ch) => !!line && onIt(line).some((c) => callTo(c, ch));
+    if (!taken(lead ? lead.channel : "gatherer") && hit("coordinator agent", "gatherer agent", "manager"))
+      out.push({ kind: "lead", group: "Coordinator", channel: lead ? lead.channel : "gatherer", a: lead, label: "Coordinator agent",
         note: "hands it to an actor, now or once another is done" });
     const shown = crew.agents.filter((a) => !isLead(a) && ((a.status || [])[0] !== "closed" || a.saved))
       .sort((x, y) => (y.last || 0) - (x.last || 0));
-    for (const a of shown) if (hit(nameOf(a), a.last_user_message, a.channel))
+    for (const a of shown) if (!taken(a.channel) && hit(nameOf(a), a.last_user_message, a.channel))
       out.push({ kind: "actor", group: "Actors", channel: a.channel, a, label: nameOf(a), note: oneLine(a.last_user_message || "", 60) });
     for (const h of crew.harnesses) if (hit(`new ${h.label} actor`))
       out.push({ kind: "new", group: "Start a new actor on it", harness: h.name, label: `New ${h.label} actor`, note: `in ${tilde(crew.start) || "a folder you name"}` });
@@ -2804,8 +3408,10 @@ browser's own undo, which knows nothing of the ops. */
   function agentsTable(showSaved, showClosed) {
     const sent = new Map(), last = new Map();
     for (const p of live()) for (const b of p.blocks) {
-      const a = b.to ? actorOf(b.to) : null;
-      if (a) { if (!sent.has(a.channel)) sent.set(a.channel, []); sent.get(a.channel).push({ p, b }); }
+      for (const c of onIt(b)) {
+        const a = actorOf(c.to);
+        if (a) { if (!sent.has(a.channel)) sent.set(a.channel, []); sent.get(a.channel).push({ p, b, at: c.sent || 0 }); }
+      }
       for (const l of b.thread || []) {
         if (l.by === "user") continue;
         const who = actorOf(l.by.slice(6));
@@ -2820,7 +3426,7 @@ browser's own undo, which knows nothing of the ops. */
     const go = (p, b) => { openPage(p.id); requestAnimationFrame(() => { const r = rowOf(b.id); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }); };
     const tr = (a) => {
       const [cls, word] = stands(a);
-      const mine = (sent.get(a.channel) || []).sort((x, y) => (y.b.sent || 0) - (x.b.sent || 0));
+      const mine = (sent.get(a.channel) || []).sort((x, y) => y.at - x.at);
       const l = last.get(a.channel);
       return el("tr", { class: cls === "ask" ? "asks" : null },
         el("td", {}, el("button", { type: "button", class: "who-btn", title: `Open ${nameOf(a)}'s Chat`,
@@ -2880,34 +3486,36 @@ browser's own undo, which knows nothing of the ops. */
   const WEEK = 7 * 86400;
   function workItems() {
     const out = [];
-    for (const p of live()) for (const b of p.blocks) if (isWork(b)) out.push({ p, b, s: itemStands(b) });
+    for (const p of live()) for (const b of p.blocks) if (isWork(b)) out.push({ p, b, s: lineStands(b) });
     return out;
   }
   const isOpen = (x) => x.s.key !== "done" && x.s.key !== "canceled";
   const forYou = () => workItems().filter((x) => x.s.key === "ask" || x.s.key === "review").length;
   const wordsOf = (b) => oneLine(b.type === "code" ? esc(b.text) : b.text, 160) || "(empty)";
   // A work item shown on its page: the page opened (its ended lines shown, if it is one of them), the line flashed --
-  // and its conversation opened, if asked for and it has one.
-  function goLine(p, b, talk = false) {
+  // and its conversation opened (with the agent `to`, else the one most pressing), if asked for and it has one.
+  function goLine(p, b, talk = false, to = null) {
     if (foldOf(p).has(b.id)) showDone(p.id, true);
     openPage(p.id);
-    if (talk && (b.to || (b.thread && b.thread.length))) openConvo(b.id);
+    if (talk && (callsOf(b).length || (b.thread && b.thread.length))) openConvo(b.id, to);
     requestAnimationFrame(() => {
       const r = rowOf(b.id);
       if (r) { r.scrollIntoView({ block: "center" }); r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash"); }
     });
   }
+  // the agents a work item is with now, by name
+  const namesOf = (b) => onIt(b).map((c) => nameOf(actorOf(c.to), c.to)).join(", ");
   function workRow({ p, b, s }, compact = false) {
-    const a = b.to ? actorOf(b.to) : null, done = s.key === "done";
+    const v = s.v || viewsOn(b)[0] || null, a = v ? actorOf(v.to) : null, done = s.key === "done";   // (with several: the one its status is from)
     const said = done || s.key === "new" ? "" : itemSaid(b, s), made = done ? [] : madeOf(b);   // (not started: its meta says "No one yet")
-    const latest = [...(b.thread || [])].reverse().find((l) => l.by !== "user");
-    const time = done ? `accepted ${when(endedAt(b))}` : s.key === "review" && latest && (latest.at || 0) >= lastSent(b) ? `reported ${ago(latest.at)}`
-      : b.to && s.key !== "run" ? `sent ${ago(lastSent(b))}` : "";
+    const latest = [...((v || b).thread || [])].reverse().find((l) => l.by !== "user");
+    const time = done ? `accepted ${when(endedAt(b))}` : s.key === "review" && latest && (latest.at || 0) >= lastSent(v || b) ? `reported ${ago(latest.at)}`
+      : v && s.key !== "run" ? `sent ${ago(lastSent(v))}` : "";
     const btn = (label, cls, run, title) => el("button", { type: "button", class: `wk-btn${cls ? ` ${cls}` : ""}`, text: label, title: title || null, onclick: run });
     const pick = (ev) => openPicker(b.id, ev.currentTarget.getBoundingClientRect());
     const acts = s.key === "ask" ? (s.word === "Agent gone" ? [btn("Cancel", "", () => cancel([b])), btn("Send to…", "primary", pick)]
-      : [btn("Answer", "answer", () => goLine(p, b, true), "Open its conversation, where it asks")])
-      : s.key === "review" ? [btn("Send back", "", () => goLine(p, b, true), "Open its conversation, to say what's left"), btn("Accept", "accept", () => accept([b]), "Accept it as done")]
+      : [btn("Answer", "answer", () => goLine(p, b, true, v && v.to), "Open its conversation, where it asks")])
+      : s.key === "review" ? [btn("Send back", "", () => goLine(p, b, true, v && v.to), "Open its conversation, to say what's left"), btn("Accept", "accept", () => accept([b]), "Accept it as done")]
       : s.key === "run" || s.key === "queue" ? [btn("Cancel", "", () => cancel([b]), "Cancel it, and tell its agent to stop")]
       : s.key === "new" ? [btn("Remove", "", () => markWork([b], false), "Not a work item: the line stays on its page"),     // (done without an agent: ended here)
         btn("Cancel", "", () => cancel([b]), "Cancel it: into the Logbook, as canceled"), btn("Done", "accept", () => accept([b]), "Accept it as done: no agent needed"),
@@ -2915,11 +3523,11 @@ browser's own undo, which knows nothing of the ops. */
       : [btn("Reopen", "", () => reopen([b]))];
     const pill = compact || s.key === "run" || s.key === "ask" || s.word === "Sent";
     return el("div", { class: `wk-row ${s.key}`, "data-id": b.id },
-      b.to ? face(a, compact ? 18 : 22) : el("span", { class: "face dash", style: `width:${compact ? 18 : 22}px;height:${compact ? 18 : 22}px`, "aria-hidden": "true" }),
+      v ? face(a, compact ? 18 : 22) : el("span", { class: "face dash", style: `width:${compact ? 18 : 22}px;height:${compact ? 18 : 22}px`, "aria-hidden": "true" }),
       el("div", { class: "wk-main" },
-        el("button", { type: "button", class: "wk-text", title: "Show it on its page", onclick: () => goLine(p, b, !done && s.key !== "new") }, wordsOf(b)),
+        el("button", { type: "button", class: "wk-text", title: "Show it on its page", onclick: () => goLine(p, b, !done && s.key !== "new", v && v.to) }, wordsOf(b)),
         el("div", { class: "wk-meta" }, pill ? el("span", { class: `pill ${s.cls}`, text: s.word }) : null,
-          el("span", { text: [b.to ? nameOf(a, b.to) : "No one yet", p.title || "Untitled", time].filter(Boolean).join(" · ") })),
+          el("span", { text: [namesOf(b) || "No one yet", p.title || "Untitled", time].filter(Boolean).join(" · ") })),
         said && !compact ? el("div", { class: "wk-said", text: said }) : null,
         made.length && !compact ? madeRow(made) : null),
       el("div", { class: "wk-acts" }, ...acts));
@@ -2970,12 +3578,12 @@ browser's own undo, which knows nothing of the ops. */
         : [el("div", { class: "wk-none", text: "Nothing done or canceled yet. Work items you accept or cancel show here." })]));
   }
   function logRow({ p, b, s }) {
-    const a = b.to ? actorOf(b.to) : null, done = s.key === "done", made = madeOf(b);
+    const done = s.key === "done", made = madeOf(b);
     return el("div", { class: `lg-row${done ? "" : " canceled"}`, "data-id": b.id },
       el("span", { class: "lg-mk", role: "img", "aria-label": done ? "Done" : "Canceled", html: done ? SVG.check : SVG.x }),
       el("div", { class: "wk-main" },
         el("div", { class: "wk-text", text: wordsOf(b) }),
-        el("div", { class: "wk-meta" }, el("span", { text: [b.to ? nameOf(a, b.to) : "No agent", p.title || "Untitled", `${done ? "accepted" : "canceled"} ${clock(endedAt(b))}`].join(" · ") })),
+        el("div", { class: "wk-meta" }, el("span", { text: [namesOf(b) || "No agent", p.title || "Untitled", `${done ? "accepted" : "canceled"} ${clock(endedAt(b))}`].join(" · ") })),
         made.length ? madeRow(made) : null),
       el("div", { class: "wk-acts" },
         el("button", { type: "button", class: "wk-btn link", text: "Show line", onclick: () => goLine(p, b) }),

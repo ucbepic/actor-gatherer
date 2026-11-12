@@ -646,13 +646,16 @@ same ops (`notebook.py`), one batch at a time; the backend tells every open pane
 Agents get `notes_read`, `notes_add` and `notes_change` (offer `always`), and read and write pages as markdown with
 each block's id. The test app it took the name of is now Notepad (`tests/apps/notepad/`). An app's mark now shows
 on its "+ ⋯" menu entry too.
+The pages' list (2026-11-12) hides by its own « button or ⌘\ (the bar's button shows it again, and is there only
+while it is hidden), and its right edge drags its width (160-520 px, double-click for the usual 236); both are kept in
+the browser, per instance. Narrow (≤600 px) it opens over the page instead, as before.
 
 **Notes and the actors** (2026-11-08): the user works with the gatherer's actors from the notebook.
 - **Sending a line:** `@` typed in a block (or its Assign / Ask button) picks an actor, the gatherer agent, or a new
   actor on a harness the dashboard runs; a box in the picker takes instructions to add to the line. The message is the
   user's own, as Chat sends one: a note first, "(From my Notes, page "…", block <id>. …)" -- first, so what the list
   keeps of a message (cut at 600 characters) still names the line -- then the line's words and what was added. The
-  block keeps who it went to and with what (`to`, `sent`, `extra`).
+  block keeps who it went to and with what: a call per agent (`calls`: `to`, `sent`, `extra`, `group`, `dropped`).
 - **Each line's own status:** the line an actor is on now is the one its latest message names (`asked_of`); only it
   shows the actor working, or its question. A line the actor reported on since the user last wrote about it (or a
   ticked to-do) is Done, whatever the actor does next; another line sent to a busy actor waits ("After …"), else it
@@ -675,11 +678,26 @@ on its "+ ⋯" menu entry too.
   copied or cut (markdown, plus their own clipboard type so Notes pastes them back as they were), indented, moved,
   duplicated, ticked or turned into a type together. Sent to an agent, they go as ONE message: the note names every
   line, "blocks <id>, <id>, …", in the order the lines follow it as markdown, and asks for a report on each. `[asked]`'s
-  third group is then those ids, ", " between, and every one of them is a line the actor is on. Each line keeps `to`,
-  `sent` and `extra` as one sent alone, and a `group` id they share. They show ONCE, at the last of them (the user:
+  third group is then those ids, ", " between, and every one of them is a line the actor is on. Each line keeps a call
+  to it as one sent alone, with a `group` id their calls share. They show ONCE, at the last of them (the user:
   "the agent should only show once at the end of what was selected, not all the lines"): one status for them all
   (working or asking as the actor is, "1 of 2 done", Done once it reported on each) and one conversation -- the lines
   as sent, the user's replies (about them all, kept on the last), and a report on each, saying which line.
+- **Several agents on a line, and one taken off** (2026-11-11, the user: "allow removing agent assignment to a note,
+  and also adding another agent call for a line"): a line keeps a call per agent it went to, in the order sent
+  (`calls`; a notebook from before, its one `to`, is read as its one call). Its "+" (on hover, at the end of the line;
+  also the conversation's head and the line's menu) sends it to another agent, the picker leaving out those it is with;
+  the note then says so ("I sent this line to actor <id> too; this message is for you"). Each agent shows its own chip,
+  with how the line stands with it; the line as a whole (the Work page) stands as the most pressing of them -- asking,
+  working, to review, queued -- and is accepted or canceled as one. The conversation beside the page is a tab per
+  agent: the line as sent to it, the user's messages to it (each thread line names its `to`), its reports. "Remove
+  from this line" (the conversation, or the line's menu) marks its call `dropped`: its chip goes, its tab and what was
+  said stay, an agent still on the line or yet to take it up is told to leave it (a message, as Cancel's), and its
+  `notes_report` on the line is refused since. Sent to it again, the call is its own again. Taken off every agent, the
+  line is still a work item, sent to no one. The same words sent to two actors of one gatherer meet the context
+  policy's requests made in parallel: the second gets the first's message, framed "not addressed to you", in the
+  same user turn as its own. Haiku then took its own message for the other session's too and did nothing; the
+  default model did its part.
 - **What the contract gained, each general:**
   - capability `message_actors`: the SDK's `ag.actors.send` / `answer` / `start` / `show`, for any actor of the
     panel's gatherer ("gatherer": its gatherer agent, started if it has none), as Chat does them. `message_agents`
@@ -690,6 +708,28 @@ on its "+ ⋯" menu entry too.
     <app> · <that>" above the user's words, and the list shows the words alone, for every actor, not only one the
     app started. A third group names the item the message is about; panels are told it as the actor's `asked_of`.
     The words may be read by a lookahead, so the note can come first (Python and JavaScript share no named groups).
+
+**Pictures in Notes** (2026-11-11): a page can hold an image and a live Figma frame (the user: "design a diagram in
+figma and put it in my notes").
+- **Image blocks:** a picture pasted, dropped between lines, or picked from the `/` menu's Image is sent to the backend
+  (`POST image`) and kept once in `apps/notes/data/files/`, named by its contents' hash, for every gatherer's notebook
+  (a block copied to another notebook still finds it). The block keeps `file`, its size (`w`, `h`, read from the
+  file's own header: no Pillow) and `width`, a percent of the page, dragged from its sides. Its words are its caption.
+  Pictures are served under a `sandbox` Content-Security-Policy, so an SVG opened on its own runs nothing.
+- **Figma blocks:** a Figma link pasted alone on a line asks "the frame, live" or "a link"; the `/` menu's Figma asks
+  for one. The frame is Figma's own embed (Embed Kit 2.0: `embed.figma.com`, `embed-host=ag`) over a snapshot the
+  backend keeps (`snap`). The snapshot comes from Figma's REST API with the user's personal access token (kept in
+  `apps/notes/data/figma.json`, mode 600; the panel's "Add a Figma token"), fetched again only when Figma's
+  `lastModified` changed. Without a token, Figma's oEmbed gives a public file's cover. The panel asks for it as the page
+  shows the frame, at most every 10 minutes. It shows while the embed loads, offline, or when the reader picks it,
+  and it is what agents see. Whether the reader is signed in to Figma can't be seen from outside its embed, so the
+  embed says that itself. Figma's CDN refuses headless Chrome (403), so screenshots of the live frame need a normal
+  user agent.
+- **Agents:** `notes_read` returns the page's markdown, `![caption](image:<file>)` and `[Figma: name](url) -- caption`,
+  then the pictures themselves: at most 6, each under 3.7 MB, never an SVG. Each is preceded by its block's id.
+  `notes_add` / `notes_change` take `![caption](<a path>)`, read in from the agent's folder (not a URL), and a Figma
+  link alone on a line; the snapshot of a new frame is fetched after the call answers. A picture is sent to no one
+  (`UNSENT`): its caption is no line of work.
 
 Steps 6–8 change what the user sees the most. Each gets its Playwright tests before it moves and keeps them after,
 as the move to React did.
