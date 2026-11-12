@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -449,6 +450,26 @@ class WatchTest(CoordinationBase):
         self.assertEqual(self.crew.check(), [])                                     # once
         self.assertEqual(self.crew.watches(self.coordinator)["watches"], [])
 
+    def test_a_watch_whose_target_left_the_watcher_s_group_ends_and_says_only_that(self):
+        n = self.crew.when(self.coordinator, self.b, "then tell A to rebase")["watch"]
+        with unittest.mock.patch.object(data, "groups_now", return_value={self.b: "elsewhere", self.coordinator: "g"}):
+            self.assertEqual(self.crew.check(), [n])
+        got = self.until(self.told)[0]
+        self.assertEqual((got["from"], got["id"], got["how"], got["watch"]),
+                         ("update", self.b, "it left your group, so this watch has ended", n))
+        self.assertEqual(got["text"], "")                                           # nothing of its work
+        self.assertEqual(self.crew.watches(self.coordinator)["watches"], [])
+
+    def test_a_watch_whose_target_and_watcher_moved_together_goes_with_them(self):
+        n = self.crew.when(self.a, self.b)["watch"]
+        with unittest.mock.patch.object(data, "groups_now", return_value={self.a: "elsewhere", self.b: "elsewhere"}):
+            self.assertEqual(self.crew.check(), [])
+        conn = sqlite3.connect(sessions.db_path())
+        try:
+            self.assertEqual(conn.execute("SELECT gatherer, fired FROM watches WHERE id = ?", (n,)).fetchone(), ("elsewhere", 0))
+        finally:
+            conn.close()
+
     def test_an_actor_never_seen_at_work_is_over_after_the_grace(self):
         n = self.crew.when(self.coordinator, self.b)["watch"]
         self.assertEqual(self.crew.check(), [])                                     # a message may be on its way to it
@@ -522,6 +543,31 @@ class CommandTest(CoordinationBase):
         self.assertEqual(coordination.opened(self.until(lambda: self.messages(self.b))[0])["text"], "hello there")
         code, out, _ = self.run_cli("--json", "list")
         self.assertEqual(json.loads(out)["you"], self.a)
+
+    def test_moves_between_groups_from_the_shell_are_groups_py_s(self):
+        from ag_dashboard import groups
+        alone = {"group": f"self:{self.b}", "actors": [self.b], "from": "g"}
+        with unittest.mock.patch.object(groups, "alone", return_value=alone) as took:
+            code, out, err = self.run_cli("alone", self.b[:8])
+        self.assertEqual((code, err), (0, ""))
+        took.assert_called_once_with("g", self.b)
+        self.assertIn("works on its own now", out)
+        with unittest.mock.patch.object(groups, "move", return_value={"actors": [self.b], "from": "g", "to": "h"}) as moved, \
+                unittest.mock.patch.object(data, "gatherer_names", return_value=["g", "h"]):
+            code, out, err = self.run_cli("move", self.b[:8], "top", "--group", "h")
+        self.assertEqual((code, err), (0, ""))
+        moved.assert_called_once_with("g", "h", [self.b], into=None)
+        self.assertIn("Now at the top of the group h:", out)
+        with unittest.mock.patch.object(groups, "move", side_effect=groups.GroupError("no group 'nowhere'")):
+            code, out, err = self.run_cli("move", self.b[:8], "top", "--group", "nowhere")
+        self.assertNotEqual(code, 0)
+        self.assertIn("no group 'nowhere'", out + err)
+        paper = folders.make("g", "Paper")
+        with unittest.mock.patch.object(groups, "split", return_value={"group": "Paper", "actors": [], "from": "g"}) as split:
+            code, out, err = self.run_cli("folder", "split", "Paper")
+        self.assertEqual((code, err), (0, ""))
+        split.assert_called_once_with("g", paper)
+        self.assertIn('Folder "Paper" is a group of its own now: Paper', out)
 
     def test_the_gatherer_agent_starts_a_docwriter_from_its_shell(self):
         from ag_dashboard import app_agents

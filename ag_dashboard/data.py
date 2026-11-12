@@ -184,6 +184,19 @@ def members(conn, gatherer: str) -> Optional[set]:
 ALONE = "self:"                  # an actor on its own: its group of one (groups.py's `alone`)
 
 
+def groups_now() -> Dict[str, Any]:
+    """In the home's one database: {channel: its group now} (coordination.py's watches); {} before."""
+    if not paths.merged() or not os.path.exists(paths.home_db()):
+        return {}
+    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
+    try:
+        return _groups(conn)
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+
+
 def alone_names() -> List[str]:
     """In the home's one database, the groups of one of the actors on their own (`self:<channel>`); [] before."""
     if not paths.merged() or not os.path.exists(paths.home_db()):
