@@ -335,7 +335,7 @@ and what agents see of it. The words under either are its caption. */
       else if (!b) return;
       else if (op.op === "block.put") {
         const was = { id: b.id };
-        for (const k of Object.keys(op.block)) if (k !== "id") was[k] = copied(k === "text" ? known.get(b.id) ?? b.text : b[k] ?? BLANK[k] ?? "");
+        for (const k of Object.keys(op.block)) if (k !== "id") was[k] = copied(k === "text" ? known.get(b.id) ?? b.text : b[k] ?? BLANK[k] ?? null);   // (none: null, as notebook.py takes a picture's width none -- "" it refuses)
         if (Object.keys(was).every((k) => JSON.stringify(was[k]) === JSON.stringify(op.block[k]))) return;   // (as it was)
         back = { op: "block.put", page: p.id, block: was };
       } else if (op.op === "block.delete") back = { op: "block.put", page: p.id, block: copied({ ...b, text: known.get(b.id) ?? b.text }), after: prev };
@@ -441,8 +441,11 @@ and what agents see of it. The words under either are its caption. */
       setTimeout(() => pump(), 2500);
       return;
     }
+    if (refused) {                                      // the page read again, still "sending": a change made meanwhile
+      console.error("notes: a change refused:", refused, ops);   // waits in the queue, applied over the page as read --
+      try { await resync(); } finally { sending = false; }       // not sent before the read comes, and lost under it
+    }
     sending = false;
-    if (refused) { console.error("notes: a change refused:", refused, ops); await resync(); }
     pump();
   }
   function saved(how) {

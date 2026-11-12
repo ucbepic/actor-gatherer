@@ -6,7 +6,7 @@
 import type { FrameLocator, Page } from "@playwright/test";
 import { expect, test } from "./test";
 import { open } from "./home";
-import { binPage, newPage, openNotes } from "./notes-home";
+import { binPage, call, newPage, openNotes } from "./notes-home";
 import { GATHERER } from "./home";
 
 const FIGMA = "https://www.figma.com/design/Xk2abcdEF9/Paper-figures?node-id=12-34";
@@ -129,6 +129,97 @@ test("⌘Z takes back a picture's width, its caption, and the picture pasted", a
   await page.keyboard.press("ControlOrMeta+z"); // the picture
   await expect.poll(() => types(panel)).toEqual(["text", "text"]);
   await binPage(panel, "Undone");
+});
+
+// A picture had no width before it was sized: ⌘Z takes it back to none, and the backend keeps that -- it refused the ""
+// the panel used to send, the panel read the page again, and the width came back (and with it, on CI, a change in flight
+// was lost, so the next ⌘Z was refused)
+test("a picture's width taken back by ⌘Z stays taken back", async ({ page }) => {
+  const refused: string[] = [];
+  page.on("console", (m) => {
+    if (m.text().startsWith("notes: a change refused")) refused.push(m.text());
+  });
+  await open(page);
+  const { panel } = await openNotes(page);
+  await newPage(page, panel, "Narrowed");
+  await paste(panel, 200, 100);
+  await expect.poll(() => types(panel)).toEqual(["image", "text"]);
+  const fig = panel.locator(".blk[data-type=image] .pic");
+  const width = () => fig.evaluate((n) => (n as HTMLElement).style.width);
+  await fig.hover();
+  const r = (await panel.locator(".blk[data-type=image] .hdl.r").boundingBox())!;
+  await page.mouse.move(r.x + 3, r.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(r.x - 60, r.y + 10, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(width).toMatch(/^\d+%$/);
+  await panel.locator("#blocks > .blk").nth(1).locator(".tx").click();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(width).toBe("");
+  await expect(panel.locator("#saved")).toHaveText("Saved");
+  expect(refused).toEqual([]);
+  await page.reload();
+  const again = await openNotes(page);
+  await again.panel.locator(".pg-row", { hasText: "Narrowed" }).click();
+  const kept = again.panel.locator(".blk[data-type=image] .pic");
+  await expect(kept).toHaveCount(1);
+  expect(await kept.evaluate((n) => (n as HTMLElement).style.width)).toBe("");
+  await binPage(again.panel, "Narrowed");
+});
+
+// A change the backend refuses: the panel reads the page again, and a change made while that read is on its way is kept
+// -- applied over the page as read, then sent -- not sent first and then lost under the older page, when the read came
+// back before the change's own echo did (the next ⌘Z of it refused, "those lines have changed since"; CI's flake)
+test("a change made while the page is read again after a refusal is kept", async ({ page }) => {
+  await open(page);
+  const { panel, instance } = await openNotes(page);
+  await newPage(page, panel, "Refused");
+  await page.keyboard.type("first");
+  await page.keyboard.press("Enter");
+  await expect(panel.locator("#saved")).toHaveText("Saved");
+  let refusing = () => {};
+  const refusedOne = new Promise<void>((r) => (refusing = r));
+  let release = () => {};
+  const released = new Promise<void>((r) => (release = r));
+  let reading = false;
+  const ops = (u: URL) => u.pathname.endsWith("/ops");
+  await page.route(ops, async (route) => {
+    if ((route.request().postData() || "").includes("REFUSE")) {
+      reading = true;
+      refusing();
+      return route.fulfill({ status: 400, json: { error: "refused by the test" } });
+    }
+    if (reading) {
+      await released; // sent while the page is read again: reaches the backend only after that read is back
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    await route.continue();
+  });
+  const state = (u: URL) => u.pathname.endsWith("/state");
+  await page.route(state, async (route) => {
+    const asked = new URL(route.request().url()); // (on the panel's own origin, *.localhost: Node can't look it up)
+    const got = await route.fetch({
+      url: `${asked.protocol}//127.0.0.1:${asked.port}${asked.pathname}${asked.search}`,
+      headers: { ...route.request().headers(), host: asked.host },
+    }); // the page as it is now; given to the panel only once the test says so
+    await released;
+    await route.fulfill({ response: got });
+  });
+  await panel.locator("#blocks > .blk").nth(0).locator(".tx").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" REFUSE");
+  await refusedOne; // sent and refused: the page being read again
+  await panel.locator("#blocks > .blk").nth(1).locator(".tx").click();
+  await page.keyboard.type("kept");
+  await page.waitForTimeout(900); // past the panel's 450 ms: the words would be sent now
+  release();
+  await expect(panel.locator("#saved")).toHaveText("Saved");
+  await expect.poll(async () => (await call(page, instance, "read", { page: "Refused" })).text).toMatch(/\] kept$/m);
+  await page.keyboard.press("ControlOrMeta+z"); // its typing taken back: the line as the panel has it is "kept" too
+  await expect.poll(async () => (await call(page, instance, "read", { page: "Refused" })).text).not.toMatch(/kept/);
+  await page.unroute(state); // the rest as usual: the page binned, and deleted for good before the test ends
+  await page.unroute(ops);
+  await binPage(panel, "Refused");
 });
 
 test("pictures dropped land between the lines where the drop line shows", async ({ page }) => {
