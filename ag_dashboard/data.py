@@ -84,7 +84,7 @@ import threading
 import time
 import zlib
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
@@ -297,7 +297,10 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
     started = sessions.stored() if started is None else started
     named: Dict[str, Dict[str, dict]] = {}   # the names of sessions started here with no message yet, which `_agents` lists not
     lone = alone_names()                 # each actor on its own: a group of one, listed as one (`alone`)
-    for name in gatherer_names() + lone:
+    names = gatherer_names() + lone
+    if kept is not None:
+        kept.only(names)
+    for name in names:
         conn = _connect(name)
         if conn is None:                 # made (`ag new`), no session has run in it yet
             gatherers.append({"name": name, "policy": _policy(name), "agents": [], "last": None})
@@ -425,6 +428,7 @@ class Kept:
         self.open: Dict[str, Dict[str, tuple]] = {}  # gatherer -> its `_open` rows by session, as last read
         self.stale = 0.0                             # a gatherer read whole before this: read whole again
         self.refreshing: Dict[str, threading.Thread] = {}   # gatherer -> its whole read in the background
+        self.members: Dict[str, set] = {}            # gatherer -> its channels as last read (the home's one database)
 
     def changed(self, gatherer: Optional[str], channel: Optional[str], what: str = "", row: Optional[int] = None) -> None:
         """Something of `gatherer` (its directory's name; None: any) changed, for `channel` (None: not named) -- `what`
@@ -440,6 +444,15 @@ class Kept:
                 self.told[gatherer] = None
             elif self.told.get(gatherer, set()) is not None:
                 self.told.setdefault(gatherer, set()).add(channel)
+
+    def only(self, gatherers: Iterable[str]) -> None:
+        """Nothing kept but of `gatherers`, those the home lists now: a group no longer listed -- an actor on its own
+        back in a group -- read whole should it be listed again, not as it was when it went."""
+        with self.lock:
+            for g in set(self.kept) - set(gatherers):
+                for kept in (self.kept, self.at, self.read, self.told, self.reads, self.open, self.members):
+                    kept.pop(g, None)
+                self.opened.discard(g)
 
     def agents(self, conn, gatherer: str, now: float) -> List[dict]:
         """The gatherer's agents as `_agents` reads them, newest created first -- copies, the caller's to change.
@@ -468,6 +481,8 @@ class Kept:
                 with self.lock:
                     self.kept[gatherer], self.open[gatherer], self.read[gatherer] = {a["channel"]: a for a in got}, opens, now
                     self.at[gatherer] = {a["channel"]: now for a in got}
+                    if mine is not None:
+                        self.members[gatherer] = mine
             else:
                 told = set(told)
                 if reads:
@@ -480,23 +495,28 @@ class Kept:
                         before, self.open[gatherer] = self.open.get(gatherer, {}), after
                     told.update(ch for ch in set(before) | set(after) if before.get(ch) != after.get(ch))
                 told.discard("")
-                if mine is not None:
-                    told &= mine
+                if mine is not None:             # and those that came into its group since: the move told another
+                    with self.lock:
+                        was = self.members.get(gatherer, set())
+                    told = (told & mine) | (mine - was)
                 got = _agents(conn, now, told) if told else []
                 with self.lock:
-                    self.kept[gatherer] = {**self.kept[gatherer], **{a["channel"]: a for a in got}}
+                    kept = self.kept[gatherer]
+                    if mine is not None:         # those gone to another group since: no longer its
+                        kept, self.members[gatherer] = {c: a for c, a in kept.items() if c in mine}, mine
+                    self.kept[gatherer] = {**kept, **{a["channel"]: a for a in got}}
                     self.at[gatherer].update((a["channel"], now) for a in got)
         except sqlite3.Error:
             with self.lock:
                 self.told[gatherer] = None
             raise
-        with self.lock:
-            agents = list(self.kept[gatherer].values())
+        with self.lock:                          # (a read in the background may have kept one gone since it began)
+            agents = [a for c, a in self.kept[gatherer].items() if mine is None or c in mine]
         return copy.deepcopy(sorted(agents, key=lambda a: a["created"] or 0, reverse=True))
 
     def _refresh(self, gatherer: str) -> None:
         """The gatherer read whole, on a connection of its own, and kept -- but where a channel was read since it began,
-        that read: it is newer."""
+        that read: it is newer; and one it did not find, gone to another group, no longer kept unless read since."""
         began = time.time()
         conn = _connect(gatherer)
         try:
@@ -511,8 +531,12 @@ class Kept:
         if got is None:
             return
         with self.lock:
-            at = self.at.setdefault(gatherer, {})
-            kept = self.kept.setdefault(gatherer, {})
+            if gatherer not in self.kept:        # no longer listed (`only`) while it read
+                return
+            at, kept = self.at.setdefault(gatherer, {}), self.kept[gatherer]
+            found = {a["channel"] for a in got}
+            for c in [c for c in kept if c not in found and at.get(c, 0.0) < began]:
+                del kept[c]
             for a in got:
                 if at.get(a["channel"], 0.0) < began:
                     kept[a["channel"]], at[a["channel"]] = a, began
