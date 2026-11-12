@@ -43,11 +43,23 @@ Every context opens, after the harness's own set-up, with the GATHERER GUIDE
 parallel requests, notices, stream messages, left-out notes -- and where the full history
 is. On every read, with or without a build; one made item, the same while its text is.
 
-Not every channel is shown to the others. One whose latest `role` record (ROLE: the dashboard's, for a gatherer's
-gatherer agent) says `private` is seen by no other channel -- neither its requests, as parallel messages or in the
-index, nor its tasks, ranked into another's sections -- though it sees theirs (`unseen`). Nor is a message the
+Not every channel is shown to the others. A channel shares only with those of its GROUP: the latest `group` record
+in it (GROUP: the dashboard's, from the folder the actor is in) names it, and a channel with none is in the gatherer's
+own group, "" -- so in a gatherer where no channel has one, every channel shares with every other, as before groups.
+One in another group is seen neither by its requests, as parallel messages or in the index, nor by its tasks, ranked
+into the sections, nor counts for a join (`unseen`). One whose latest `role` record (ROLE: the dashboard's, for a
+gatherer's gatherer agent) says `private` is seen by no other channel, though it sees theirs. Nor is a message the
 actors send one another (`ag actors`, typed into the receiver's conversation as its user's), known by its opening
 (`unshared_openings`): it is the receiver's to act on, not a request of the user's (`shared`).
+
+When a channel's group changes -- a `group` record moves it, or another channel into or out of its group, since its
+last read (`regrouped`) -- what it is shown follows at once: the parallel requests are worked out at every read, and
+the block of requests made before it began is made again. Its sections, made from the build it uses, are built again
+at that read, which waits for it as for a join (`regroup`): a `regrouped` build, for a channel with a build of its
+own, adopted mid-turn and whatever its size; a `join` again, for one whose context came from a join or that has
+none. Its parallel mark moves up with it, so a joined channel's past requests come in the index, not one by one.
+A short message says what changed, at the record's place (`group_changes`). A record with no channel -- a stream
+message, an app's -- that names a group (its payload's `group`) is shown only to that group's channels (`outside`).
 
 A channel with no build of its own, in a gatherer where another channel has a ready one
 (`tables.joinable`), JOINS at its first user message: a `join` build ranks the other
@@ -114,12 +126,17 @@ PARALLEL_REQUEST = "parallel_request"
 PARALLEL_BEFORE = "parallel_before"   # with no build: the other channels' requests before the channel began, as one block
 CURRENT_REQUEST = "Current request"   # the running task a `limit` build starts at the last user message
 LEFT_OUT = "left_out"           # a step stubbed to keep the context within max_context_tokens
+GROUP_CHANGE = "group_change"   # the message saying a change of groups changed what a channel is shown
 DRIFT_MAX = 1.5                 # the most `drift_of` scales ag's count by: tokenizers differ by up to ~25% (Gemini's
                                 # over o200k_base); a provider's count further over ag's is something ag does not see,
                                 # not its own items counted short, and is left to `measured_over`
 GUIDE = "gatherer_guide"        # the guide every context opens with
 AGENT_STEP = ("agent_message", "tool_call", "agent_reasoning")   # what an agent step may start with
 ROLE = "role"                   # a channel's role, as the dashboard records it: {role, private} (`unseen`)
+GROUP = "group"                 # a channel's group, as the dashboard records it: {group, ...} (`unseen`); each
+                                # record an id of its own, naming its channel: a read returns an id once, where it
+                                # was first stored, whatever its channel
+ALONE = "self:"                 # a group of one: an actor on its own (the dashboard's `self:<channel>`)
 OPENING_CHARS = 600             # how far into a message its opening is looked for, past a harness's wrapper (`shared`)
 
 # A tool call that could have WRITTEN a file it names. Reading one (cat, head, grep, wc, awk, a script
@@ -230,6 +247,21 @@ def mentions(text: str, subject: str, cwd=None) -> bool:
     return False
 
 
+class Unseen:
+    """The channels one channel is not shown (`in`): the private ones (`private`, a set), and those of another group
+    than its own (`own`): a channel's group is `groups`' for it, "" (its gatherer's own) when it has none."""
+
+    def __init__(self, private: set, groups: Dict[str, str], own: str):
+        self.private, self.groups, self.own = private, groups, own
+
+    def grouped(self, channel_id) -> bool:
+        """Whether `channel_id` is in the same group, private or not."""
+        return self.groups.get(channel_id, "") == self.own
+
+    def __contains__(self, channel_id) -> bool:
+        return channel_id in self.private or not self.grouped(channel_id)
+
+
 class ProactiveContextManager(Policy):
     name = "proactive_context_manager"
     event_types = EVENT_TYPES           # events.py
@@ -320,6 +352,11 @@ class ProactiveContextManager(Policy):
         self.drift = self.drift_of(last)
         build, made = self.choose(conn, types, rows, latest, last, at_user or self.for_this_turn(latest, rows, types), read)
         items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
+        if last and self.regrouped(conn, types, ch, last.get("row_id") or 0) \
+                and self.regroup(conn, types, read, rows, latest, build):
+            latest = tables.build_for(conn, ch)
+            build, made = self.choose(conn, types, rows, latest, last, True, read)
+            items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
         over = self.by_provider(size) > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if over and not at_user and tables.waiting(latest, last):        # a ready build: taken now, not at the user
             build, made = self.choose(conn, types, rows, latest, last, True, read)
@@ -434,7 +471,8 @@ class ProactiveContextManager(Policy):
         tokens = (sum(r.tokens for r in pinned) + sum(made_items[m][2] for m in made) - fixed
                   + sum(b[2] for b in before))
         made_here = (self.shown_messages(conn, types, channel_of(read), cut)
-                     + self.notices(conn, types, channel_of(read), cut, preamble + pinned + tail, read.properties))
+                     + self.notices(conn, types, channel_of(read), cut, preamble + pinned + tail, read.properties)
+                     + self.group_changes(conn, types, channel_of(read), cut))
         entries = list(self.interleave(tail, made_here, types))
         shown = self.parallel_requests(conn, types, channel_of(read), build["parallel_mark"] if build else since)
         tokens += sum(cost[1] if kind == "made" else cost for kind, _, _, cost in entries) + sum(c for _, _, c, _ in shown)
@@ -608,7 +646,7 @@ class ProactiveContextManager(Policy):
     def parallel_requests(self, conn, types: TypeIds, channel_id, after_row: int) -> List[tuple]:
         """(made_id, item, tokens, its row id) for each user message stored in
         another channel after `after_row`, oldest first."""
-        out, unseen = [], self.unseen(conn, types)
+        out, unseen = [], self.unseen(conn, types, channel_id)
         for r in conn.rows(after_row, types.of(*self.groups.user), differ=channel.of(channel_id)):
             other = channel_of(r)
             if other is None or other == channel_id or other in unseen or not self.shared(r):
@@ -640,9 +678,9 @@ class ProactiveContextManager(Policy):
             made = [r.made_id for r in last["refs"] if r.made_id is not None]
             kept = [(m, item, tokens) for m, (name, item, tokens) in conn.made_items(made).items()
                     if name == PARALLEL_BEFORE]
-            if kept:
+            if kept and not self.regrouped(conn, types, channel_id, last.get("row_id") or 0):
                 return kept[:1], start
-        unseen = self.unseen(conn, types)
+        unseen = self.unseen(conn, types, channel_id)
         before = [(c, e) for c, e in history.other_requests(conn, types, self.groups, self.tokenizer, channel_id,
                                                             keep=lambda r: channel_of(r) not in unseen and self.shared(r))
                   if e.row_id < start]
@@ -660,14 +698,61 @@ class ProactiveContextManager(Policy):
                                  source=f"requests before {start}")
         return [(made_id, item, conn.made_items([made_id])[made_id][2])], start
 
-    def unseen(self, conn, types: TypeIds) -> set:
-        """The channels no other channel is shown: those whose latest ROLE record says `private`."""
+    def unseen(self, conn, types: TypeIds, channel_id) -> "Unseen":
+        """The channels `channel_id` is not shown (`in`): those whose latest ROLE record says `private`, and those of
+        another group than its own -- a channel's group the latest GROUP record in it names, "" without one."""
         private: Dict[str, bool] = {}
-        for r in conn.rows(0, types.of(ROLE)):
+        group: Dict[str, str] = {}
+        role_ids = types.of(ROLE)
+        for r in conn.rows(0, types.of(ROLE, GROUP)):
             ch = channel_of(r)
-            if ch is not None:
-                private[ch] = bool(isinstance(r.payload, dict) and r.payload.get("private"))
-        return {ch for ch, hidden in private.items() if hidden}
+            if ch is None or not isinstance(r.payload, dict):
+                continue
+            if r.type.id in role_ids:
+                private[ch] = bool(r.payload.get("private"))
+            else:
+                group[ch] = str(r.payload.get("group") or "")
+        return Unseen({ch for ch, hidden in private.items() if hidden}, group, group.get(channel_id, ""))
+
+    def regrouped(self, conn, types: TypeIds, channel_id, since_row: int) -> bool:
+        """Whether what the channel is shown changed groups after `since_row`: a GROUP record stored since moved a
+        channel from one group to another (its `was` given, and not its `group`) -- this one, or another into or out
+        of this one's group. A first record (no `was`: an actor starting) changes nothing of the others': its
+        requests come to them as any new session's do."""
+        moves = []
+        for r in conn.rows(since_row, types.of(GROUP)):
+            p = r.payload if isinstance(r.payload, dict) else {}
+            if "was" in p and str(p.get("group") or "") != str(p.get("was") or ""):
+                moves.append((channel_of(r), str(p.get("group") or ""), str(p.get("was") or "")))
+        if not moves:
+            return False
+        own = self.unseen(conn, types, channel_id).own
+        return any(moved == channel_id or own in (group, was) for moved, group, was in moves)
+
+    def regroup(self, conn, types: TypeIds, read: Read, rows, latest, in_use) -> bool:
+        """After a change of the channel's group (`regrouped`): its sections built again from its group's work, and
+        waited for (up to build_timeout) -- a `join` again, for a channel whose context came from one, or that has no
+        build and can join its new group (`tables.joinable`); a `regrouped` build, for one with a build of its own in
+        use. Whether one is ready; nothing is started without background work, or while a build runs."""
+        cfg, ch = self.config, channel_of(read)
+        if self.jobs is None:
+            return False
+        joining = joined(in_use) or (in_use is None and latest is None)
+        if joining and not tables.joinable(conn, ch, self.unseen(conn, types, ch).grouped):
+            return False
+        if not joining and in_use is None:          # a build of its own, not taken up yet: adopted at its user message
+            return False
+        reason = tables.JOIN if joining else tables.REGROUPED
+        build_id = tables.claim_build(conn, ch, cfg.build_timeout, reason)
+        if build_id is None:
+            return False
+        try:
+            self.jobs.start(read.gatherer_id, channel.of(ch), "build", build_id)
+        except OSError as exc:
+            tables.fail_build(conn, build_id, f"could not start the worker: {exc}")
+            return False
+        self.log(f"[{ch}] its group changed: a {reason} build ({build_id})")
+        return self.wait(conn, ch, rows[-1].row_id, "build", cfg.build_timeout, read.stopped)
 
     def shared(self, r: Row) -> bool:
         """Whether another channel's user message is shown to this one as its user's request: not a message the actors
@@ -691,7 +776,12 @@ class ProactiveContextManager(Policy):
         """The events of type `name` the channel can see from `cut` on -- the
         verbatim part of the context; those a build has condensed past are
         not looked at -- in row order."""
-        return conn.rows(after_row=max(cut - 1, 0), match=channel.of(channel_id), type_ids=types.of(name))
+        rows = conn.rows(after_row=max(cut - 1, 0), match=channel.of(channel_id), type_ids=types.of(name))
+        if not any(channel_of(r) is None and isinstance(r.payload, dict) and "group" in r.payload for r in rows):
+            return rows
+        own = self.unseen(conn, types, channel_id).own       # a record with no channel, for one group: its channels'
+        return [r for r in rows if channel_of(r) is not None or not isinstance(r.payload, dict)
+                or str(r.payload.get("group", own) or "") == own]
 
     def shown_messages(self, conn, types: TypeIds, channel_id, cut: int) -> List[tuple]:
         """("made", row_id, item, (made_id, tokens)) for each stream message
@@ -707,6 +797,51 @@ class ProactiveContextManager(Policy):
             made_id = conn.make_item(item, self.tokenizer, properties=channel.of(channel_id),
                                       name="context_stream", source=f"message {r.row_id}")
             out.append(("made", r.row_id, item, (made_id, conn.made_items([made_id])[made_id][2])))
+        return out
+
+    def group_changes(self, conn, types: TypeIds, channel_id, cut: int) -> List[tuple]:
+        """("made", row_id, item, (made_id, tokens)) for each change of groups in the verbatim part that changed what
+        the channel is shown (`regrouped`): its own move (`group_moved`), or a run of other channels' moves into or out
+        of its group -- records stored one after another, as a folder's move writes them -- as one message
+        (`group_joined`, `group_left`), at its first record's place."""
+        ids = types.of(GROUP)
+        rows = conn.rows(after_row=max(cut - 1, 0), type_ids=ids) if ids else []
+        moves = [(r, r.payload) for r in rows if isinstance(r.payload, dict) and "was" in r.payload
+                 and str(r.payload.get("group") or "") != str(r.payload.get("was") or "")]
+        if not moves:
+            return []
+        cfg, own = self.config, self.unseen(conn, types, channel_id).own
+
+        def named(name, group_id: str) -> str:
+            return str(name) if name else (f"group {group_id}" if group_id else cfg.group_own)
+
+        said, run, last_row = [], None, None                 # said: [row_id, kind, text or [channels]]
+        for r, p in moves:
+            group, was, moved = str(p.get("group") or ""), str(p.get("was") or ""), channel_of(r)
+            if moved == channel_id:
+                to, fro = named(p.get("name"), group), named(p.get("was_name"), was)
+                said.append([r.row_id, "moved", cfg.group_alone.format(was=fro) if group.startswith(ALONE)
+                             else cfg.group_back.format(group=to) if was.startswith(ALONE)
+                             else cfg.group_moved.format(group=to, was=fro)])
+                run = None
+            elif own in (group, was):
+                kind = "joined" if group == own else "left"
+                if run is not None and run[1] == kind and r.row_id == last_row + 1:
+                    run[2].append(moved)
+                else:
+                    run = [r.row_id, kind, [moved]]
+                    said.append(run)
+            else:
+                run = None
+            last_row = r.row_id
+        out = []
+        for row_id, kind, what in said:
+            text = what if kind == "moved" else (cfg.group_joined if kind == "joined" else cfg.group_left).format(
+                channels=", ".join(what))
+            item = self.format.make_section(text, GROUP_CHANGE)
+            made_id = conn.make_item(item, self.tokenizer, properties=channel.of(channel_id), name=GROUP_CHANGE,
+                                     source=f"group {row_id}")
+            out.append(("made", row_id, item, (made_id, conn.made_items([made_id])[made_id][2])))
         return out
 
     def notices(self, conn, types: TypeIds, channel_id, cut: int, verbatim,
@@ -825,7 +960,7 @@ class ProactiveContextManager(Policy):
         names = conn.made_items(made)
         return tables.get_build(conn, used), [m for m in made
                                               if names[m][0] not in ("context_stream", "environment_update", PARALLEL_REQUEST,
-                                                                     PARALLEL_BEFORE, LEFT_OUT, GUIDE)]
+                                                                     PARALLEL_BEFORE, LEFT_OUT, GUIDE, GROUP_CHANGE)]
 
     def adopt(self, conn, types: TypeIds, rows, build: dict, read: Read) -> Optional[List[int]]:
         """Lay `build`'s analysis out as sections and store them as made
@@ -853,7 +988,7 @@ class ProactiveContextManager(Policy):
         ranked = [by_key[tuple(k)] for k in build["ranking"] if tuple(k) in by_key]
         ranked = [t for t in ranked if id(t) not in shown]
         mark = build["parallel_mark"]
-        unseen = self.unseen(conn, types)
+        unseen = self.unseen(conn, types, ch)
         others = [(c, e) for c, e in history.other_requests(conn, types, groups, tok, ch,
                                                             keep=lambda r: channel_of(r) not in unseen and self.shared(r))
                   if e.row_id <= mark]
@@ -869,8 +1004,9 @@ class ProactiveContextManager(Policy):
             return None
         if sections.open_from_row != build["open_from_row"]:
             tables.set_cut(conn, build["build_id"], sections.open_from_row)
-        # compacted: not sent whole again; joined: the sections replace nothing of its own, they add the others' work
-        if cfg.require_smaller and build.get("reason") not in (tables.COMPACTION, tables.JOIN):
+        # compacted: not sent whole again; joined: the sections replace nothing of its own, they add the others' work;
+        # regrouped: they replace sections made from another group's work
+        if cfg.require_smaller and build.get("reason") not in (tables.COMPACTION, tables.JOIN, tables.REGROUPED):
             why = self.not_smaller(sections, rows, turns, types)
             if why:
                 tables.settle(conn, build["build_id"], "nothing", error=why)
@@ -921,7 +1057,7 @@ class ProactiveContextManager(Policy):
         cfg, ch = self.config, channel_of(read)
         if self.jobs is None:                      # no background work
             return ""
-        if latest is None and tables.joinable(conn, ch):
+        if latest is None and tables.joinable(conn, ch, self.unseen(conn, types, ch).grouped):
             build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.JOIN)
             if build_id is None:
                 return ""
@@ -1066,7 +1202,7 @@ class ProactiveContextManager(Policy):
         """(the other channels' tasks, located in their turns; those turns, by channel): each channel's whole history
         read, so seconds in a big gatherer -- cut short, with what was found so far, once `stopped` (the harness hung
         up on the call: `Read.stopped`)."""
-        found, turns_by_channel, unseen = [], {}, self.unseen(conn, types)
+        found, turns_by_channel, unseen = [], {}, self.unseen(conn, types, channel_id)
         for other in tables.channels_with_tasks(conn):
             if stopped():
                 break
