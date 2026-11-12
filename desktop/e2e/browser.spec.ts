@@ -436,7 +436,7 @@ test("over the page: the agent's cues, Pick and Area, the user's click told, Esc
     await until(async () => (await pagesOf(app)).every((p) => !p.visible));
     expect(await panel(page).locator(".bw-stage > img").getAttribute("src")).toMatch(/^data:image\/png/);
     await page.keyboard.press("Escape");
-    await panel(page).locator(".bw-bar input[aria-label=Address]").click();   // (anywhere outside it closes it too)
+    await panel(page).locator(".bw-bar .omni input").click();   // (anywhere outside it closes it too)
     await until(async () => (await pagesOf(app)).some((p) => p.url === site && p.visible));
   } finally {
     await app.close();
@@ -628,7 +628,7 @@ test("a tab the agent opens while its pane shows something else: at the pane's s
     await page.evaluate(() => {
       const d = document.createElement("div");
       d.id = "e2e-cover";
-      Object.assign(d.style, { position: "fixed", left: "0", right: "0", bottom: "0", height: "40%", background: "#333", zIndex: "50" });
+      Object.assign(d.style, { position: "fixed", left: "0", right: "0", bottom: "0", height: "60%", background: "#333", zIndex: "50" });
       document.body.append(d);
     });
     await openPanel(page);
@@ -653,6 +653,46 @@ test("a tab the agent opens while its pane shows something else: at the pane's s
     // (its tab closed: the next test's Browser has one tab, as before)
     expect((await tool("tabs", { action: "close", index: 2, expect: [{ tab: 2, js: "document.title === 'Red'", why: "the red tab" }] })).error)
       .toBe(false);
+  } finally {
+    await app.close();
+  }
+});
+
+test("a browser's keys on the page are the Browser's: zoom, a new tab with its address bar ready, close and reopen; mute", async () => {
+  const { app, page } = await launch();
+  try {
+    expect((await browserAsk("nav", { url: site })).done).toBe(site);
+    type Tab = { url: string; zoom: number; muted: boolean };
+    const tabs = async () => (await stateOf()).tabs as Tab[];
+    const mod = process.platform === "darwin" ? "meta" : "control";
+    // (a browser's key acts as it goes down: Cmd+W's page is gone before it comes up)
+    const press = (url: string, keyCode: string, more: string[] = []) =>
+      native(app, url, [{ type: "keyDown", keyCode, modifiers: [mod, ...more] } as Electron.KeyboardInputEvent]);
+    // Cmd+= zooms the page in a step, Chrome's, not the dashboard: the address box says so; Cmd+0 back to 100%
+    await press(site, "=");
+    await until(async () => (await tabs())[0].zoom === 1.1, 10_000);
+    const zoomOf = (u: string) => app.evaluate(({ BrowserWindow }, url) =>
+      (BrowserWindow.getAllWindows()[0].contentView.children.find((c) => (c as Electron.WebContentsView).webContents.getURL() === url) as
+        Electron.WebContentsView).webContents.getZoomFactor(), u);
+    expect(await zoomOf(site)).toBeCloseTo(1.1);
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor())).toBe(1);
+    await expect(panel(page).locator(".omni .zoom")).toHaveText("110%");
+    await press(site, "0");
+    await until(async () => (await tabs())[0].zoom === 1, 10_000);
+    await expect(panel(page).locator(".omni .zoom")).toBeHidden();
+    // Cmd+T: a new tab, shown, the address bar given the keys
+    await press(site, "t");
+    await until(async () => (await tabs()).length === 2 && (await stateOf()).active === 1, 10_000);
+    // (its active element: the test's window may not be the one in front, which a check of focus itself needs)
+    await expect.poll(() => panelFrame(page).evaluate(() => document.activeElement?.matches(".omni input") ?? false)).toBe(true);
+    // Cmd+W on the first page closes it; Cmd+Shift+T, from the new tab's, opens it again where it was
+    await press(site, "w");
+    await until(async () => (await tabs()).length === 1, 10_000);
+    await press("about:blank", "t", ["shift"]);
+    await until(async () => (await tabs()).map((t) => t.url).join() === `${site},about:blank`, 10_000);
+    // a tab muted from the panel: the page's own sound off
+    expect(await browserAsk("tab", { action: "mute", index: 0, muted: true })).toEqual({ muted: true });
+    await until(async () => (await tabs())[0].muted, 10_000);
   } finally {
     await app.close();
   }

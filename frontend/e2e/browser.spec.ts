@@ -261,7 +261,7 @@ const CUES: { name: string; next: object; check: (page: Page) => Promise<void> }
     name: "opening a page fills the address bar with the address, lit",
     next: { label: "Opening ballotpedia.org", box: null, tool: "navigate", cue: { url: "https://ballotpedia.org/" } },
     check: async (page) => {
-      const addr = panel(page).locator(".bw-bar input[aria-label=Address]");
+      const addr = panel(page).locator(".bw-bar .omni input");
       await expect(addr).toHaveClass(/\bcoming\b/);
       await expect(addr).toHaveValue("https://ballotpedia.org/");
     },

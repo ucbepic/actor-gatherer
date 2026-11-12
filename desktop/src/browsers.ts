@@ -8,6 +8,7 @@
 // opens no debugging port: Google refuses a sign-in in a browser that has one (desktop/DESIGN.md, "Rules the app keeps").
 import { dialog, Menu, session, WebContentsView, type BaseWindow, type IpcMainEvent, type WebContents } from "electron";
 import { editItems, spellingItems, tidy } from "./menu.ts";
+import { browserKey, zoomStep } from "./keys.ts";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -116,6 +117,7 @@ export class Pages {
     changed?: (id: string, app: string) => void;
     destroyed?: (id: string, app: string) => void;
     escape?: (id: string, app: string) => void;
+    key?: (id: string, app: string, key: string) => void;
     findBar?: (id: string, app: string) => void;
     dialog?: (id: string, d: Dialog) => void;
     download?: (app: string, begun: Record<string, string>) => void;
@@ -291,7 +293,29 @@ export class Pages {
       canAccessOpener: !!p.opener,
       ...(p.opener ? { openerId: p.opener } : {}),
       browserContextId: "app",
+      // (beyond Chrome's: what a browser's tab strip shows of a page -- core.py's `_sounds`)
+      audible: wc.isCurrentlyAudible(),
+      muted: wc.isAudioMuted(),
+      zoom: wc.getZoomFactor(),
     };
+  }
+
+  /** Page `id` zoomed a step (`zoomStep`): Chromium keeps a zoom per site, so every page of the site is told of it. */
+  zoomBy(id: string, step: number): number {
+    const p = this.pages.get(id);
+    if (!p) throw new Error("No target with given id found");
+    const wc = p.view.webContents;
+    wc.setZoomFactor(zoomStep(wc.getZoomFactor(), step));
+    for (const [other, q] of this.pages) if (q.app === p.app) this.hooks.changed?.(other, q.app);
+    return wc.getZoomFactor();
+  }
+
+  mute(id: string, muted: boolean): boolean {
+    const p = this.pages.get(id);
+    if (!p) throw new Error("No target with given id found");
+    p.view.webContents.setAudioMuted(muted);
+    this.hooks.changed?.(id, p.app);
+    return p.view.webContents.isAudioMuted();
   }
 
   /** A new page of `app`'s, at `url`, laid out at `size` (its panel's view's, as the app knows it) while no panel shows
@@ -333,6 +357,8 @@ export class Pages {
     // one would be there to answer. (Electron would stay, asking no one.)
     wc.on("will-prevent-unload", (event) => event.preventDefault());
     // The user's keys (ag's own, sent over the link, never come here): Esc to ag when it is ag's; none while held.
+    // A browser's own keys (`browserKey`: Cmd+T, Cmd+W, Cmd+L, the zoom keys...) are the Browser's, as in Chrome, not
+    // the page's -- nor the app menu's, which would close or zoom the dashboard's window.
     wc.on("before-input-event", (event, input) => {
       const p = this.pages.get(id);
       if (!p) return;
@@ -340,13 +366,22 @@ export class Pages {
         event.preventDefault();
         this.hooks.escape?.(id, of);
       } else if (p.held) event.preventDefault();
+      else {
+        const key = browserKey(input);
+        if (!key) return;
+        event.preventDefault();
+        if (key.startsWith("zoom:")) this.zoomBy(id, Number(key.slice(5)));
+        else this.hooks.key?.(id, of, key);
+      }
     });
+    // Cmd+scroll or a pinch asking for zoom: Chrome's steps, as its keys
+    wc.on("zoom-changed", (_e, direction) => this.zoomBy(id, direction === "in" ? 1 : -1));
     id = await targetIdOf(wc);
     const page: Page = { view, app: of, opener, size: at };
     this.pages.set(id, page);
     this.emulate(page);
     wc.on("destroyed", () => this.gone(id)); // closed by ag, or by its own page (a popup done: window.close)
-    for (const ev of ["did-navigate", "did-navigate-in-page", "page-title-updated"] as const)
+    for (const ev of ["did-navigate", "did-navigate-in-page", "page-title-updated", "audio-state-changed"] as const)
       wc.on(ev as "did-navigate", () => this.hooks.changed?.(id, of));
     this.hooks.created?.(id, of);
     this.place();
@@ -620,6 +655,7 @@ export class Link {
         changed: (id, app) => discover(app) && send({ method: "Target.targetInfoChanged", params: { targetInfo: this.pages.info(id) } }, app),
         destroyed: (id, app) => discover(app) && send({ method: "Target.targetDestroyed", params: { targetId: id } }, app),
         escape: (id, app) => send({ method: "App.escape", params: { targetId: id } }, app),
+        key: (id, app, key) => send({ method: "App.key", params: { targetId: id, key } }, app),
         findBar: (id, app) => send({ method: "App.findBar", params: { targetId: id } }, app),
         // a page's dialog, to each session of its as Chrome's own would be told; downloads, as Chrome tells them
         dialog: (id, d) => {
@@ -712,6 +748,12 @@ export class Link {
               : fail("No target with given id found");
           case "Target.getTargets":
             return answer({ result: { targetInfos: this.pages.ids(app).map((id) => this.pages.info(id)) } });
+          case "App.zoom":
+            if (!mine(String(p.targetId))) return fail("No target with given id found");
+            return answer({ result: { zoom: this.pages.zoomBy(String(p.targetId), Math.sign(Number(p.step) || 0)) } });
+          case "App.mute":
+            if (!mine(String(p.targetId))) return fail("No target with given id found");
+            return answer({ result: { muted: this.pages.mute(String(p.targetId), !!p.muted) } });
           case "App.find":
             if (!mine(String(p.targetId))) return fail("No target with given id found");
             return answer({ result: await this.pages.find(String(p.targetId), String(p.q || ""), !!p.back, !!p.again) });

@@ -6,27 +6,77 @@ body { background: var(--surface); color: var(--ink); font: 13px/1.4 system-ui, 
 #app { height: 100%; }
 .bw { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .bw [hidden] { display: none !important; }
-.bw-bar { flex: none; display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 1px solid var(--ring); }
-.bw-bar button { flex: none; display: grid; place-items: center; width: 28px; height: 26px; border: 0; border-radius: 6px;
+/* the tabs, over the bar, as Chrome's strip: the tab shown the bar's colour, joined to it; each its icon (a spinner while
+   it loads; the agent's mark on one it opened), title, sound and x; narrow ones keep the icon only */
+.bw-tabs { --strip: color-mix(in srgb, var(--ink) 7%, var(--surface)); flex: none; display: flex; align-items: flex-end;
+  height: 36px; box-sizing: border-box; padding: 6px 6px 0; background: var(--strip); min-width: 0; }   /* (one height, tabs
+  or none: the page's screen under it not resized as they come) */
+.bw-tabs .list { flex: 0 1 calc(var(--n, 1) * 220px); min-width: 0; display: flex; align-items: flex-end; overflow: hidden; }
+.bw-tabs .t { position: relative; flex: 1 1 0; max-width: 220px; min-width: 34px; height: 30px; box-sizing: border-box; display: flex;
+  align-items: center; gap: 6px; padding: 0 4px 0 10px; border-radius: 8px 8px 0 0; color: var(--muted); font-size: 12px;
+  cursor: default; user-select: none; container-type: inline-size; }
+.bw-tabs .t + .t:not(.on)::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px; background: var(--grid); }
+.bw-tabs .t.on + .t::before { display: none; }
+.bw-tabs .t:hover:not(.on) { background: color-mix(in srgb, var(--surface) 50%, var(--strip)); }
+.bw-tabs .t.on { background: var(--surface); color: var(--ink); }
+.bw-tabs .t.acting { box-shadow: inset 0 -2px 0 #E8590C; }
+.bw-tabs .t.dragging { opacity: .5; }
+.bw-tabs .t.drop-l { box-shadow: inset 2px 0 0 #2563EB; }
+.bw-tabs .t.drop-r { box-shadow: inset -2px 0 0 #2563EB; }
+.bw-tabs .t .ic { position: relative; flex: none; display: grid; place-items: center; width: 16px; height: 16px; }
+.bw-tabs .t .fav { width: 16px; height: 16px; object-fit: contain; }
+.bw-tabs .t .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid color-mix(in srgb, #2563EB 25%, transparent);
+  border-top-color: #2563EB; animation: bw-spin .8s linear infinite; }
+@keyframes bw-spin { to { transform: rotate(360deg); } }
+.bw-tabs .t .by { position: absolute; right: -4px; bottom: -3px; width: 9px; height: 9px; border-radius: 50%; background: #E8590C;
+  box-shadow: 0 0 0 1.5px var(--surface); }
+.bw-tabs .t .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bw-tabs .t button { flex: none; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: inherit; cursor: pointer; }
+.bw-tabs .t button:hover { background: var(--wash); color: var(--ink); }
+.bw-tabs .t .snd { color: var(--ink); }
+@container (max-width: 64px) { .bw-tabs .t .nm, .bw-tabs .t .snd { display: none; } .bw-tabs .t:not(.on) .x { display: none; } }
+.bw-tabs .add { flex: none; align-self: center; display: grid; place-items: center; width: 28px; height: 28px; margin: 0 0 1px 4px;
+  border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
+.bw-tabs .add:hover { background: var(--wash); color: var(--ink); }
+/* the bar: Back, Forward, Reload/Stop, the address box, Pick, Area, "⋯"; the loading line along its foot */
+.bw-bar { position: relative; flex: none; display: flex; align-items: center; gap: 2px; padding: 5px 8px; background: var(--surface);
+  border-bottom: 1px solid var(--ring); }
+.bw-bar button { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%;
   background: none; color: var(--muted); cursor: pointer; }
 .bw-bar button:hover:not([disabled]) { background: var(--wash); color: var(--ink); }
-.bw-bar button[disabled] { opacity: .4; cursor: default; }
+.bw-bar button[disabled] { opacity: .35; cursor: default; }
 .bw-bar button[aria-pressed="true"] { background: color-mix(in srgb, #2563EB 16%, transparent); color: #2563EB; }
-.bw-bar form { flex: 1 1 auto; min-width: 0; display: flex; margin: 0 4px; }
-.bw-bar input { flex: 1 1 auto; min-width: 0; font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink);
-  background: var(--page); border: 1px solid var(--grid); border-radius: 999px; padding: 3px 12px; }
-.bw-bar input:focus { outline: 2px solid color-mix(in srgb, #2563EB 45%, transparent); outline-offset: -1px; }
+.bw-bar .omni { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; height: 32px; box-sizing: border-box;
+  margin: 0 6px; padding: 0 4px 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  border: 1px solid transparent; }
+.bw-bar .omni:hover { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
+.bw-bar .omni:focus-within { background: var(--page); border-color: color-mix(in srgb, #2563EB 55%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #2563EB 35%, transparent); }
+.bw-bar .omni:has(input.coming) { border-color: #E8590C; box-shadow: 0 0 0 1px #E8590C; }
+.bw-bar .omni .site { flex: none; display: flex; align-items: center; gap: 4px; height: 22px; padding: 0 5px; border-radius: 999px;
+  color: var(--muted); font-size: 12px; white-space: nowrap; }
+.bw-bar .omni .site.warn { padding: 0 8px 0 6px; background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+.bw-bar .omni .field { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
+.bw-bar .omni input { flex: 1 1 auto; min-width: 0; font: 13.5px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink);
+  background: none; border: 0; outline: none; padding: 0; }
+/* the address as shown while not typed in: over the box, which hides its own text meanwhile */
+.bw-bar .omni .shown { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; white-space: pre;
+  pointer-events: none; font: 13.5px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.bw-bar .omni .shown .host { color: var(--ink); flex: none; }
+.bw-bar .omni .shown .rest { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.bw-bar .omni.has-url:not(:focus-within) input { color: transparent; }
+.bw-bar .omni:focus-within .shown, .bw-bar .omni:not(.has-url) .shown { display: none; }
+.bw-bar .omni .zoom { width: auto; height: 22px; padding: 0 8px; border-radius: 999px; font: 500 11.5px system-ui, sans-serif;
+  color: var(--ink); background: var(--surface); }
 .bw-bar .sep { width: 1px; height: 18px; background: var(--grid); margin: 0 4px; flex: none; }
 .bw-bar .mine { flex: none; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; color: #2563EB; white-space: nowrap;
   background: color-mix(in srgb, #2563EB 12%, transparent); }
-.bw-tabs { flex: none; display: flex; gap: 2px; padding: 4px 8px 0; overflow-x: auto; border-bottom: 1px solid var(--ring); }
-.bw-tabs .t { display: flex; align-items: center; gap: 4px; max-width: 220px; padding: 4px 6px 5px 10px; border: 1px solid transparent;
-  border-bottom: 0; border-radius: 6px 6px 0 0; background: none; color: var(--muted); font-size: 12px; cursor: pointer; }
-.bw-tabs .t .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.bw-tabs .t.on { background: var(--surface); border-color: var(--ring); color: var(--ink); }
-.bw-tabs .t .x { border: 0; background: none; color: inherit; padding: 0 3px; cursor: pointer; border-radius: 4px; line-height: 1; }
-.bw-tabs .t .x:hover { background: var(--wash); }
-.bw-tabs .add { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 8px; }
+.bw-load { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; pointer-events: none; }
+.bw-load > div { width: 0; height: 100%; background: #2563EB; opacity: 0; }
+.bw-load.on > div { opacity: 1; animation: bw-loading 10s cubic-bezier(.1, .7, .2, 1) forwards; }
+.bw-load.done > div { opacity: 0; width: 100%; transition: width .2s ease-out, opacity .3s ease-in .15s; }
+@keyframes bw-loading { from { width: 0; } 15% { width: 35%; } to { width: 85%; } }
 /* under the page, what Chrome paints behind one in the theme its pages are shown in (Canvas: the page's own theme, which
    they follow -- bwTellScheme); the page's pointer shape (bwUiDraw) */
 .bw-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: Canvas; outline: none;
@@ -54,7 +104,6 @@ body { background: var(--surface); color: var(--ink); font: 13px/1.4 system-ui, 
 /* where an action acts outside the page (bwCue): the Browser's own controls lit, a key cap, an arrow for a scroll */
 .bw-bar button.coming, .bw-tabs .coming { background: color-mix(in srgb, #E8590C 18%, transparent); color: #E8590C;
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #E8590C 60%, transparent); }
-.bw-bar input.coming { outline: 2px solid #E8590C; outline-offset: -1px; }
 .bw-stage .keycap { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 2; pointer-events: none;
   padding: 6px 14px; border-radius: 8px; border: 1.5px solid #E8590C; border-bottom-width: 3px; background: var(--surface);
   color: var(--ink); font: 600 15px/1.2 system-ui, -apple-system, sans-serif; box-shadow: 0 4px 14px rgba(0, 0, 0, .2);
@@ -205,7 +254,13 @@ body { background: var(--surface); color: var(--ink); font: 13px/1.4 system-ui, 
   box-sizing: border-box; padding: 6px 12px; border-radius: 8px; background: var(--surface); color: var(--critical);
   border: 1px solid var(--grid); box-shadow: 0 4px 16px rgba(0, 0, 0, .18); font-size: 12.5px; overflow-wrap: anywhere; }
 .bw { position: relative; height: 100%; }
-.bw-more-menu { position: absolute; right: 8px; top: 38px; z-index: 9; }
+.bw-more-menu { position: absolute; right: 8px; top: 80px; z-index: 9; min-width: 240px; }
+.bw-more-menu button[role="menuitem"] { display: flex; justify-content: space-between; gap: 16px; }
+.bw-more-menu .kb { color: var(--muted); }
+.bw-more-menu .zoomrow { display: flex; align-items: center; gap: 4px; padding: 3px 6px 3px 10px; }
+.bw-more-menu .zoomrow > span:first-child { flex: 1 1 auto; }
+.bw-more-menu .zoomrow button { width: 28px; padding: 2px 0; text-align: center; border: 1px solid var(--ring); border-radius: 6px; }
+.bw-more-menu .zoomrow .z { width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
 .bw-sheet { position: absolute; inset: 0; z-index: 10; display: grid; place-items: start center; padding-top: 48px;
   background: color-mix(in srgb, var(--page) 70%, transparent); }
 .bw-sheet .box { width: min(460px, calc(100% - 24px)); max-height: calc(100% - 72px); box-sizing: border-box; display: grid;
