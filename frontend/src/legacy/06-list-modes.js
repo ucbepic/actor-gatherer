@@ -273,7 +273,8 @@ function renderRail() {
     saved: railShow.saved, closed: railShow.closed });
   // drilled in: where it is; else every gatherer, in the folders the reader keeps them in, if any (05-gatherer-folders.js)
   if (here) list.append(railHere(here, view(here.g)));
-  else list.append(...railGfLevel(shown, null, (g) => railGatherer(g, view(g))));
+  else list.append(...railGfLevel(shown.filter((g) => !aloneShut(g)), null, (g) => railGatherer(g, view(g))),
+    ...railAloneShut(shown.filter(aloneShut)));          // the actors on their own closed: in their lines (05-group-moves.js)
   if (!shown.length) list.append(el("div", { class: "r-none", text: state.home.gatherers.length ? "Every group is hidden" : "No groups" }));
   // its buttons -- open the list, settings, full screen -- the header's, in one row over it (01-layout.css); then the
   // totals of what every actor does (railTotals), then the tree, drawn again; then its foot, as it was (RAIL_FOOT)
