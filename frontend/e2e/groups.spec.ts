@@ -1,7 +1,8 @@
 // Moves between groups (05-group-moves.js; groups.py): in the home's one database, an actor dragged onto another
 // group asks first -- who moves, from which group to which -- and moves only once the reader says so, and a folder
-// dragged outside every group asks first, then is a group of its own, and an actor dragged there is on its own; with a
-// database per gatherer, a drop into another group is refused, as every one was before.
+// dragged outside every group asks first, then is a group of its own, and an actor dragged there is on its own; an
+// app in a folder that moves goes with it, its pane opened again in its new group, unless it is its group's only one;
+// with a database per gatherer, a drop into another group is refused, as every one was before.
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, GATHERER, open } from "./home";
@@ -243,4 +244,104 @@ test("in the home's one database, an actor dragged outside every group asks firs
     do: "plan",
     channels: [state.claude],
   });
+});
+
+// The home of twoGroups, merged, with a folder Work in demo holding Claude Code and a Notepad, "Shopping list" (n1),
+// listed as an app of `mode` instances; once `state.moved`, Work's actor and app are lab's
+async function appInFolder(page: Page, mode: string, state: { moved: boolean; claude: string }) {
+  await page.route("**/api/home", async (route) => {
+    const home = await (await route.fetch()).json();
+    const demo = home.gatherers.find((x: Group) => x.name === GATHERER) as Group;
+    const claude = demo.agents.find((a) => a.harness === "claude")!;
+    state.claude = claude.channel;
+    const lab: Group = { ...demo, name: LAB, agents: [] };
+    if (state.moved) {
+      lab.agents = [claude];
+      demo.agents = demo.agents.filter((a) => a.channel !== claude.channel);
+    } else
+      home.folders = {
+        [GATHERER]: { folders: [{ id: 7, parent: null, name: "Work" }], filed: { [claude.channel]: 7, "app:n1": 7 } },
+      };
+    home.gatherers.push(lab);
+    home.merged = true;
+    await route.fulfill({ json: home });
+  });
+  await page.route(/\/api\/apps(\?gatherer=[^&]*)?$/, async (route) => {
+    const got = await (await route.fetch()).json();
+    const g = new URL(route.request().url()).searchParams.get("gatherer");
+    got.apps = (got.apps || []).map((a: { name: string }) => (a.name === "notepad" ? { ...a, instances: mode } : a));
+    const at = state.moved ? LAB : GATHERER;
+    got.instances =
+      g === at ? [{ id: "n1", app: "notepad", gatherer: at, folder: null, title: "Shopping list", data: {} }] : [];
+    got.attached = g === at ? { n1: [state.claude] } : {};
+    await route.fulfill({ json: got });
+  });
+  await streamsAsRequests(page);
+  await page.route("**/api/stream*", (route) => route.abort());
+}
+
+// the folder Work opened, from the keyboard: its line's buttons, shown on hover, lie over its name
+async function openWork(page: Page) {
+  await page.locator("#agents .folder-line .fbtn", { hasText: "Work" }).focus();
+  await page.keyboard.press("Enter");
+}
+
+test("in the home's one database, an app in a folder that moves goes with it, its pane opened again there", async ({
+  page,
+}) => {
+  const state = { moved: false, claude: "" };
+  await appInFolder(page, "many", state);
+  const asked: Record<string, unknown>[] = [];
+  await page.route("**/api/groups", async (route) => {
+    const body = route.request().postDataJSON();
+    asked.push(body);
+    if (body.do === "plan")
+      return route.fulfill({
+        json: {
+          actors: [state.claude],
+          apps: [{ id: "n1", app: "notepad", title: "Shopping list" }],
+          from: GATHERER,
+          to: LAB,
+          folder: 7,
+          before: {},
+          after: {},
+        },
+      });
+    state.moved = true;
+    return route.fulfill({
+      json: { moved: { actors: [state.claude], apps: ["n1"], from: GATHERER, to: LAB }, folders: {}, tasks: {} },
+    });
+  });
+  await open(page);
+  await openWork(page); // what is in it shown
+  await page.locator("#agents button.agent.app-row", { hasText: "Shopping list" }).click(); // its pane open
+  const frame = page.locator(".app-frame");
+  await expect(frame).toHaveAttribute("src", new RegExp(`gatherer=${GATHERER}&instance=n1`));
+  await page.locator("#agents .folder-line", { hasText: "Work" }).dragTo(groupRow(page, LAB));
+  const dialog = page.locator("dialog.mv-dialog");
+  await expect(dialog.locator("h3")).toHaveText(`Move to the ${LAB} group?`);
+  await expect(dialog.locator(".mv-line").last()).toHaveText("The app Notepad (Shopping list) goes with them.");
+  await dialog.getByRole("button", { name: "Move" }).click();
+  await expect(dialog).toBeHidden();
+  expect(asked.map((b) => b.do)).toEqual(["plan", "move"]);
+  await expect(frame).toHaveCount(1); // the same pane, its panel opened again for lab
+  await expect(frame).toHaveAttribute("src", new RegExp(`gatherer=${LAB}&instance=n1`));
+});
+
+test("in the home's one database, a folder holding its group's only one of an app stays in its group", async ({
+  page,
+}) => {
+  const state = { moved: false, claude: "" };
+  await appInFolder(page, "one", state);
+  const asked: unknown[] = [];
+  await page.route("**/api/groups", (route) => {
+    asked.push(route.request().postDataJSON());
+    return route.abort();
+  });
+  await open(page);
+  await openWork(page);
+  await expect(page.locator("#agents button.agent.app-row", { hasText: "Shopping list" })).toBeVisible();
+  await page.locator("#agents .folder-line", { hasText: "Work" }).dragTo(groupRow(page, LAB));
+  await expect(page.locator("dialog.mv-dialog")).toHaveCount(0);
+  expect(asked).toEqual([]);
 });

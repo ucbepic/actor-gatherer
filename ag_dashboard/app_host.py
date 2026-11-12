@@ -17,6 +17,8 @@ group's agents:
 
     app_opened    {instance}: the instance (its id, folder, title, data), no channel -- its gatherer's
     app_named     {name, by}: what the user called it ("": its own title again) -- the page shows it over its title
+    app_regrouped {group, was}: it moved to another group with its task's or folder's actors (groups.py): listed,
+                  reached and heard there from then on, as if opened there
     app_closed    {}
     app_attached  {by}: in the agent's channel
     app_detached  {by}
@@ -365,6 +367,19 @@ class AppHost:
         with self.lock:
             i = self.instances[i.id] = replace(self.instances.get(i.id, i), name=text)
         self._record(i, "app_named", {"name": text, "by": by})
+        self._ring(i)
+        return i
+
+    def regroup(self, gatherer: str, instance_id: str, to: str) -> Instance:
+        """The instance moved from group `gatherer` to `to`, with its task's or folder's actors (groups.py): listed,
+        reached by its agents and heard by its group's there from now on (`app_regrouped`) -> it, moved. Its panels
+        told (`_ring`); a panel opened for its old group is opened again by the page."""
+        i = self.instance(gatherer, instance_id)
+        if not to or to == gatherer:
+            return i
+        with self.lock:
+            i = self.instances[i.id] = replace(self.instances.get(i.id, i), gatherer=to)
+        self._record(i, "app_regrouped", {"group": to, "was": gatherer})
         self._ring(i)
         return i
 
@@ -769,6 +784,8 @@ class AppHost:
                 attached.setdefault(inst, set())
             elif kind == "app_named" and inst in opened:
                 opened[inst] = replace(opened[inst], name=str(payload.get("name") or ""))
+            elif kind == "app_regrouped" and inst in opened and payload.get("group"):
+                opened[inst] = replace(opened[inst], gatherer=str(payload["group"]))
             elif kind == "app_closed":
                 opened.pop(inst, None)
                 attached.pop(inst, None)
