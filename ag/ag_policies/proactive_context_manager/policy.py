@@ -136,6 +136,7 @@ ROLE = "role"                   # a channel's role, as the dashboard records it:
 GROUP = "group"                 # a channel's group, as the dashboard records it: {group, ...} (`unseen`); each
                                 # record an id of its own, naming its channel: a read returns an id once, where it
                                 # was first stored, whatever its channel
+ALONE = "self:"                 # a group of one: an actor on its own (the dashboard's `self:<channel>`)
 OPENING_CHARS = 600             # how far into a message its opening is looked for, past a harness's wrapper (`shared`)
 
 # A tool call that could have WRITTEN a file it names. Reading one (cat, head, grep, wc, awk, a script
@@ -814,8 +815,10 @@ class ProactiveContextManager(Policy):
         for r, p in moves:
             group, was, moved = str(p.get("group") or ""), str(p.get("was") or ""), channel_of(r)
             if moved == channel_id:
-                said.append([r.row_id, "moved", cfg.group_moved.format(group=named(p.get("name"), group),
-                                                                       was=named(p.get("was_name"), was))])
+                to, fro = named(p.get("name"), group), named(p.get("was_name"), was)
+                said.append([r.row_id, "moved", cfg.group_alone.format(was=fro) if group.startswith(ALONE)
+                             else cfg.group_back.format(group=to) if was.startswith(ALONE)
+                             else cfg.group_moved.format(group=to, was=fro)])
                 run = None
             elif own in (group, was):
                 kind = "joined" if group == own else "left"

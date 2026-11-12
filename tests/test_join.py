@@ -378,6 +378,20 @@ class RegroupTest(JoinBase):
         self.assertIn("in your group now", said[0])
         self.assertIn("c3, c4", said[0])
 
+    def test_an_actor_on_its_own_is_told_so_and_again_when_it_is_back(self):
+        self.adopted()
+        self.moved("c1", "self:c1", "", was_name="Editor")
+        self.put([agent("working on it", 200)])
+        own = [t for t in self.texts(self.read()) if "on your own" in t]
+        self.assertEqual(len(own), 1)
+        self.assertIn("You work on your own now", own[0])
+        self.assertIn("no longer with those of Editor", own[0])
+        self.moved("c1", "", "self:c1", name="Editor")
+        self.put([agent("back", 201)])
+        back = [t for t in self.texts(self.read()) if "Until now you worked on your own" in t]
+        self.assertEqual(len(back), 1)
+        self.assertIn("the sessions of Editor", back[0])
+
     def test_a_move_between_two_other_groups_says_nothing(self):
         self.adopted()
         self.moved("c3", "b")
