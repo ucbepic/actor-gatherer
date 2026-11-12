@@ -545,7 +545,7 @@ function cardDraw() {
   const top = !!g && !a && channel === "gatherer:";
   if (!at || !(a || f || t || o || top) || !HOVER_FROM[hover.from]()) { cardHide(); return; }
   if (!hover.node) {
-    hover.node = el("div", { class: "actor-card", id: "actor-card", role: "tooltip" });
+    hover.node = el("div", { class: "actor-card floats", id: "actor-card", role: "tooltip" });   // (floats: over a native page, it covers it -- apps/native.ts)
     hover.node.addEventListener("pointerenter", () => clearTimeout(hover.timer));
     hover.node.addEventListener("pointerleave", () => { if (cardLive()) hoverTo(hover.from, null); });
     document.body.append(hover.node);

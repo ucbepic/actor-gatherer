@@ -352,3 +352,45 @@ test("a Browser shown while its still picture is being taken keeps up with its p
     await app.close();
   }
 });
+
+// The rail's hover cards over the Browsers shown above the panes: the pages covered while one shows -- each a still
+// picture in its place -- as for anything of the dashboard's over them: a task's card, which the pointer can go onto,
+// and an actor's, which the pointer passes through (pointer-events: none), so that no look at what is at a point finds
+// it. (Last here: it takes the other actor out of its task.)
+test("a hover card in the rail over the Browsers: the pages under it covered while it shows, an actor's as a task's", async () => {
+  const { app, page } = await launchInFront();
+  const shown = async () => (await pagesOf(app)).filter((p) => p.visible && /\/(one|two)$/.test(p.url));
+  try {
+    await (await rowOf(page, agent)).click();
+    await expect(page.locator("#top-row .app-pane[data-app=browser]")).toHaveCount(2);
+    expect((await ask(`/api/w/g/${keys[0]}/nav`, { url: `${site}one` }, "browser")).done).toBe(`${site}one`);
+    expect((await ask(`/api/w/g/${keys[1]}/nav`, { url: `${site}two` }, "browser")).done).toBe(`${site}two`);
+    await until(async () => (await shown()).length === 2, 30_000);
+    await page.locator("#agents .lb-fold").click(); // the list folded into the rail
+    const card = page.locator("#actor-card:not([hidden])");
+    const panels = (await page.locator("#top-row").boundingBox())!;
+    const hovered = async (tile: ReturnType<Page["locator"]>, what: string) => {
+      await tile.hover();
+      await expect(card).toBeVisible();
+      const c = (await card.boundingBox())!; // (the window's pixels: the dashboard at zoom 1)
+      const under = (b: Electron.Rectangle) => c.x < b.x + b.width && c.x + c.width > b.x && c.y < b.y + b.height && c.y + c.height > b.y;
+      const pages = (await pagesOf(app)).filter((p) => /\/(one|two)$/.test(p.url) && under(p.bounds));
+      expect(pages.length, `${what}: its card over a page`).toBeGreaterThan(0);
+      await until(async () => !(await shown()).some((p) => under(p.bounds)), 5_000).catch(async () => {
+        throw new Error(`${what}: a page shown over its card (${JSON.stringify(c)}): ${JSON.stringify(await pagesOf(app))}`);
+      });
+      await page.mouse.move(panels.x + panels.width / 2, panels.y + panels.height + 200); // (off the rail: the card gone)
+      await expect(card).toHaveCount(0);
+      await until(async () => (await shown()).length === 2, 5_000);
+    };
+    const tasks = ((await ask("/api/home")).tasks || {}) as Record<string, { tasked: Record<string, number> }>;
+    await hovered(page.locator(`#rail .r-task[data-card$="task:${tasks.g.tasked[otherAgent]}"]`), "the other task's tile");
+    // the other actor on its own: an actor's tile, its card the pointer's to pass through
+    await ask("/api/tasks", { gatherer: "g", do: "out", items: [otherAgent] });
+    const tile = page.locator(`#rail .r-actor:not(.r-task)[data-card$="${otherAgent}"]`);
+    await expect(tile).toHaveCount(1);
+    await hovered(tile, "the other actor's tile");
+  } finally {
+    await app.close();
+  }
+});
