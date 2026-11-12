@@ -107,7 +107,7 @@ describe("AgSettings", () => {
       fireEvent.submit(document.getElementById("cfg-defaults")!);
     });
     expect(calls[0].body).toEqual({ version: "v1", policy: "pcm_small", pollers: [], gatherer: "" });
-    expect(document.getElementById("cfg-defaults-note")!.textContent).toBe("Saved: new gatherers get these.");
+    expect(document.getElementById("cfg-defaults-note")!.textContent).toBe("Saved: new groups get these.");
   });
 
   it("opens config.toml as it is now, shows why a save failed, and closes", async () => {
