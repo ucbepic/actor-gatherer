@@ -144,9 +144,9 @@ function railHere(here, view) {
   }
   return el("section", { class: "r-gatherer open r-drilled", "aria-label": f ? f.name : titleOf(g) },
     el("div", { class: "r-nav" },
-      el("button", { class: "r-navb up", type: "button", title: f ? `Up: ${up === null ? titleOf(g) : folderById(g.name, up).name}` : "Up: every gatherer",
+      el("button", { class: "r-navb up", type: "button", title: f ? `Up: ${up === null ? titleOf(g) : folderById(g.name, up).name}` : "Up: every group",
         onclick: () => railUp(here) }, strokeIcon(ICONS.up, 13), el("span", { text: "Up" })),
-      el("button", { class: "r-navb root", type: "button", title: "Root: every gatherer", onclick: () => railGo(null) },
+      el("button", { class: "r-navb root", type: "button", title: "Root: every group", onclick: () => railGo(null) },
         strokeIcon(ICONS.home, 13), el("span", { text: "Root" }))),
     el("div", { class: "r-here" + (f ? " folder" : "") },
       steps.length ? el("div", { class: "r-path", role: "group", "aria-label": "Where it is" },
@@ -186,7 +186,7 @@ function railTotals(shown) {
     chip(told, "notified", told === 1 ? "app with a notification you haven't seen" : "apps with a notification you haven't seen"),
     chip(t.running + t.background, "running", t.background ? `running (${t.background} in the background)` : "running"),
     chip(t.finished, "finished", "finished, not yet seen"), chip(t.idle, "idle", "idle")].filter(Boolean);
-  return chips.length ? el("div", { class: "r-totals", role: "group", "aria-label": `Every gatherer's actors: ${chips.map((c) => c.title).join(", ")}` },
+  return chips.length ? el("div", { class: "r-totals", role: "group", "aria-label": `Every group's actors: ${chips.map((c) => c.title).join(", ")}` },
     ...chips) : null;
 }
 // The rail shows only what the reader checks at its foot (RAIL_FOOT), over every gatherer and drilled in alike, kept in
@@ -274,7 +274,7 @@ function renderRail() {
   // drilled in: where it is; else every gatherer, in the folders the reader keeps them in, if any (05-gatherer-folders.js)
   if (here) list.append(railHere(here, view(here.g)));
   else list.append(...railGfLevel(shown, null, (g) => railGatherer(g, view(g))));
-  if (!shown.length) list.append(el("div", { class: "r-none", text: state.home.gatherers.length ? "Every gatherer is hidden" : "No gatherers" }));
+  if (!shown.length) list.append(el("div", { class: "r-none", text: state.home.gatherers.length ? "Every group is hidden" : "No groups" }));
   // its buttons -- open the list, settings, full screen -- the header's, in one row over it (01-layout.css); then the
   // totals of what every actor does (railTotals), then the tree, drawn again; then its foot, as it was (RAIL_FOOT)
   const rail = document.getElementById("rail"), was = rail.querySelector(".r-actors");
@@ -554,7 +554,7 @@ function cardDraw() {
   const card = hover.node, live = !SNAPSHOT && !hover.keys && (!!t || !!o || (hover.from === "rail" && (!!f || top)));
   card.classList.toggle("live", live);
   card.setAttribute("role", live ? "group" : "tooltip");
-  if (live) card.setAttribute("aria-label", t ? `The task ${taskName(g, t)}` : o ? `The app ${appTitle(o)}` : f ? `The folder ${f.name}` : `The gatherer ${titleOf(g)}`);
+  if (live) card.setAttribute("aria-label", t ? `The task ${taskName(g, t)}` : o ? `The app ${appTitle(o)}` : f ? `The folder ${f.name}` : `The group ${titleOf(g)}`);
   else card.removeAttribute("aria-label");
   const typing = cardInput && document.activeElement === cardInput && [cardInput.selectionStart, cardInput.selectionEnd];
   cardMoving = true;                                 // its name box taken out and put back: not a blur that ends it
@@ -789,7 +789,7 @@ function cardEditBox(gname) {
   if (!cardInput) {
     cardInput = el("input", { class: "name-box c-box", type: "text", maxlength: String(e.gatherer || e.kind ? 120 : FOLDER_CHARS), spellcheck: "false",
       autocomplete: "off", placeholder: e.kind ? e.auto : e.gatherer ? gname : "Folder name",
-      "aria-label": e.kind ? `The ${e.kind}'s name` : e.gatherer ? "This gatherer's name" : "The folder's name" });
+      "aria-label": e.kind ? `The ${e.kind}'s name` : e.gatherer ? "This group's name" : "The folder's name" });
     cardInput.value = e.value;
     cardInput.addEventListener("input", () => { e.value = cardInput.value; });
     cardInput.addEventListener("keydown", (ev) => {

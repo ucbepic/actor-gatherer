@@ -230,7 +230,7 @@ function DefaultsForm({ s }: { s: Settings }) {
         })
       }
     >
-      <h4>Gatherer defaults</h4>
+      <h4>Group defaults</h4>
       <label>
         Policy
         <select id="cfg-policy" value={policy} onChange={(ev) => setPolicy(ev.target.value)}>

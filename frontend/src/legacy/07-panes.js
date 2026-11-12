@@ -901,8 +901,8 @@ function gathererForm() {
     spellcheck: "false", autocomplete: "off" });
   const err = el("div", { class: "err", role: "alert" });
   const make = el("button", { type: "submit", class: "primary" }, "Create");
-  const form = el("form", { class: "newform", "aria-label": "New gatherer" },
-    el("label", {}, "Gatherer name", name),
+  const form = el("form", { class: "newform", "aria-label": "New group" },
+    el("label", {}, "Group name", name),
     el("div", { class: "desc", text: "Made with ag's default policy and pollers. Agents in it share context with each other." }),
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), make));

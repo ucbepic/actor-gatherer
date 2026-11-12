@@ -417,17 +417,17 @@ function renderAgents() {
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
   // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (05-gatherer-folders.js)
   aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }),
-    SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new gatherer" }, "+ New gatherer"),
-    SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep gatherers in",
-      "aria-label": "New folder, to keep gatherers in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
+    SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new group" }, "+ New group"),
+    SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep groups in",
+      "aria-label": "New folder, to keep groups in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
   if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
-  if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
-  else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
+  if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No groups in this home yet." }));
+  else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every group is hidden." }));
   aside.append(...gfLevel(shown, null, gathererBox));   // its gatherers, in the folders the reader keeps them in, if any
   if (hidden.length) {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
-      el("summary", { text: `${hidden.length} hidden gatherer${hidden.length === 1 ? "" : "s"}` }));
+      el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));
     for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: titleOf(g) }),
       el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `nothing for ${ago(g.last).replace(" ago", "")}` }),
       el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
@@ -1075,7 +1075,7 @@ function nameBox() {
   const r = state.renaming;
   nameInput = el("input", { class: "name-box", type: "text", maxlength: "120", spellcheck: "false", autocomplete: "off",
     placeholder: r.c === null ? r.g : r.kind ? r.auto : "Name this actor",
-    "aria-label": r.c === null ? "This gatherer's name" : r.kind ? `This ${r.kind}'s name` : "This actor's name" });
+    "aria-label": r.c === null ? "This group's name" : r.kind ? `This ${r.kind}'s name` : "This actor's name" });
   nameInput.value = r.value;
   nameInput.addEventListener("input", () => { r.value = nameInput.value; });
   nameInput.addEventListener("keydown", (ev) => {
