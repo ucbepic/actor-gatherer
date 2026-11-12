@@ -7,7 +7,7 @@ import harness_kit
 from fastapi import APIRouter
 from starlette.responses import Response
 
-from .. import folders, gatherer_folders, hiding, naming, saved, seen, sessions, task_links, tasks, titles
+from .. import folders, gatherer_folders, groups, hiding, naming, saved, seen, sessions, task_links, tasks, titles
 from ..models import Home
 from .common import Body, Errors, Parts, answer
 
@@ -85,6 +85,26 @@ def folder(srv: Parts, body: Body) -> Response:
         raise ValueError("do what? One of new, rename, move, delete, file, close, reopen")
     srv.hub.ring(None, what="list")
     return answer({"folders": folders.stored(), **({"made": made} if made is not None else {}), **closing})
+
+
+@router.post("/api/groups")
+def group(srv: Parts, body: Body) -> Response:
+    """{gatherer, to, do, channels?, folder?, into?}: actors, or a folder with every actor in it, moved from one group
+    to another (groups.py), in the home's one database -> plan: what it would do, for the page to ask first; move: it
+    done -> {moved, folders, tasks}."""
+    g, to, do = str(body.get("gatherer") or ""), str(body.get("to") or ""), str(body.get("do") or "")
+    channels = body.get("channels") or []
+    if not isinstance(channels, list):
+        raise ValueError("which actors? `channels`, a list")
+    folder, into = body.get("folder"), body.get("into")
+    folder, into = (None if folder in (None, "") else int(folder)), (None if into in (None, "") else int(into))
+    if do == "plan":
+        return answer(groups.plan(g, to, [str(c) for c in channels], folder))
+    if do != "move":
+        raise ValueError("do what? plan or move")
+    moved = groups.move(g, to, [str(c) for c in channels], folder, into)
+    srv.hub.ring(None, what="list")
+    return answer({"moved": moved, "folders": folders.stored(), "tasks": tasks.stored()})
 
 
 @router.post("/api/tasks")
