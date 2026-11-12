@@ -200,6 +200,14 @@ class VisitedChromeTest(ChromeBase):
         self.assertIsNone(self.kept(three + "#below"))
         self.assertEqual(urls(browser.in_db(lambda c: visited.suggest(c, "localhost")))[:1], [one])
 
+    def test_words_typed_are_searched_for_not_kept_as_typed(self):
+        page = self.serve("search.html", "<!doctype html><title>Results</title>")
+        with mock.patch.object(browser, "SEARCH", page + "?q="):
+            self.b.navigate("tau bench paper")                       # the user, in the address bar
+        found = page + "?q=tau+bench+paper"
+        self.assertTrue(self.until(lambda: self.kept(found) == ("Results", 1, 0), 5), self.kept(found))
+        self.assertEqual(self.b.tab().url, found)
+
 
 if __name__ == "__main__":
     unittest.main()

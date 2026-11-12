@@ -96,13 +96,20 @@
   b.reload = btn(ICONS.reload, "Reload", () => post("nav", { action: "reload" }).catch(bwSay(b)));
   b.newTab = btn(ICONS.plus, "New tab (a link Cmd+clicked, or middle-clicked, opens in one too)",
     () => post("tab", { action: "new" }).then(() => { b.addr.focus(); b.addr.select(); }).catch(bwSay(b)));
-  b.addr = el("input", { type: "text", spellcheck: "false", autocomplete: "off", "aria-label": "Address", placeholder: "Type an address" });
+  b.addr = el("input", { type: "text", spellcheck: "false", autocomplete: "off", "aria-label": "Address", placeholder: "Search Google or type a URL" });
   const form = b.addrForm = el("form", {}, b.addr);
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const url = b.addr.value.trim();
     b.histClose?.();
     if (url) post("nav", { url }).then(() => b.stage.focus()).catch(bwSay(b));
+  });
+  b.addr.addEventListener("paste", (ev) => {     // lines pasted run together with a space, as in Chrome's address bar
+    const text = ev.clipboardData?.getData("text/plain") || "";   // (a text box drops the breaks: "oneline two")
+    if (!/[\r\n]/.test(text)) return;
+    ev.preventDefault();
+    b.addr.setRangeText(text.replace(/\s*[\r\n]+\s*/g, " ").trim(), b.addr.selectionStart, b.addr.selectionEnd, "end");
+    b.addr.dispatchEvent(new Event("input", { bubbles: true }));
   });
   b.pickBtn = btn(ICONS.pointer, "Pick an element to point the agent at (Esc to stop)", () => bwMode(b, bwModeOn(b) === "pick" ? null : "pick"), { "aria-pressed": "false" });
   b.areaBtn = btn(ICONS.area, "Pick an area: drag a box over the page (Esc to stop)", () => bwMode(b, bwModeOn(b) === "area" ? null : "area"), { "aria-pressed": "false" });

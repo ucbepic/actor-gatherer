@@ -88,6 +88,7 @@ import harness_kit
 
 from . import video as browser_video
 from . import visited
+from .tlds import TLDS
 
 HOME = os.environ.get("AG_HOME") or os.path.expanduser("~/.ag")   # the home, as ag finds it (backend.py sets it):
                                       # its dashboard/ holds the Chrome's profile, downloads, uploads and the ag app's
@@ -101,6 +102,7 @@ KEY = re.compile(r"[0-9a-f]{16}")
 IDLE_STOP = 600.0           # seconds the Chrome runs on with no Browser used
 CALL_WAIT = 20.0            # the most a call to Chrome is waited for
 NAV_WAIT = 20.0             # the most the agent's navigation waits for its site to answer, before it is stopped
+SEARCH = "https://www.google.com/search?q="   # where words typed in the address bar are searched for
 TYPED_WAIT = 30.0           # seconds within which a page opened in a tab is the one the user typed in its address bar
 LOAD_WAIT = 15.0            # the most an action waits for the page it started loading
 SCHEMES = ("light", "dark")   # the dashboard's theme as shown, its Browsers' pages' prefers-color-scheme
@@ -2218,8 +2220,8 @@ class Browser:
         elif action == "reload":
             cdp.call("Page.reload", {}, tab.session, sent=self.let_go)
         else:
-            url = _url(url)
-            if by_user:
+            url, words = _typed(url)
+            if by_user and not words:                    # a search is no address typed (as in Chrome's history)
                 with self.lock:
                     self.typed_in = (tab.target, time.time())
             got = self._go(cdp, tab, url, by_user, self.let_go)
@@ -2864,9 +2866,13 @@ def _phrases(b: "Browser", name: str, args: dict, on: Optional[dict], ctx: dict)
         return f"Scrolling {d or 'down'}{at}", f"Scrolled {d or 'down'}{at}", f"Didn't scroll {d or 'down'}" + (f" in {it}" if it else "")
     if name == "navigate":
         try:
-            site = _site(_url(str(args.get("url") or "")))
+            url, words = _typed(str(args.get("url") or ""))
         except BrowserError:
-            site = _q(str(args.get("url") or ""))
+            url, words = "", None
+        if words:
+            return f"Searching Google for {_q(words, 40)}", f"Searched Google for {_q(words, 40)}", \
+                f"Didn't search Google for {_q(words, 40)}"
+        site = _site(url) if url else _q(str(args.get("url") or ""))
         return f"Opening {site}", f"Opened {site}", f"Didn't open {site}"
     if name in ("back", "forward", "reload"):
         return {"back": ("Going back", "Went back", "Didn't go back"),
@@ -2916,18 +2922,51 @@ def _openable(url: str) -> bool:
 
 
 def _url(url: str) -> str:
-    """What the user or agent typed, as a URL: a scheme added to a host -- http for one on this machine."""
-    url = (url or "").strip()
-    if not url:
+    """What the user or agent typed, as the URL it opens (`_typed`)."""
+    return _typed(url)[0]
+
+
+def _typed(text: str) -> Tuple[str, Optional[str]]:
+    """What the user or agent typed in the address bar, as Chrome's address bar takes it: the URL it opens, and the
+    words searched for when it searches Google for them (else None). An address -- a scheme added to a host, http for
+    one on this machine; a path a file -- when it is one; else words: with a space, a host with no dot or of no
+    top-level domain there is (numpy.array, but numpy.org a site), an email address. A ? first searches for the rest."""
+    text = (text or "").strip()
+    if not text:
         raise BrowserError("which page?")
-    if re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", url) and not re.match(r"(localhost|127\.0\.0\.1|\[::1\]):\d", url):
-        if not _openable(url):
-            raise BrowserError(f"not a page the browser opens: {url}")
-        return url
-    if url.startswith("/") or url.startswith("~"):
-        return "file://" + os.path.abspath(os.path.expanduser(url))
-    local = re.match(r"(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])([:/]|$)", url)
-    return ("http://" if local else "https://") + url
+    if text.startswith("?"):
+        return _searched(text[1:].strip())
+    port = re.match(r"[\w.-]+:\d{1,5}(?:[/?#]|$)", text)   # a host and its port, which looks like a scheme too
+    if re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", text) and not port:
+        if _openable(text):
+            return text, None
+        if re.search(r"\s", text):                     # "Attention: is all you need"
+            return _searched(text)
+        raise BrowserError(f"not a page the browser opens: {text}")
+    if text.startswith("/") or text.startswith("~"):
+        return "file://" + os.path.abspath(os.path.expanduser(text)), None
+    if re.search(r"\s", text):
+        return _searched(text)
+    if re.match(r"(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])([:/?#]|$)", text, re.I):
+        return "http://" + text, None
+    host = re.split(r"[/?#]", text, maxsplit=1)[0]
+    name = re.sub(r":\d+$", "", host).rstrip(".").lower()
+    if "@" in host or not re.fullmatch(r"[\w-]+(\.[\w-]+)*", name):
+        return _searched(text)
+    if port or re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", name):
+        return "https://" + text, None
+    tld = name.rpartition(".")[2]
+    try:
+        tld = tld.encode("idna").decode("ascii")       # .рф as xn--p1ai, as the list has it
+    except UnicodeError:
+        pass
+    return ("https://" + text, None) if "." in name and tld in TLDS else _searched(text)
+
+
+def _searched(words: str) -> Tuple[str, Optional[str]]:
+    if not words:
+        raise BrowserError("search for what?")
+    return SEARCH + urllib.parse.quote_plus(words), words
 
 
 def _clip(cdp: "Cdp", tab: "Tab", x: float, y: float, w: float, h: float, scale: float = 1.0) -> dict:
@@ -3724,7 +3763,8 @@ TOOLS = [
           "`ref`, bring the element into view.",
           {"direction": {"type": "string", "enum": ["up", "down", "left", "right"]}, "amount": {"type": "number"},
            "ref": REF}),
-    _acting("navigate", "Open a page in the tab shown: a URL, or a host (https://, or http:// for localhost).",
+    _acting("navigate", "Open a page in the tab shown: a URL, or a host (https://, or http:// for localhost); words "
+          "that are no address are searched for on Google, as in Chrome's address bar.",
           {"url": {"type": "string"}}, ["url"]),
     _acting("back", "Go back a page."),
     _acting("forward", "Go forward a page."),
