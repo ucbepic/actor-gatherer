@@ -2572,7 +2572,7 @@ and what agents see of it. The words under either are its caption. */
   const actorOf = (ch) => (ch === "gatherer" ? crew.agents.find(isLead)
     : crew.agents.find((a) => a.channel === ch || a.started_as === ch)) || null;
   const byOf = (a, by) => !!a && (by === `agent:${a.channel}` || (!!a.started_as && by === `agent:${a.started_as}`));
-  const nameOf = (a, ch) => isLead(a) || ch === "gatherer" ? "Gatherer agent"
+  const nameOf = (a, ch) => isLead(a) || ch === "gatherer" ? "Coordinator agent"
     : (a && a.name && a.name.text) || `Actor ${short(ch || (a && a.channel))}`;
   const tilde = (path) => (crew.home && path && path.startsWith(crew.home) ? `~${path.slice(crew.home.length)}` : path || "");
   function face(a, size = 18, lead = false) {
@@ -3290,8 +3290,8 @@ and what agents see of it. The words under either are its caption. */
     // the agents a line is with now: not offered again (lines sent together: any agent, the call to it sent again)
     const line = menu && !menu.blocks ? (findLine(menu.block) || {}).b : null;
     const taken = (ch) => !!line && onIt(line).some((c) => callTo(c, ch));
-    if (!taken(lead ? lead.channel : "gatherer") && hit("gatherer agent", "coordinator", "manager"))
-      out.push({ kind: "lead", group: "Coordinator", channel: lead ? lead.channel : "gatherer", a: lead, label: "Gatherer agent",
+    if (!taken(lead ? lead.channel : "gatherer") && hit("coordinator agent", "gatherer agent", "manager"))
+      out.push({ kind: "lead", group: "Coordinator", channel: lead ? lead.channel : "gatherer", a: lead, label: "Coordinator agent",
         note: "hands it to an actor, now or once another is done" });
     const shown = crew.agents.filter((a) => !isLead(a) && ((a.status || [])[0] !== "closed" || a.saved))
       .sort((x, y) => (y.last || 0) - (x.last || 0));

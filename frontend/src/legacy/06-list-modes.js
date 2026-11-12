@@ -396,7 +396,7 @@ function railName(a) {
   if (a.name && a.name.text) return { text: a.name.text, cls: "" };
   const env = envelope(a.last_user_message), asked = env ? crewLine(env) : a.last_user_message;
   if (asked) return { text: firstLine(asked, 160), cls: "unnamed" };
-  return { text: isCoordinator(a) ? "Gatherer agent" : "No message yet", cls: "none" };
+  return { text: isCoordinator(a) ? "Coordinator agent" : "No message yet", cls: "none" };
 }
 // A TASK in the rail (05-agent-list.js's TASKS): one tile where its first actor comes, as an actor's -- its actors'
 // faces grouped in the room of one avatar (two side by side, more in a square of four), its lead's state at its corner,
