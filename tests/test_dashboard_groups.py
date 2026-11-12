@@ -111,6 +111,13 @@ class GroupsTest(unittest.TestCase):
             groups.move("a", "b", folder=work)
         self.assertEqual((self.events("group"), self.members("a")), ([], ["c1", "c3"]))
 
+    def test_an_app_does_not_move_between_groups(self):
+        work = folders.make("a", "Work")
+        folders.file("a", ["c1", "app:x1"], work)
+        with self.assertRaises(groups.GroupError):
+            groups.move("a", "b", folder=work)
+        self.assertEqual(self.members("a"), ["c1", "c3"])
+
     def test_refused_for_no_such_group_or_its_own(self):
         for to in ("a", "nowhere"):
             with self.assertRaises(groups.GroupError):
@@ -131,6 +138,7 @@ class FoldersInHomeTest(GroupsTest):
     test_a_task_moves_whole = test_nothing_of_the_dashboard_s_changes_when_ag_did_not_take_the_record = None
     test_a_folder_named_as_one_where_it_would_go_is_refused_before_anything = None
     test_refused_for_no_such_group_or_its_own = test_refused_with_a_database_per_gatherer = None
+    test_an_app_does_not_move_between_groups = None
 
     def kept_in_dashboard_db(self):
         if not os.path.exists(sessions.db_path()):
@@ -173,6 +181,16 @@ class FoldersInHomeTest(GroupsTest):
         self.assertEqual(folders.of("a"), {"folders": [{"id": work, "parent": None, "name": "Work", "closed": None}],
                                            "filed": {"c1": work}})
         self.assertGreater(folders.make("a", "Next"), inner)
+
+    def test_an_app_in_a_folder_is_no_conversation(self):
+        work = folders.make("a", "Work")
+        folders.file("a", ["app:x1"], work)
+        self.assertEqual(folders.of("a")["filed"], {"app:x1": work})
+        self.assertEqual(self.members("a"), ["c1", "c3"])                 # not one of the group's channels
+        self.assertEqual([e["payload"] for e in self.events("filed")], [{"item": "app:x1", "group": "a", "folder": work}])
+        self.assertNotIn("properties", self.events("filed")[0])
+        folders.file("a", ["app:x1"], None)
+        self.assertEqual(folders.of("a")["filed"], {})
 
     def test_a_folder_closed_and_reopened(self):
         work = folders.make("a", "Work")

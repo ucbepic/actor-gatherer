@@ -44,6 +44,8 @@ tree is kept there instead, as records ag reads and never shows an agent (the No
     group       in each actor's channel (the one it is filed as): {group, was, folder} -- `folder` its folder's id, none
                 at its group's top. One that only files it has `was` its `group`: no move, nothing rebuilt
                 (groups.py's are the moves).
+    filed       no channel's: {item, group, folder} -- an app's instance ("app:<id>", as the list has it) in a folder;
+                an app is no conversation, so it has no `group` record. The latest of an item wins.
 
 A change is made as in dashboard.db -- on a copy of the tree in memory, by the same code -- and what it changed put in
 by ag at once (actions.py's `insert`): a FolderError, and nothing kept, if ag did not take it. dashboard.db's folders
@@ -135,7 +137,8 @@ def _with_closed(conn: sqlite3.Connection) -> None:
             raise
 
 
-FOLDER, GROUP = "folder", "group"
+FOLDER, GROUP, FILED = "folder", "group", "filed"
+APP = "app:"                    # an app's instance in a folder (the list's item), kept by a FILED record
 COPIED = "folders_in_home"      # dashboard.db's: when its folders were copied into the home's one database
 _copied: set = set()            # the dashboard.db paths whose folders are copied in, as seen by this process
 
@@ -163,7 +166,7 @@ def _records() -> tuple:
         return kept, placed, top
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
     try:
-        for kind in (FOLDER, GROUP):
+        for kind in (FOLDER, GROUP, FILED):
             for ch, raw in conn.execute("SELECT e.p_channel, e.payload_json FROM events e JOIN event_types t "
                                         "ON t.event_type_id = e.event_type_id WHERE t.name = ? ORDER BY e.row_id", (kind,)):
                 p = _payload(raw)
@@ -178,6 +181,9 @@ def _records() -> tuple:
                 elif kind == GROUP and ch is not None:
                     folder = p.get("folder")
                     placed[ch] = (str(p.get("group") or ""), folder if isinstance(folder, int) else None)
+                elif kind == FILED and ch is None and str(p.get("item") or "").startswith(APP):
+                    folder = p.get("folder")
+                    placed[p["item"]] = (str(p.get("group") or ""), folder if isinstance(folder, int) else None)
     except sqlite3.OperationalError:                    # no events yet, or no channel's column
         pass
     finally:
@@ -224,6 +230,16 @@ def _folder_event(fid: int, row: Optional[tuple], tag: Optional[str] = None) -> 
     return {"type": FOLDER, "id": f"{FOLDER}:{fid}:{tag or secrets.token_hex(6)}", "payload": payload}
 
 
+def _filed_event(group: str, item: str, folder: Optional[int], tag: Optional[str] = None) -> dict:
+    return {"type": FILED, "id": f"{FILED}:{item}:{tag or secrets.token_hex(6)}",
+            "payload": {"item": item, "group": group, "folder": folder}}
+
+
+def _placed_event(group: str, key: str, folder: Optional[int], tag: Optional[str] = None) -> dict:
+    """Where an item of the list is: an actor's `group` record, an app's `filed` one."""
+    return (_filed_event if key.startswith(APP) else _group_event)(group, key, folder, tag)
+
+
 def _group_event(group: str, channel: str, folder: Optional[int], tag: Optional[str] = None) -> dict:
     # its id names the channel: a read returns an id once, whatever its channel
     return {"type": GROUP, "id": f"{GROUP}:{channel}:{tag or secrets.token_hex(6)}", "properties": {"channel": channel},
@@ -255,7 +271,7 @@ def _change_in_home(gatherer: str, do):
         conn.close()
     events = [_folder_event(fid, after[0].get(fid)) for fid in sorted(set(before[0]) | set(after[0]))
               if before[0].get(fid) != after[0].get(fid)]
-    events += [_group_event(g, c, after[1].get((g, c))) for g, c in sorted(set(before[1]) | set(after[1]))
+    events += [_placed_event(g, c, after[1].get((g, c))) for g, c in sorted(set(before[1]) | set(after[1]))
                if before[1].get((g, c)) != after[1].get((g, c))]
     _put(gatherer, events)
     return got
@@ -285,7 +301,7 @@ def _copy_in() -> None:
     for g, ch, fid in filed:
         now, there = placed.get(ch, (g, None))
         if fid in known and now == g and there is None:
-            by.setdefault(g, []).append(_group_event(g, ch, fid, tag="folder-copied"))
+            by.setdefault(g, []).append(_placed_event(g, ch, fid, tag="folder-copied"))
     for g, events in by.items():
         _put(g, events)
     conn = _write()
