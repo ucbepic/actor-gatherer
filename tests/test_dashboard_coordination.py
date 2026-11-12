@@ -245,6 +245,11 @@ class CoordinationTest(CoordinationBase):
         with open(sessions.log_path(row["session_id"])) as fh:                       # its log names them, not writes them
             self.assertIn("'<the instructions of its role>'", fh.read())
 
+    def test_an_actor_on_its_own_has_no_coordinator_agent(self):
+        with self.assertRaises(coordination.CoordinationError):
+            self.crew.ensure("self:c9", self.work)
+        self.assertIsNone(self.crew.coordinator("self:c9"))
+
     def test_the_gatherer_agents_messages_say_they_are_its(self):
         coordinator = self.crew.ensure("g", self.work)["session_id"]
         self.crew.send(coordinator, self.b, "Stop: A owns page.html until its PR is merged.")

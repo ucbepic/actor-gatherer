@@ -291,6 +291,7 @@ function renderRail() {
 // A gatherer in the rail: its name, a button folding it as the list does (a double-click: only it); folded, the counts
 // the list shows for it, and its actors open in a pane; open, what is in it, under its name. `view`: as railBox's.
 function railGatherer(g, view) {
+  if (g.alone) return railAlone(g);                  // an actor on its own: its face alone (05-group-moves.js)
   const open = !collapsed.has(g.name), crew = g.agents.find(isCoordinator);
   const sec = el("section", { class: "r-gatherer" + (open ? " open" : ""), "aria-label": titleOf(g) },
     dropOn(el("button", { class: "r-gname", type: "button", "aria-expanded": open ? "true" : "false", "data-card": key(g.name, "gatherer:"),

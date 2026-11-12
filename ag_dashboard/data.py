@@ -161,11 +161,8 @@ def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
     return conn
 
 
-def members(conn, gatherer: str) -> Optional[set]:
-    """The channels of `gatherer` in its database: None -- every one -- while each gatherer has a database of its own;
-    in the home's one database (ag's `paths.merged`), those whose latest `group` record names it."""
-    if not paths.merged():
-        return None
+def _groups(conn) -> Dict[str, Any]:
+    """{channel: its group, as its latest `group` record names it}."""
     latest: Dict[str, Any] = {}
     for ch, raw in conn.execute(f"SELECT e.{CHANNEL}, e.payload_json FROM events e JOIN event_types t "
                                 f"ON t.event_type_id = e.event_type_id WHERE t.name = 'group' AND e.{CHANNEL} IS NOT NULL "
@@ -173,7 +170,31 @@ def members(conn, gatherer: str) -> Optional[set]:
         payload = _json(raw)
         if isinstance(payload, dict):
             latest[ch] = payload.get("group")
-    return {ch for ch, group in latest.items() if group == gatherer}
+    return latest
+
+
+def members(conn, gatherer: str) -> Optional[set]:
+    """The channels of `gatherer` in its database: None -- every one -- while each gatherer has a database of its own;
+    in the home's one database (ag's `paths.merged`), those whose latest `group` record names it."""
+    if not paths.merged():
+        return None
+    return {ch for ch, group in _groups(conn).items() if group == gatherer}
+
+
+ALONE = "self:"                  # an actor on its own: its group of one (groups.py's `alone`)
+
+
+def alone_names() -> List[str]:
+    """In the home's one database, the groups of one of the actors on their own (`self:<channel>`); [] before."""
+    if not paths.merged() or not os.path.exists(paths.home_db()):
+        return []
+    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
+    try:
+        return sorted({g for g in _groups(conn).values() if isinstance(g, str) and g.startswith(ALONE)})
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
 
 
 def _columns(conn, table: str) -> set:
@@ -262,7 +283,8 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
     gatherers = []
     started = sessions.stored() if started is None else started
     named: Dict[str, Dict[str, dict]] = {}   # the names of sessions started here with no message yet, which `_agents` lists not
-    for name in gatherer_names():
+    lone = alone_names()                 # each actor on its own: a group of one, listed as one (`alone`)
+    for name in gatherer_names() + lone:
         conn = _connect(name)
         if conn is None:                 # made (`ag new`), no session has run in it yet
             gatherers.append({"name": name, "policy": _policy(name), "agents": [], "last": None})
@@ -278,7 +300,8 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
         finally:
             conn.close()
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents, "apps": apps,
-                          "last": max((a["last"] or 0 for a in agents), default=0) or None})
+                          "last": max((a["last"] or 0 for a in agents), default=0) or None,
+                          **({"alone": True} if name in lone else {})})
     _with_started(gatherers, started, now, named)
     wakes = {}                           # the actors whose status changes at a time of their own, with nothing written
     for g in gatherers:

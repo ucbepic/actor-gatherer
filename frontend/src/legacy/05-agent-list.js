@@ -55,7 +55,7 @@ async function keepChoice(name, choice) {
 }
 // The reader's name for a gatherer, kept by the server (titles.py, `home.titles`) and shown in place of its own, which
 // everything else -- its directory, its actors, `ag` -- still goes by.
-const titleOf = (g) => (state.home.titles || {})[g.name] || g.name;
+const titleOf = (g) => g.alone ? "On its own" : (state.home.titles || {})[g.name] || g.name;   // alone: 05-group-moves.js
 // Named in the actor's name box (nameBox), its channel null: Enter keeps it, Esc leaves it, empty gives its own back.
 function retitle(g) {
   state.renaming = { g: g.name, c: null, value: titleOf(g), was: "" };
@@ -416,13 +416,11 @@ function renderAgents() {
   document.getElementById("home").textContent = document.getElementById("home").title = state.home.home;
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
   // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (05-gatherer-folders.js)
-  aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }),
+  aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }), outsideDrop(),
     SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new group" }, "+ New group"),
     SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep groups in",
       "aria-label": "New folder, to keep groups in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
-  const outside = outsideDrop();                     // a folder dragged outside every group (05-group-moves.js)
-  if (outside) aside.append(outside);
   if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No groups in this home yet." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every group is hidden." }));
@@ -455,6 +453,7 @@ function renderAgents() {
 // A gatherer's box in the list: its row -- its name, its gatherer agent, its counts, its buttons over them on hover --
 // and, open, what is in it set in under it. Its row dragged (dragGatherer): put in a folder of gatherers.
 function gathererBox(g) {
+  if (g.alone) return aloneBox(g);                   // an actor on its own: its row alone (05-group-moves.js)
   const open = !collapsed.has(g.name);
   const crew = g.agents.find(isCoordinator);
   const box = el("div", { class: "gatherer" + (picks.g === g.name && picks.cs.size > 1 ? " picking" : "") },
@@ -1417,7 +1416,7 @@ function startDrag(ev, g, what) {
   markDragged();
   cardHide();
   railDragged();
-  setTimeout(() => document.body.classList.toggle("drag-out", canOutside()), 0);   // after dragstart: the page unmoved till then
+  setTimeout(showOutside, 0);                        // after dragstart: the page unmoved till then
 }
 // what is dragged, shown so -- again after the list, or the rail, is drawn mid-drag (the rail's by their data-card, its
 // \u0000 one CSS.escape cannot write)
