@@ -16,7 +16,8 @@ actor's group is its file, and none moves (GroupError).
                                             actors moved to the group's name, in one transaction -- the session's, its
                                             saved mark, what was seen of it, its avatar, its task
 
-Not yet: an actor's apps' attachments and the gatherer agent's watches of it stay where they were."""
+Not yet: an app does not move between groups (GroupError), and the coordinator agent's watches of an actor stay
+where they were."""
 
 import secrets
 from typing import Dict, Iterable, List, Optional
@@ -63,6 +64,8 @@ def actors(gatherer: str, channels: Iterable[str] = (), folder: Optional[int] = 
     mine = (tasks.stored() or {}).get(gatherer) or {"tasks": [], "tasked": {}}
     joined = {mine["tasked"][c] for c in out if c in mine["tasked"]}
     out |= {c for c, t in mine["tasked"].items() if t in joined}
+    if any(c.startswith(folders.APP) for c in out):
+        raise GroupError("an app does not move between groups yet: take it out of the folder or the task first")
     return sorted(out)
 
 
