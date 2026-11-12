@@ -233,7 +233,7 @@ test("in the home's one database, an actor dragged outside every group asks firs
   await expect(dialog).toBeHidden();
   expect(asked).toEqual([{ gatherer: GATHERER, do: "alone", channel: state.claude }]);
   const lone = page.locator("#agents .gatherer.alone");
-  await expect(lone.locator(".alone-head")).toHaveText("own context");
+  await expect(lone.locator(".alone-head")).toHaveCount(0); // no "own context" head
   await expect(lone.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
   await expect(inGroup(page, GATHERER, CLAUDE)).toHaveCount(0);
 
@@ -248,7 +248,7 @@ test("in the home's one database, an actor dragged outside every group asks firs
 });
 
 // An actor on its own (05-group-moves.js's aloneShut): open, its row at the top with its ×; closed, it leaves the top for
-// a line at the list's end, "1 closed, on its own", folded till opened (kept in this browser) -- never "hidden" as a
+// a line at the list's end, "1 closed", folded till opened (kept in this browser) -- never "hidden" as a
 // group is; in the rail, that line only once its foot shows the closed ones
 test("an actor on its own, closed, goes from the top of the list into a closed line at its end", async ({ page }) => {
   const state = { closed: false, claude: "" };
@@ -284,7 +284,8 @@ test("an actor on its own, closed, goes from the top of the list into a closed l
   await open(page);
   const top = page.locator("#agents .gatherer.alone:not(.shut)");
   const shut = page.locator("#agents .gatherer.alone.shut");
-  await expect(top.locator(".alone-head")).toHaveText("own context");
+  await expect(top.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
+  await expect(top).not.toContainText("own context");
   await expect(shut).toHaveCount(0);
   await top.locator("button.agent", { hasText: CLAUDE }).hover();
   await top.locator(".close-btn").click();
@@ -295,10 +296,10 @@ test("an actor on its own, closed, goes from the top of the list into a closed l
   await expect(top).toHaveCount(0);
   await expect(page.locator("#hidden-gatherers")).toHaveCount(0);
   const line = shut.locator(".fold-line");
-  await expect(line).toHaveText("▸ 1 closed, on its own");
+  await expect(line).toHaveText("▸ 1 closed");
   await expect(shut.locator("button.agent")).toHaveCount(0);
   await line.click();
-  await expect(line).toHaveText("▾ 1 closed, on its own");
+  await expect(line).toHaveText("▾ 1 closed");
   await expect(shut.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
   const order = await page
     .locator("#agents")
@@ -317,7 +318,7 @@ test("an actor on its own, closed, goes from the top of the list into a closed l
   await rail.locator(".r-show-hd").hover();
   await rail.locator(".r-check", { hasText: "closed" }).click();
   await expect(rail.locator(".r-alone.shut .r-fold")).toHaveText("▾ 1 closed");
-  await expect(rail.locator(".r-alone.shut .r-fold")).toHaveAttribute("title", "1 closed, on its own: hide it");
+  await expect(rail.locator(".r-alone.shut .r-fold")).toHaveAttribute("title", "1 closed: hide it");
   await expect(rail.locator(".r-alone.shut .r-actor", { hasText: CLAUDE })).toBeVisible();
 });
 

@@ -250,13 +250,14 @@ function outsideDrop() {
   return n;
 }
 
-// ---- an actor on its own: a group of one (groups.py's `alone`, `self:<channel>`), listed as its row alone, marked so;
+// ---- an actor on its own: a group of one (groups.py's `alone`, `self:<channel>`), listed as its row alone (no head: its
+// title says what it is);
 // it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).
 const ALONE_SAYS = "On its own: it shares context with no other actor, and no other actor with it. Drag it into a group to bring it back.";
 const aloneActor = (g) => g.agents.find((x) => !isCoordinator(x));
 function aloneBox(g) {
   const a = aloneActor(g);
-  return el("div", { class: "gatherer alone" }, el("div", { class: "alone-head", title: ALONE_SAYS, text: "own context" }),
+  return el("div", { class: "gatherer alone", title: ALONE_SAYS },
     ...(a ? rowsOf(g, a, groupOf(g, a)) : []), ...appRowsIn(g, null));   // its task, with its apps; its apps in none
 }
 function railAlone(g) {
@@ -265,8 +266,8 @@ function railAlone(g) {
     ...(a ? railRowsOf(g, a) : []), ...railAppsIn(g, null));
 }
 // Once closed (groupOf's Closed; saved too, Saved), an actor on its own leaves the top of the list, as a group's closed
-// actors go into its closed line: every such one is in a line at the list's end -- "▸ N closed, on their own", and
-// "▸ N saved, on their own" -- opened again from there as any closed actor is (a message starts it, and it is back at
+// actors go into its closed line: every such one is in a line at the list's end -- "▸ N closed", and "▸ N saved" --
+// opened again from there as any closed actor is (a message starts it, and it is back at
 // the top). Open or not kept in this browser (foldOpen, by ALONE_KEY); folded, those open in a pane in view under it. Never
 // hidden as a group is (isHidden): closed, it is in its line. The rail likewise (railAloneShut), its lines shown as its
 // foot says for its boxes' saved and closed lines (railShow), "▸ N closed" (the rest in its title: the rail is narrow).
@@ -281,7 +282,7 @@ function aloneFolds(gs) {
   return ["Saved", "Closed"].map((name) => [name, gs.filter((g) => groupOf(g, aloneActor(g)) === name).sort(latest)])
     .filter(([, list]) => list.length);
 }
-const aloneSays = (name, n) => `${n} ${name.toLowerCase()}, on ${n === 1 ? "its" : "their"} own`;
+const aloneSays = (name, n) => `${n} ${name.toLowerCase()}`;
 const aloneInPane = (list) => list.filter((g) => inPane(g, aloneActor(g)));
 function aloneShutRows(gs) {
   const out = [];
