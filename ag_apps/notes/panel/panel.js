@@ -66,6 +66,7 @@ and what agents see of it. The words under either are its caption. */
     more: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg>',
     doc: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M6 8.2h4.5M6 10.8h4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
     side: '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="1.8" y="2.5" width="12.4" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 2.8v10.4" stroke="currentColor" stroke-width="1.3"/></svg>',
+    hide: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4L4 8l4 4M12.5 4l-4 4 4 4"/></svg>',
     trash: '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     restore: '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M3.5 6.5A5 5 0 1 1 4 11M3.2 3v3.7h3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     x: '<svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
@@ -571,15 +572,66 @@ and what agents see of it. The words under either are its caption. */
   $("new-page").addEventListener("click", () => newPage(null));
   $("empty-new").addEventListener("click", () => newPage(null));
   document.querySelector(".empty-mark").innerHTML = SVG.book;
-  $("side-toggle").innerHTML = SVG.side;
+  // -- the pages' list: hidden by its own button (or ⌘\), shown by the bar's, and as wide as its edge is dragged
+  // (both kept in this browser). Narrow, it opens over the page instead and is never kept open.
   const narrow = () => matchMedia("(max-width: 600px)").matches;
-  const app = $("app");
+  const app = $("app"), sideEl = $("side"), sideGrip = $("side-grip");
+  const SIDE_KEY = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘\\" : "Ctrl+\\";
+  $("side-toggle").innerHTML = SVG.side;
+  $("side-toggle").title = `Show the pages (${SIDE_KEY})`;
+  $("side-hide").innerHTML = SVG.hide;
+  $("side-hide").title = `Hide the pages (${SIDE_KEY})`;
   document.querySelector(".main").addEventListener("mousedown", (ev) => { if (!ev.target.closest("#side-toggle")) app.classList.remove("side-on"); });
   if (store.get("side", true) === false) app.classList.add("side-off");
-  $("side-toggle").addEventListener("click", () => {
-    if (narrow()) return app.classList.toggle("side-on");
-    app.classList.toggle("side-off");
-    store.set("side", !app.classList.contains("side-off"));
+  const sideShown = () => (narrow() ? app.classList.contains("side-on") : !app.classList.contains("side-off"));
+  function showSide(on) {
+    if (narrow()) return app.classList.toggle("side-on", on);
+    app.classList.toggle("side-off", !on);
+    store.set("side", on);
+  }
+  $("side-toggle").addEventListener("click", () => showSide(!sideShown()));
+  $("side-hide").addEventListener("click", () => { showSide(false); $("side-toggle").focus(); });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "\\" || !(ev.metaKey || ev.ctrlKey) || ev.altKey || ev.shiftKey || ev.isComposing) return;
+    ev.preventDefault();
+    showSide(!sideShown());
+  });
+  const SIDE_W = 236, SIDE_MIN = 160, SIDE_MAX = 520;
+  const fitW = (w) => Math.round(Math.max(SIDE_MIN, Math.min(SIDE_MAX, w)));
+  function sideWidth(w) {                                // null: back to the default
+    if (w === null) app.style.removeProperty("--side-w"); else app.style.setProperty("--side-w", `${fitW(w)}px`);
+    sideGrip.setAttribute("aria-valuenow", w === null ? SIDE_W : fitW(w));
+    return w === null ? null : fitW(w);
+  }
+  sideGrip.setAttribute("aria-valuemin", SIDE_MIN);
+  sideGrip.setAttribute("aria-valuemax", SIDE_MAX);
+  sideGrip.title = "Drag to change the width, double-click for the usual one";
+  sideWidth(typeof store.get("side-w", null) === "number" ? store.get("side-w", null) : null);
+  sideGrip.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    sideGrip.setPointerCapture(ev.pointerId);
+    const x0 = ev.clientX, w0 = sideEl.getBoundingClientRect().width;
+    let w = null;
+    app.classList.add("sizing");
+    const move = (e) => { w = sideWidth(w0 + e.clientX - x0); };
+    const up = () => {
+      sideGrip.removeEventListener("pointermove", move);
+      sideGrip.removeEventListener("pointerup", up);
+      sideGrip.removeEventListener("pointercancel", up);
+      app.classList.remove("sizing");
+      if (w !== null) store.set("side-w", w);
+    };
+    sideGrip.addEventListener("pointermove", move);
+    sideGrip.addEventListener("pointerup", up);
+    sideGrip.addEventListener("pointercancel", up);
+  });
+  sideGrip.addEventListener("dblclick", () => { sideWidth(null); store.set("side-w", null); });
+  sideGrip.addEventListener("keydown", (ev) => {
+    const step = { ArrowLeft: -16, ArrowRight: 16 }[ev.key];
+    if (!step) return;
+    ev.preventDefault();
+    store.set("side-w", sideWidth(sideEl.getBoundingClientRect().width + step));
   });
 
   function newPage(parent) {
