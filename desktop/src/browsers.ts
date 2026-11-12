@@ -6,7 +6,8 @@
 // (webContents.debugger). Each app's pages are its own: in a profile of its own (`partitionOf`: the Browser's, the
 // profile its logins have always been in), seen and driven by it alone, and shown only over its own panels. This app
 // opens no debugging port: Google refuses a sign-in in a browser that has one (desktop/DESIGN.md, "Rules the app keeps").
-import { clipboard, dialog, Menu, session, WebContentsView, type BaseWindow, type IpcMainEvent, type WebContents } from "electron";
+import { dialog, Menu, session, WebContentsView, type BaseWindow, type IpcMainEvent, type WebContents } from "electron";
+import { editItems, spellingItems, tidy } from "./menu.ts";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -91,10 +92,7 @@ async function targetIdOf(wc: WebContents): Promise<string> {
 
 function contextMenu(win: BaseWindow, wc: WebContents, find: () => void): void {
   wc.on("context-menu", (_e, p) => {
-    const items: Electron.MenuItemConstructorOptions[] = [];
-    if (p.linkURL) items.push({ label: "Copy Link Address", click: () => clipboard.writeText(p.linkURL) }, { type: "separator" });
-    if (p.isEditable) items.push({ role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" });
-    else if (p.selectionText) items.push({ role: "copy" });
+    const items = [...spellingItems(wc, p), ...editItems(p)];
     const nav = wc.navigationHistory;
     items.push(
       { type: "separator" },
@@ -104,7 +102,7 @@ function contextMenu(win: BaseWindow, wc: WebContents, find: () => void): void {
       { type: "separator" },
       { label: "Find in Page…", click: find },
     );
-    Menu.buildFromTemplate(items).popup({ window: win });
+    Menu.buildFromTemplate(tidy(items)).popup({ window: win });
   });
 }
 
