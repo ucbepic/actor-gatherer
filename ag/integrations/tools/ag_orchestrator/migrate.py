@@ -139,8 +139,12 @@ async def migrate(client, gatherer: str) -> Optional[Dict[str, int]]:
 
 
 def gatherers() -> List[str]:
-    """Every gatherer of the home with a database."""
+    """Every gatherer of the home with a database -- in the home's one database (`ag home merge`'s), one name for it:
+    every gatherer's is that one."""
     root = os.path.join(home(), "gatherers")
+    if os.path.isfile(os.path.join(home(), "context.db")):
+        listed = sorted(os.listdir(root)) if os.path.isdir(root) else []
+        return listed[:1]
     return sorted(n for n in os.listdir(root) if os.path.isfile(os.path.join(root, n, "context.db"))) \
         if os.path.isdir(root) else []
 
