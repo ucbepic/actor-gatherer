@@ -579,6 +579,11 @@ function cardDraw() {
 // a path's end, where it tells one actor's from another's: its worktree, its project
 const tail = (t, n) => t.length > n ? "…" + t.slice(-(n - 1)) : t;
 // `shown`: the one shown, in the list, whose name is renamed by double-clicking it -- said at its foot
+// An actor's status in a card's row: its dot alone, at the row's end where its word was -- the word its title, and what
+// a screen reader says
+function rowStatus(cls, label) {
+  return el("span", { class: `status ${cls}`, role: "img", "aria-label": label, title: label }, el("i", { "aria-hidden": "true" }));
+}
 function actorCard(g, a, shown = false) {
   const [cls, label] = statusOf(a), nm = railName(a), size = a.real_tokens ?? a.sent_tokens;
   const env = envelope(a.last_user_message), asked = env ? crewLine(env) : a.last_user_message;
@@ -623,8 +628,7 @@ function taskCard(g, t) {
       return el("div", { class: "c-task-row" },
         el("button", { class: "c-row", type: "button", title: `Show it · ${BESIDE_KEY}+click: beside the one shown`,
           onclick: (ev) => { cardHide(); pick(g.name, a.channel, ev); } },
-        el("span", { class: `status ${cls}` }, el("i", { "aria-hidden": "true" })), plainFace(a),
-        el("span", { class: "nm", text: actorTitle(a) }), el("span", { class: "st", text: label })),
+        plainFace(a), el("span", { class: "nm", text: actorTitle(a) }), rowStatus(cls, label)),
         // its own bookmark and close, as its row's; then out of the task (its own mark: not a close)
         saveButton(g, a), closeButton(g, a),
         el("button", { class: "act take-out", type: "button", title: "Take it out of the task: an actor on its own again, detached from the task's apps",
@@ -734,8 +738,7 @@ function cardTree(g, id, depth, live) {
   const groups = new Map(boxGroups(g, id));
   for (const a of groups.get(OPEN) || []) {
     const [cls, label] = statusOf(a);
-    const parts = [el("span", { class: `status ${cls}` }, el("i", { "aria-hidden": "true" })), actorLogo(a),
-      el("span", { class: "nm", text: railName(a).text }), el("span", { class: "st", text: label })];
+    const parts = [actorLogo(a), el("span", { class: "nm", text: railName(a).text }), rowStatus(cls, label)];
     out.push(live ? el("button", { class: "c-row", type: "button", ...pad, title: `Show it · ${BESIDE_KEY}+click: beside the one shown`,
       onclick: (ev) => { cardHide(); pick(g.name, a.channel, ev); } }, ...parts) : el("div", { class: "c-row", ...pad }, ...parts));
   }
