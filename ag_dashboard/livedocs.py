@@ -424,11 +424,13 @@ def writers(directories: List[str], since: float) -> Dict[str, List[dict]]:
     (copied ones, in theirs, before any that came after)."""
     prefixes = [d.rstrip("/") + "/" for d in set(directories)]
     out: Dict[str, Dict[tuple, dict]] = {}
-    for gatherer in data.gatherer_names():
+    names = data.gatherer_names()
+    for gatherer in names[:1] if data.paths.merged() else names:        # the home's one database: read once
         conn = data._connect(gatherer)
         if conn is None:
             continue
         try:
+            owner = {ch: g for g in names for ch in data.members(conn, g)} if data.paths.merged() else None
             kind = conn.execute("SELECT event_type_id FROM event_types WHERE name = 'file_touched'").fetchone()
             if kind is None:
                 continue
@@ -441,11 +443,14 @@ def writers(directories: List[str], since: float) -> Dict[str, List[dict]]:
                 path = t.get("path")
                 if t.get("how") not in ("created", "modified", "deleted") or not isinstance(path, str):
                     continue
+                mine = gatherer if owner is None else owner.get(r["session"])    # its group's, in the one database
+                if mine is None:
+                    continue
                 for prefix in prefixes:
                     if path.startswith(prefix):
-                        key, kept = (gatherer, r["session"]), out.setdefault(path[len(prefix):], {})
+                        key, kept = (mine, r["session"]), out.setdefault(path[len(prefix):], {})
                         if key not in kept or at > kept[key]["at"]:
-                            kept[key] = {"gatherer": gatherer, "channel": r["session"], "at": at, "how": t["how"]}
+                            kept[key] = {"gatherer": mine, "channel": r["session"], "at": at, "how": t["how"]}
         except sqlite3.Error:                       # being written, or not ag's: the next listing
             continue
         finally:
