@@ -44,8 +44,20 @@
     pointer: "M3.25 2.25l9.5 4.6-4.05 1.35-1.7 4.3z",
     area: "M2.5 5V2.5H5M11 2.5h2.5V5M13.5 11v2.5H11M5 13.5H2.5V11M7 2.5h2M7 13.5h2M2.5 7v2M13.5 7v2",
     chevron: "M6 3.5 10.5 8 6 12.5",
-    more: "M3.5 8h.01M8 8h.01M12.5 8h.01",
+    more: "M8 3.5h.01M8 8h.01M8 12.5h.01",
+    stop: "M4.5 4.5l7 7M11.5 4.5l-7 7",
+    close: "M5 5l6 6M11 5l-6 6",
+    lock: "M4.5 7.5h7v5.5h-7zM6 7.5V5.5a2 2 0 0 1 4 0v2",
+    warn: "M8 2.75 14 13H2zM8 6.5v3M8 11.25h.01",
+    info: "M8 2.75a5.25 5.25 0 1 1 0 10.5 5.25 5.25 0 0 1 0-10.5zM8 7.25v3.5M8 5.25h.01",
+    search: "M7 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM10 10l3 3",
+    file: "M4.5 2.5h4.5l2.5 2.5v8.5h-7zM9 2.5V5h2.5",
+    globe: "M8 2.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zM2.5 8h11M8 2.5c1.6 1.6 2.3 3.4 2.3 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.7 5.9 5.7 8s.7 3.9 2.3 5.5",
+    sound: "M3 6.25h2l3-2.5v8.5l-3-2.5H3zM10.5 6a2.5 2.5 0 0 1 0 4M12 4.5a4.5 4.5 0 0 1 0 7",
+    muted: "M3 6.25h2l3-2.5v8.5l-3-2.5H3zM10.5 6.5l3 3M13.5 6.5l-3 3",
   };
+  const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const KEY = MAC ? "⌘" : "Ctrl+";
   const signature = (value) => JSON.stringify(value);
   const clock = (t) => t ? new Date(t * 1000).toLocaleString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "–";
   const ago = (t) => {
@@ -91,27 +103,53 @@
   const b = { state: null, frameSize: [0, 0], mode: null, queue: [], sending: false, hovering: false, drag: null, sized: "",
               lastClick: { at: 0, x: 0, y: 0, n: 0 }, outlined: "", feedOpen: false, es: null, seenNow: true };
   const btn = (icon, label, onclick, extra = {}) => el("button", { type: "button", title: label, "aria-label": label, onclick, ...extra }, strokeIcon(icon, 16));
-  b.back = btn(ICONS.back, "Back", () => post("nav", { action: "back" }).catch(bwSay(b)));
-  b.fwd = btn(ICONS.forward, "Forward", () => post("nav", { action: "forward" }).catch(bwSay(b)));
-  b.reload = btn(ICONS.reload, "Reload", () => post("nav", { action: "reload" }).catch(bwSay(b)));
-  b.newTab = btn(ICONS.plus, "New tab (a link Cmd+clicked, or middle-clicked, opens in one too)",
-    () => post("tab", { action: "new" }).then(() => { b.addr.focus(); b.addr.select(); }).catch(bwSay(b)));
-  b.addr = el("input", { type: "text", spellcheck: "false", autocomplete: "off", "aria-label": "Address", placeholder: "Type an address" });
-  const form = b.addrForm = el("form", {}, b.addr);
+  // The bar, as Chrome's: Back, Forward, Reload (Stop while the page loads), the address box -- the site's
+  // security before it, its host dark and the rest grey until clicked, its zoom after it -- Pick, Area and "⋯"; over
+  // it the tabs (bwTabs), always, as Chrome's; under it the page's loading, a line filling (bwLoading).
+  b.back = btn(ICONS.back, "Back", () => post("nav", { action: "back" }).catch(bwSay(b)), { title: `Back (${KEY}[)` });
+  b.fwd = btn(ICONS.forward, "Forward", () => post("nav", { action: "forward" }).catch(bwSay(b)), { title: `Forward (${KEY}])` });
+  b.reload = btn(ICONS.reload, "Reload", (ev) => post("nav", { action: b.loadingNow ? "stop" : ev.shiftKey ? "hard-reload" : "reload" })
+    .catch(bwSay(b)), { title: `Reload (${KEY}R)` });
+  b.newTab = el("button", { type: "button", class: "add", title: `New tab (${KEY}T) -- a link ${MAC ? "Cmd" : "Ctrl"}+clicked, or middle-clicked, opens in one too`,
+    "aria-label": "New tab", onclick: () => bwNewTab(b) }, strokeIcon(ICONS.plus, 16));
+  b.addr = el("input", { type: "text", spellcheck: "false", autocomplete: "off", "aria-label": "Address and search bar", placeholder: "Search Google or type a URL" });
+  b.addrShown = el("div", { class: "shown", "aria-hidden": "true" });
+  b.site = el("span", { class: "site" });
+  b.zoomBadge = el("button", { type: "button", class: "zoom", hidden: "", onclick: () => bwZoom(b, 0) });
+  const form = b.addrForm = el("form", { class: "omni" }, b.site, el("div", { class: "field" }, b.addr, b.addrShown), b.zoomBadge);
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const url = b.addr.value.trim();
     b.histClose?.();
     if (url) post("nav", { url }).then(() => b.stage.focus()).catch(bwSay(b));
   });
+  b.addr.addEventListener("paste", (ev) => {     // lines pasted run together with a space, as in Chrome's address bar
+    const text = ev.clipboardData?.getData("text/plain") || "";   // (a text box drops the breaks: "oneline two")
+    if (!/[\r\n]/.test(text)) return;
+    ev.preventDefault();
+    b.addr.setRangeText(text.replace(/\s*[\r\n]+\s*/g, " ").trim(), b.addr.selectionStart, b.addr.selectionEnd, "end");
+    b.addr.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  // a click into it picks the whole address, as Chrome's does (a drag picks what it covers); its keys too
+  let clickedIn = false;
+  b.addr.addEventListener("mousedown", () => { clickedIn = document.activeElement !== b.addr; });
+  b.addr.addEventListener("mouseup", () => {
+    if (clickedIn && b.addr.selectionStart === b.addr.selectionEnd) b.addr.select();
+    clickedIn = false;
+  });
+  b.addr.addEventListener("focus", () => { if (!clickedIn) b.addr.select(); });
+  b.addr.addEventListener("blur", () => bwAddr(b, b.addr.value));   // what was typed kept, as in Chrome, until the page moves on
   b.pickBtn = btn(ICONS.pointer, "Pick an element to point the agent at (Esc to stop)", () => bwMode(b, bwModeOn(b) === "pick" ? null : "pick"), { "aria-pressed": "false" });
   b.areaBtn = btn(ICONS.area, "Pick an area: drag a box over the page (Esc to stop)", () => bwMode(b, bwModeOn(b) === "area" ? null : "area"), { "aria-pressed": "false" });
   b.moreBtn = btn(ICONS.more, "More", () => moreMenu(), { "aria-haspopup": "menu" });
   b.mine = el("span", { class: "mine", hidden: "", text: "Your Chrome",
     title: "This page runs in your own Chrome (config.toml's [dashboard] browser_profile = \"mine\"): your logins and history, a tab hidden from its tab strip" });
   b.find = bwFindBar(b);
-  b.bar = el("div", { class: "bw-bar" }, b.back, b.fwd, b.reload, b.newTab, form, b.find, b.mine, el("span", { class: "sep" }), b.pickBtn, b.areaBtn, b.moreBtn);
-  b.tabs = el("div", { class: "bw-tabs", hidden: "" });
+  b.loadLine = el("div", { class: "bw-load", "aria-hidden": "true" }, el("div"));
+  b.bar = el("div", { class: "bw-bar" }, b.back, b.fwd, b.reload, form, b.find, b.mine, b.pickBtn, b.areaBtn, el("span", { class: "sep" }), b.moreBtn,
+    b.loadLine);
+  b.tabList = el("div", { class: "list", role: "tablist", "aria-label": "Tabs" });
+  b.tabs = el("div", { class: "bw-tabs" }, b.tabList, b.newTab);
   b.img = el("img", { alt: "" });
   b.cv = el("canvas", { class: "screen", hidden: "" });   // the screen as video, where it comes so (bwVideo)
   b.acting = el("div", { class: "acting", hidden: "" });
@@ -136,7 +174,11 @@
   b.picks = el("div", { class: "bw-picks", "aria-label": "Picked in the browser", hidden: "" });
   b.feed = bwFeed(b);
   b.host = document.getElementById("app");
-  b.host.append(b.bar, b.tabs, b.stage, b.picks, b.feed.root, sayEl);
+  b.host.append(b.tabs, b.bar, b.stage, b.picks, b.feed.root, sayEl);
+  bwTabDrag(b);
+  document.addEventListener("keydown", (ev) => {     // the Browser's keys while the panel has them, not the page
+    if (!ev.defaultPrevented && !ev.target.closest?.(".bw-sheet") && bwKey(b, ev)) ev.preventDefault();
+  });
   bwInput(b);
   // the user scrolling: an outline from before is no longer where its element is
   b.stage.addEventListener("wheel", () => { bwOutline(b, null); b.agentPtr.hidden = true; }, { passive: true, capture: true });
@@ -248,17 +290,31 @@
     }, 120);
   }
   function bwDraw(b) {
-    const st = b.state || {}, tabs = st.tabs || [], tab = tabs[st.active] || null;
-    if (tab && document.activeElement !== b.addr) b.addr.value = tab.url === "about:blank" ? "" : tab.url;
-    // its tabs, when it has more than one
-    b.tabs.hidden = tabs.length < 2;
-    if (tabs.length > 1) b.tabs.replaceChildren(...tabs.map((t, i) => el("div", { class: "t" + (i === st.active ? " on" : ""),
-        title: `${t.title || ""}\n${t.url}`, onclick: () => post("tab", { action: "switch", index: i }).catch(bwSay(b)) },
-      el("span", { class: "nm", text: (t.loading ? "… " : "") + (t.title || t.url || "New tab") }),
-      el("button", { type: "button", class: "x", "aria-label": "Close the tab", text: "×",
-        onclick: (ev) => { ev.stopPropagation(); post("tab", { action: "close", index: i }).catch(bwSay(b)); } }))),
-      el("button", { type: "button", class: "add", "aria-label": "New tab", title: "New tab", text: "+",
-        onclick: () => post("tab", { action: "new" }).catch(bwSay(b)) }));
+    const st = b.state || {}, tab = (st.tabs || [])[st.active] || null;
+    bwTabs(b);
+    bwAddr(b);
+    // the address bar asked for: Cmd+L, Cmd+T on the ag app's page (core.py's `ask_address`), each time it counts up
+    if (Number.isInteger(st.address)) {
+      if (b.addrAsked !== undefined && st.address > b.addrAsked) bwAddrFocus(b);
+      b.addrAsked = st.address;
+    }
+    // Back and Forward where there is somewhere to go; Reload, or Stop while the page loads, and the line filling
+    b.back.disabled = !tab?.back;
+    b.fwd.disabled = !tab?.fwd;
+    const loading = !!tab?.loading;
+    if (loading !== !!b.loadingNow) {
+      b.loadingNow = loading;
+      const label = loading ? "Stop loading this page" : `Reload (${KEY}R; with Shift, its files fetched again)`;
+      b.reload.replaceChildren(strokeIcon(loading ? ICONS.stop : ICONS.reload, 16));
+      b.reload.title = label;
+      b.reload.setAttribute("aria-label", loading ? "Stop" : "Reload");
+    }
+    bwLoading(b, loading, tab?.target || "");
+    // its zoom, as Chrome's address box shows one not 100% (the ag app's pages only)
+    const z = Math.round((tab?.zoom || 1) * 100);
+    b.zoomBadge.hidden = !NATIVE || z === 100;
+    b.zoomBadge.textContent = `${z}%`;
+    b.zoomBadge.title = `Zoom: ${z}% -- click for 100% (${KEY}0)`;
     // what the agent is about to do, and does now: outlined, its pointer there; what it did, flashed then fading
     // (bwFeedDraw), and said under the page
     const a = st.acting, nx = st.next;
@@ -327,6 +383,171 @@
     }
     p.style.transform = `translate(${x}px, ${y}px)`;
   }
+  // The tabs, over the bar, as Chrome's: each its site's icon (a spinner while it loads; the agent's pointer on one the
+  // agent opened), its title, its sound (in the ag app: a click mutes it) and its x; a click shows it, a middle click
+  // closes it, a drag moves it (bwTabDrag). Drawn again only when they change, and not during a drag.
+  function bwTabs(b) {
+    const st = b.state || {}, tabs = st.tabs || [], acting = !!(st.acting || st.next);
+    const sig = signature([tabs.map((t) => [t.target, t.title, t.url, t.loading, t.icon, t.agent, t.audible, t.muted]), st.active, acting]);
+    if (sig === b.tabsSig || b.tabDrag) return;
+    b.tabsSig = sig;
+    b.tabList.replaceChildren(...tabs.map((t, i) => bwTab(b, t, i, i === st.active, acting && i === st.active)));
+    b.tabList.style.setProperty("--n", String(tabs.length));   // (its width: the tabs' at their widest, as space allows)
+  }
+  function bwTab(b, t, i, on, acting) {
+    const name = t.title || (t.url && t.url !== "about:blank" ? t.url : "New tab");
+    let icon;
+    if (t.loading) icon = el("span", { class: "spin", "aria-label": "Loading" });
+    else if (t.icon) {
+      icon = el("img", { class: "fav", alt: "", src: t.icon, referrerpolicy: "no-referrer", draggable: "false" });
+      icon.addEventListener("error", () => icon.replaceWith(strokeIcon(ICONS.globe, 14)), { once: true });
+    } else icon = strokeIcon(ICONS.globe, 14);
+    const mark = el("span", { class: "ic" }, icon, t.agent ? el("span", { class: "by", title: "Opened by the agent" }) : null);
+    const sound = NATIVE && (t.audible || t.muted)
+      ? el("button", { type: "button", class: "snd", title: t.muted ? "Unmute this tab" : "Mute this tab", "aria-label": t.muted ? "Unmute this tab" : "Mute this tab",
+        onclick: (ev) => { ev.stopPropagation(); post("tab", { action: "mute", index: i, muted: !t.muted }).catch(bwSay(b)); } },
+      strokeIcon(t.muted ? ICONS.muted : ICONS.sound, 14))
+      : null;
+    const n = el("div", { class: "t" + (on ? " on" : "") + (t.agent ? " agent" : "") + (acting ? " acting" : ""), role: "tab",
+      "aria-selected": String(on), draggable: "true", "data-i": String(i),
+      title: `${t.title || name}\n${t.url}${t.agent ? "\nOpened by the agent" : ""}${acting ? "\nThe agent is working in it" : ""}` },
+      mark, el("span", { class: "nm", text: name }), sound,
+      el("button", { type: "button", class: "x", title: `Close the tab (${KEY}W)`, "aria-label": "Close the tab",
+        onclick: (ev) => { ev.stopPropagation(); post("tab", { action: "close", index: i }).catch(bwSay(b)); } }, strokeIcon(ICONS.close, 12)));
+    n.addEventListener("click", () => { if (!on) post("tab", { action: "switch", index: i }).catch(bwSay(b)); });
+    n.addEventListener("mousedown", (ev) => { if (ev.button === 1) ev.preventDefault(); });   // (no scrolling by it)
+    n.addEventListener("auxclick", (ev) => { if (ev.button === 1) { ev.preventDefault(); post("tab", { action: "close", index: i }).catch(bwSay(b)); } });
+    return n;
+  }
+  // A tab dragged along the strip: a line where it would go, and moved there when let go (core.py's `move_tab`).
+  function bwTabDrag(b) {
+    const list = b.tabList;
+    const slot = (x) => {                               // the place it would go: before which tab
+      const ts = [...list.querySelectorAll(".t")];
+      const k = ts.findIndex((n) => { const r = n.getBoundingClientRect(); return x < r.left + r.width / 2; });
+      return k < 0 ? ts.length : k;
+    };
+    const unmark = () => list.querySelectorAll(".drop-l, .drop-r").forEach((n) => n.classList.remove("drop-l", "drop-r"));
+    list.addEventListener("dragstart", (ev) => {
+      const n = ev.target.closest?.(".t");
+      if (!n) return;
+      b.tabDrag = { from: Number(n.dataset.i) };
+      n.classList.add("dragging");
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", (b.state?.tabs || [])[b.tabDrag.from]?.url || "");
+    });
+    list.addEventListener("dragover", (ev) => {
+      if (!b.tabDrag) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "move";
+      unmark();
+      const ts = list.querySelectorAll(".t"), k = slot(ev.clientX);
+      if (k < ts.length) ts[k].classList.add("drop-l"); else ts[ts.length - 1]?.classList.add("drop-r");
+    });
+    list.addEventListener("dragleave", (ev) => { if (!list.contains(ev.relatedTarget)) unmark(); });
+    list.addEventListener("drop", (ev) => {
+      if (!b.tabDrag) return;
+      ev.preventDefault();
+      const from = b.tabDrag.from, k = slot(ev.clientX), to = k > from ? k - 1 : k;
+      if (to !== from) post("tab", { action: "move", index: from, to }).catch(bwSay(b));
+    });
+    list.addEventListener("dragend", () => {
+      unmark();
+      list.querySelector(".dragging")?.classList.remove("dragging");
+      b.tabDrag = null;
+      b.tabsSig = "";
+      bwTabs(b);
+    });
+  }
+  // The address box: the page's address, or `url` (the agent's, as it comes); while not being typed in, shown as
+  // Chrome shows it -- its host dark, the rest grey, no https:// or www. -- after what it is: secure (https), not
+  // secure (http but this machine), a file, or a search to type.
+  function bwAddr(b, url) {
+    const st = b.state || {}, tab = (st.tabs || [])[st.active];
+    const u = url ?? (tab && tab.url !== "about:blank" ? tab.url : "");
+    if (document.activeElement !== b.addr) b.addr.value = u;
+    const m = /^(https?):\/\/(?:www\.)?([^/?#]+)(.*)$/i.exec(u);
+    if (signature([u]) === b.addrSig) return;
+    b.addrSig = signature([u]);
+    b.addrForm.classList.toggle("has-url", !!u);
+    b.addrShown.replaceChildren(...(m ? [el("span", { class: "host", text: m[2] }), el("span", { class: "rest", text: m[3] === "/" ? "" : m[3] })]
+      : [el("span", { class: "host", text: u })]));
+    const local = m && /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(m[2]);
+    const [icon, label, word] = !u ? [ICONS.search, "Search Google or type a URL", ""]
+      : /^file:/i.test(u) ? [ICONS.file, "A file on this computer", ""]
+      : m && m[1].toLowerCase() === "https" ? [ICONS.lock, "Connection is secure", ""]
+      : local ? [ICONS.info, "A page on this computer", ""]
+      : m ? [ICONS.warn, "Not secure: this site's connection isn't encrypted", "Not secure"]
+      : [ICONS.info, "", ""];
+    b.site.replaceChildren(...[strokeIcon(icon, 14), word ? el("span", { text: word }) : null].filter(Boolean));
+    b.site.title = label;
+    b.site.classList.toggle("warn", !!word);
+  }
+  function bwAddrFocus(b) {
+    bwTakeKeys(b, () => { b.addr.focus(); b.addr.select(); });
+  }
+  // The keys to the panel's own box (`focus`): in the ag app first taken back from the native page, which had them --
+  // the box focused again once that is done, as the dashboard focuses the panel's frame for it, its own focus lost.
+  function bwTakeKeys(b, focus) {
+    focus();
+    if (NATIVE) ag.native.release().then(focus, () => {});
+  }
+  function bwNewTab(b) {
+    post("tab", { action: "new" }).then(() => bwAddrFocus(b)).catch(bwSay(b));
+  }
+  // The line under the bar while the page loads: filling, slower as it goes, then full and gone as it finishes.
+  function bwLoading(b, loading, target) {
+    const line = b.loadLine;
+    if (loading && (!line.classList.contains("on") || b.loadFor !== target)) {
+      b.loadFor = target;
+      line.classList.remove("on", "done");
+      void line.offsetWidth;                            // (its filling started again)
+      line.classList.add("on");
+    } else if (!loading && line.classList.contains("on")) {
+      line.classList.replace("on", "done");
+      clearTimeout(b.loadDone);
+      b.loadDone = setTimeout(() => line.classList.remove("done"), 450);
+    }
+  }
+  // The page's zoom: a step in (1), out (-1), or back to 100% (0), as Chrome's Cmd+= / Cmd+- / Cmd+0 (the ag app only).
+  function bwZoom(b, step) {
+    const i = b.state?.active;
+    return post("tab", { action: "zoom", step, ...(Number.isInteger(i) ? { index: i } : {}) }).catch(bwSay(b));
+  }
+  // A browser's own keys, as Chrome's (desktop/src/keys.ts has them for the app's own pages): done on the Browser,
+  // and true; else false, the key the page's (or the dashboard's). Cmd+T, Cmd+W and Cmd+1..9 reach the panel only in
+  // the ag app: an ordinary browser keeps them.
+  function bwKey(b, ev) {
+    if (ev.isComposing) return false;
+    const cmd = MAC ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && !ev.metaKey;
+    const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
+    const st = b.state || {}, n = (st.tabs || []).length, at = st.active || 0;
+    const sw = (i) => { if (n > 1) post("tab", { action: "switch", index: ((i % n) + n) % n }).catch(bwSay(b)); };
+    if (ev.ctrlKey && !ev.metaKey && !ev.altKey && k === "Tab") { sw(at + (ev.shiftKey ? -1 : 1)); return true; }
+    if (!cmd) return false;
+    if (ev.altKey) {
+      if (k === "ArrowRight" || k === "ArrowLeft") { sw(at + (k === "ArrowRight" ? 1 : -1)); return true; }
+      return false;
+    }
+    const nav = (action) => { post("nav", { action }).catch(bwSay(b)); return true; };
+    if (ev.shiftKey) {
+      if (k === "t") { post("tab", { action: "reopen" }).catch(bwSay(b)); return true; }
+      if (k === "r") return nav("hard-reload");
+      if (k === "[" || k === "{" || k === "]" || k === "}") { sw(at + (k === "[" || k === "{" ? -1 : 1)); return true; }
+      if ((k === "=" || k === "+") && NATIVE) { bwZoom(b, 1); return true; }
+      return false;
+    }
+    if (/^[1-8]$/.test(k)) { if (Number(k) <= n) sw(Number(k) - 1); return true; }
+    if (k === "9") { sw(n - 1); return true; }
+    if (k === "t") { bwNewTab(b); return true; }
+    if (k === "w") { if (n) post("tab", { action: "close", index: at }).catch(bwSay(b)); return true; }
+    if (k === "l") { bwAddrFocus(b); return true; }
+    if (k === "r") return nav("reload");
+    if (k === "[" && ev.target !== b.addr) return nav("back");
+    if (k === "]" && ev.target !== b.addr) return nav("forward");
+    if (NATIVE && (k === "=" || k === "+" || k === "-" || k === "0")) { bwZoom(b, k === "-" ? -1 : k === "0" ? 0 : 1); return true; }
+    return false;
+  }
   function bwPress(b) {
     b.agentPtr.classList.remove("press");
     void b.agentPtr.offsetWidth;
@@ -340,7 +561,7 @@
     const mark = (node, on) => { if (node) node.classList.toggle("coming", !!on); };
     mark(b.back, t === "back"); mark(b.fwd, t === "forward"); mark(b.reload, t === "reload");
     mark(b.addr, t === "navigate");
-    if (t === "navigate" && x.url && document.activeElement !== b.addr) b.addr.value = x.url;
+    if (t === "navigate" && x.url && document.activeElement !== b.addr) bwAddr(b, x.url);
     mark(b.newTab, t === "tabs" && x.action === "new");
     mark(b.tabs.querySelector(".add"), t === "tabs" && x.action === "new");
     b.tabs.querySelectorAll(".t").forEach((n, i) => mark(n, t === "tabs" && x.action !== "new" && i === Number(x.index) - 1));
@@ -583,14 +804,14 @@
         bwQueue(b, { type: "copy", cut: /x/i.test(ev.key), modifiers: bwMods(ev) });
         return;
       }
-      if (cmd && ["r", "R"].includes(ev.key) && !ev.shiftKey) { ev.preventDefault(); post("nav", { action: "reload" }).catch(bwSay(b)); return; }
-      if (cmd && ["l", "L"].includes(ev.key)) { ev.preventDefault(); b.addr.focus(); b.addr.select(); return; }
+      if (bwKey(b, ev)) { ev.preventDefault(); b.keyTaken = ev.code; return; }   // the Browser's (Cmd+T, Cmd+L, ...)
       ev.preventDefault();
       bwQueue(b, { type: "key", down: true, key: ev.key, code: ev.code, keyCode: ev.keyCode, location: ev.location, repeat: ev.repeat, modifiers: bwMods(ev) });
     });
     st.addEventListener("keyup", (ev) => {
       ev.stopPropagation();
-      if (b.mode || ((ev.metaKey || ev.ctrlKey) && /^[cvxrlCVXRL]$/.test(ev.key))) return;
+      if (b.keyTaken === ev.code) { b.keyTaken = ""; return; }
+      if (b.mode || ((ev.metaKey || ev.ctrlKey) && /^[cvxCVX]$/.test(ev.key))) return;
       ev.preventDefault();
       bwQueue(b, { type: "key", down: false, key: ev.key, code: ev.code, keyCode: ev.keyCode, location: ev.location, modifiers: bwMods(ev) });
     });
@@ -998,10 +1219,8 @@
       btn("M4.5 4.5l7 7M11.5 4.5l-7 7", "Close (Esc)", () => bwFindClose(b)));
   }
   function bwFindOpen(b) {
-    if (NATIVE) ag.native.release().catch(() => {});      // (the keys were the native page's)
     b.find.hidden = false;
-    b.findInput.focus();
-    b.findInput.select();
+    bwTakeKeys(b, () => { b.findInput.focus(); b.findInput.select(); });
     if (b.findInput.value) b.findRun(false, false);
   }
   function bwFindClose(b) {
@@ -1027,13 +1246,28 @@
   function closeMore() { if (b.more) { b.more.remove(); b.more = null; } }
   function moreMenu() {
     if (b.more) return closeMore();
-    const mine = (b.state || {}).chrome === "mine";
+    const st = b.state || {}, mine = st.chrome === "mine", tab = (st.tabs || [])[st.active];
+    const item = (label, kb, run, extra = {}) => el("button", { type: "button", role: "menuitem", onclick: () => { closeMore(); run(); }, ...extra },
+      el("span", { text: label }), kb ? el("span", { class: "kb", text: kb }) : null);
+    const z = Math.round((tab?.zoom || 1) * 100);
+    const zs = el("span", { class: "z", text: `${z}%` });
+    const zoomBtn = (label, text, step) => el("button", { type: "button", "aria-label": label, title: label, text,
+      onclick: () => bwZoom(b, step).then((r) => { if (r && r.zoom) zs.textContent = `${Math.round(r.zoom * 100)}%`; }) });
     const m = bwShield(el("div", { class: "bw-menu bw-more-menu", role: "menu" },
+      item("New tab", `${KEY}T`, () => bwNewTab(b)),
+      item("Reopen closed tab", `${MAC ? "⇧⌘" : "Ctrl+Shift+"}T`, () => post("tab", { action: "reopen" }).catch(bwSay(b)),
+        { disabled: st.closed ? null : "" }),
+      el("hr"),
+      NATIVE ? el("div", { class: "zoomrow" }, el("span", { text: "Zoom" }), zoomBtn("Zoom out", "−", -1),
+        zs, zoomBtn("Zoom in", "+", 1)) : null,
+      item("Find in page…", `${KEY}F`, () => bwFindOpen(b)),
+      el("hr"),
       el("button", { type: "button", role: "menuitem", disabled: mine ? "" : null,
         title: mine ? "This Browser runs in your own Chrome: its logins are there already" : "Copy sites' logins from your Chrome into the Browsers' own",
         onclick: () => { closeMore(); logins(); } }, "Import logins from your Chrome…")));
     b.host.append(m);
     b.more = m;
+    m.style.top = `${Math.round(b.moreBtn.getBoundingClientRect().bottom + 4)}px`;
     m.querySelector("button:not([disabled])")?.focus();
   }
   async function logins() {

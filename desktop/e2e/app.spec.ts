@@ -90,7 +90,7 @@ test("shows the home's running dashboard", async () => {
     const app = await launch(home, port);
     const page = await app.firstWindow();
     await page.waitForURL(`http://127.0.0.1:${port}/`, { timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "+ New gatherer" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "+ New group" })).toBeVisible();
     await app.close();
     expect(await answers(port)).toBe(home); // the dashboard the app found isn't the app's to stop
   } finally {
@@ -105,7 +105,7 @@ test("starts the dashboard when none runs, and leaves it running when the app qu
   try {
     const page = await app.firstWindow();
     await page.waitForURL(`http://127.0.0.1:${port}/`, { timeout: 120_000 });
-    await expect(page.getByRole("button", { name: "+ New gatherer" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "+ New group" })).toBeVisible();
     await app.close();
     expect(await answers(port)).toBe(home);
   } finally {

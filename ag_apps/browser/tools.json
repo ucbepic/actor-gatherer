@@ -333,7 +333,7 @@
  },
  {
   "name": "navigate",
-  "description": "Open a page in the tab shown: a URL, or a host (https://, or http:// for localhost).",
+  "description": "Open a page in the tab shown: a URL, or a host (https://, or http:// for localhost); words that are no address are searched for on Google, as in Chrome's address bar.",
   "input_schema": {
    "type": "object",
    "properties": {

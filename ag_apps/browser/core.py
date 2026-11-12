@@ -88,6 +88,7 @@ import harness_kit
 
 from . import video as browser_video
 from . import visited
+from .tlds import TLDS
 
 HOME = os.environ.get("AG_HOME") or os.path.expanduser("~/.ag")   # the home, as ag finds it (backend.py sets it):
                                       # its dashboard/ holds the Chrome's profile, downloads, uploads and the ag app's
@@ -101,6 +102,7 @@ KEY = re.compile(r"[0-9a-f]{16}")
 IDLE_STOP = 600.0           # seconds the Chrome runs on with no Browser used
 CALL_WAIT = 20.0            # the most a call to Chrome is waited for
 NAV_WAIT = 20.0             # the most the agent's navigation waits for its site to answer, before it is stopped
+SEARCH = "https://www.google.com/search?q="   # where words typed in the address bar are searched for
 TYPED_WAIT = 30.0           # seconds within which a page opened in a tab is the one the user typed in its address bar
 LOAD_WAIT = 15.0            # the most an action waits for the page it started loading
 SCHEMES = ("light", "dark")   # the dashboard's theme as shown, its Browsers' pages' prefers-color-scheme
@@ -129,6 +131,8 @@ MAX_EVAL = 20_000           # the most characters of an evaluation's result
 MAX_PASTE = 1_000_000       # the most characters of a paste's text, and of its HTML
 MAX_HTML = 1_500            # the most characters of a pick's HTML
 CONSOLE_KEEP = 200          # the console messages kept per tab
+CLOSED_KEEP = 25            # tabs closed, kept to reopen (Cmd+Shift+T), latest last
+ICON_MAX = 8000             # characters of a tab's icon's address kept (a data: one can be long), else none
 UI_WORLD = "ag-ui"          # the world UI_JS runs in, in each of a tab's pages: of its own, apart from the page's
 UI_BINDING = "__agUISay"    # how it tells the dashboard (Runtime.addBinding, in that world only)
 UPLOAD_KEEP = 86400.0       # seconds a file the user gave a page is kept (the page reads it when it sends it, later)
@@ -1039,6 +1043,14 @@ class Tab:
         self.cues_sent = ""                             # what it was told to draw last
         self.windowed = False                           # a popup window a page opened (`popup_window`): no video for it
         self.visited = ""                               # the page last kept as opened in it (`Browser._visited`)
+        # what a browser's tab strip and bar show of it (`Browser._look`): its site's icon, whether it can go back or
+        # forward; opened by the agent; and, in the ag app only (its page's own: desktop/src/browsers.ts), whether it
+        # plays sound, is muted, and its zoom
+        self.icon = ""
+        self.back = self.fwd = False
+        self.agent = False
+        self.audible = self.muted = False
+        self.zoom = 1.0
 
 
 class Viewer:
@@ -1177,6 +1189,8 @@ class Browser:
         self.clicked = 0.0                               # when the user or the agent last clicked in it
         self.behind = False                              # whether that click opens a link behind: Cmd/Ctrl, middle
         self.pending: List[dict] = []                    # tabs its pages asked for, Chrome not yet seen to open
+        self.closed: List[dict] = []                     # tabs closed, to reopen: {url, title, index}, latest last
+        self.address_asked = 0                           # times the view's address bar was asked for (`ask_address`)
         self.popup_asked = 0.0                           # when a page last asked for a popup window (`popup_window`)
         self.asked = 0                                   # of those, not yet opened (by Chrome or the dashboard)
         self.quick_until = 0.0                           # the screen sent at QUICK_SCALE until then
@@ -1353,6 +1367,9 @@ class Browser:
         if method == "App.findBar":                      # "Find in page..." in the app's own menu on its page
             tab = self._tab_of(target=params.get("targetId"))
             return self._find_bar(tab) if tab is not None else None
+        if method == "App.key":                          # a browser's key pressed on the ag app's page
+            tab, key = self._tab_of(target=params.get("targetId")), str(params.get("key") or "")
+            return self.chrome.later(lambda: self.browser_key(key, tab)) if tab is not None else None
         if method == "Runtime.bindingCalled" and session is not None and session == self.video.session:
             if params.get("name") == browser_video.BINDING:
                 self._chunk(self.video.got(str(params.get("payload") or "")))
@@ -1370,6 +1387,7 @@ class Browser:
             tab.loading, tab.loads = False, tab.loads + 1
             self._publish()
             self.chrome.later(lambda: self._retitle(tab))
+            self.chrome.later(lambda: self._look(tab))
         elif method == "Page.domContentEventFired":
             self.chrome.later(lambda: self._retitle(tab))
         elif method == "Page.frameNavigated" and not frame.get("parentId"):
@@ -1389,6 +1407,7 @@ class Browser:
                     self.note(f"the page went to {url}")
             self._publish()
             self._save()
+            self.chrome.later(lambda: self._look(tab, icon=False))   # (its icon once the page is there: loaded)
         elif (method == "Page.windowOpen" and params.get("userGesture")) or (
                 method == "Page.frameRequestedNavigation" and params.get("disposition") in ("newTab", "newWindow")):
             if method == "Page.windowOpen" and popup_window(params.get("windowFeatures")):
@@ -1401,6 +1420,7 @@ class Browser:
             self._publish()
             self._save()
             self.chrome.later(lambda: self._retitle(tab))
+            self.chrome.later(lambda: self._look(tab, icon=False))
         elif method == "Page.javascriptDialogOpening":
             tab.dialog = {"type": params.get("type"), "message": params.get("message", ""),
                           "default": params.get("defaultPrompt", "")}
@@ -1441,6 +1461,8 @@ class Browser:
         info = params.get("targetInfo") or {}
         if method == "Target.targetInfoChanged":
             tab = self._tab_of(target=info.get("targetId"))
+            if tab is not None and self._sounds(tab, info):
+                self._publish()
             if tab is not None and (tab.title != info.get("title") or tab.url != info.get("url")):
                 tab.title, tab.url = info.get("title") or "", info.get("url") or tab.url
                 self._publish()
@@ -1475,12 +1497,55 @@ class Browser:
                 self._retitle(tab)                       # its page as it is now: it may have moved on unseen
                 if not self._acting_now():               # the user's doing, not the agent's
                     self.note(f"a new tab opened{'' if select else ' behind'}: {tab.url or 'blank'}")
+                else:
+                    tab.agent = True
                 self._recast()
                 self._publish()
                 self._save()
             except BrowserError:
                 pass
         self.chrome.later(adopt)
+
+    def _look(self, tab: Tab, icon: bool = True) -> None:
+        """What the tab strip and bar show of the tab that its page says: whether it can go back or forward (its
+        history), and, `icon`, its site's icon -- the page's own <link rel=icon>, else its site's /favicon.ico (Chrome
+        tells neither: asked of the page once it has loaded, or moved within itself)."""
+        cdp = self.chrome.conn
+        if cdp is None or not cdp.alive:
+            return
+        changed = False
+        try:
+            hist = cdp.call("Page.getNavigationHistory", {}, tab.session, timeout=5)
+            i, n = int(hist.get("currentIndex", 0)), len(hist.get("entries") or [])
+            if (tab.back, tab.fwd) != (i > 0, i < n - 1):
+                tab.back, tab.fwd, changed = i > 0, i < n - 1, True
+        except (BrowserError, ValueError, TypeError):
+            pass
+        if icon:
+            try:
+                got = cdp.call("Runtime.evaluate", {"expression": ICON_JS, "returnByValue": True}, tab.session, timeout=5)
+                value = (got.get("result") or {}).get("value")
+                found = value if isinstance(value, str) and len(value) <= ICON_MAX \
+                    and re.match(r"(?i)(https?:|data:image/)", value) else ""
+                if found != tab.icon:
+                    tab.icon, changed = found, True
+            except BrowserError:
+                pass
+        if changed:
+            self._publish()
+
+    @staticmethod
+    def _sounds(tab: Tab, info: dict) -> bool:
+        """In the ag app, what its page says of itself beyond Chrome's (desktop/src/browsers.ts `info`): whether it
+        plays sound, is muted, and its zoom. Whether any changed."""
+        was = (tab.audible, tab.muted, tab.zoom)
+        if isinstance(info.get("audible"), bool):
+            tab.audible = info["audible"]
+        if isinstance(info.get("muted"), bool):
+            tab.muted = info["muted"]
+        if isinstance(info.get("zoom"), (int, float)) and 0.1 <= info["zoom"] <= 10:
+            tab.zoom = round(float(info["zoom"]), 3)
+        return (tab.audible, tab.muted, tab.zoom) != was
 
     def _retitle(self, tab: Tab) -> None:
         """The tab's title, as its page has it now (Chrome tells no change of it)."""
@@ -1492,6 +1557,8 @@ class Browser:
         except (BrowserError, KeyError):
             return
         url = info.get("url") or tab.url
+        if self._sounds(tab, info):
+            self._publish()
         if info.get("title") != tab.title or url != tab.url:
             tab.title, tab.url = info.get("title") or "", url
             self._publish()
@@ -1679,8 +1746,10 @@ class Browser:
             acting = {"label": self.doing, "box": self.acting.get("box"), "tool": self.doing_tool, "cue": self.doing_cue} \
                 if self.acting and not self.acting_until and self.doing else None   # while it acts (`shown`: after)
             tab = self.tabs[self.active] if self.tabs else None
-            return {"tabs": [{"title": t.title, "url": t.url, "loading": t.loading, "target": t.target} for t in self.tabs],
-                    "active": self.active, "picks": [{"id": p["id"], "label": p["label"]} for p in self.picks],
+            return {"tabs": [{"title": t.title, "url": t.url, "loading": t.loading, "target": t.target, "icon": t.icon,
+                              "back": t.back, "fwd": t.fwd, "agent": t.agent, "audible": t.audible, "muted": t.muted,
+                              "zoom": t.zoom} for t in self.tabs],
+                    "active": self.active, "closed": len(self.closed), "address": self.address_asked, "picks": [{"id": p["id"], "label": p["label"]} for p in self.picks],
                     "acting": acting, "dialog": tab.dialog if tab else None, "error": self.error,
                     "actions": [{k: a[k] for k in ("i", "at", "ok", "text", "box", "detail")} for a in self.shown],
                     "next": self.next, "playing": bool(self.playing), "halted": self.halt.is_set(),
@@ -2215,11 +2284,17 @@ class Browser:
             if not 0 <= i < len(entries):
                 raise BrowserError(f"nothing to go {action} to")
             cdp.call("Page.navigateToHistoryEntry", {"entryId": entries[i]["id"]}, tab.session, sent=self.let_go)
-        elif action == "reload":
-            cdp.call("Page.reload", {}, tab.session, sent=self.let_go)
+        elif action in ("reload", "hard-reload"):         # hard: its files fetched again, not from the cache
+            cdp.call("Page.reload", {"ignoreCache": True} if action == "hard-reload" else {}, tab.session, sent=self.let_go)
+        elif action == "stop":
+            cdp.call("Page.stopLoading", {}, tab.session)
+            tab.loading = False
+            self._publish()
+        elif action:
+            raise BrowserError(f"no such action: {action}")
         else:
-            url = _url(url)
-            if by_user:
+            url, words = _typed(url)
+            if by_user and not words:                    # a search is no address typed (as in Chrome's history)
                 with self.lock:
                     self.typed_in = (tab.target, time.time())
             got = self._go(cdp, tab, url, by_user, self.let_go)
@@ -2267,6 +2342,7 @@ class Browser:
     def new_tab(self, url: str = "", by_user: bool = True) -> Tab:
         cdp = self.live()
         tab = self._open(cdp, _url(url) if url else "about:blank", by_user=by_user, sent=self.let_go)
+        tab.agent = not by_user
         if by_user:                                      # the page asked for: Chrome may not have said it is there yet,
             self.note(f"opened a new tab: {_url(url) if url else tab.url or 'blank'}")   # or said "about:blank" first
         self._recast()
@@ -2280,7 +2356,110 @@ class Browser:
         self.chrome.cdp().call("Target.closeTarget", {"targetId": tab.target})
         if by_user:
             self.note(f"closed tab {index + 1}: {tab.title or tab.url or 'blank'}")
+        if tab.url and tab.url != "about:blank":         # kept, to reopen (`reopen_tab`)
+            with self.lock:
+                self.closed = (self.closed + [{"url": tab.url, "title": tab.title, "index": index}])[-CLOSED_KEEP:]
         self._dropped(tab.target)
+
+    @_users
+    def reopen_tab(self, by_user: bool = True) -> Tab:
+        """The tab closed last opened again, where it was, at the page it had (Chrome's Cmd+Shift+T: its page's history
+        isn't kept)."""
+        with self.lock:
+            if not self.closed:
+                raise BrowserError("no tab was closed")
+            was = self.closed.pop()
+        tab = self._open(self.live(), was["url"], by_user=by_user, sent=self.let_go)
+        with self.lock:
+            at = self.tabs.index(tab) if tab in self.tabs else -1
+        if at >= 0:
+            self.move_tab(at, int(was.get("index") or 0), by_user=False)
+        if by_user:
+            self.note(f"reopened a closed tab: {was['url']}")
+        self._recast()
+        self._publish()
+        self._save()
+        return tab
+
+    @_users
+    def move_tab(self, index: int, to: int, by_user: bool = True) -> None:
+        """Tab `index` moved to `to` (both from 0), as a tab dragged along the strip; the tab shown stays shown."""
+        with self.lock:
+            n = len(self.tabs)
+            if not 0 <= index < n:
+                raise BrowserError(f"no tab {index + 1}")
+            to = max(0, min(int(to), n - 1))
+            if to == index:
+                return
+            shown = self.tabs[self.active] if self.tabs else None
+            tab = self.tabs.pop(index)
+            self.tabs.insert(to, tab)
+            if shown is not None:
+                self.active = self.tabs.index(shown)
+        if by_user:
+            self.note(f"moved tab {index + 1} to {to + 1}: {tab.title or tab.url or 'blank'}")
+        self._publish()
+        self._save()
+
+    def _app_page(self, index: Optional[int]) -> Tuple[Cdp, Tab]:
+        cdp = self.chrome.cdp()
+        if cdp.mode != "app":
+            raise BrowserError("only in the ag app: its tabs are its own pages there")
+        return cdp, self.tab(index)
+
+    def mute(self, index: Optional[int], muted: bool) -> bool:
+        """The tab's sound off (or on again): in the ag app only."""
+        cdp, tab = self._app_page(index)
+        got = cdp.call("App.mute", {"targetId": tab.target, "muted": bool(muted)})
+        tab.muted = bool(got.get("muted", muted))
+        self._publish()
+        return tab.muted
+
+    def zoom(self, index: Optional[int], step: int) -> float:
+        """The tab's page zoomed in a step (1), out (-1), or back to 100% (0), as Chrome's Cmd+= / Cmd+- / Cmd+0 -- for
+        every page of its site, as Chrome does: in the ag app only."""
+        cdp, tab = self._app_page(index)
+        got = cdp.call("App.zoom", {"targetId": tab.target, "step": max(-1, min(1, int(step)))})
+        if isinstance(got.get("zoom"), (int, float)):
+            tab.zoom = round(float(got["zoom"]), 3)
+        self._publish()
+        return tab.zoom
+
+    def browser_key(self, key: str, tab: Optional[Tab] = None) -> None:
+        """A browser's own key, pressed on a page in the ag app (desktop/src/keys.ts `browserKey`), done as Chrome
+        does it: on the Browser it is a tab of. Its zoom keys the app does itself."""
+        try:
+            with self.lock:
+                at = self.tabs.index(tab) if tab in self.tabs else self.active
+                n = len(self.tabs)
+            if key == "newTab":
+                self.new_tab()
+                self.ask_address()
+            elif key == "closeTab":
+                self.close_tab(at)
+            elif key == "reopenTab":
+                self.reopen_tab()
+            elif key in ("nextTab", "prevTab") and n > 1:
+                self.switch((at + (1 if key == "nextTab" else -1)) % n)
+            elif key.startswith("tab:") and n:
+                k = key[4:]
+                i = n - 1 if k == "last" else int(k) - 1
+                if 0 <= i < n:
+                    self.switch(i)
+            elif key in ("back", "forward", "reload", "hard-reload"):
+                self.navigate(action=key)
+            elif key == "address":
+                self.ask_address()
+        except (BrowserError, ValueError):
+            pass
+
+    def ask_address(self) -> None:
+        """The view's address bar given the keys, its text picked (Cmd+L on the ag app's page; a new tab's): the panel
+        focuses it each time this counts up. (Not a tab's `popup`, as Cmd+F's find bar is: a new tab's first page
+        clears that before the panel sees it.)"""
+        with self.lock:
+            self.address_asked += 1
+        self._publish()
 
     @_users
     def answer_dialog(self, accept: bool, text: Optional[str] = None, by_user: bool = True) -> str:
@@ -2864,9 +3043,13 @@ def _phrases(b: "Browser", name: str, args: dict, on: Optional[dict], ctx: dict)
         return f"Scrolling {d or 'down'}{at}", f"Scrolled {d or 'down'}{at}", f"Didn't scroll {d or 'down'}" + (f" in {it}" if it else "")
     if name == "navigate":
         try:
-            site = _site(_url(str(args.get("url") or "")))
+            url, words = _typed(str(args.get("url") or ""))
         except BrowserError:
-            site = _q(str(args.get("url") or ""))
+            url, words = "", None
+        if words:
+            return f"Searching Google for {_q(words, 40)}", f"Searched Google for {_q(words, 40)}", \
+                f"Didn't search Google for {_q(words, 40)}"
+        site = _site(url) if url else _q(str(args.get("url") or ""))
         return f"Opening {site}", f"Opened {site}", f"Didn't open {site}"
     if name in ("back", "forward", "reload"):
         return {"back": ("Going back", "Went back", "Didn't go back"),
@@ -2916,18 +3099,51 @@ def _openable(url: str) -> bool:
 
 
 def _url(url: str) -> str:
-    """What the user or agent typed, as a URL: a scheme added to a host -- http for one on this machine."""
-    url = (url or "").strip()
-    if not url:
+    """What the user or agent typed, as the URL it opens (`_typed`)."""
+    return _typed(url)[0]
+
+
+def _typed(text: str) -> Tuple[str, Optional[str]]:
+    """What the user or agent typed in the address bar, as Chrome's address bar takes it: the URL it opens, and the
+    words searched for when it searches Google for them (else None). An address -- a scheme added to a host, http for
+    one on this machine; a path a file -- when it is one; else words: with a space, a host with no dot or of no
+    top-level domain there is (numpy.array, but numpy.org a site), an email address. A ? first searches for the rest."""
+    text = (text or "").strip()
+    if not text:
         raise BrowserError("which page?")
-    if re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", url) and not re.match(r"(localhost|127\.0\.0\.1|\[::1\]):\d", url):
-        if not _openable(url):
-            raise BrowserError(f"not a page the browser opens: {url}")
-        return url
-    if url.startswith("/") or url.startswith("~"):
-        return "file://" + os.path.abspath(os.path.expanduser(url))
-    local = re.match(r"(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])([:/]|$)", url)
-    return ("http://" if local else "https://") + url
+    if text.startswith("?"):
+        return _searched(text[1:].strip())
+    port = re.match(r"[\w.-]+:\d{1,5}(?:[/?#]|$)", text)   # a host and its port, which looks like a scheme too
+    if re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", text) and not port:
+        if _openable(text):
+            return text, None
+        if re.search(r"\s", text):                     # "Attention: is all you need"
+            return _searched(text)
+        raise BrowserError(f"not a page the browser opens: {text}")
+    if text.startswith("/") or text.startswith("~"):
+        return "file://" + os.path.abspath(os.path.expanduser(text)), None
+    if re.search(r"\s", text):
+        return _searched(text)
+    if re.match(r"(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])([:/?#]|$)", text, re.I):
+        return "http://" + text, None
+    host = re.split(r"[/?#]", text, maxsplit=1)[0]
+    name = re.sub(r":\d+$", "", host).rstrip(".").lower()
+    if "@" in host or not re.fullmatch(r"[\w-]+(\.[\w-]+)*", name):
+        return _searched(text)
+    if port or re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", name):
+        return "https://" + text, None
+    tld = name.rpartition(".")[2]
+    try:
+        tld = tld.encode("idna").decode("ascii")       # .рф as xn--p1ai, as the list has it
+    except UnicodeError:
+        pass
+    return ("https://" + text, None) if "." in name and tld in TLDS else _searched(text)
+
+
+def _searched(words: str) -> Tuple[str, Optional[str]]:
+    if not words:
+        raise BrowserError("search for what?")
+    return SEARCH + urllib.parse.quote_plus(words), words
 
 
 def _clip(cdp: "Cdp", tab: "Tab", x: float, y: float, w: float, h: float, scale: float = 1.0) -> dict:
@@ -3527,6 +3743,13 @@ WRITE_CLIPBOARD_JS = r"""(async () => { const items = %s;
   await navigator.clipboard.write([new ClipboardItem(Object.fromEntries(Object.entries(items)
     .map(([type, v]) => [type, new Blob([v], {type})])))]);
   return 1; })()"""
+# A tab's site's icon, as its page names it (the first <link rel=icon> that isn't Apple's, else any), else its site's
+# /favicon.ico: what Chrome's tab strip shows (`Browser._look`). Its address, or "".
+ICON_JS = r"""(() => { const links = [...document.querySelectorAll('link[rel]')].filter((l) => /(^|\s)icon(\s|$)/i.test(l.rel) && l.href);
+  const l = links.find((x) => !/apple/i.test(x.rel)) || links[0];
+  if (l) return l.href;
+  return /^https?:$/.test(location.protocol) ? location.origin + '/favicon.ico' : ''; })()"""
+
 SELECTION_JS = r"""(() => { const a = document.activeElement;
   if (a && (a.localName === 'textarea' || (a.localName === 'input' && a.type !== 'password')) && a.selectionStart !== a.selectionEnd)
     return a.value.slice(a.selectionStart, a.selectionEnd);
@@ -3724,7 +3947,8 @@ TOOLS = [
           "`ref`, bring the element into view.",
           {"direction": {"type": "string", "enum": ["up", "down", "left", "right"]}, "amount": {"type": "number"},
            "ref": REF}),
-    _acting("navigate", "Open a page in the tab shown: a URL, or a host (https://, or http:// for localhost).",
+    _acting("navigate", "Open a page in the tab shown: a URL, or a host (https://, or http:// for localhost); words "
+          "that are no address are searched for on Google, as in Chrome's address bar.",
           {"url": {"type": "string"}}, ["url"]),
     _acting("back", "Go back a page."),
     _acting("forward", "Go forward a page."),

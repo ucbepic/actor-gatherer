@@ -292,6 +292,26 @@ class WordsTest(unittest.TestCase):
             browser._url("javascript:alert(1)")
         with self.assertRaises(browser.BrowserError):
             browser._url("  ")
+        self.assertEqual(browser._url("example.com:8080/x"), "https://example.com:8080/x")   # a port, not a scheme
+        self.assertEqual(browser._url("10.0.0.2/x"), "https://10.0.0.2/x")
+        self.assertEqual(browser._url("Numpy.org."), "https://Numpy.org.")
+        self.assertEqual(browser._url("пример.рф"), "https://пример.рф")
+
+    def test_words_are_searched_for_as_chrome_does(self):
+        google = "https://www.google.com/search?q="
+        self.assertEqual(browser._typed("tau-bench: evaluating agents"),
+                         (google + "tau-bench%3A+evaluating+agents", "tau-bench: evaluating agents"))
+        self.assertEqual(browser._typed("Attention: is all you need")[1], "Attention: is all you need")   # no scheme
+        for words in ("numpy", "numpy.array", "README.txt", "me@example.com", "3+4", "what's c++?", "C:/x y"):
+            self.assertEqual(browser._typed(words)[1], words, words)
+        self.assertEqual(browser._typed("? example.com"), (google + "example.com", "example.com"))   # ? first: words
+        for address in ("numpy.org", "localhost", "en.wikipedia.org/wiki/A_B?x=1#y", "a.io"):
+            self.assertIsNone(browser._typed(address)[1], address)
+        with self.assertRaises(browser.BrowserError):
+            browser._typed("?")
+        self.assertEqual(browser._phrases(None, "navigate", {"url": "numpy array"}, None, {})[0],
+                         'Searching Google for "numpy array"')
+        self.assertEqual(browser._phrases(None, "navigate", {"url": "numpy.org"}, None, {})[0], "Opening numpy.org")
 
     def test_keys_as_chrome_takes_them(self):
         down = browser._key_event({"key": "a", "code": "KeyA", "keyCode": 65}, True, 0)
@@ -548,6 +568,77 @@ class ChromeTest(ChromeBase):
         self.assertIn("opened a new tab: " + second, told)
         self.assertNotIn("opened a new tab: about:blank", told)
         self.assertNotIn("the page went to " + second, told)   # (the same thing, told once)
+
+    def test_the_tab_strip_shows_each_tabs_icon_its_history_and_who_opened_it(self):
+        icon = "data:image/png;base64,iVBORw0KGgo="
+        first = self.serve("first.html", f'<title>First</title><link rel="icon" href="{icon}"><a href="second.html">on</a>')
+        second = first.replace("first.html", "second.html")
+        self.write("second.html", "<title>Second</title><p>two</p>")
+        self.b.open_link(first)
+        tab = lambda: self.b.state()["tabs"][self.b.active]   # noqa: E731
+        self.assertTrue(self.until(lambda: tab()["icon"] == icon), tab())     # the page's own <link rel=icon>
+        self.assertEqual((tab()["fwd"], tab()["agent"]), (False, False))   # (back: to the blank page it opened on)
+        self.b.navigate(second)
+        self.assertTrue(self.until(lambda: tab()["url"] == second and tab()["back"]), tab())
+        self.assertTrue(self.until(lambda: tab()["icon"] == second.rsplit("/", 1)[0] + "/favicon.ico"), tab())   # its site's
+        self.b.navigate(action="back")
+        self.assertTrue(self.until(lambda: tab()["url"] == first and tab()["fwd"]), tab())
+        self.call("tabs", action="new", url=second)            # the agent's: marked so
+        self.assertTrue(self.until(lambda: [t["agent"] for t in self.b.state()["tabs"]] == [False, True]), self.b.state()["tabs"])
+
+    def test_tabs_moved_closed_and_reopened_where_they_were(self):
+        pages = [self.serve(f"p{i}.html", f"<title>P{i}</title>") for i in range(3)]
+        self.b.open_link(pages[0])
+        for u in pages[1:]:
+            self.b.new_tab(u)
+        urls = lambda: [t.url for t in self.b.tabs]          # noqa: E731
+        self.assertTrue(self.until(lambda: urls() == pages and all(t.title for t in self.b.tabs)), urls())
+        self.assertEqual(self.b.active, 2)
+        self.b.move_tab(2, 0)                                 # dragged to the front: still the one shown
+        self.assertEqual(urls(), [pages[2], pages[0], pages[1]])
+        self.assertEqual(self.b.active, 0)
+        self.assertIn("moved tab 3 to 1: P2", [w for _, w in self.b.lately])
+        self.b.close_tab(1)
+        self.assertTrue(self.until(lambda: urls() == [pages[2], pages[1]]), urls())
+        self.assertEqual(self.b.state()["closed"], 1)
+        self.b.reopen_tab()                                   # back where it was, shown
+        self.assertTrue(self.until(lambda: urls() == pages[2:] + pages[:2] and self.b.active == 1), (urls(), self.b.active))
+        self.assertEqual(self.b.state()["closed"], 0)
+        with self.assertRaises(browser.BrowserError):
+            self.b.reopen_tab()
+        self.b.browser_key("tab:1")                                   # a browser's keys, from the ag app's page
+        self.assertEqual(self.b.active, 0)
+        self.b.browser_key("tab:last")
+        self.assertEqual(self.b.active, 2)
+        self.b.browser_key("nextTab")
+        self.assertEqual(self.b.active, 0)
+        self.b.browser_key("closeTab")
+        self.assertTrue(self.until(lambda: urls() == pages[:2]), urls())
+        self.b.browser_key("reopenTab")
+        self.assertTrue(self.until(lambda: urls() == pages[2:] + pages[:2]), urls())
+        asked = self.b.state()["address"]
+        self.b.browser_key("address")                         # Cmd+L: the view's address bar asked for
+        self.assertEqual(self.b.state()["address"], asked + 1)
+
+    def test_a_page_loading_is_stopped_and_reloaded_hard(self):
+        page = self.serve("p.html", "<title>P</title><p id='out'>0</p><script>document.getElementById('out').textContent = String(Date.now())</script>")
+        self.b.open_link(page)
+        self.assertTrue(self.until(lambda: self.b.tabs and self.b.tabs[0].loads > 0), [t.url for t in self.b.tabs])
+        self.b.navigate(action="stop")
+        self.assertFalse(self.b.state()["tabs"][0]["loading"])
+        before = self.page_says()
+        loads = self.b.tabs[0].loads
+        self.b.navigate(action="hard-reload")
+        self.assertTrue(self.until(lambda: self.b.tabs[0].loads > loads and self.page_says() != before), self.page_says())
+        with self.assertRaises(browser.BrowserError):
+            self.b.navigate(action="sideways")
+
+    def test_zoom_and_mute_are_the_ag_apps_only(self):
+        self.b.open_link(self.serve("p.html", "<title>P</title>"))
+        for do in (lambda: self.b.zoom(None, 1), lambda: self.b.mute(None, True)):
+            with self.assertRaises(browser.BrowserError) as e:
+                do()
+            self.assertIn("ag app", str(e.exception))
 
     def test_the_agent_and_the_user_use_one_tab(self):
         self.assertIn('"Shop checkout"', self.text("navigate", url=os.path.join(self.root, "index.html")))

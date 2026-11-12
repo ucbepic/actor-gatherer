@@ -243,8 +243,16 @@ def _post(b: "core.Browser", what: str, body: dict):
             b.close_tab(i)
         elif action == "new":
             b.new_tab(str(body.get("url") or ""))
+        elif action == "reopen":
+            b.reopen_tab()
+        elif action == "move":
+            b.move_tab(i, int(body.get("to") or 0))
+        elif action == "mute":
+            return {"muted": b.mute(None if body.get("index") is None else i, bool(body.get("muted")))}
+        elif action == "zoom":
+            return {"zoom": b.zoom(None if body.get("index") is None else i, int(body.get("step") or 0))}
         else:
-            raise core.BrowserError("switch, close or new")
+            raise core.BrowserError("switch, close, new, reopen, move, mute or zoom")
     elif what == "stop":
         b.stop()
     elif what == "watch":

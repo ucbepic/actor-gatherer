@@ -2,11 +2,11 @@
 // under it (bwFeed) and outlined on it (bwOutline) -- from a Browser's stream, scripted here: the test home has no
 // Browser, nor a Chrome to run one. The panel is the real one, served on the app's own origin; its requests to its
 // backend are the routes here.
-import type { FrameLocator, Page } from "@playwright/test";
-import { expect, streamsAsRequests, test } from "./test";
-import { CLAUDE, GATHERER, NOW, openActor } from "./home";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./test";
+import { NOW } from "./home";
+import { KEY, browserActors, events, openOwn, panel } from "./browser-home";
 
-const KEY = "0123456789abcdef";
 const DELETE = [40, 60, 120, 30]; // where the agent's click was
 const ROW = [30, 50, 400, 50]; // the row whose check failed
 const NOW_BOX = [30, 200, 400, 50]; // where the clicked element is when hovered in the list (`where`)
@@ -30,73 +30,6 @@ const REFUSED = act(
   ROW,
   "Not done: expect 1 is false: el.innerText.includes('#4411')",
 );
-
-/** The test home's Claude Code actor (CLAUDE) as a Browser's (its session's `role`), the Browser an instance of the
- * app attached to it, the two one task (as the server keeps an app and the agent it started: task_links.py); the home's
- * own stream held back, so it does not replace this one. Every request of its panel's to its backend answered {} unless
- * a test says otherwise (routes added later are tried first). */
-async function browserActors(page: Page) {
-  let channel = "";
-  const task = () => ({ tasks: [{ id: 99, name: "" }], tasked: { [channel]: 99, [`app:${KEY}`]: 99 } });
-  await page.route("**/api/home", async (route) => {
-    const home = await (await route.fetch()).json();
-    for (const a of home.gatherers.find((g: { name: string }) => g.name === GATHERER).agents)
-      if (a.harness === "claude") {
-        a.session = { ...(a.session || {}), role: JSON.stringify({ app: "browser", key: KEY }) };
-        channel = a.channel;
-      }
-    home.tasks = { ...(home.tasks || {}), [GATHERER]: task() };
-    await route.fulfill({ json: home });
-  });
-  await page.route("**/api/apps?gatherer=*", async (route) => {
-    const got = await (await route.fetch()).json();
-    got.instances.push({ id: KEY, app: "browser", gatherer: GATHERER, folder: "/work", title: "work", data: {} });
-    got.attached[KEY] = [channel];
-    got.tasks = task();
-    await route.fulfill({ json: got });
-  });
-  await streamsAsRequests(page);
-  await page.route("**/api/stream*", (route) => route.abort());
-  await page.route(`**/api/w/*/${KEY}/**`, (route) => route.fulfill({ json: {} }));
-}
-/** The Browser's actor shown -- its row a task's, with its Browser -- the pointer then off the list, so the task's card
- * (live while hovered) does not lie over the panel. */
-async function openOwn(page: Page) {
-  await openActor(page, CLAUDE);
-  await page.mouse.move(0, 0);
-}
-/** The Browser's panel: its frame, on the app's own origin, above the actor. */
-const panel = (page: Page): FrameLocator => page.frameLocator("#top-row .app-pane[data-app=browser] iframe");
-
-/** The Browser's stream: its state as ag_apps/browser/core.py's `state` sends it, as server-sent events; joined again `retry` ms
- * after it ends. */
-const events = (states: object[], frame: string, retry = 150) =>
-  `retry: ${retry}\n\nevent: frame\ndata: ${JSON.stringify({ data: frame, w: 800, h: 600 })}\n\n` +
-  states
-    .map(
-      (s) =>
-        `event: state\ndata: ${JSON.stringify({
-          tabs: [{ title: "Invoices", url: "https://example.com/invoices", loading: false }],
-          active: 0,
-          picks: [],
-          acting: null,
-          dialog: null,
-          error: "",
-          running: true,
-          viewport: [800, 600],
-          chrome: "own",
-          allow: false,
-          video: false,
-          video_off: "",
-          cursor: "",
-          tip: null,
-          popup: null,
-          chooser: null,
-          downloads: [],
-          ...s,
-        })}\n\n`,
-    )
-    .join("");
 
 test("what the agent did is said under the page and flashed on it; what it didn't, and why, in amber", async ({
   page,
@@ -328,7 +261,7 @@ const CUES: { name: string; next: object; check: (page: Page) => Promise<void> }
     name: "opening a page fills the address bar with the address, lit",
     next: { label: "Opening ballotpedia.org", box: null, tool: "navigate", cue: { url: "https://ballotpedia.org/" } },
     check: async (page) => {
-      const addr = panel(page).locator(".bw-bar input[aria-label=Address]");
+      const addr = panel(page).locator(".bw-bar .omni input");
       await expect(addr).toHaveClass(/\bcoming\b/);
       await expect(addr).toHaveValue("https://ballotpedia.org/");
     },
@@ -545,4 +478,15 @@ test("the address bar suggests pages opened before: Down to one puts it in the b
   await rows.first().click();
   await expect.poll(() => opened).toEqual([PAGES[1].url, PAGES[1].url]);
   await expect(list).toBeHidden();
+  // lines pasted run together with a space, as in Chrome's address bar (a text box drops the breaks); Enter sends
+  // them as typed, for the Browser to search for
+  await addr.fill("");
+  await addr.evaluate((box) => {
+    const d = new DataTransfer();
+    d.setData("text/plain", "  τ²-Bench: Evaluating\r\nConversational Agents\n");
+    box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true }));
+  });
+  await expect(addr).toHaveValue("τ²-Bench: Evaluating Conversational Agents");
+  await addr.press("Enter");
+  await expect.poll(() => opened.at(-1)).toBe("τ²-Bench: Evaluating Conversational Agents");
 });
