@@ -157,10 +157,22 @@ def _preview(text: Optional[str], payload: Optional[str]) -> str:
     return " ".join((words or "").split())[:PREVIEW]
 
 
-def _tasks(conn, channel: Optional[str]) -> List[dict]:
+def _which(conn, gatherer: str, channel: Optional[str], column: str = f"e.{CHANNEL}") -> Tuple[str, list]:
+    """(" AND ...", its args): the named channel's rows alone; with none, in the home's one database, the gatherer's
+    group's (data.members) -- ("", []) for every channel of a database the gatherer has to itself."""
+    if channel is not None:
+        return f" AND ifnull({column}, '') = ?", [channel]
+    mine = data.members(conn, gatherer)
+    if mine is None:
+        return "", []
+    return f" AND ifnull({column}, '') IN ({', '.join('?' * len(mine))})", sorted(mine)
+
+
+def _tasks(conn, gatherer: str, channel: Optional[str]) -> List[dict]:
     if "tasks" not in data._tables(conn):
         return []
-    where, args = ("WHERE channel_key = ?", (channel,)) if channel is not None else ("", ())
+    which, args = _which(conn, gatherer, channel, "channel_key")
+    where = f"WHERE 1{which}" if which else ""
     return [{"channel": r["channel_key"], "index": r["task_index"], "name": r["name"], "description": r["description"],
              "first_row": r["first_row"], "last_row": r["last_row"], "tokens": r["tokens"]}
             for r in conn.execute(f"SELECT channel_key, task_index, name, description, first_row, last_row, tokens "
@@ -172,12 +184,13 @@ def _tasks(conn, channel: Optional[str]) -> List[dict]:
 BUILD_MESSAGES = 10
 
 
-def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
+def _builds(conn, gatherer: str, channel: Optional[str]) -> Dict[str, dict]:
     """Each channel's latest build of its own history -- {build_id, status, reason, started, finished, error}
     -- and how many user messages it has after the last row those went through (`since`). A join is not one:
     it ranks the other channels' tasks, and splits nothing of the channel's own."""
     tables = data._tables(conn)
-    where, args = (f"WHERE ifnull(e.{CHANNEL}, '') = ?", (channel,)) if channel is not None else (f"WHERE e.{CHANNEL} IS NOT NULL", ())
+    which, args = _which(conn, gatherer, channel)
+    where = f"WHERE e.{CHANNEL} IS NOT NULL{which}"
     cols = data._columns(conn, "_builds") if "_builds" in tables else set()
     own = "WHERE coalesce(reason, '') != 'join'" if "reason" in cols else ""
     through = dict(conn.execute(f"SELECT channel_key, max(through_row) FROM _builds {own} GROUP BY channel_key")) \
@@ -212,9 +225,8 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
     try:
         if not data._channels_kept(conn):
             return dict(data.NOTHING_YET)
-        where, args = f"e.row_id > ? AND e.{CHANNEL} IS NOT NULL AND {data.NOT_RECORD}", [after]
-        if channel is not None:
-            where, args = where + f" AND ifnull(e.{CHANNEL}, '') = ?", args + [channel]
+        which, mine = _which(conn, gatherer, channel)
+        where, args = f"e.row_id > ? AND e.{CHANNEL} IS NOT NULL AND {data.NOT_RECORD}{which}", [after, *mine]
         # a user message as ag stored it cleaned -- the harness's wrapper around it taken off -- where it has
         cleaned = "cleaned_messages" in data._tables(conn)
         words = "coalesce(c.text, e.text)" if cleaned else "e.text"
@@ -236,7 +248,7 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
                    or _preview(harness_kit.words(r["text"])[1] if r["type"] == "user_message" and r["text"] else r["text"],
                                r["payload"])}
                   for r in rows[:OUTLINE_ITEMS]]
-        return {"events": events, "tasks": _tasks(conn, channel), "builds": _builds(conn, channel),
+        return {"events": events, "tasks": _tasks(conn, gatherer, channel), "builds": _builds(conn, gatherer, channel),
                 "more": len(rows) > OUTLINE_ITEMS}
     finally:
         conn.close()
@@ -273,9 +285,8 @@ def search(gatherer: str, channel: Optional[str], q: str) -> dict:
             return {"hits": [], "more": False}
         like = "%" + re.sub(r"([\\%_])", r"\\\1", q) + "%"
         words = "CASE WHEN e.text IS NULL OR e.text = '' THEN e.payload_json ELSE e.text END"
-        where, args = f"e.{CHANNEL} IS NOT NULL AND {data.NOT_RECORD} AND {words} LIKE ? ESCAPE '\\'", [like]
-        if channel is not None:
-            where, args = where + f" AND ifnull(e.{CHANNEL}, '') = ?", args + [channel]
+        which, mine = _which(conn, gatherer, channel)
+        where, args = f"e.{CHANNEL} IS NOT NULL AND {data.NOT_RECORD} AND {words} LIKE ? ESCAPE '\\'{which}", [like, *mine]
         rows = conn.execute(f"SELECT e.row_id, e.text, e.payload_json FROM events e WHERE {where} ORDER BY e.row_id LIMIT ?",
                             (*args, SEARCH_HITS + 1)).fetchall()
         hits = []
@@ -391,7 +402,7 @@ def render(gatherer: str, rows, clip: Optional[dict] = CLIP) -> Tuple[str, dict]
         user_rows = {ch: [x[0] for x in conn.execute(
             f"SELECT e.row_id FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
             f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'user_message' ORDER BY e.row_id", (ch,))] for ch in order}
-        tasks = {ch: _tasks(conn, ch) for ch in order}
+        tasks = {ch: _tasks(conn, gatherer, ch) for ch in order}
         cwd = {}
         if CHANNEL in data._columns(conn, "_reads") and "p_cwd" in data._columns(conn, "_reads"):
             for ch in order:
