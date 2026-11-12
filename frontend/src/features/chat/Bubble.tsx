@@ -46,7 +46,7 @@ export function UserWords({ text, kind }: { text: string; kind?: string }) {
   return <span className={"tx" + (kind === "user_command" ? " bang" : "")}>{text}</span>;
 }
 
-const COORDINATOR_NAME = "Gatherer agent";
+const COORDINATOR_NAME = "Coordinator agent";
 const isCoordinator = (a: Actor) => a.role === "coordinator";
 
 /** The actor of the gatherer shown that a message names: the gatherer agent, or the one whose id starts with `id`. */
@@ -273,7 +273,7 @@ export function SentBubble({ m }: { m: SentMessage }) {
   const { feed, host } = useChat();
   const coordinator = m.to_name === COORDINATOR_NAME,
     to = crewActor(feed, coordinator, String(m.to || ""));
-  const who = coordinator ? "the gatherer agent" : to?.name?.text || m.to_name || `actor ${crewId(m.to)}`;
+  const who = coordinator ? "the coordinator agent" : to?.name?.text || m.to_name || `actor ${crewId(m.to)}`;
   const fold = useCrewFold(crewKey(feed, m.text));
   return (
     <div

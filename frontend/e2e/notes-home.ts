@@ -34,15 +34,21 @@ export async function newPage(page: Page, panel: FrameLocator, title: string) {
   await page.keyboard.press("Enter");
 }
 
-/** The page, put in the trash from its row's menu, then deleted for good from the trash. */
+/** The page, put in the trash from its row's menu, then deleted for good from the trash. By its title exactly: "Undo"
+ * is not "Undone", a page another test left. */
 export async function binPage(panel: FrameLocator, title: string) {
-  const row = panel.locator(".pg-row", { hasText: title }).first();
+  const exact = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rows = panel.locator(".pg-row").filter({ has: panel.locator(".nm", { hasText: new RegExp(`^${exact}$`) }) });
+  const binned = panel
+    .locator(".trash-row")
+    .filter({ has: panel.locator(".nm", { hasText: new RegExp(`(^|\\s)${exact}$`) }) });
+  const row = rows.first();
   await row.hover();
   await row.locator(".acts button[title=More]").click();
   await panel.locator(".pop .it", { hasText: "Move to trash" }).click();
-  await expect(panel.locator(".pg-row", { hasText: title })).toHaveCount(0);
+  await expect(rows).toHaveCount(0);
   await panel.locator("#trash-btn").click();
-  await panel.locator(".trash-row", { hasText: title }).locator("button[title='Delete for good']").click();
-  await expect(panel.locator(".trash-row", { hasText: title })).toHaveCount(0);
+  await binned.locator("button[title='Delete for good']").click();
+  await expect(binned).toHaveCount(0);
   await panel.locator("#trash-btn").click();
 }
