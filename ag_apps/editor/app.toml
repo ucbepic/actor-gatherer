@@ -5,7 +5,8 @@
 # documents the actors' branches merge into). Beside the file, the project's preview: the command that builds or
 # runs it, set by the user or an agent, run by either (Execute, ⌘↵), and what it makes. One per Editor started, on a
 # folder, with an agent of its own (started with it), who alone is given its tools and instructions -- as the Browser
-# and DocWriter are.
+# and DocWriter are. Lines selected in a file are sent from there to any actor of the gatherer, with what to do, as the
+# user's message (message_actors).
 name = "editor"
 label = "Editor"
 version = "1"
@@ -42,6 +43,7 @@ entry = "panel/index.html"
 docs = true
 actors = true
 edit_guard = true
+message_actors = true
 
 [[tools]]
 name = "read"
