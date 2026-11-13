@@ -418,9 +418,9 @@ function startPlacing() {
 let autoShown = null;
 async function viaTabs(k, ev, item = null) {
   if (!workPlacer || !k || !ev || ev.inTabs || SNAPSHOT || ev.shiftKey) return false;
-  const tabs = workPlacer.tabs;
-  if (tabs.busy()) await tabs.settled();             // a tab still being shown (its panels opened one by one): once it is
-  const at = tabs.where(k);
+  // (a tab still being shown -- its actors' chats loading -- is overtaken: the click goes on at once, from the tasks it was
+  // being given)
+  const tabs = workPlacer.tabs, at = tabs.where(k);
   const chance = !!autoShown && shownPanels().every((s) => !s.key || s.key === autoShown);
   autoShown = null;
   if (ev.ctrlKey || ev.metaKey) {
@@ -486,8 +486,9 @@ async function clearWork() {
 // A tab shown: its tasks in place of those shown, each as it was left -- the first of them with an actor (`focus`, if it
 // has one) entered as a click on its row does, closing the rest (terminals kept), the others opened beside it, as ⌘+click
 // does: those with actors first, those of apps alone after (one entered first would put the actors' panes out of sight,
-// and the actors opened beside it would not be shown); `focus` in focus after
-async function enterTasks(keys, focus) {
+// and the actors opened beside it would not be shown); `focus` in focus after. Another tab shown meanwhile (`live`
+// false: a click goes on at once, not waiting on what an actor shown loads), no more opened.
+async function enterTasks(keys, focus, live = () => true) {
   const all = [focus, ...keys].filter((k, i, them) => k && them.indexOf(k) === i);
   const actor = (k) => {
     const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
@@ -496,6 +497,7 @@ async function enterTasks(keys, focus) {
   };
   const order = [...all.filter(actor), ...all.filter((k) => !actor(k))];
   for (const [i, k] of order.entries()) {
+    if (!live()) return;
     const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
     if (!gg || id === undefined) continue;
     const beside = i > 0;
@@ -510,7 +512,7 @@ async function enterTasks(keys, focus) {
       else { enterAppTask(g, k); await taskAppsOpening; }
     } else if (gg.agents.some((a) => a.channel === id)) await (beside ? openTaskBeside(g, k, id) : show(g, id));
   }
-  focusTask(focus);
+  if (live()) focusTask(focus);
 }
 // A task's key as it is now: a lone item's -- an actor's, an app's -- the task it has been put in since, if it has (taskKey);
 // any other, as it is (a task's; one not known yet, its apps not read). A screen tab keeps the keys of the tasks it was

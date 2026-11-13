@@ -134,6 +134,25 @@ test("a click while a tab is still being opened goes where it would once it is",
   await expect(mark(page, CLAUDE)).toHaveText("1");
 });
 
+test("a click is not held up by a tab still loading what its actor shows: it goes on at once", async ({ page }) => {
+  await twoTabs(page); // Codex's tab shown
+  await page.route("**/api/files?*", async (route) => {
+    await new Promise((r) => setTimeout(r, 6000)); // an actor's Chat slow to load: Claude's tab a long while opening
+    await route.continue();
+  });
+  await tabs(page).nth(0).click();
+  await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true");
+  await row(page, CODEX).click(); // well before Claude's Chat has loaded
+  await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 3000 });
+  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true", { timeout: 3000 });
+  await page.waitForTimeout(6500); // Claude's tab done loading meanwhile: nothing of it opened here, nothing lost
+  await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(notes(page)).toHaveCount(0);
+  await expect(tabs(page)).toHaveCount(2);
+  await row(page, CLAUDE).click(); // and Claude's tab, shown again, has its task whole
+  await expect(notes(page)).toHaveCount(1);
+});
+
 test("reloaded, the page shows the tab shown's actor again, whichever of its first answers comes first", async ({
   page,
 }) => {
