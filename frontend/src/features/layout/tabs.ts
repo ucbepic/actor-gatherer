@@ -55,6 +55,8 @@ export class Tabs {
   private tabs: Tab[];
   private current: string;
   private switching = false;
+  private settling: Promise<void> = Promise.resolve(); // the tab being shown (or made): done
+  private started = false; // the page's first tab shown as it was left (start): the tab shown kept as it changes since
   private readonly strip: HTMLElement;
   private readonly list: HTMLElement;
   private readonly add: HTMLButtonElement;
@@ -92,9 +94,37 @@ export class Tabs {
   height(): number {
     return TABS_H;
   }
-  /** Whether a tab is being shown (its tasks opened one by one): no click routed meanwhile. */
+  /** Whether a tab is being shown (its tasks opened one by one): a click waits (settled) before it goes anywhere. */
   busy(): boolean {
     return this.switching;
+  }
+  /** Once the tab being shown, or made, is. */
+  settled(): Promise<void> {
+    return this.settling;
+  }
+
+  /** The page opened, what it shows known: the tab shown's tasks shown as it was left, if the page shows others (the
+   * actor it opens on by itself) -- true if so. From then on the tab shown is kept as it changes, for a reload. */
+  async start(): Promise<boolean> {
+    if (this.started) return false;
+    this.started = true;
+    const tab = this.tab(),
+      kept = this.tasksOf({ ...tab, id: "" }),
+      shown = this.hooks.shown();
+    if (!kept.length || (kept.length === shown.length && kept.every((k) => shown.includes(k)))) return false;
+    const focus = tab.focus && this.hooks.canon ? this.hooks.canon(tab.focus) : tab.focus;
+    this.hooks.setScreen(tab.screen);
+    await this.switch(() => this.hooks.enter(kept, focus));
+    return true;
+  }
+  // the tab shown kept as it is now, once started: its tasks, their arrangement, the one in focus (a reload shows it so)
+  private note(): void {
+    if (!this.started || this.switching) return;
+    const tab = this.tab(),
+      now = { tasks: this.hooks.shown(), screen: this.hooks.screen(), focus: this.hooks.focus() };
+    if (JSON.stringify(now) === JSON.stringify({ tasks: tab.tasks, screen: tab.screen, focus: tab.focus })) return;
+    Object.assign(tab, now);
+    this.save();
   }
 
   /** Where a task is open: the tab holding it (its number, from 1), and whether that is the tab shown; null: nowhere. */
@@ -141,15 +171,7 @@ export class Tabs {
   async blank(): Promise<void> {
     if (this.switching) return;
     this.fresh();
-    this.switching = true;
-    this.hooks.hold(true);
-    try {
-      await this.hooks.clear?.();
-    } finally {
-      this.switching = false;
-      this.hooks.hold(false);
-      this.hooks.changed();
-    }
+    await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
   }
 
   /** The tab `id` shown, `focus` in focus (else the task in focus when it was left). */
@@ -162,17 +184,26 @@ export class Tabs {
     this.current = id;
     this.drop(left);
     this.save();
+    this.hooks.setScreen(to.screen);
+    await this.switch(() => this.hooks.enter(tasks, focus ?? kept));
+  }
+
+  // the panels of the tab shown changed (`work`): the tasks' arrangement held as it is, nothing routed, till it is done
+  private async switch(work: () => Promise<void>): Promise<void> {
     this.switching = true;
     this.hooks.hold(true);
-    this.hooks.setScreen(to.screen);
     this.draw();
-    try {
-      await this.hooks.enter(tasks, focus ?? kept);
-    } finally {
-      this.switching = false;
-      this.hooks.hold(false);
-      this.hooks.changed();
-    }
+    const done = (async () => {
+      try {
+        await work();
+      } finally {
+        this.switching = false;
+        this.hooks.hold(false);
+        this.hooks.changed();
+      }
+    })();
+    this.settling = done.catch(() => {});
+    await done;
   }
 
   /** The tab next to the one shown (`by` -1: before it), shown. */
@@ -201,8 +232,9 @@ export class Tabs {
     this.draw();
   }
 
-  /** The bar drawn again: each tab's faces, name and what its actors do. */
+  /** The bar drawn again: each tab's faces, name and what its actors do (the tab shown kept as it is now). */
   draw(): void {
+    this.note();
     if (this.list.querySelector("input")) return; // a name being typed: left as it is
     const want = this.tabs.map((t) => this.look(t));
     const sig = JSON.stringify([want, this.tabs.length > 1]);

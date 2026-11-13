@@ -417,8 +417,10 @@ function startPlacing() {
 // True: the task now shown where the click goes on as a plain one (⌘ having brought its tab forward).
 let autoShown = null;
 async function viaTabs(k, ev, item = null) {
-  if (!workPlacer || !k || !ev || SNAPSHOT || ev.shiftKey || workPlacer.tabs.busy()) return false;
-  const tabs = workPlacer.tabs, at = tabs.where(k);
+  if (!workPlacer || !k || !ev || ev.inTabs || SNAPSHOT || ev.shiftKey) return false;
+  const tabs = workPlacer.tabs;
+  if (tabs.busy()) await tabs.settled();             // a tab still being shown (its panels opened one by one): once it is
+  const at = tabs.where(k);
   const chance = !!autoShown && shownPanels().every((s) => !s.key || s.key === autoShown);
   autoShown = null;
   if (ev.ctrlKey || ev.metaKey) {
@@ -434,6 +436,14 @@ async function viaTabs(k, ev, item = null) {
     if (t) await workPlacer.showTab(k, t);
   }
   return !!(ev.ctrlKey || ev.metaKey);
+}
+// The page opened, the home come: the tab shown's tasks shown as it was left (tabs.ts's start), in place of what the page
+// opened on by itself (the first actor; with one pane, the page keeps none) -- once
+let tabsStarted = false;
+async function startTabs() {
+  if (tabsStarted || !workPlacer || !state.home || PANE || SNAPSHOT) return;
+  tabsStarted = true;
+  if (await workPlacer.tabs.start()) autoShown = null;
 }
 // Task `k`'s panel in focus, if one is shown: its actor's pane (this page's own first), else its app's panel selected
 function focusTask(k) {
@@ -493,7 +503,7 @@ async function enterTasks(keys, focus) {
       const t = Number(id.slice(1));
       if (!taskById(g, t)) continue;
       if (beside && !taskLead(gg, t)) await openTaskApps(g, null, k, (taskLayout(k) || {}).apps || null, true);   // apps alone
-      else await openTask(g, t, null, beside ? { metaKey: true } : null);
+      else await openTask(g, t, null, beside ? { metaKey: true, inTabs: true } : null);   // (the tab's own: not routed)
     } else if (isAppItem(id)) {
       if (!appInfo(g, id.slice(APP_ITEM.length))) continue;
       if (beside) await openTaskApps(g, null, k, null, true);

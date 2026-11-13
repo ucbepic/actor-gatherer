@@ -129,6 +129,7 @@ async function refresh(userAction = false) {
       }
     }
     if (state.selected && !PANE) showActorsApp(...state.selected);   // an app's actor (19-app-actors.js): its panel above
+    startTabs();                                     // the tab shown as it was left (07-panes.js)
     await loadAgent().catch(() => { state.agent = null; });   // a session started here may have no database yet
     await loadChat();
     render(userAction);

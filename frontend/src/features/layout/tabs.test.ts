@@ -93,6 +93,19 @@ describe("screen tabs", () => {
     expect(strip(t)).toEqual(["T *", "B"]);
   });
 
+  it("kept as it changes, the tab shown is shown again on a reload, in place of what the page opened on", async () => {
+    const t = tabs();
+    await t.start(); // nothing kept yet: as it is
+    expect(entered).toEqual([]);
+    shown = ["a", "b"];
+    t.draw(); // kept as it is now
+    const again = tabs(); // the page reloaded, on the actor it opens on by itself
+    shown = ["z"];
+    expect(await again.start()).toBe(true);
+    expect(entered).toEqual([[["a", "b"], "a"]]);
+    expect(await again.start()).toBe(false); // once
+  });
+
   it("where a task is open: its tab's number, and whether it is the tab shown", () => {
     const t = tabs();
     shown = ["a", "b"];

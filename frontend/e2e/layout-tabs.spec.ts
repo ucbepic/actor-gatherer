@@ -119,6 +119,38 @@ test("an actor stays in its tab though an app beside it was selected as the tab 
   await expect(mark(page, CLAUDE)).toHaveText("1"); // still kept in tab 1
 });
 
+test("a click while a tab is still being opened goes where it would once it is", async ({ page }) => {
+  await twoTabs(page); // Codex's tab shown
+  await page.route("**/api/apps?*", async (route) => {
+    await new Promise((r) => setTimeout(r, 1500)); // the apps read slowly: Claude's tab a while opening
+    await route.continue();
+  });
+  await tabs(page).nth(0).click(); // Claude's tab, still opening its Notepad...
+  await row(page, CODEX).click(); // ...as Codex is clicked: its tab, once Claude's is open
+  await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(notes(page)).toHaveCount(0);
+  await expect(tabs(page)).toHaveCount(2);
+  await expect(mark(page, CLAUDE)).toHaveText("1");
+});
+
+test("reloaded, the page shows the tab shown's actor again, whichever of its first answers comes first", async ({
+  page,
+}) => {
+  await twoTabs(page);
+  await tabs(page).nth(0).click(); // Claude's tab: not the actor the page opens on by itself
+  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await page.route("**/api/home", async (route) => {
+    await new Promise((r) => setTimeout(r, 1500)); // the stream's home first
+    await route.continue();
+  });
+  await page.reload();
+  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true");
+  await expect(notes(page)).toHaveCount(1);
+  await expect(mark(page, CODEX)).toHaveText("2");
+});
+
 test('"+" opens a new tab, empty, the next task clicked shown in it; left empty, it goes', async ({ page }) => {
   await open(page);
   await row(page, CLAUDE).click();
