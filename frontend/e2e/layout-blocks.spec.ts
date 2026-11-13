@@ -10,6 +10,12 @@ import { addNotepad } from "./task-home";
 
 const beside = process.platform === "darwin" ? "Meta" : "Control";
 const box = async (l: Locator) => (await l.boundingBox())!;
+// its box once it has one: a row of the list, drawn again as what is shown changes, is measured on the row now
+async function settledBox(l: Locator): Promise<Box> {
+  let b: Box | null = null;
+  await expect.poll(async () => (b = await l.boundingBox()) !== null).toBe(true);
+  return b!;
+}
 type Box = { x: number; y: number; width: number; height: number };
 async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
   await page.mouse.move(from.x, from.y);
@@ -85,7 +91,7 @@ test("a task's row dragged from the list onto the top of the work area: opened t
   const h = await box(here);
   const codexRow = page.locator("#agents button.agent", { hasText: CODEX });
   await expect(codexRow).toBeVisible(); // (the list drawn again as Claude is shown)
-  const row = await box(codexRow);
+  const row = await settledBox(codexRow);
   await drag(page, middle(row), { x: h.x + h.width / 2, y: h.y + h.height * 0.1 });
   const codex = page.locator("#panes > .pane").nth(1);
   await expect(codex).toHaveCount(1);
