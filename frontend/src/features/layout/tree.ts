@@ -14,6 +14,8 @@ export interface Size {
   px?: number;
   fit?: boolean;
   min?: number;
+  /** a task's apps' row, never dragged in it: as tall as the one dragged last (work.ts makes it a `px`) */
+  top?: boolean;
 }
 export interface Split {
   /** what the split is, to whoever made the tree: told with its sizes when a bar of it is dragged */
@@ -27,6 +29,9 @@ export interface Split {
   still?: boolean;
   /** its bars drawn as a band, not a line */
   thick?: boolean;
+  /** a split of the panels shown (arrange.ts's view): the one kept it came from, and where each of its kids is in it */
+  src?: Split;
+  at?: number[];
 }
 export type Node = Leaf | Split;
 export interface Rect {

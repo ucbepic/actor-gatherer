@@ -140,3 +140,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .warn { color: var(--ink-2); font-size: 12px; margin-top: 8px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .stale { opacity: .55; transition: opacity .2s; }
+/* a panel moved from its head's menu (07-panes.js's moveMenu): the menu hangs from the point pressed, each choice its arrow */
+.lay-anchor { position: fixed; width: 0; height: 0; pointer-events: none; }
+.row-menu .lay-mark { flex: none; width: 16px; text-align: center; color: var(--ink-2); }
+.files .fl-act.fl-grip { cursor: grab; }

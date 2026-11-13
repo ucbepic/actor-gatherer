@@ -65,25 +65,26 @@ function setAppsOnly(k) {
 }
 let taskNow = null;                                  // the task last entered: what the apps opened for it wait on
 // Each task's LAYOUT, as it was left (`taskLayouts`, kept in this browser): its actors' panes, in order, the one in focus,
-// the view each shows and its width, and its apps' panels, each its width -- with the top row's height and the chat
-// minimized under it or not -- so a task is opened again as it was, an actor's pane or an app's panel closed in it staying
-// closed. A task never left yet opens as a task does at first: its actors not closed side by side, its apps above, the
-// chat not minimized.
+// the view each shows, and its apps' panels -- with the chat minimized under them or not -- so a task is opened again as
+// it was, an actor's pane or an app's panel closed in it staying closed; where each goes, and how wide or tall, its
+// arrangement (features/layout/work.ts; made, the first time, from the widths and height an older page kept here). A
+// task never left yet opens as a task does at first: its actors not closed side by side, its apps above, the chat not
+// minimized.
 const TASK_LAYOUTS_KEY = "ag-dashboard-task-layouts-2", TASK_LAYOUTS_KEPT = 200;   // -2: none kept of a task never laid out
 const taskLayouts = (() => { try { return JSON.parse(localStorage.getItem(TASK_LAYOUTS_KEY)) || {}; } catch (e) { return {}; } })();
 function rememberTask(key) {
   if (!key) return;
   const sel = focusedActor(), [g] = key.split("\u0000"), its = (pg, c) => pg === g && taskKey(pg, c) === key;
   const actors = openActors().filter(([pg, c]) => its(pg, c)).map(([, c]) => c);
-  const views = {}, sizes = {};                      // each of its actors' panes: the view it shows, its width
-  if (state.selected && its(...state.selected)) { views[state.selected[1]] = chatView().id; sizes[state.selected[1]] = panes.here.size; }
-  for (const p of actorPanes()) if (its(p.g, p.c)) { if (p.view) views[p.c] = p.view; sizes[p.c] = p.size; }
-  const apps = panes.apps.filter((p) => !p.held && p.g === g && appPaneTask(p) === key).map((p) => ({ app: p.app.name, id: p.instance.id, size: p.size }));
+  const views = {};                                  // each of its actors' panes: the view it shows
+  if (state.selected && its(...state.selected)) views[state.selected[1]] = chatView().id;
+  for (const p of actorPanes()) if (its(p.g, p.c) && p.view) views[p.c] = p.view;
+  const apps = panes.apps.filter((p) => !p.held && p.g === g && appPaneTask(p) === key).map((p) => ({ app: p.app.name, id: p.instance.id }));
   const chosen = appSelected(), focusApp = chosen && apps.some((a) => a.id === chosen) ? chosen : null;   // an app selected in it
   const mine = !appsOnly && sel && taskKey(sel[0], sel[1]) === key;
-  const under = !appsOnly && apps.length > 0;       // its actors under its apps: the chat minimized there, the row's height
+  const under = !appsOnly && apps.length > 0;       // its actors under its apps: the chat minimized there or not
   taskLayouts[key] = { actors: appsOnly ? [] : actors, focus: mine ? sel[1] : appsOnly ? null : actors[0] || null, focusApp, apps,
-    views: appsOnly ? {} : views, sizes: appsOnly ? {} : sizes, min: under && !!state.chatMin, topH: under ? topHeight() || 0 : null, at: Date.now() };   // 0: never dragged
+    views: appsOnly ? {} : views, min: under && !!state.chatMin, at: Date.now() };
   const keys = Object.keys(taskLayouts).sort((x, y) => taskLayouts[y].at - taskLayouts[x].at);
   for (const k of keys.slice(TASK_LAYOUTS_KEPT)) delete taskLayouts[k];
   try { localStorage.setItem(TASK_LAYOUTS_KEY, JSON.stringify(taskLayouts)); } catch (e) { /* this page only */ }
@@ -93,8 +94,8 @@ const taskLayout = (key) => taskLayouts[key] || null;
 // remembered (rememberTask: only one laid out in this page -- one shown by chance as the page opened, its apps never
 // opened, would be remembered as having none), its panes closed (terminals kept) and its apps' panels (one attached to
 // none kept: no task's; one whose agent is at work held out of sight, as closing it does), the new task's actor taken
-// into this page's pane and its apps' panels opened above (openTaskApps), the chat minimized under them or not and the
-// row as tall as when it was left (taskLooks) -> `view`, the view `c` showed then (not open already), and `after`, what
+// into this page's pane and its apps' panels opened above (openTaskApps), the chat minimized under them or not, as it
+// was left (taskLooks) -> `view`, the view `c` showed then (not open already), and `after`, what
 // to do once `c` is shown: the rest of its actors' panes opened beside it, as the task was left, or, never left, every
 // one not closed (its lead first). The same task: nothing to do -- but, never laid out in this page, laid out now, adding
 // to what is open.
@@ -126,9 +127,8 @@ function enterTask(g, c) {
   return { view, after: () => layOutTask(g, to, c, was ? was.actors : taskOrder(g, to), was) };
 }
 // A task entered: the chat under its apps minimized (`min`) or not, every pane told -- drawn so as its apps' panels come
-// (topChanged), and so at once where they are already -- and its top row as tall as it was left
+// (topChanged), and so at once where they are already
 function taskLooks(was, min) {
-  if (was && typeof was.topH === "number") setTopHeight(was.topH);
   if (min === !!state.chatMin) return;
   if (topShown()) { setChatMin(min); return; }
   keepMin(min);
@@ -155,7 +155,7 @@ function enterAppTask(g, k) {
 // The tasks laid out in this page (entered, or opened at first by openTask): a task shown, laid out, stays as it is
 const tasksLaidOut = new Set();
 // a task's actors `rest`, not closed, opened beside `c` (shown), as many as there is room for -- each in the view it showed
-// and as wide as it was when the task was left (`was`); `c` in focus after
+// when the task was left (`was`); `c` in focus after
 function layOutTask(g, to, c, rest, was = null) {
   const gg = state.home && state.home.gatherers.find((x) => x.name === g);
   const open = (ch) => { const a = gg && gg.agents.find((x) => x.channel === ch); return a && statusOf(a)[0] !== "closed" && taskKey(g, ch) === to; };
@@ -165,17 +165,7 @@ function layOutTask(g, to, c, rest, was = null) {
     if (allPanes().length >= MAX_PANES) break;
     openBeside(g, ch, (was && was.views && was.views[ch]) || null);
   }
-  if (was && was.sizes) sizePanes(g, was.sizes);
   focusPane(actorPanes().find((p) => isAt([p.g, p.c], g, c)) || panes.here);
-}
-// the actors' panes of `g` as wide as `sizes` (channel -> its share) says, each it names
-function sizePanes(g, sizes) {
-  let moved = false;
-  for (const p of allPanes()) {
-    const at = p === panes.here ? state.selected : [p.g, p.c], s = at && at[0] === g ? +sizes[at[1]] : 0;
-    if (s > 0 && s !== p.size) { p.size = s; moved = true; }
-  }
-  if (moved) { layout(); savePanes(); }
 }
 // A task opened BESIDE the one shown (⌘/Ctrl+click on it): nothing of the one shown closed -- its actors not closed, as it
 // was left (else its lead first; `first`, first), in panes beside the one in focus, as many as there is room for, and its
@@ -352,7 +342,7 @@ if (!PANE && !SNAPSHOT) window.addEventListener("blur", () => setTimeout(() => {
   if (p && appSel !== p.instance.id) selectAppPane(p);
 }, 0));
 // The panes' widths (each its share, `size`), which is in focus, and whether the page is split at all: split,
-// each pane's head says whose it is, and has its ×. Placed so (workTree).
+// each pane's head says whose it is, and has its ×. Placed so (placeWork).
 function layout() {
   const split = panes.others.length > 0;
   document.getElementById("panes").classList.toggle("split", split);
@@ -361,44 +351,96 @@ function layout() {
   drawn.who = null; drawWho();
 }
 // ------------------------------------------------------------------ the work area placed
-// The column right of the list as a tree (features/layout/tree.ts), for a box this size: the apps' panels above (the top
-// row), side by side, as tall as the row was dragged (else half the column, at least TOP_MIN), the band under them part
-// of that; the actors' panes below, side by side -- only as tall as their message boxes, the chat minimized under the
-// apps (18-top.js); none, a task of apps only shown (appsOnly). Placed there (window.agNext.layout), each bar dragged
-// telling its sizes back (workResized). None placed at a phone's width: the stylesheet lays them out, one under another.
-const TOP_BAND = 5, TOP_MIN = 140, BELOW_MIN = 220;  // the band under the top row; the room each keeps, a bar dragged
+// The panels shown, as the work area arranges them (features/layout/work.ts): each task shown a block of its own, side by
+// side, laid out as the reader arranged it (kept per task in this browser) -- at first its apps' panels side by side
+// above its actors' panes side by side -- the chat minimized under the apps only as tall as their message boxes; a task
+// of apps only shown (appsOnly), its apps alone. A pane's head (or its Chat bar's grip, the head put there) or an app's
+// panel's head dragged moves it beside another panel of its task, or into its place; right-clicked, a menu does. None
+// placed at a phone's width: the stylesheet lays them out, one under another.
 let workPlacer = null;
-const workNodes = new Map();                         // each panel's element, by its id in the tree last made
-function workTree(box) {
-  workNodes.clear();
-  if (NARROW.matches) return null;
-  const leaf = (id, node) => { workNodes.set(id, node); return { id }; };
-  const side = (key, ps, idOf) => ps.length === 1 ? leaf(idOf(ps[0]), ps[0].node)
-    : { key, dir: "row", bar: 1, kids: ps.map((p) => leaf(idOf(p), p.node)), sizes: ps.map((p) => ({ share: p.size, min: MIN_PANE })) };
-  const above = panes.apps.filter((p) => !p.held);
-  const below = side("actors", allPanes(), (p) => (p === panes.here ? "here" : `actor:${p.g}\u0000${p.c}`));
-  if (!above.length) return below;
-  const top = side("apps", above, (p) => `app:${p.instance.id}`);
-  if (appsOnly) return top;
-  const min = chatMin(), h = Math.max(TOP_MIN, topHeight() || box.h / 2);
-  return { key: "work", dir: "col", bar: TOP_BAND, thick: true, still: min, kids: [top, below],
-    sizes: min ? [{ share: 1 }, { fit: true }] : [{ px: h - TOP_BAND, min: TOP_MIN - TOP_BAND }, { share: 1, min: BELOW_MIN }] };
+// The panels shown, in order -- this page's own pane, the others, the apps' panels -- each with its task's key (null: a
+// terminal, the gatherer's agent, the page with no actor, or any panel before the home has come and says what tasks
+// there are: a block of its own, kept nowhere) and its item there.
+function shownPanels() {
+  const known = !!state.home, out = [], actor = (g, c, node) => out.push({ key: known ? taskKey(g, c) : null, item: c, node, app: false });
+  if (!appsOnly) {
+    if (state.selected) actor(state.selected[0], state.selected[1], panes.here.node);
+    else out.push({ key: null, item: "here", node: panes.here.node, app: false });
+    for (const p of actorPanes()) actor(p.g, p.c, p.node);
+  }
+  for (const p of panes.apps) if (!p.held) out.push({ key: known ? appPaneTask(p) : null, item: appItem(p.instance.id), node: p.node, app: true });
+  return out;
 }
-// A bar dragged (`done`: let go) or double-clicked: the panes' or the panels' shares, or the top row's height, as it puts them
-function workResized(key, sizes, done) {
-  if (key === "work") { dragTopHeight(sizes[0].px + TOP_BAND, done); return; }
-  const ps = key === "apps" ? panes.apps.filter((p) => !p.held) : allPanes();
-  ps.forEach((p, i) => { if (sizes[i] && sizes[i].share > 0) p.size = sizes[i].share; });
-  if (key === "apps") { topLayout(); if (done) saveAppPanes(); }
-  else { layout(); if (done) savePanes(); }
+let placedFor = "";
+const shownSig = () => JSON.stringify(shownPanels().map((s) => [s.key, s.item]));
+// (a failure placing them breaks nothing that called it -- a panel being opened, the panels kept being restored: thrown
+// again on its own)
+function placeWork() {
+  if (!workPlacer) return;
+  try { placedFor = shownSig(); workPlacer.place(); } catch (e) { setTimeout(() => { throw e; }, 0); }
 }
-function placeWork() { if (workPlacer) workPlacer.place(); }
+// placed again only if what it shows changed since (an actor shown in this page's own pane, one put in a task): each draw
+function placeIfShown() { if (workPlacer && shownSig() !== placedFor) placeWork(); }
 function startPlacing() {
   if (PANE || SNAPSHOT || workPlacer) return;
-  workPlacer = window.agNext.layout.placer(document.querySelector(".work"),
-    { tree: workTree, node: (id) => workNodes.get(id) || null, resized: workResized });
+  workPlacer = window.agNext.layout.work(document.querySelector(".work"),
+    { shown: shownPanels, min: chatMin, narrow: () => NARROW.matches, old: (k) => taskLayout(k) });
   NARROW.addEventListener("change", placeWork);
   placeWork();
+}
+// A panel's head dragged -- this page's own pane's, its Chat bar's grip (the head put there), an app's panel's; in a
+// frame, the page around it told -- picks it up (none from a press on a button in it, nor one with nowhere to go); let
+// go, it is put down. Right-clicked: what it can be moved to, as a menu.
+const MOVE_FROM = "#pane-here > .pane-top, .fl-grip, .app-pane > .app-top";
+let movePress = null;                                // what the last press was on: a drag starting from a button is none
+if (!SNAPSHOT) {
+  const head = document.querySelector("#pane-here > .pane-top");
+  if (head) head.draggable = true;
+  const from = (ev) => (ev.target.closest ? ev.target.closest(MOVE_FROM) : null);
+  const panel = (f) => f.closest(".app-pane, #pane-here");
+  const busy = () => !!(movePress && movePress.closest && movePress.closest("button, input, textarea, select, a, [contenteditable]"));
+  document.addEventListener("pointerdown", (ev) => { movePress = ev.target; }, true);
+  document.addEventListener("dragstart", (ev) => {
+    const f = from(ev);
+    if (!f) return;
+    if (busy() || !(PANE ? PANE.move(window, true) : moveStart(panel(f)))) { ev.preventDefault(); return; }
+    ev.dataTransfer.effectAllowed = "move";
+    ev.dataTransfer.setData("application/x-ag-panel", "1");
+  });
+  document.addEventListener("dragend", (ev) => { if (from(ev)) { if (PANE) PANE.move(window, false); else moveEnd(); } });
+  document.addEventListener("contextmenu", (ev) => {
+    const f = from(ev);
+    if (!f || (ev.target.closest && ev.target.closest("input, textarea, [contenteditable]"))) return;
+    if (PANE ? PANE.menu(window, ev.clientX, ev.clientY) : moveMenu(panel(f), ev.clientX, ev.clientY)) ev.preventDefault();
+  });
+}
+function moveStart(node) { return !!workPlacer && !!node && workPlacer.startMove(node); }
+function moveEnd() { if (workPlacer) workPlacer.endMove(); }
+// The menu a panel's head right-clicked opens at (x, y): which side of its task's block it goes along, or whose place it
+// takes. None for a panel with no other of its task shown.
+const MOVE_SIDES = [["left", "←", "To the left"], ["right", "→", "To the right"], ["top", "↑", "To the top"], ["bottom", "↓", "To the bottom"]];
+function moveMenu(node, x, y) {
+  const m = workPlacer && node && workPlacer.moves(node);
+  if (!m) return false;
+  let at = document.getElementById("lay-anchor");    // what the menu hangs from: the point pressed
+  if (!at) { at = el("span", { id: "lay-anchor", class: "lay-anchor", "data-pop": "lay-move", "aria-hidden": "true" }); document.body.append(at); }
+  at.style.left = `${Math.round(x)}px`; at.style.top = `${Math.round(y)}px`;
+  const mark = (t) => el("span", { class: "lay-mark", "aria-hidden": "true", text: t });
+  openPop("lay-move", at, popMenu("Move this panel", [
+    ...MOVE_SIDES.map(([side, arrow, text]) => ({ mark: mark(arrow), text, run: () => workPlacer.toSide(node, side) })),
+    ...m.others.map((o) => ({ mark: mark("⇄"), text: `Swap with ${panelName(o)}`, run: () => workPlacer.swapWith(node, o) }))]));
+  return true;
+}
+// what a panel is called in the menu: an app's as its head names it, an actor's as the list does
+function panelName(node) {
+  const app = panes.apps.find((p) => p.node === node);
+  const short = (t) => (t.length > 48 ? `${t.slice(0, 47)}…` : t);
+  if (app) { const w = node.querySelector(".app-who"); return short((w && w.textContent.trim()) || app.app.label); }
+  const q = actorPanes().find((p) => p.node === node), at = node === panes.here.node ? state.selected : q ? [q.g, q.c] : null;
+  if (!at) return "this pane";
+  if (isShell(at[1])) return "the terminal";
+  const a = appActor(at[0], at[1]);
+  return short(a ? (a.name && a.name.text) || firstLine(a.last_user_message || "", 60) || at[1] : at[1]);
 }
 // The page's top row -- the page's name at the left, each pane's head -- as tall as the tallest of them, so the
 // rule under it runs straight across the page: each says how tall it is by itself (`tops`: the name's, this
@@ -486,8 +528,8 @@ function panesTake(name, data) {
   for (const p of actorPanes()) if (!to || isAt(to, p.g, p.c)) p.call("take", name, data);
 }
 // ------------------------------------------------------------------ apps' panels
-// An app's panel (app_kit/DESIGN.md) is in the top row, above the actors' panes: the row as tall as it is dragged (the
-// band under it, workTree), each panel's width its share (`size`, the bar before it dragged). Opening
+// An app's panel (app_kit/DESIGN.md) is in the top row (where it goes, the work area's arrangement: placeWork), above the
+// actors' panes at first, each panel's width its share (`size`, for a phone's width). Opening
 // one opens the actor it is attached to below it, in the pane in focus (one open already: its pane focused). Its head
 // and its iframe are made by features/apps/host.ts (window.agNext.apps); what its panel asks goes through it to the
 // dashboard's /api/apps; the actor in focus (appsSelected) and the theme are told to it. The panels open are kept in
@@ -600,6 +642,8 @@ function addAppPane(app, instance, size = 1, held = false) {
     named: (i) => readApps(i.gatherer, true),       // named in its head: the list's name for it too
   });
   p.node = p.panel.node; p.frame = p.panel.frame;
+  const head = p.node.querySelector(".app-top");     // dragged, the panel moved (MOVE_FROM)
+  if (head) head.draggable = true;
   p.node.hidden = held;
   topRowEl().append(p.node);
   panes.apps.push(p);
@@ -866,6 +910,11 @@ if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
   focus(win) { if (state.renaming) endRename(true); const p = paneOf(win); if (p) focusPane(p); },   // a press in its frame
   close(win) { const p = paneOf(win); if (p) closePane(p); },
   openLink(win, url) { const p = paneOf(win); return !!p && openLink(p.g, p.c, url); },   // a link clicked in it (linkClicked)
+  move(win, on) { const p = paneOf(win); if (!on) { moveEnd(); return true; } return !!p && moveStart(p.node); },   // its head dragged
+  menu(win, x, y) {                                  // its head right-clicked, at (x, y) in its frame
+    const p = paneOf(win), r = p && p.frame.getBoundingClientRect();
+    return !!p && moveMenu(p.node, r.left + p.frame.clientLeft + x, r.top + p.frame.clientTop + y);
+  },
 });
 // In a frame: its URL says what it shows -- its actor and view -- so that loaded again it shows them still.
 function paneUrl() {

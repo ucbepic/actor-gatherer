@@ -1,12 +1,13 @@
 // ------------------------------------------------------------------ the top row, as the actors' panes see it
 // Above the panes, the apps' panels (07-panes.js's top row): whether it shows any (topShown), and the chat minimized
 // under the row. A pane's frame asks this page (window.agTop).
-const ED_HEIGHT_KEY = "ag-dashboard-editor-height";
 const topShown = () => PANE ? !!(window.parent.agTop && window.parent.agTop.shown())
   : !!(panes.apps && panes.apps.some((p) => !p.held));
-// Drawn with the main view: the column's chat minimized, or not.
+// Drawn with the main view: the column's chat minimized, or not -- and the work area placed again if what it shows changed
+// (another actor shown in this page's own pane: 07-panes.js's placeIfShown).
 function topMount() {
   if (PANE || SNAPSHOT) return;
+  placeIfShown();
   const work = document.querySelector(".work"), min = chatMin();
   if (work.classList.contains("chat-min") === min) return;
   work.classList.toggle("chat-min", min);
@@ -115,35 +116,4 @@ function fitMini() {
   const obs = new ResizeObserver(() => { f.style.height = `${Math.ceil(card.getBoundingClientRect().height)}px`; });
   obs.observe(card);
   miniFit = { card, obs };
-}
-// The top row's height, as dragged (null: never, half the column); set again (a task entered as it was left: 07-panes.js's
-// taskLooks; 0: as never dragged), no taller than the column leaves the panes below their room, and kept as dragged
-function topHeight() {
-  const h = topRowEl() ? parseFloat(topRowEl().style.getPropertyValue("--ed-h")) : NaN;
-  return h > 0 ? h : null;
-}
-function setTopHeight(h) {
-  const top = topRowEl();
-  if (!top || !(h >= 0) || (h || null) === topHeight()) return;
-  if (!h) {
-    top.style.removeProperty("--ed-h");
-    try { localStorage.removeItem(ED_HEIGHT_KEY); } catch (e) { /* this page only */ }
-    placeWork();
-    return;
-  }
-  const room = top.parentElement ? top.parentElement.getBoundingClientRect().height : 0;
-  const to = Math.round(room > 360 ? Math.max(140, Math.min(h, room - 220)) : h);
-  top.style.setProperty("--ed-h", `${to}px`);
-  try { localStorage.setItem(ED_HEIGHT_KEY, String(to)); } catch (e) { /* this page only */ }
-  placeWork();
-}
-// The top row's height as it was dragged, kept in this browser: set as the page opens
-function keepTopHeight(top) {
-  try { const h = Number(localStorage.getItem(ED_HEIGHT_KEY)); if (h > 0) top.style.setProperty("--ed-h", `${h}px`); } catch (e) { /* this page only */ }
-}
-// The band under the top row dragged (07-panes.js's workResized): the row as tall as it puts it, kept once let go
-function dragTopHeight(h, done) {
-  topRowEl().style.setProperty("--ed-h", `${h}px`);
-  if (done) try { localStorage.setItem(ED_HEIGHT_KEY, String(h)); } catch (e) { /* this page only */ }
-  placeWork();
 }

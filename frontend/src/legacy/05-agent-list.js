@@ -449,6 +449,7 @@ function renderAgents() {
   askRefocus();
   markDragged();                                     // drawn again mid-drag: what is dragged, still shown as it
   renderPickBar();
+  placeIfShown();                                    // an actor or an app put in a task, or taken out: its block now
   const servers = state.home.hook_servers || [];     // in the dashboard's panel (the header's button)
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";

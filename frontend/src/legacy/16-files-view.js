@@ -194,14 +194,17 @@ function sideBar(files, cmds, info) {
   return acts ? el("div", { class: "fl-barbox" }, acts, bar) : bar;
 }
 // With a panel open above the panes (the top row), a pane's head is put in its Chat view's folded bar, at the other end
-// from the numbers, as small icons -- which view, Details, and (panes side by side) the pane's close -- and the head
-// itself hidden (.pane:has(.fl-acts)), its room the chat's.
+// from the numbers, as small icons -- a grip to move the pane by (dragged, or right-clicked: 07-panes.js's MOVE_FROM),
+// which view, Details, and (panes side by side) the pane's close -- and the head itself hidden (.pane:has(.fl-acts)), its
+// room the chat's.
 function barActs() {
   if (SNAPSHOT || !topShown()) return null;
   const now = chatView().id;
   const act = (label, title, icon, onclick, pressed = null, cls = "") => el("button", { type: "button", class: `fl-act ${cls}`.trim(),
     title, "aria-label": label, "aria-pressed": pressed === null ? null : pressed ? "true" : "false", onclick }, icon);
   return el("div", { class: "fl-acts", role: "group", "aria-label": "This pane" },
+    el("span", { class: "fl-act fl-grip", draggable: "true", title: "Drag to move this pane beside another of its task · right-click: move it",
+      "aria-label": "Move this pane" }, strokeIcon(ICONS.move, 14)),
     ...offeredViews().filter((v) => !v.more || v.id === now).map((v) =>
       act(v.name, v.description || v.name, v.icon ? strokeIcon(v.icon, 14) : v.name.slice(0, 1), () => setChatView(v.id), v.id === now)),
     act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),

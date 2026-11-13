@@ -86,11 +86,17 @@ export class Placer {
           : this.at(r),
       );
     }
-    for (const [id, e] of this.placed) if (!now.has(id) || now.get(id) !== e) spot(e, {});
+    const placing = new Set(now.values()); // (a panel under another id now -- the page's own pane, another actor -- stays)
+    for (const e of this.placed.values()) if (!placing.has(e)) spot(e, {});
     this.placed = now;
     this.laid = laid;
     this.watch(new Set([...laid.fitted].map((id) => now.get(id)).filter((e): e is HTMLElement => !!e)));
     this.drawBars();
+  }
+
+  /** Where each panel was placed last, by its id (the work area's own coordinates). */
+  rects(): Map<string, Rect> {
+    return this.laid ? this.laid.rects : new Map();
   }
 
   private at(r: Rect): Spot {
