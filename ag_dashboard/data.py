@@ -717,7 +717,7 @@ def app_notices(conn, gatherer: Optional[str] = None) -> Dict[str, dict]:
     its instance not closed -- {instance: {app, notices: [{id, key, title, text, show, where, at}, oldest first],
     last}}; `last` when the newest came, which the page compares with when the reader last looked at the instance
     (seen.py, its item "app:<id>"): newer, it shows NOTIFIED, as an agent done since is FINISHED. Read by type (its
-    index): few rows. In the home's one database, `gatherer`'s instances alone: those opened in it."""
+    index): few rows. In the home's one database, `gatherer`'s instances alone: those in it now (`_instances_of`)."""
     if CHANNEL not in _columns(conn, "events") or not {"p_app", "p_instance"} <= _columns(conn, "events"):
         return {}
     mine = _instances_of(conn, gatherer) if gatherer is not None and paths.merged() else None
@@ -732,14 +732,23 @@ def app_notices(conn, gatherer: Optional[str] = None) -> Dict[str, dict]:
 
 
 def _instances_of(conn, gatherer: str) -> set:
-    """The app instances opened in `gatherer` (their `app_opened` records say), by id."""
-    out = set()
-    for inst, raw in conn.execute("SELECT e.p_instance, e.payload_json FROM events e JOIN event_types t "
-                                  "ON t.event_type_id = e.event_type_id WHERE t.name = 'app_opened'"):
-        made = (_json(raw) or {}).get("instance") if isinstance(_json(raw), dict) else None
-        if inst and isinstance(made, dict) and made.get("gatherer") == gatherer:
-            out.add(inst)
-    return out
+    """The app instances in `gatherer` now, by id: opened in it (their `app_opened` records say), or moved to it since
+    (`app_regrouped`: with a task, a folder or their own agent, groups.py) -- as the app host reads them (`_load`), so
+    a notification is listed in the group that lists its app."""
+    where: Dict[str, str] = {}
+    for kind, inst, raw in conn.execute("SELECT t.name, e.p_instance, e.payload_json FROM events e JOIN event_types t "
+                                        "ON t.event_type_id = e.event_type_id "
+                                        "WHERE t.name IN ('app_opened', 'app_regrouped') ORDER BY e.row_id"):
+        payload = _json(raw)
+        if not inst or not isinstance(payload, dict):
+            continue
+        if kind == "app_opened":
+            made = payload.get("instance")
+            if isinstance(made, dict) and made.get("gatherer"):
+                where[inst] = str(made["gatherer"])
+        elif inst in where and payload.get("group"):
+            where[inst] = str(payload["group"])
+    return {inst for inst, g in where.items() if g == gatherer}
 
 
 def _status(conn, ch: str, a: dict, tables: set, now: float) -> None:
