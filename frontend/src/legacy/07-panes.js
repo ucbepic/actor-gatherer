@@ -1286,7 +1286,7 @@ function popMenu(head, items, title) {
 // A gatherer row's pop-up ("+ actor"'s drop-down, "+ more"'s, the DocWriter box one of those opens): outside the list,
 // fixed under the button it hangs from -- `key`, that button's data-pop, so found again after the list is drawn again --
 // so it may reach past the list's edge without the list scrolling, and the list's redraws leave it be. Closed by its
-// button pressed again, a press elsewhere, Esc, or the page scrolling (but in it) or resizing.
+// button pressed again, a press elsewhere, Esc, the page resizing, or the page or a box holding its button scrolling.
 const rowPop = { key: "", el: null, off: null };
 const popButton = () => rowPop.key && document.querySelector(`[data-pop="${CSS.escape(rowPop.key)}"]`) || null;
 function closePop() {
@@ -1333,7 +1333,12 @@ function openPop(key, button, box) {
       items[(at + (ev.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
     }
   };
-  const scrolled = (ev) => { if (!box.contains(ev.target)) closePop(); };
+  // the page, or a box holding its button, scrolled: it no longer hangs where it should. Another box scrolling by itself
+  // (a Chat's history kept at its end as its pane is resized) leaves it be.
+  const scrolled = (ev) => {
+    const b = popButton() || button;
+    if (!box.contains(ev.target) && ev.target.contains && ev.target.contains(b)) closePop();
+  };
   document.addEventListener("pointerdown", away, true);
   document.addEventListener("keydown", keys, true);
   window.addEventListener("resize", closePop);

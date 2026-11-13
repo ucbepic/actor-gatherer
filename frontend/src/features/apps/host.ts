@@ -330,13 +330,14 @@ export class AppPane {
       item.setAttribute("aria-checked", String(on));
       item.addEventListener("click", async (ev) => {
         ev.stopPropagation();
+        // closed at once, not when the answer comes: by then the button may have opened the menu again
+        menu.remove();
+        if (this.menu === menu) this.menu = null;
         await post(`/api/apps/${on ? "detach" : "attach"}`, {
           gatherer: this.instance.gatherer,
           instance: this.instance.id,
           channel: a.channel,
         }).catch(() => undefined);
-        this.menu?.remove();
-        this.menu = null;
       });
       menu.append(item);
     }

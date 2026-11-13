@@ -177,3 +177,46 @@ test("an app opened shows the actor it is attached to below it", async ({ page }
   await there.locator(".app-menu-item", { hasText: CODEX }).click(); // detached again
   await expect(there.locator(".app-agents")).toHaveText("No agent");
 });
+
+test("the agents menu closes as an agent is picked, before the answer: opened again meanwhile, it stays open", async ({
+  page,
+}) => {
+  await openActor(page, CLAUDE);
+  const { pane } = await openNotepad(page);
+  let answer = () => {};
+  const held = new Promise<void>((r) => (answer = r));
+  await page.route("**/api/apps/attach", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await pane.locator(".app-agents").click();
+  await pane.locator(".app-menu-item", { hasText: CODEX }).click();
+  await expect(pane.locator(".app-menu")).toHaveCount(0); // closed at once, the attach still unanswered
+  await pane.locator(".app-agents").click();
+  await expect(pane.locator(".app-menu")).toHaveCount(1);
+  answer();
+  await expect(pane.locator(".app-agents")).toHaveText(/1 agent/);
+  await expect(pane.locator(".app-menu")).toHaveCount(1); // the answer leaves the menu opened since alone
+  await page.getByRole("heading", { name: "Agents" }).click(); // a press elsewhere: closed; opened again, Codex attached
+  await expect(pane.locator(".app-menu")).toHaveCount(0);
+  await attach(pane, CODEX, /No agent/); // detached again: as the other tests expect
+});
+
+test("a menu from a row stays open while a Chat's history scrolls by itself; the list it hangs from scrolled, it closes", async ({
+  page,
+}) => {
+  await openActor(page, CLAUDE);
+  const row = page.locator("#agents .gatherer-row").first();
+  await row.hover();
+  await row.locator("button.new-more").click();
+  const menu = page.locator(".row-menu[role=menu]");
+  await expect(menu).toHaveCount(1);
+  // a Chat keeps its history at its end as its pane is resized: that scroll is no reason to close the menu
+  await page
+    .locator(".fl-talk")
+    .first()
+    .evaluate((e) => e.dispatchEvent(new Event("scroll")));
+  await expect(menu).toHaveCount(1);
+  await page.locator("#agents").evaluate((e) => e.dispatchEvent(new Event("scroll"))); // its button moved: closed
+  await expect(menu).toHaveCount(0);
+});
