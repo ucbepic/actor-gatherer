@@ -392,7 +392,7 @@ function startPlacing() {
   const work = document.querySelector(".work");
   workPlacer = window.agNext.layout.work(work, { shown: shownPanels, narrow: () => NARROW.matches,
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
-    focus: selectedTask, enter: enterTasks, status: tasksStatus, showItems: showTaskItems, lead: taskLeadOf,
+    focus: selectedTask, enter: enterTasks, status: tasksStatus, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
     faces: blockFaces, about: blockAbout, listed: () => { if (state.home) renderAgents(); } });
   NARROW.addEventListener("change", placeWork);
@@ -501,6 +501,14 @@ async function enterTasks(keys, focus) {
     } else if (gg.agents.some((a) => a.channel === id)) await (beside ? openTaskBeside(g, k, id) : show(g, id));
   }
   focusTask(focus);
+}
+// A task's key as it is now: a lone item's -- an actor's, an app's -- the task it has been put in since, if it has (taskKey);
+// any other, as it is (a task's; one not known yet, its apps not read). A screen tab keeps the keys of the tasks it was
+// left with (features/layout/tabs.ts).
+function keyNow(k) {
+  const [g, id] = String(k).split("\u0000");
+  if (id === undefined || /^t\d+$/.test(id) || !state.home) return k;
+  return taskKey(g, id) || k;
 }
 // what the actors of tasks `keys` do, all told: one asking the reader, one failed, one at work
 function tasksStatus(keys) {

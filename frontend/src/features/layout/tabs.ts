@@ -25,6 +25,9 @@ export interface TabsHooks {
   focus: () => string | null;
   /** Show these tasks (`focus` first, the others beside it), as they were left, in place of the tasks shown. */
   enter: (tasks: string[], focus: string | null) => Promise<void>;
+  /** A task's key as it is now (a lone item since put in a task: the task's), null if it is gone: a tab keeps keys,
+   * and a key changes as its items join or leave a task. */
+  canon?: (task: string) => string | null;
   /** The tab shown emptied: every task's panels closed (a new tab, "+"). */
   clear?: () => Promise<void>;
   /** These tasks, shown, about to be left: each kept as it is now (its actors, apps, views), to be opened so again. */
@@ -105,7 +108,7 @@ export class Tabs {
    * on by itself). */
   async route(task: string, idle = false): Promise<void> {
     if (this.switching || this.hooks.shown().includes(task)) return;
-    const holding = this.tabs.find((t) => t.id !== this.current && t.tasks.includes(task));
+    const holding = this.tabs.find((t) => t.id !== this.current && this.tasksOf(t).includes(task));
     if (holding) return this.show(holding.id, task);
     if (this.hooks.shown().length && !idle) this.fresh();
   }
@@ -113,7 +116,7 @@ export class Tabs {
   /** ⌥+click: the task out of any other tab (one left with none closed, unless named), to be the tab shown's alone. */
   take(task: string): void {
     if (this.switching) return;
-    for (const t of this.tabs) if (t.id !== this.current) t.tasks = t.tasks.filter((k) => k !== task);
+    for (const t of this.tabs) if (t.id !== this.current) t.tasks = this.tasksOf(t).filter((k) => k !== task);
     this.tabs = this.tabs.filter((t) => t.id === this.current || t.tasks.length > 0 || t.name);
     this.save();
     this.hooks.changed();
@@ -153,6 +156,8 @@ export class Tabs {
   async show(id: string, focus: string | null = null): Promise<void> {
     const to = this.tabs.find((t) => t.id === id);
     if (!to || id === this.current || this.switching) return;
+    const tasks = this.tasksOf(to),
+      kept = to.focus && this.hooks.canon ? this.hooks.canon(to.focus) : to.focus;
     const left = this.leave();
     this.current = id;
     this.drop(left);
@@ -162,7 +167,7 @@ export class Tabs {
     this.hooks.setScreen(to.screen);
     this.draw();
     try {
-      await this.hooks.enter(to.tasks, focus ?? to.focus);
+      await this.hooks.enter(tasks, focus ?? kept);
     } finally {
       this.switching = false;
       this.hooks.hold(false);
@@ -209,8 +214,12 @@ export class Tabs {
   private tab(): Tab {
     return this.tabs.find((t) => t.id === this.current)!;
   }
+  // a tab's tasks: the tab shown's, what is shown; another's, the ones it was left with, by their keys now
   private tasksOf(t: Tab): string[] {
-    return t.id === this.current && !this.switching ? this.hooks.shown() : t.tasks;
+    if (t.id === this.current && !this.switching) return this.hooks.shown();
+    if (!this.hooks.canon) return t.tasks;
+    const now = t.tasks.map((k) => this.hooks.canon!(k)).filter((k): k is string => !!k);
+    return now.filter((k, i) => now.indexOf(k) === i);
   }
   private look(t: Tab): { id: string; name: string; given: boolean; status: string; on: boolean; faces: string[] } {
     const tasks = this.tasksOf(t),
@@ -235,7 +244,7 @@ export class Tabs {
       tasks = this.hooks.shown();
     this.hooks.remember?.(tasks);
     Object.assign(tab, { tasks, screen: this.hooks.screen(), focus: this.hooks.focus() });
-    for (const t of this.tabs) if (t !== tab) t.tasks = t.tasks.filter((k) => !tasks.includes(k));
+    for (const t of this.tabs) if (t !== tab) t.tasks = this.tasksOf(t).filter((k) => !tasks.includes(k));
     this.tabs = this.tabs.filter((t) => t === tab || t.tasks.length > 0 || t.name);
     return tab;
   }

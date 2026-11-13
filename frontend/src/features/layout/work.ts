@@ -47,6 +47,8 @@ export interface WorkHooks {
   focus: () => string | null;
   /** These tasks shown in place of those shown, as they were left: a screen tab shown (tabs.ts). */
   enter: (tasks: string[], focus: string | null) => Promise<void>;
+  /** A task's key as it is now (tabs.ts's): a lone item's since put in a task, the task's; null, gone. */
+  canon?: (key: string) => string | null;
   /** What the actors of these tasks do, all told: "asking", "error", "working", or "". */
   status: (tasks: string[]) => string;
   /** A task's tab shown: these of its panels open, its others closed. */
@@ -132,9 +134,15 @@ export class Work {
     this.empty.append(head, line);
     work.append(this.stripBox, this.cardBox, this.empty);
     this.tabs = new Tabs(work, {
-      shown: () => (this.last?.blocks || []).filter((b) => !b.startsWith("\u0002")),
+      // the tasks shown, by their keys now (the panels', not as last placed: a lone item put in a task since has its
+      // task's key, whether or not the work area was placed again)
+      shown: () => {
+        const keys = this.hooks.shown().map((s) => s.key);
+        return keys.filter((k, i): k is string => !!k && keys.indexOf(k) === i);
+      },
       focus: hooks.focus,
       enter: hooks.enter,
+      canon: hooks.canon,
       clear: hooks.clear,
       remember: hooks.remember,
       name: hooks.label,

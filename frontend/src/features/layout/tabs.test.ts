@@ -9,7 +9,8 @@ let shown: string[],
   screen: Node | null,
   entered: [string[], string | null][],
   work: HTMLElement,
-  remembered: string[][];
+  remembered: string[][],
+  now: Record<string, string>; // a key's key now (a lone item put in a task since)
 function tabs(): Tabs {
   const hooks: TabsHooks = {
     shown: () => shown,
@@ -22,6 +23,7 @@ function tabs(): Tabs {
       shown = [];
     },
     remember: (k) => remembered.push(k),
+    canon: (k) => now[k] ?? k,
     name: (k) => k.toUpperCase(),
     status: () => "",
     screen: () => screen,
@@ -47,6 +49,7 @@ beforeEach(() => {
   screen = null;
   entered = [];
   remembered = [];
+  now = {};
 });
 
 describe("screen tabs", () => {
@@ -76,6 +79,18 @@ describe("screen tabs", () => {
     await t.route("c"); // the tab shown showing nothing: c goes in it
     shown = ["c"];
     expect(strip(t)).toEqual(["A", "C *"]);
+  });
+
+  it("a tab left with a lone item, put in a task since, holds the task: a click on it brings the tab forward", async () => {
+    const t = tabs();
+    t.fresh(); // tab 1 left with a, alone
+    shown = ["b"];
+    now = { a: "T" }; // a put in task T since
+    expect(t.where("T")).toEqual({ n: 1, here: false });
+    expect(t.where("a")).toBe(null);
+    await t.route("T");
+    expect(entered).toEqual([[["T"], "T"]]); // shown by its key now
+    expect(strip(t)).toEqual(["T *", "B"]);
   });
 
   it("where a task is open: its tab's number, and whether it is the tab shown", () => {
