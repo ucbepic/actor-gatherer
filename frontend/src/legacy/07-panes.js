@@ -396,7 +396,7 @@ function startPlacing() {
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
     focus: selectedTask, enter: enterTasks, status: tasksStatus, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
-    faces: blockFaces, about: blockAbout, listed: () => { if (state.home) renderAgents(); } });
+    faces: blockFaces, about: blockAbout, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); } });
   NARROW.addEventListener("change", placeWork);
   // a task's row dragged from the list over the work area (05-agent-list.js's listDrag): one open in no tab, opened beside
   // the tasks shown, on the side of the one it is dropped on
@@ -473,6 +473,38 @@ async function onlyTask(k) {
     else enterAppTask(g, k);
   }
   focusTask(k);
+  placeWork(); renderAgents();
+}
+// A task of a screen tab dragged into the tab shown (features/layout/work.ts's mergeTab): opened beside the tasks shown,
+// as ⌘+click opens one -- not routed, its tab gone from the bar
+async function openTaskHereBeside(k) {
+  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  if (!gg || id === undefined) return;
+  if (/^t\d+$/.test(id)) {
+    const t = Number(id.slice(1));
+    if (!taskById(g, t)) return;
+    if (!taskLead(gg, t)) return openTaskApps(g, null, k, (taskLayout(k) || {}).apps || null, true);   // apps alone
+    return openTask(g, t, null, { metaKey: true, inTabs: true });
+  }
+  if (isAppItem(id)) { if (appInfo(g, id.slice(APP_ITEM.length))) await openTaskApps(g, null, k, null, true); return; }
+  if (gg.agents.some((a) => a.channel === id)) await openTaskBeside(g, k, id);
+}
+// A task CLOSED HERE (its card head's ×): kept as it is now (rememberTask), its panes and panels closed -- its agents go on
+// -- this page's own pane given the next pane's actor if it showed one of k's, else out of sight (the tab showing nothing
+// else: its note says so)
+async function closeTaskHere(k) {
+  const mine = (g, c) => taskKey(g, c) === k;
+  if (tasksLaidOut.has(k)) rememberTask(k);
+  for (const p of [...panes.apps]) if (!p.held && appPaneTask(p) === k) closeAppPane(p);
+  for (const p of [...actorPanes()]) if (mine(p.g, p.c)) closePane(p);
+  if (appsOnly === k) {                              // apps alone: the actors' panes out of sight still
+    if (state.selected) hereAway = state.selected;
+    setAppsOnly(null);
+  } else if (state.selected && !isAway() && mine(...state.selected)) {
+    if (actorPanes().length) await closeHere();
+    else hereAway = state.selected;
+  }
+  if (taskNow === k) taskNow = null;
   placeWork(); renderAgents();
 }
 // A new tab, empty ("+" on the tabs' bar): the tasks shown kept as they are (the tab left keeps them: hooks.remember),

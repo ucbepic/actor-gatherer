@@ -324,7 +324,7 @@
   left: 0;
   right: 0;
   height: 40px;
-  z-index: 5;
+  z-index: 31; /* over a drag's cover (.lay-cover): a tab dragged onto another's name still goes beside it there */
   display: flex;
   align-items: center;
   gap: 2px;
@@ -434,4 +434,20 @@
   width: 140px;
   font: inherit;
   padding: 1px 4px;
+}
+/* a task's card head's ×: the task closed here (its agents go on) */
+.lay-sclose {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.lay-sclose:hover {
+  color: var(--ink);
+  background: var(--wash);
 }

@@ -204,6 +204,27 @@ test("a task's row open in a tab is not dropped onto the work area", async ({ pa
   await expect(mark(page, CLAUDE)).toHaveText("1");
 });
 
+test("a tab dragged onto the work area opens its tasks there, on the side it is let go, and goes from the bar", async ({
+  page,
+}) => {
+  await twoTabs(page); // Codex's tab shown; Claude's task (with its Notepad) in tab 1
+  const chip = await box(tabs(page).nth(0)),
+    area = await box(page.locator("#pane-here"));
+  await page.mouse.move(chip.x + chip.width / 2, chip.y + chip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(chip.x + chip.width / 2 + 10, chip.y + chip.height / 2 + 10, { steps: 3 });
+  await page.mouse.move(area.x + area.width * 0.1, area.y + area.height / 2, { steps: 8 }); // Codex's left side
+  await expect(page.locator(".lay-to")).toBeVisible();
+  await page.mouse.up();
+  await expect(tabs(page)).toHaveCount(1); // tab 1 gone: its task in this one
+  await expect(notes(page)).toHaveCount(1);
+  await expect(mark(page, CLAUDE)).toHaveClass(/here/);
+  await expect(mark(page, CODEX)).toHaveClass(/here/);
+  await expect
+    .poll(async () => (await box(frame(page))).x < (await box(page.locator("#pane-here"))).x) // Claude's, left of Codex's
+    .toBe(true);
+});
+
 test("a tab named by a double-click keeps its name; × closes a tab, its actors go on; kept after a reload", async ({
   page,
 }) => {
