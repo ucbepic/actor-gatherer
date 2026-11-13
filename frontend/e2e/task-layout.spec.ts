@@ -48,7 +48,7 @@ test("a task opened again shows each of its actors in the view it showed, as wid
   await panes.nth(1).frameLocator("iframe").locator("#controls").getByRole("button", { name: "Terminal" }).click();
   await expect(pressed(1)).toHaveAttribute("aria-label", "Terminal");
   await expect(pressed(0)).toHaveAttribute("aria-label", "Chat");
-  const bar = (await page.locator(".lay-bar[data-split=actors]").boundingBox())!;
+  const bar = (await page.locator(".lay-bar[data-dir=row]").boundingBox())!;
   await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
   await page.mouse.down();
   await page.mouse.move(bar.x + bar.width / 2 - 120, bar.y + bar.height / 2, { steps: 5 });
@@ -110,7 +110,7 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   };
   // dragged down, over this page's own pane
   const drag = async (to: number) => {
-    const grip = (await page.locator(".lay-bar[data-split=work]").boundingBox())!;
+    const grip = (await page.locator(".lay-bar.thick").boundingBox())!;
     const top = (await row.locator("> .app-pane").first().boundingBox())!.y;
     await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
     await page.mouse.down();
@@ -120,12 +120,13 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   await claude.click();
   await addNotepad(page, claude); // Claude's task: Notepad above
   await expect(row.locator("> .app-pane")).toHaveCount(1);
+  await expect.poll(tall).toBe(450); // no row dragged yet: half the column
   await drag(520);
   await expect.poll(tall).toBeGreaterThan(505);
   const claudes = await tall();
   await codex.click();
   await expect(row.locator("> .app-pane")).toHaveCount(1);
-  await expect.poll(tall).toBe(claudes); // never left: as tall as the row was
+  await expect.poll(tall).toBe(claudes); // never dragged in it: as tall as the row dragged last
   await drag(650);
   await expect.poll(tall).toBeGreaterThan(635);
   const codexes = await tall();
@@ -133,10 +134,9 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   await expect.poll(tall).toBe(claudes);
   await codex.click(); // and Codex's
   await expect.poll(tall).toBe(codexes);
-  // Codex's row as if never dragged (as a new home's is): so when Codex's task is left, half the column when back
-  await page.evaluate(() => document.getElementById("top-row")!.style.removeProperty("--ed-h"));
+  await page.reload(); // kept in this browser: each as it was
   await claude.click();
   await expect.poll(tall).toBe(claudes);
-  await codex.click(); // back: half the column again, not Claude's
-  await expect.poll(tall).toBe(450);
+  await codex.click();
+  await expect.poll(tall).toBe(codexes);
 });

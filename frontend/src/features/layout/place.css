@@ -73,3 +73,29 @@
 .work[data-resizing] iframe {
   pointer-events: none;
 }
+/* a panel dragged by its head (move.ts): the work area covered, the panel dragged marked, and where it would go */
+.lay-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+}
+.lay-from {
+  position: absolute;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  outline: 1px dashed var(--muted);
+  outline-offset: -1px;
+}
+.lay-to {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid var(--s1);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--s1) 22%, transparent);
+  transition:
+    left 0.08s,
+    top 0.08s,
+    width 0.08s,
+    height 0.08s;
+}

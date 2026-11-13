@@ -414,6 +414,7 @@ const ICONS = {
   play: "M5 3.25v9.5L12.75 8z",                                        // run: the Editor's preview
   minimize: "M4 5.5 8 9.5l4-4M3 12.75h10",                             // the chat minimized under the Editor: down to a line
   restore: "M4 10.5 8 6.5l4 4M3 3.25h10",                              // and shown again: up from it
+  move: "M8 2v12M2 8h12M6 4l2-2 2 2M6 12l2 2 2-2M4 6 2 8l2 2M12 6l2 2-2 2",   // a pane moved, dragged by it: four ways
   takeOut: "M9 2.75h3.25v10.5H9M10.25 8H3m2.5-2.75L2.75 8l2.75 2.75",  // out of its task: an arrow leaving a box
 };
 // A circled cross: end the dashboard's own idle agent for a session, which then shows Closed.
