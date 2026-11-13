@@ -450,6 +450,7 @@ function renderAgents() {
   markDragged();                                     // drawn again mid-drag: what is dragged, still shown as it
   renderPickBar();
   placeIfShown();                                    // an actor or an app put in a task, or taken out: its block now
+  if (workPlacer) workPlacer.tabs.draw();            // what each screen tab's actors do
   const servers = state.home.hook_servers || [];     // in the dashboard's panel (the header's button)
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
@@ -820,6 +821,8 @@ function appRow(g, o) {
 // on that task would; one of apps only, its apps alone shown (enterAppTask) -- its panel shown (opened, if it was not) and
 // selected. ⌘/Ctrl: no task entered, its panel added beside the ones shown.
 async function selectApp(gname, o, ev = null) {
+  if (!state.home.gatherers.some((x) => x.name === gname)) return;
+  await viaTabs(taskKey(gname, appItem(o.id)), ev);  // its screen tab, or a new one (07-panes.js)
   const g = state.home.gatherers.find((x) => x.name === gname);
   if (!g) return;
   if (!(ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT)) {
@@ -863,6 +866,8 @@ async function closeApp(gname, o) {
 // page (as the page opened on one of its actors), laid out as at first. One of apps only: its apps alone (enterAppTask).
 // ⌘/Ctrl: the whole task beside the one shown (07-panes.js's openTaskBeside).
 async function openTask(gname, id, focus = null, ev = null) {
+  if (!state.home.gatherers.some((x) => x.name === gname)) return;
+  await viaTabs(`${gname}\u0000t${id}`, ev);         // its screen tab, or a new one (07-panes.js)
   const g = state.home.gatherers.find((x) => x.name === gname);
   if (!g) return;
   const k = `${gname}\u0000t${id}`, sel = focusedActor(), was = taskLayout(k);
@@ -1506,6 +1511,7 @@ function endDrag() {
   document.body.classList.remove("drag-out");
   for (const n of document.querySelectorAll(":is(#agents, #rail) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
   if (d.later || d.revealed) renderAgents();         // the rail, its folders shown for the drag: as it was again
+  if (d.offered) moveEnd();                          // over the work area too: its cover put away (07-panes.js)
 }
 document.addEventListener("dragover", () => { if (listDrag) listDrag.seen = Date.now(); }, true);
 document.addEventListener("drop", () => { if (listDrag) setTimeout(endDrag, 0); }, true);   // anywhere: after the line's own

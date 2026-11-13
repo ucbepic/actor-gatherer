@@ -77,6 +77,7 @@ test("a panel moved from its head's menu: along a side of its task, or in anothe
     /To the top/,
     /To the bottom/,
     /^⇄Swap with Parser fixes/,
+    /To a new tab of this task/,
   ]);
   await menu.getByRole("menuitem", { name: "To the right" }).click();
   await expect(menu).toHaveCount(0);
@@ -114,8 +115,9 @@ test("a task opened beside another is a block of its own: its panels together, n
   await expect(other).toHaveCount(1);
   const [n, h, o] = [await box(notes), await box(here), await box(other)];
   expect(o.x).toBeGreaterThanOrEqual(Math.max(n.x + n.width, h.x + h.width) - 1); // right of Claude's whole task
-  expect(o.y).toBe(n.y); // the whole height
-  expect(o.height).toBeCloseTo(h.y + h.height - n.y, 0);
+  const top = (await box(page.locator(".lay-strip"))).y; // Claude's task's top: its strip, over its panels
+  expect(o.y).toBe(top); // the whole height
+  expect(o.height).toBeCloseTo(h.y + h.height - top, 0);
   // Codex's grip right-clicked (its head in its Chat bar, an app shown): no other panel of its task shown, nowhere to go
   const grip = await box(other.frameLocator("iframe").locator(".fl-grip"));
   await page.mouse.click(grip.x + grip.width / 2, grip.y + grip.height / 2, { button: "right" });

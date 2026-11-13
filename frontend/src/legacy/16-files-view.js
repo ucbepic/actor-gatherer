@@ -209,7 +209,7 @@ function barActs() {
       act(v.name, v.description || v.name, v.icon ? strokeIcon(v.icon, 14) : v.name.slice(0, 1), () => setChatView(v.id), v.id === now)),
     act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),
       () => setDetails(!state.details), !!state.details),
-    act("Minimize the chat", MIN_TIP, strokeIcon(ICONS.minimize, 14), () => setChatMin(true)),
+    canMinimize() ? act("Minimize the chat", MIN_TIP, strokeIcon(ICONS.minimize, 14), () => setChatMin(true)) : null,
     act("Close this pane", "Close this pane", "×", () => $("pane-close").click(), null, "close"));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.

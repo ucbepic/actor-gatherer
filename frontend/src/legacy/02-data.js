@@ -209,7 +209,7 @@ const mainSignature = () => {
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
-    state.details && state.detailsTab, topShown(), chatMin()]);
+    state.details && state.detailsTab, topShown(), chatMin(), canMinimize()]);
 };
 // The page's state, small under its name: its dot green while live, amber paused, red on an error.
 const setLive = (text) => {

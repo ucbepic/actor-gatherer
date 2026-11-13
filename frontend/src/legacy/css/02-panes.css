@@ -144,3 +144,5 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .lay-anchor { position: fixed; width: 0; height: 0; pointer-events: none; }
 .row-menu .lay-mark { flex: none; width: 16px; text-align: center; color: var(--ink-2); }
 .files .fl-act.fl-grip { cursor: grab; }
+/* this page's own pane away: its actor not in its task's tab shown (07-panes.js's hereAway) */
+.work.placed #pane-here.lay-away { display: none; }

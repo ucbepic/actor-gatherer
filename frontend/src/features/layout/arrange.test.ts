@@ -1,7 +1,20 @@
 // A task's arrangement changed by the reader (arrange.ts): a panel put beside another, swapped, along a side, taken out;
 // the tree as it shows the panels open, a bar dragged in it kept in the tree it came from; where a drop goes.
 import { describe, expect, it } from "vitest";
-import { insert, keepSizes, leaves, move, remove, swap, toSide, view, zoneAt, zoneRect } from "./arrange";
+import {
+  insert,
+  keepSizes,
+  leafNodes,
+  leaves,
+  mark,
+  move,
+  remove,
+  swap,
+  toSide,
+  view,
+  zoneAt,
+  zoneRect,
+} from "./arrange";
 import type { Node, Split } from "./tree";
 
 const S = (dir: "row" | "col", kids: Node[], shares: number[] = kids.map(() => 1)): Split => ({
@@ -65,6 +78,18 @@ describe("a panel moved", () => {
       ["b", "c", "a"],
       [2, 3, 2.5],
     ]);
+  });
+
+  it("keeps what it is marked with (a pane minimized) wherever it goes", () => {
+    const t = mark(first(), "c1", { min: true });
+    const minimized = (n: Node) =>
+      leafNodes(n)
+        .filter((l) => l.min)
+        .map((l) => l.id);
+    expect(minimized(move(t, "c1", "app:b", "left"))).toEqual(["c1"]);
+    expect(minimized(toSide(t, "c1", "top"))).toEqual(["c1"]);
+    expect(minimized(swap(t, "c1", "c2"))).toEqual(["c1"]);
+    expect(minimized(view(t, () => true)!)).toEqual(["c1"]);
   });
 
   it("swapped from its menu: each in the other's place, every size as it was", () => {
