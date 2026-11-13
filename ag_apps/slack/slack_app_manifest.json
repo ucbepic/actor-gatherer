@@ -13,7 +13,9 @@
         "im:history", "im:read", "im:write",
         "mpim:history", "mpim:read",
         "users:read", "reactions:read",
-        "chat:write", "search:read"
+        "chat:write", "search:read",
+        "reactions:write", "files:read", "files:write", "emoji:read",
+        "channels:write", "groups:write", "mpim:write", "pins:read"
       ]
     }
   },

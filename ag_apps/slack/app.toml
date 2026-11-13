@@ -13,8 +13,10 @@ instructions = """Slack here is the user's own Slack, shown in the dashboard's S
 stream messages ("Message in Slack #design from Maya Chen ...") that end with [conversation <id>, ts <ts>]. Read with
 slack_read -- no `conversation`: what the user has open in the panel, their conversations (unread first) and the drafts
 waiting for them; with one (its id, #name, a person's @name or name, or "open": what the user has open, its thread if
-one is): its latest messages; with `thread` (a message's ts): that thread. slack_search searches all of the user's
-Slack, channels they aren't in too; each hit names its conversation (and thread) for slack_read.
+one is): its latest messages; with `thread` (a message's ts): that thread; with `file` (a shared file's id, as
+messages show it: [file: plan.pdf (F0123ABC, PDF)]): its text -- a text or code file, a PDF -- or the picture itself.
+slack_search searches all of the user's Slack, channels they aren't in too; each hit names its conversation (and
+thread) for slack_read.
 
 When the user opens a conversation or thread in the panel, you're told ("The user opened DM with Maya Chen in the Slack
 panel [conversation <id>]"). The latest of these is what they're looking at: when they say "this", "here", "she", "that
@@ -23,9 +25,10 @@ your conversation.
 
 You never send anything to Slack. To reply or write for the user, call slack_draft with the conversation, your `text`
 (Slack's mrkdwn: *bold*, _italic_, `code`, <https://url|label>), and `thread` (the ts of the message you answer) to
-reply in its thread. The draft waits in the Slack panel, where the user sends it, edits it or discards it; you are told
-which. To change a draft still waiting, call slack_draft with its `draft` id and the new text. Write as the user would:
-it is posted as them. If you also have other Slack tools (a Slack connector), don't use them to post: replies go
+reply in its thread. To mention someone, write @ and their name as slack_read shows it ("@Maya Chen"; also @here,
+@channel), and #name for a channel: they become Slack's mentions and links when the user sends it. The draft waits in
+the Slack panel, where the user sends it, edits it or discards it; you are told which. To change a draft still waiting,
+call slack_draft with its `draft` id and the new text. Write as the user would: it is posted as them. If you also have other Slack tools (a Slack connector), don't use them to post: replies go
 through slack_draft."""
 
 [agent]
@@ -50,8 +53,8 @@ every = "1m"
 
 [[tools]]
 name = "read"
-description = "The user's Slack: with no `conversation`, what they have open in the Slack panel, their conversations (unread first) and the drafts waiting for them; with one, its latest messages, oldest first, each [ts] author: text; with `thread` (a message's ts), that thread."
-input_schema = { type = "object", properties = { conversation = { type = "string", description = "a conversation's id (any channel's, from a search hit), #name, a person's @name or name (their DM), or \"open\": what the user has open in the panel (its thread, if one is open)" }, thread = { type = "string", description = "a message's ts: its thread" }, limit = { type = "integer", description = "how many messages (default 20, at most 100)" } } }
+description = "The user's Slack: with no `conversation`, what they have open in the Slack panel, their conversations (unread first) and the drafts waiting for them; with one, its latest messages, oldest first, each [ts] author: text; with `thread` (a message's ts), that thread; with `file` (a shared file's id), its text or picture."
+input_schema = { type = "object", properties = { conversation = { type = "string", description = "a conversation's id (any channel's, from a search hit), #name, a person's @name or name (their DM), or \"open\": what the user has open in the panel (its thread, if one is open)" }, thread = { type = "string", description = "a message's ts: its thread" }, file = { type = "string", description = "a shared file's id (F...), as messages show it: its text (a text or code file, a PDF), or the picture" }, limit = { type = "integer", description = "how many messages (default 20, at most 100)" } } }
 
 [[tools]]
 name = "search"
