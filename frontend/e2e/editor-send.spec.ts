@@ -22,6 +22,10 @@ test("lines selected in a file go to an actor picked, with what to do, as the us
   await page.keyboard.press("Home");
   await page.keyboard.press("Shift+ArrowDown"); // the first line, to the second's start: that line alone
   await expect(button).toBeVisible();
+  const shade = () => button.evaluate((b) => getComputedStyle(b).backgroundColor);
+  const resting = await shade();
+  await button.hover(); // its background as it was: not the panel's see-through hover wash over the file
+  await expect.poll(shade).toBe(resting);
   await button.click();
   const pop = panel.locator(".ed-sendpop");
   await expect(pop).toBeVisible();
