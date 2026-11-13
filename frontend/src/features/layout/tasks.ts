@@ -140,33 +140,78 @@ export interface StripHooks {
   show: (tab: string) => void;
   close: (tab: string) => void;
   rename: (tab: string, name: string) => void;
-  add: () => void;
+  /** Another tab of the task (its lead actor's chat in it); null: none to put in one (a task of apps alone). */
+  add: (() => void) | null;
 }
-/** A task's strip drawn: its name; its tabs, if it has two or more, each pressed to be shown, double-clicked to be named,
- * closed by its ×; and a "+" for another tab. Drawn again only as what it shows changes. */
+/** What a task's card's head says: its name, its actors' faces (and its apps' marks), what is in it in words. */
+export interface StripHead {
+  name: string;
+  faces: HTMLElement[];
+  about: string;
+}
+/** A task's strip -- the head of its card -- drawn: a grip, its faces, its name and what is in it; its tabs, if it has
+ * two or more, as a switch, each pressed to be shown, double-clicked to be named, closed by its ×; and a "+" for
+ * another tab. Drawn again only as what it shows changes. */
 export function drawStrip(
   e: HTMLElement,
-  name: string,
+  head: StripHead,
   tabs: { tabs: TaskTab[]; shown: string } | null,
   hooks: StripHooks,
 ): void {
-  const sig = JSON.stringify([name, tabs && tabs.tabs.map((t) => [t.id, t.name]), tabs?.shown]);
+  const sig = JSON.stringify([
+    head.name,
+    head.about,
+    head.faces.map((f) => f.outerHTML),
+    tabs && tabs.tabs.map((t) => [t.id, t.name]),
+    tabs?.shown,
+    !!hooks.add,
+  ]);
   if (e.dataset.sig === sig || e.querySelector("input")) return;
   e.dataset.sig = sig;
-  e.dataset.name = name;
-  const label = document.createElement("span");
-  label.className = "lay-sname";
-  label.textContent = name;
-  const parts: HTMLElement[] = [label];
-  for (const t of tabs?.tabs || []) {
-    const chip = document.createElement("span");
-    chip.className = "lay-ttab";
+  e.dataset.name = head.name;
+  const span = (cls: string, text = ""): HTMLElement => {
+    const x = document.createElement("span");
+    x.className = cls;
+    x.textContent = text;
+    return x;
+  };
+  const grip = span("lay-grip", "⋮⋮");
+  grip.setAttribute("aria-hidden", "true");
+  const faces = span("lay-faces");
+  faces.setAttribute("aria-hidden", "true");
+  faces.append(...head.faces);
+  const parts: HTMLElement[] = [grip, ...(head.faces.length ? [faces] : []), span("lay-sname", head.name)];
+  if (head.about) parts.push(span("lay-sabout", head.about));
+  const right = span("lay-sright");
+  if (tabs) {
+    const box = span("lay-ttabs");
+    box.setAttribute("role", "tablist");
+    box.setAttribute("aria-label", `${head.name}: its tabs`);
+    for (const t of tabs.tabs) box.append(chipOf(t));
+    right.append(box);
+  }
+  if (hooks.add) {
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "lay-tadd";
+    add.textContent = "+";
+    add.title = add.ariaLabel = tabs ? "Another tab of this task" : "Another tab of this task (this one kept as it is)";
+    add.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      hooks.add!();
+    });
+    right.append(add);
+  }
+  parts.push(right);
+  e.replaceChildren(...parts);
+
+  function chipOf(t: TaskTab): HTMLElement {
+    const chip = span("lay-ttab");
     chip.dataset.tab = t.id;
     chip.setAttribute("role", "tab");
     chip.setAttribute("aria-selected", String(t.id === tabs!.shown));
     chip.title = `${t.name} · double-click to name it · drop a panel here to move it to this tab (⌥: to copy it)`;
-    const n = document.createElement("span");
-    n.textContent = t.name;
+    const n = span("", t.name);
     const x = document.createElement("button");
     x.type = "button";
     x.className = "lay-tclose";
@@ -193,7 +238,7 @@ export function drawStrip(
         input.remove();
         e.dataset.sig = "";
         if (keep && input.value.trim()) hooks.rename(t.id, input.value);
-        else drawStrip(e, name, tabs, hooks);
+        else drawStrip(e, head, tabs, hooks);
       };
       input.addEventListener("keydown", (k) => {
         k.stopPropagation();
@@ -206,19 +251,6 @@ export function drawStrip(
       input.focus();
       input.select();
     });
-    parts.push(chip);
+    return chip;
   }
-  if (tabs) {
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "lay-tadd";
-    add.textContent = "+";
-    add.title = add.ariaLabel = "Another tab of this task";
-    add.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      hooks.add();
-    });
-    parts.push(add);
-  }
-  e.replaceChildren(...parts);
 }

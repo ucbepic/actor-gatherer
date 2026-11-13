@@ -10,6 +10,12 @@ import { addNotepad } from "./task-home";
 
 const beside = process.platform === "darwin" ? "Meta" : "Control";
 const box = async (l: Locator) => (await l.boundingBox())!;
+// its box once it has one: a row of the list, drawn again as what is shown changes, is measured on the row now
+async function settledBox(l: Locator): Promise<Box> {
+  let b: Box | null = null;
+  await expect.poll(async () => (b = await l.boundingBox()) !== null).toBe(true);
+  return b!;
+}
 type Box = { x: number; y: number; width: number; height: number };
 async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
   await page.mouse.move(from.x, from.y);
@@ -39,12 +45,13 @@ test("with other tasks shown, a task of two panels or more is under a strip with
 }) => {
   const { notes, here, strip } = await twoTasks(page);
   await expect(strip).toHaveCount(1); // Claude's task's; Codex's pane its own head
-  await expect(strip).toHaveText(CLAUDE);
+  await expect(strip.locator(".lay-sname")).toHaveText(CLAUDE);
+  await expect(strip.locator(".lay-sabout")).toHaveText("1 actor · Notepad");
   const [s, n, h] = [await box(strip), await box(notes), await box(here)];
   expect(s.y + s.height).toBeLessThanOrEqual(n.y + 1); // over both its panels, as wide
   expect(s.width).toBeCloseTo(n.width, 0);
   expect(h.x).toBeCloseTo(s.x, 0);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click(); // Claude's task alone: no strip
+  await page.locator("#agents button.agent", { hasText: CLAUDE }).click({ modifiers: ["Alt"] }); // Claude's task alone: no strip
   await expect(strip).toHaveCount(0);
 });
 
@@ -84,7 +91,7 @@ test("a task's row dragged from the list onto the top of the work area: opened t
   const h = await box(here);
   const codexRow = page.locator("#agents button.agent", { hasText: CODEX });
   await expect(codexRow).toBeVisible(); // (the list drawn again as Claude is shown)
-  const row = await box(codexRow);
+  const row = await settledBox(codexRow);
   await drag(page, middle(row), { x: h.x + h.width / 2, y: h.y + h.height * 0.1 });
   const codex = page.locator("#panes > .pane").nth(1);
   await expect(codex).toHaveCount(1);

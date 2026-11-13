@@ -127,8 +127,8 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   await codex.click();
   await expect(row.locator("> .app-pane")).toHaveCount(1);
   await expect.poll(tall).toBe(claudes); // never dragged in it: as tall as the row dragged last
-  await drag(650);
-  await expect.poll(tall).toBeGreaterThan(635);
+  await drag(600);
+  await expect.poll(tall).toBeGreaterThan(585);
   const codexes = await tall();
   await claude.click(); // back: Claude's row as it was left
   await expect.poll(tall).toBe(claudes);

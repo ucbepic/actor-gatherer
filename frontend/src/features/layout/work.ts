@@ -3,12 +3,15 @@
 // the tasks' arrangement says (blocks.ts), all built afresh from the panels shown each time the work area is placed
 // (build.ts), in one of several screens (tabs.ts). A bar dragged keeps its sizes in the arrangement it is of; a panel
 // dragged by its head, or a task by its strip (move.ts), or either moved from its menu, changes it.
+// Drawn so a task reads as one thing, a tab as another: the tabs' bar on top, the tasks under it in a well of their own,
+// each task a card (its frame drawn over its panels, the well showing between cards), its panels split by a line only;
+// a tab showing nothing, a note saying so.
 import { addItem, keepSizes, leaves, mark, move, remove, swap, toSide, type Side, type Zone } from "./arrange";
 import { type Put } from "./blocks";
 import { APP, build, TOP_BAND, type Built, type Old, type Shown } from "./build";
 import { Mover } from "./move";
 import { Placer } from "./place";
-import { Tabs } from "./tabs";
+import { TABS_H, Tabs } from "./tabs";
 import { drawStrip, Tasks } from "./tasks";
 import type { Node, Rect, Size } from "./tree";
 
@@ -44,12 +47,23 @@ export interface WorkHooks {
   focus: () => string | null;
   /** These tasks shown in place of those shown, as they were left: a screen tab shown (tabs.ts). */
   enter: (tasks: string[], focus: string | null) => Promise<void>;
+  /** A task's key as it is now (tabs.ts's): a lone item's since put in a task, the task's; null, gone. */
+  canon?: (key: string) => string | null;
   /** What the actors of these tasks do, all told: "asking", "error", "working", or "". */
   status: (tasks: string[]) => string;
   /** A task's tab shown: these of its panels open, its others closed. */
   showItems: (key: string, items: string[]) => Promise<void>;
   /** A task's lead actor (a new tab of it holds it). */
   lead: (key: string) => string | null;
+  /** The tab shown emptied: every task's panels closed (a new tab, empty). */
+  clear?: () => Promise<void>;
+  /** These tasks, shown, about to be left for another tab: each kept as it is now, to be opened so again. */
+  remember?: (keys: string[]) => void;
+  /** A block's faces (its task's actors', its apps' marks) and what is in it, in words: on its card's head, its tab. */
+  faces?: (block: string) => HTMLElement[];
+  about?: (block: string) => string;
+  /** Where the tasks are open changed (a tab shown, made, closed; a task opened or closed): the list marked again. */
+  listed?: () => void;
 }
 /** What a panel (or a task, by its strip) can be moved to from its menu: a side, or another's place; `task`: the task is
  * moved (its strip, or the head of its only panel shown); another tab of its task, or a new one (`split`). */
@@ -62,6 +76,11 @@ export interface Moves {
 }
 
 const SCREEN_KEY = "ag-dashboard-screen";
+// the well under the tabs' bar, this far from the work area's sides and bottom; the cards this far in it, and apart
+export const WELL = 6,
+  PAD = 6,
+  GAP = 6;
+const EMPTY = "\u0007empty"; // a tab showing nothing: its note, placed as a panel
 // a block dragged, by its strip or its row in the list; a task not shown, dropped from the list
 const BLOCK = "\u0004",
   NEW = "\u0005",
@@ -81,6 +100,10 @@ export class Work {
   private holding = false; // a tab being shown: the tasks' arrangement held as it is meanwhile
   private mins = new Set<HTMLElement>(); // the panes minimized, as last placed; those that can be
   private unders = new Set<HTMLElement>();
+  private readonly cardBox: HTMLElement; // each block's card: its frame, drawn over its panels
+  private readonly cards = new Map<string, HTMLElement>();
+  private readonly empty: HTMLElement;
+  private listedFor = "";
 
   constructor(
     private readonly work: HTMLElement,
@@ -94,14 +117,36 @@ export class Work {
       }
     };
     this.screen = read(SCREEN_KEY, null);
+    const well = document.createElement("div");
+    well.className = "lay-well";
+    work.prepend(well); // (first: under every panel)
     this.stripBox = document.createElement("div");
     this.stripBox.className = "lay-strips";
-    work.append(this.stripBox);
+    this.cardBox = document.createElement("div");
+    this.cardBox.className = "lay-cards";
+    this.empty = document.createElement("div");
+    this.empty.className = "lay-empty";
+    this.empty.hidden = true;
+    const head = document.createElement("strong"),
+      line = document.createElement("span");
+    head.textContent = "Nothing open in this tab";
+    line.textContent = "Click a task in the list to open it here.";
+    this.empty.append(head, line);
+    work.append(this.stripBox, this.cardBox, this.empty);
     this.tabs = new Tabs(work, {
-      shown: () => (this.last?.blocks || []).filter((b) => !b.startsWith("\u0002")),
+      // the tasks shown, by their keys now (the panels', not as last placed: a lone item put in a task since has its
+      // task's key, whether or not the work area was placed again)
+      shown: () => {
+        const keys = this.hooks.shown().map((s) => s.key);
+        return keys.filter((k, i): k is string => !!k && keys.indexOf(k) === i);
+      },
       focus: hooks.focus,
       enter: hooks.enter,
+      canon: hooks.canon,
+      clear: hooks.clear,
+      remember: hooks.remember,
       name: hooks.label,
+      faces: (k) => (hooks.faces ? hooks.faces(k).slice(0, 1) : []),
       status: hooks.status,
       screen: () => this.screen,
       setScreen: (screen) => {
@@ -109,14 +154,18 @@ export class Work {
         this.saveScreen();
       },
       hold: (on) => (this.holding = on),
-      changed: () => this.place(),
+      changed: () => {
+        this.place();
+        this.hooks.listed?.();
+      },
     });
     this.placer = new Placer(work, {
       tree: (box) => this.tree(box),
       node: (id) => this.last?.nodes.get(id) ?? null,
       resized: (key, sizes, done) => this.resized(key, sizes, done),
-      inset: () => this.tabs.height(),
+      inset: () => ({ top: TABS_H + PAD, right: WELL + PAD, bottom: WELL + PAD, left: WELL + PAD }),
       fitted: (id) => !!this.last?.minimized.has(id),
+      placed: () => this.drawCards(),
     });
     this.mover = new Mover(work, {
       rects: () => this.rects(),
@@ -139,10 +188,20 @@ export class Work {
   endMove(): void {
     this.mover.end();
   }
-  /** A task's row dragged from the list over the work area: the task moved, if shown, else opened where it is dropped. */
+  /** A task's row dragged from the list over the work area: opened where it is dropped -- one open in a tab, none. */
   offer(key: string): boolean {
-    if (!this.last) return false;
-    return this.mover.start(this.last.blocks.includes(key) ? BLOCK + key : NEW + key);
+    if (!this.last || this.last.blocks.includes(key) || this.tabs.where(key)) return false;
+    return this.mover.start(NEW + key);
+  }
+  /** The tab of task `key` holding `item`, when the one shown does not: to be shown before it (a click on it, listed). */
+  itemTab(key: string, item: string): string | null {
+    const tabs = this.tasks.tabs(key);
+    if (!tabs) return null;
+    const holds = (id: string): boolean => {
+      const t = tabs.tabs.find((x) => x.id === id);
+      return !!t && leaves(t.tree).includes(item);
+    };
+    return holds(tabs.shown) ? null : (tabs.tabs.find((t) => holds(t.id))?.id ?? null);
   }
   /** What a panel (or a task, by its strip) can be moved to from its menu: a side, another's place, another tab of its
    * task, a new one. */
@@ -195,6 +254,7 @@ export class Work {
       put: this.put,
       strip: (b) => this.strip(b),
       tabbed: (b) => !!this.tasks.tabs(b),
+      gap: GAP,
     });
     for (const [k, t] of Object.entries(built.added)) this.tasks.set(k, t);
     if (Object.keys(built.added).length) this.tasks.save();
@@ -214,6 +274,11 @@ export class Work {
       }
     this.last = built;
     this.tabs.draw();
+    const listed = JSON.stringify(built.blocks); // what is open here changed: the list marked again
+    if (listed !== this.listedFor) {
+      this.listedFor = listed;
+      queueMicrotask(() => this.hooks.listed?.());
+    }
     // the panes minimized now, or no longer -- or able to be, or no longer: each told (once placed), to draw itself so
     const now = new Set([...built.minimized].map((id) => built.nodes.get(id)!)),
       under = new Set([...built.under].map((id) => built.nodes.get(id)!));
@@ -222,7 +287,37 @@ export class Work {
         queueMicrotask(() => this.hooks.minChanged(n, now.has(n)));
     this.mins = now;
     this.unders = under;
-    return built.tree;
+    this.empty.hidden = !!built.tree;
+    if (built.tree) return built.tree;
+    built.nodes.set(EMPTY, this.empty); // nothing open: the note, in the whole well
+    return { id: EMPTY };
+  }
+
+  // Each block's card: a frame round its panels (its strip with them), where they were placed -- over them, letting the
+  // pointer by; none at a phone's width
+  private drawCards(): void {
+    const rects = this.last ? this.rects() : new Map<string, Rect>(),
+      now = new Set<string>();
+    for (const b of this.last?.blocks || []) {
+      const r = rects.get(BLOCK + b);
+      if (!r) continue;
+      now.add(b);
+      let e = this.cards.get(b);
+      if (!e) {
+        e = document.createElement("div");
+        e.className = "lay-card";
+        e.setAttribute("aria-hidden", "true");
+        this.cardBox.append(e);
+        this.cards.set(b, e);
+      }
+      const s = e.style;
+      [s.left, s.top, s.width, s.height] = [r.x, r.y, r.w, r.h].map((n) => `${n}px`);
+    }
+    for (const [b, e] of this.cards)
+      if (!now.has(b)) {
+        e.remove();
+        this.cards.delete(b);
+      }
   }
 
   // PANES MINIMIZED, each on its own: only its message box, where something of its task is above or below it
@@ -253,7 +348,8 @@ export class Work {
       this.stripBox.append(e);
       this.strips.set(b, e);
     }
-    drawStrip(e, this.hooks.label(b), this.tasks.tabs(b), {
+    const head = { name: this.hooks.label(b), faces: this.hooks.faces?.(b) || [], about: this.hooks.about?.(b) || "" };
+    drawStrip(e, head, this.tasks.tabs(b), {
       show: (tab) => void this.showTab(b, tab),
       close: (tab) => this.closeTab(b, tab),
       rename: (tab, name) => {
@@ -261,10 +357,12 @@ export class Work {
         this.tasks.save();
         this.place();
       },
-      add: () => {
-        const lead = this.hooks.lead(b);
-        if (lead) void this.showTab(b, this.tasks.addTab(b, { id: lead }));
-      },
+      add: this.hooks.lead(b)
+        ? () => {
+            const lead = this.hooks.lead(b);
+            if (lead) void this.showTab(b, this.tasks.addTab(b, { id: lead }));
+          }
+        : null,
     });
     return e;
   }
