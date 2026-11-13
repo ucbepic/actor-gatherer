@@ -6,11 +6,8 @@
 .top-row { flex: 0 0 var(--ed-h, 50%); min-height: 140px; display: flex; position: relative; min-width: 0;
   background: var(--page); border-bottom: 5px solid color-mix(in srgb, var(--ink) 14%, var(--page)); }   /* the edge between it and the panes (placed: a band to drag, place.css) */
 .top-row:not(:has(> section:not([hidden]))) { display: none; }
-/* the chat minimized under the top row (setChatMin): the row the column's height but for the row of message boxes, each
-   pane's as tall as what it shows -- a frame's told by its page (fitMini) -- and no head of its own */
-.work.chat-min > .top-row { flex: 1 1 0; }
-.work.chat-min > .panes { flex: none; }
-.work.chat-min .pane > iframe { flex: none; margin-top: auto; }   /* the strips side by side, along the bottom */
+/* a pane minimized (setChatMin): as tall as what it shows -- a frame's told by its page (fitMini); placed so by the work area
+   (features/layout/) -- and no head of its own */
 .pane:has(> main > .chat.mini) > .pane-top { display: none; }
 main:has(> .chat.mini) { align-items: flex-end; }
 /* a pane minimized: what the agent asks the reader, if it does, over the message box; the way back at its left, the actor's

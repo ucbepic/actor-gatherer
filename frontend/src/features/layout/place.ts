@@ -28,6 +28,8 @@ export interface PlaceHooks {
   resized: (key: string, sizes: Size[], done: boolean) => void;
   /** How much of the box's top is taken (the screen tabs' strip): the panels under it. */
   inset?: () => number;
+  /** A panel as tall as what it shows though its spot is not (a pane minimized beside one that is not). */
+  fitted?: (id: string) => boolean;
 }
 
 const SPOT = ["left", "top", "width", "height", "bottom"] as const;
@@ -77,6 +79,7 @@ export class Placer {
     const top = Math.min(box.h, this.hooks.inset ? this.hooks.inset() : 0);
     const laid = lay(tree, { x: 0, y: top, w: box.w, h: box.h - top }, (kid, cross) => this.natural(kid, cross));
     const now = new Map<string, HTMLElement>();
+    const fitted = new Set([...laid.rects.keys()].filter((id) => laid.fitted.has(id) || !!this.hooks.fitted?.(id)));
     for (const [id, r] of laid.rects) {
       const e = this.hooks.node(id);
       if (!e) continue;
@@ -84,16 +87,14 @@ export class Placer {
       // a panel as long as what it shows: as tall as it is, at the bottom of its spot
       spot(
         e,
-        laid.fitted.has(id)
-          ? { left: px(r.x), width: px(r.w), bottom: px(box.h - r.y - r.h), height: "auto" }
-          : this.at(r),
+        fitted.has(id) ? { left: px(r.x), width: px(r.w), bottom: px(box.h - r.y - r.h), height: "auto" } : this.at(r),
       );
     }
     const placing = new Set(now.values()); // (a panel under another id now -- the page's own pane, another actor -- stays)
     for (const e of this.placed.values()) if (!placing.has(e)) spot(e, {});
     this.placed = now;
     this.laid = laid;
-    this.watch(new Set([...laid.fitted].map((id) => now.get(id)).filter((e): e is HTMLElement => !!e)));
+    this.watch(new Set([...fitted].map((id) => now.get(id)).filter((e): e is HTMLElement => !!e)));
     this.drawBars();
   }
 

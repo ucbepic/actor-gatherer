@@ -77,6 +77,7 @@ test("a panel moved from its head's menu: along a side of its task, or in anothe
     /To the top/,
     /To the bottom/,
     /^⇄Swap with Parser fixes/,
+    /To a new tab of this task/,
   ]);
   await menu.getByRole("menuitem", { name: "To the right" }).click();
   await expect(menu).toHaveCount(0);

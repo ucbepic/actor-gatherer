@@ -110,21 +110,71 @@
 .lay-strip {
   position: absolute;
   box-sizing: border-box;
-  padding: 0 10px;
-  line-height: 23px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 10px;
   font-size: 11.5px;
-  font-weight: 600;
   color: var(--ink-2);
   background: color-mix(in srgb, var(--ink) 7%, var(--page));
   border-bottom: 1px solid var(--ring);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   cursor: grab;
   user-select: none;
 }
-.lay-strip:hover {
+.lay-sname {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.lay-strip:hover .lay-sname {
   color: var(--ink);
+}
+/* its tabs, a task having two or more: each its name and ×, the one shown marked; "+" another */
+.lay-ttab {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
+  padding: 0 2px 0 8px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.lay-ttab > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lay-ttab:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+.lay-ttab[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.lay-tclose,
+.lay-tadd {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.lay-tclose:hover,
+.lay-tadd:hover {
+  color: var(--ink);
+  background: var(--wash);
 }
 /* the screen tabs (tabs.ts), over the work area while there are two or more: each its dot, its name, its × */
 .lay-tabs {

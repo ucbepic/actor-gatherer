@@ -11,9 +11,11 @@ export interface MoveHooks {
   rects: () => Map<string, Rect>;
   /** The panels `id` can go beside: its task's others shown. */
   targets: (id: string) => string[];
-  /** How near a side of a target the drop goes on that side (arrange.ts's zoneAt): a half, always on a side. */
-  edge?: (id: string) => number;
-  moved: (id: string, target: string, zone: Zone) => void;
+  /** How near a side of `target` the drop goes on that side (arrange.ts's zoneAt): a half, always on a side; none, in
+   * its place (another tab's name: the panel into that tab). */
+  edge?: (id: string, target: string) => number;
+  /** Dropped (`copy`: ⌥ held). */
+  moved: (id: string, target: string, zone: Zone, copy: boolean) => void;
 }
 
 const px = (n: number): string => `${n}px`;
@@ -57,7 +59,7 @@ export class Mover {
     for (const target of this.hooks.targets(this.id)) {
       const r = rects.get(target);
       if (r && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
-        const zone = zoneAt(r, x, y, this.hooks.edge ? this.hooks.edge(this.id) : 0.25);
+        const zone = zoneAt(r, x, y, this.hooks.edge ? this.hooks.edge(this.id, target) : 0.25);
         return { target, zone, rect: zoneRect(r, zone) };
       }
     }
@@ -96,7 +98,7 @@ export class Mover {
       const o = this.over(ev),
         id = this.id;
       this.end();
-      if (o) this.hooks.moved(id, o.target, o.zone);
+      if (o) this.hooks.moved(id, o.target, o.zone, ev.altKey);
     });
     this.work.append(cover);
     this.cover = cover;

@@ -11,7 +11,11 @@ document.getElementById("pause").addEventListener("click", async (ev) => {
 if (SNAPSHOT) document.getElementById("pause").style.display = "none";
 let resizeTimer = null;
 window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => document.getElementById("size-chart") && state.agent && state.agent.reads && drawCharts(), 150); });
-$("pane-close").addEventListener("click", () => PANE ? PANE.close(window) : closeHere());
+$("pane-close").addEventListener("click", () => {
+  if (PANE) return PANE.close(window);
+  if (actorPanes().length) workClosed(panes.here.node);   // (alone, it stays)
+  closeHere();
+});
 if (PANE) document.addEventListener("pointerdown", () => PANE.focus(window), true);
 else {
   $("pane-here").addEventListener("pointerdown", () => focusPane(panes.here), true);

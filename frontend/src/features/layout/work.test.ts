@@ -84,14 +84,33 @@ describe("the work area built", () => {
     expect([t.thick, t.bar]).toEqual([true, 5]);
   });
 
-  it("with the chat minimized under the apps: its panes as tall as what they show, the band not dragged", () => {
-    const t = build([at(T, "c1"), at(T, "c2"), at(T, "app:b")], {}, () => null, { ...opts, min: true }).tree as Split;
-    expect(shape(t)).toEqual([
-      "col",
-      [leafId(T, "app:b"), ["row", [leafId(T, "c1"), leafId(T, "c2")], [1, 1]]],
-      [1, "fit"],
-    ]);
-    expect(t.still).toBe(true);
+  it("a pane minimized under the apps: as tall as what it shows -- alone in its row; beside one that is not, at the foot of its spot", () => {
+    const items = [at(T, "c1"), at(T, "c2"), at(T, "app:b")];
+    const tree = (min: string[]): Node => ({
+      key: "",
+      dir: "col",
+      bar: 5,
+      kids: [
+        { id: "app:b" },
+        {
+          key: "",
+          dir: "row",
+          bar: 1,
+          kids: ["c1", "c2"].map((id) => ({ id, min: min.includes(id) || undefined })),
+          sizes: [{ share: 1 }, { share: 1 }],
+        },
+      ],
+      sizes: [{ top: true }, { share: 1 }],
+    });
+    const both = build(items, { [T]: tree(["c1", "c2"]) }, () => null, opts);
+    expect((both.tree as Split).sizes[1]).toEqual({ fit: true }); // the row of the two: as tall as their message boxes
+    expect([...both.minimized].sort()).toEqual([leafId(T, "c1"), leafId(T, "c2")]);
+    const one = build(items, { [T]: tree(["c1"]) }, () => null, opts);
+    expect((one.tree as Split).sizes[1].fit).toBeUndefined(); // c2 whole: the row as tall as it is
+    expect([...one.minimized]).toEqual([leafId(T, "c1")]); // c1 at the foot of its spot (work.ts's fitted)
+    expect(one.under.has(leafId(T, "c2"))).toBe(true); // under the apps: it can be
+    const alone = build([at(T, "c1")], { [T]: { id: "c1", min: true } }, () => null, opts);
+    expect(alone.minimized.size).toBe(0); // nothing above or below it: shown whole
   });
 
   it("puts the blocks of apps alone above the others, as an app's panel always was", () => {

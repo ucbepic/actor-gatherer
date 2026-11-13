@@ -3,7 +3,7 @@
 // taken out; and the tree as it shows only the panels open (view), each split of it knowing the one kept it came from,
 // so the sizes a bar dragged in it gives are kept there (keepSizes). Each gives a new tree, leaving the one it is given
 // as it was -- but keepSizes, which is what it is for. No DOM here.
-import { isSplit, type Dir, type Node, type Rect, type Size, type Split } from "./tree";
+import { isSplit, type Dir, type Leaf, type Node, type Rect, type Size, type Split } from "./tree";
 
 export type Side = "left" | "right" | "top" | "bottom";
 /** Where a panel dropped on another goes: on one of its sides, or in its place (the two swapped). */
@@ -62,9 +62,9 @@ export function remove(n: Node, id: string): Node | null {
 
 /** The panel `id` put on side `side` of the panel `target`: in the split `target` is in, if it splits that way, the two
  * sharing `target`'s room; else the two in a split of their own, in `target`'s place. */
-export function insert(n: Node, target: string, id: string, side: Side): Node {
+export function insert(n: Node, target: string, id: string, side: Side, as: Leaf = { id }): Node {
   const dir = dirOf(side),
-    leaf: Node = { id };
+    leaf: Node = { ...as, id };
   const into = (m: Node): Node => {
     if (!isSplit(m))
       return m.id === target ? split(dir, first(side) ? [leaf, m] : [m, leaf], [{ share: 1 }, { share: 1 }]) : m;
@@ -85,9 +85,21 @@ export function insert(n: Node, target: string, id: string, side: Side): Node {
 
 /** The panels `a` and `b` in each other's place. */
 export function swap(n: Node, a: string, b: string): Node {
-  if (!isSplit(n)) return { id: n.id === a ? b : n.id === b ? a : n.id };
-  return { ...n, kids: n.kids.map((k) => swap(k, a, b)) };
+  const all = (m: Node): Leaf[] => (isSplit(m) ? m.kids.flatMap(all) : [m]);
+  const [la, lb] = [all(n).find((l) => l.id === a), all(n).find((l) => l.id === b)];
+  const into = (m: Node): Node =>
+    isSplit(m) ? { ...m, kids: m.kids.map(into) } : m.id === a ? { ...lb! } : m.id === b ? { ...la! } : m;
+  return la && lb ? into(n) : n;
 }
+
+/** The panel `id` given `props` (a pane minimized, or not). */
+export function mark(n: Node, id: string, props: Partial<Leaf>): Node {
+  if (!isSplit(n)) return n.id === id ? { ...n, ...props } : n;
+  return { ...n, kids: n.kids.map((k) => mark(k, id, props)) };
+}
+
+/** The panels of a tree, as kept (each with what it is marked). */
+export const leafNodes = (n: Node | null): Leaf[] => (!n ? [] : isSplit(n) ? n.kids.flatMap(leafNodes) : [n]);
 
 /** The panel `id` dropped on `target`'s `zone`: on that side of it, or (its center) the two swapped. */
 export function move(n: Node, id: string, target: string, zone: Zone): Node {
@@ -95,7 +107,15 @@ export function move(n: Node, id: string, target: string, zone: Zone): Node {
   if (id === target || !all.includes(id) || !all.includes(target)) return n;
   if (zone === "center") return swap(n, id, target);
   const rest = remove(n, id);
-  return rest ? insert(rest, target, id, zone) : n;
+  return rest
+    ? insert(
+        rest,
+        target,
+        id,
+        zone,
+        leafNodes(n).find((l) => l.id === id),
+      )
+    : n; // (as it was marked)
 }
 
 /** The panel `id` put along a whole side of the rest: one more kid of the tree, if it splits that way (as wide as its
@@ -103,7 +123,7 @@ export function move(n: Node, id: string, target: string, zone: Zone): Node {
 export function toSide(n: Node, id: string, side: Side): Node {
   const rest = leaves(n).includes(id) ? remove(n, id) : null;
   if (!rest) return n;
-  const leaf: Node = { id },
+  const leaf: Node = { ...leafNodes(n).find((l) => l.id === id)!, id }, // (as it was marked)
     dir = dirOf(side);
   if (isSplit(rest) && rest.dir === dir && rest.sizes.every(sharing)) {
     const z: Size = { share: rest.sizes.reduce((s, x) => s + shareOf(x), 0) / rest.sizes.length };
@@ -155,7 +175,7 @@ export function addItem(
 /** The tree as it shows the panels `keep` keeps: the others left out (a split left with one kid gives its place to it),
  * each split shown knowing the one it came from and where each of its kids is in it. */
 export function view(n: Node, keep: (id: string) => boolean): Node | null {
-  if (!isSplit(n)) return keep(n.id) ? { id: n.id } : null;
+  if (!isSplit(n)) return keep(n.id) ? { ...n } : null;
   const kids: Node[] = [],
     sizes: Size[] = [],
     at: number[] = [];

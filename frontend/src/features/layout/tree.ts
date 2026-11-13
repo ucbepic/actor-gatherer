@@ -8,6 +8,8 @@
 export type Dir = "row" | "col";
 export interface Leaf {
   id: string;
+  /** a pane minimized to its message box (work.ts: where something is above or below it) */
+  min?: boolean;
 }
 export interface Size {
   share?: number;
