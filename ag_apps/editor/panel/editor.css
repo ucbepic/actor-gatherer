@@ -364,6 +364,31 @@ svg.ft-gray { color: var(--ft-gray); }
 .ed-go-st { flex: none; color: var(--muted); font-size: 11.5px; padding: 4px 8px 1px; border-top: 1px solid var(--grid); }
 .ed-go-st.bad { color: var(--critical); }
 
+/* the lines selected, sent to an actor (editor-send.js): the button beside the selection's end, and its picker -- what
+   to ask, then the actors -- as Go to file's */
+.ed-send { position: fixed; z-index: 60; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px;
+  font: inherit; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.18); cursor: pointer; white-space: nowrap; }
+.ed-send[hidden] { display: none; }
+.ed-send > svg { color: var(--s1); }
+.ed-sendpop { position: fixed; z-index: 61; display: flex; flex-direction: column; gap: 6px; padding: 8px; font-size: 13px;
+  max-height: calc(100vh - 16px); background: var(--surface); border: 1px solid var(--ring); border-radius: 9px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.3); }
+.ed-send-hd { flex: none; color: var(--muted); font-size: 12px; padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-send-ask { flex: none; width: 100%; min-height: 34px; max-height: 160px; padding: 7px 9px; font: inherit; font-size: 13.5px; resize: none;
+  color: var(--ink); background: var(--page); border: 1px solid var(--s1); border-radius: 6px; outline: none; }
+.ed-send-ask.bad { border-color: var(--critical); }
+.ed-send-ask.bad::placeholder { color: var(--critical); }
+.ed-send-list { flex: 1 1 auto; min-height: 0; max-height: 260px; overflow-y: auto; display: grid; align-content: start; gap: 1px; }
+.ed-send-it { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 0 8px; padding: 4px 8px;
+  border-radius: 5px; cursor: pointer; }
+.ed-send-it.on { background: var(--selected); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--s1) 45%, transparent); }
+.ed-send-it img, .ed-send-it .ed-noav { width: 20px; height: 20px; border-radius: 50%; display: block; }
+.ed-send-it .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-send-it .st { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.ed-send-none { color: var(--muted); padding: 6px 8px; }
+.ed-send-ft { flex: none; color: var(--muted); font-size: 11px; padding: 4px 2px 0; border-top: 1px solid var(--grid); }
+
 /* a short note at the Editor's foot (edNote): a path copied, a dialog that did not open */
 .ed-toast { position: absolute; left: 12px; bottom: 14px; z-index: 6; max-width: min(520px, calc(100% - 24px)); padding: 5px 10px;
   border-radius: 6px; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring);

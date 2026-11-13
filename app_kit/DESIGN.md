@@ -560,6 +560,18 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - Not done: telling the actor below the Editor which file is open and what is selected when the user messages it
      (decision 4); Codex and Antigravity can't be stopped from editing open files (no edit hook) -- their writes are
      merged or asked about as above.
+
+   **(c) Lines selected, sent to an actor: built** (2026-11-13). The user: "select a part of text and then after I
+   select it send to an actor ... as if I had manually switched to that actor and sent a message". Text selected in
+   the file open shows a button beside the selection's end ("Send to an actor"; not while the mouse is still
+   selecting); it opens a picker over the Editor: a box for what to do (it has the keys), then the actors of the
+   Editor's gatherer (not closed ones, but saved ones; the coordinator agent first, if there is one). The one picked
+   gets, as the user's own message (capability `message_actors`, `ag.actors.send`, as Chat sends): the user's words,
+   then "Lines 3-7 of /the/file's/path:" and the selected text in a fenced block (its extension as the language). Over
+   20,000 characters: only where the lines are. An auto-saved file is saved first, so what the actor reads there is
+   what was quoted; otherwise the message says the lines are not saved yet. No `[asked]` note, no report back, no
+   status: it is a message like any other, in its Chat. `panel/editor-send.js`; `e2e/editor.spec.ts`.
+   - Not done: a new actor started from the picker (as Notes offers); a key for it.
 8. **The Browser and DocWriter.** What they do for the user and the agent today is kept (2026-11-07): only where
    their panel sits and how they plug in change. DocWriter first, then the Browser, each its own PR.
    - Each becomes instances (the instance id is its key today, so its profile, logins and saved tabs stay where they
