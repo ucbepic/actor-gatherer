@@ -55,7 +55,7 @@ test("a panel dropped on another tab's name goes into that tab; with ⌥, a copy
   await chips(page).nth(0).click(); // Tab 1: Claude's pane
   await expect(here(page)).toBeVisible();
   const drop = async (alt: boolean) => {
-    const g = await box(here(page).locator(".fl-grip:visible, #pane-here > .pane-top:visible").first()); // its grip, or head
+    const g = await box(page.locator("#pane-here .fl-grip:visible, #pane-here > .pane-top:visible").first()); // its grip, or head
     const c = await box(chips(page).nth(1));
     await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
     await page.mouse.down();
