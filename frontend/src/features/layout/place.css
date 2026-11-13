@@ -99,3 +99,30 @@
     width 0.08s,
     height 0.08s;
 }
+/* a task's strip (work.ts), on its block of two panels or more while other tasks are shown: its name -- what holds its
+   panels together -- dragged, or right-clicked, to move the task */
+.lay-strips {
+  display: none;
+}
+.work.placed > .lay-strips {
+  display: contents;
+}
+.lay-strip {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 0 10px;
+  line-height: 23px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--ink) 7%, var(--page));
+  border-bottom: 1px solid var(--ring);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: grab;
+  user-select: none;
+}
+.lay-strip:hover {
+  color: var(--ink);
+}

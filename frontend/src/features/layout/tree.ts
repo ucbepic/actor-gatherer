@@ -61,14 +61,17 @@ const shareOf = (z: Size | undefined): number => (z && z.share !== undefined ? z
 const fixed = (z: Size | undefined): boolean => !!z && (!!z.fit || z.px !== undefined);
 
 /** The lengths of a split's kids along `len` (`cross` the other way): its bars' room taken first, then each kid of a
- * length of its own (no longer than what is left), the rest shared by the others as their shares say. */
+ * length of its own -- no longer than what is left, nor (but for its own least) than leaves the others their least --
+ * the rest shared by the others as their shares say. */
 export function lengths(s: Split, len: number, cross: number, fit: Fit = () => 0): number[] {
   let left = Math.max(0, len - s.bar * (s.kids.length - 1));
+  const least = s.kids.reduce((n, _, i) => (fixed(s.sizes[i]) ? n : n + (s.sizes[i]?.min || 0)), 0);
   const own = s.kids.map((k, i) => {
     const z = s.sizes[i];
     if (!fixed(z)) return null;
     const want = z.fit ? fit(k, cross) : Math.max(z.min || 0, z.px || 0);
-    const got = Math.max(0, Math.min(want, left));
+    const room = z.fit ? left : Math.max(left - least, Math.min(z.min || 0, left));
+    const got = Math.max(0, Math.min(want, room));
     left -= got;
     return got;
   });
@@ -89,7 +92,8 @@ export function lay(node: Node, box: Rect, fit: Fit = () => 0): Laid {
     const ls = lengths(n, row ? r.w : r.h, row ? r.h : r.w, fit);
     let at = row ? r.x : r.y;
     n.kids.forEach((k, i) => {
-      if (i) {
+      if (i && n.bar > 0) {
+        // (a split whose bars take no room has none: a task's strip on its panels)
         out.bars.push({
           split: n,
           at: i - 1,

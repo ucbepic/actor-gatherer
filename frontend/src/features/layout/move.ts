@@ -11,6 +11,8 @@ export interface MoveHooks {
   rects: () => Map<string, Rect>;
   /** The panels `id` can go beside: its task's others shown. */
   targets: (id: string) => string[];
+  /** How near a side of a target the drop goes on that side (arrange.ts's zoneAt): a half, always on a side. */
+  edge?: (id: string) => number;
   moved: (id: string, target: string, zone: Zone) => void;
 }
 
@@ -55,7 +57,7 @@ export class Mover {
     for (const target of this.hooks.targets(this.id)) {
       const r = rects.get(target);
       if (r && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
-        const zone = zoneAt(r, x, y);
+        const zone = zoneAt(r, x, y, this.hooks.edge ? this.hooks.edge(this.id) : 0.25);
         return { target, zone, rect: zoneRect(r, zone) };
       }
     }

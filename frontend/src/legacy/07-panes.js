@@ -383,21 +383,53 @@ function placeWork() {
 function placeIfShown() { if (workPlacer && shownSig() !== placedFor) placeWork(); }
 function startPlacing() {
   if (PANE || SNAPSHOT || workPlacer) return;
-  workPlacer = window.agNext.layout.work(document.querySelector(".work"),
-    { shown: shownPanels, min: chatMin, narrow: () => NARROW.matches, old: (k) => taskLayout(k) });
+  const work = document.querySelector(".work");
+  workPlacer = window.agNext.layout.work(work, { shown: shownPanels, min: chatMin, narrow: () => NARROW.matches,
+    old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped });
   NARROW.addEventListener("change", placeWork);
+  // a task's row dragged from the list over the work area (05-agent-list.js's listDrag): moved there, if it is shown, else
+  // opened beside the tasks shown, on the side of the one it is dropped on
+  work.addEventListener("dragenter", () => {
+    const k = listDrag && !listDrag.offered ? draggedTask() : null;
+    if (k && workPlacer.offer(k)) listDrag.offered = true;
+  });
   placeWork();
+}
+// What a block of the work area is called on its strip (shown while there are others): its task's name, an actor's, an
+// app's; a terminal's, the coordinator agent's (no task)
+function blockName(k) {
+  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  if (k.startsWith("\u0002")) return isShell(k.slice(1)) ? "Terminal" : "";
+  if (!gg || id === undefined) return "";
+  if (/^t\d+$/.test(id)) { const t = taskById(g, Number(id.slice(1))); return t ? taskName(gg, t) : "A task"; }
+  if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? appShown(o) : "An app"; }
+  const a = gg.agents.find((x) => x.channel === id);
+  return a ? actorTitle(a) : id;
+}
+// the task whose row (or a row of it) is dragged from the list: one task's items only; one not shown with an actor to
+// open beside (a task of apps alone opens alone)
+function draggedTask() {
+  const cs = listDrag.cs || [], keys = [...new Set(cs.map((c) => taskKey(listDrag.g, c)))];
+  if (keys.length !== 1 || !keys[0]) return null;
+  const k = keys[0], shown = shownPanels().some((s) => s.key === k);
+  return shown || cs.some((c) => !isAppItem(c)) ? k : null;
+}
+// a task dropped on the work area from the list, not shown: opened beside the tasks shown (as ⌘+click on its row does)
+function openDropped(k) {
+  const [g, id] = k.split("\u0000");
+  if (/^t\d+$/.test(id)) openTask(g, Number(id.slice(1)), null, { metaKey: true });
+  else if (!isAppItem(id)) openTaskBeside(g, k, id);
 }
 // A panel's head dragged -- this page's own pane's, its Chat bar's grip (the head put there), an app's panel's; in a
 // frame, the page around it told -- picks it up (none from a press on a button in it, nor one with nowhere to go); let
 // go, it is put down. Right-clicked: what it can be moved to, as a menu.
-const MOVE_FROM = "#pane-here > .pane-top, .fl-grip, .app-pane > .app-top";
+const MOVE_FROM = "#pane-here > .pane-top, .fl-grip, .app-pane > .app-top, .lay-strip";
 let movePress = null;                                // what the last press was on: a drag starting from a button is none
 if (!SNAPSHOT) {
   const head = document.querySelector("#pane-here > .pane-top");
   if (head) head.draggable = true;
   const from = (ev) => (ev.target.closest ? ev.target.closest(MOVE_FROM) : null);
-  const panel = (f) => f.closest(".app-pane, #pane-here");
+  const panel = (f) => (f.matches(".lay-strip") ? f : f.closest(".app-pane, #pane-here"));   // a task's strip: the task
   const busy = () => !!(movePress && movePress.closest && movePress.closest("button, input, textarea, select, a, [contenteditable]"));
   document.addEventListener("pointerdown", (ev) => { movePress = ev.target; }, true);
   document.addEventListener("dragstart", (ev) => {
@@ -418,6 +450,7 @@ function moveStart(node) { return !!workPlacer && !!node && workPlacer.startMove
 function moveEnd() { if (workPlacer) workPlacer.endMove(); }
 // The menu a panel's head right-clicked opens at (x, y): which side of its task's block it goes along, or whose place it
 // takes. None for a panel with no other of its task shown.
+// (a task's strip, or the head of its only panel shown: the task moved among the tasks shown)
 const MOVE_SIDES = [["left", "←", "To the left"], ["right", "→", "To the right"], ["top", "↑", "To the top"], ["bottom", "↓", "To the bottom"]];
 function moveMenu(node, x, y) {
   const m = workPlacer && node && workPlacer.moves(node);
@@ -426,13 +459,14 @@ function moveMenu(node, x, y) {
   if (!at) { at = el("span", { id: "lay-anchor", class: "lay-anchor", "data-pop": "lay-move", "aria-hidden": "true" }); document.body.append(at); }
   at.style.left = `${Math.round(x)}px`; at.style.top = `${Math.round(y)}px`;
   const mark = (t) => el("span", { class: "lay-mark", "aria-hidden": "true", text: t });
-  openPop("lay-move", at, popMenu("Move this panel", [
+  openPop("lay-move", at, popMenu(m.task ? "Move this task" : "Move this panel", [
     ...MOVE_SIDES.map(([side, arrow, text]) => ({ mark: mark(arrow), text, run: () => workPlacer.toSide(node, side) })),
     ...m.others.map((o) => ({ mark: mark("⇄"), text: `Swap with ${panelName(o)}`, run: () => workPlacer.swapWith(node, o) }))]));
   return true;
 }
 // what a panel is called in the menu: an app's as its head names it, an actor's as the list does
 function panelName(node) {
+  if (node.matches(".lay-strip")) return node.dataset.name || "this task";
   const app = panes.apps.find((p) => p.node === node);
   const short = (t) => (t.length > 48 ? `${t.slice(0, 47)}…` : t);
   if (app) { const w = node.querySelector(".app-who"); return short((w && w.textContent.trim()) || app.app.label); }

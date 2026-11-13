@@ -1506,6 +1506,7 @@ function endDrag() {
   document.body.classList.remove("drag-out");
   for (const n of document.querySelectorAll(":is(#agents, #rail) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
   if (d.later || d.revealed) renderAgents();         // the rail, its folders shown for the drag: as it was again
+  if (d.offered) moveEnd();                          // over the work area too: its cover put away (07-panes.js)
 }
 document.addEventListener("dragover", () => { if (listDrag) listDrag.seen = Date.now(); }, true);
 document.addEventListener("drop", () => { if (listDrag) setTimeout(endDrag, 0); }, true);   // anywhere: after the line's own

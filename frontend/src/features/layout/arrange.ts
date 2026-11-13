@@ -114,6 +114,44 @@ export function toSide(n: Node, id: string, side: Side): Node {
   return split(dir, first(side) ? [leaf, rest] : [rest, leaf], [{ share: 1 }, { share: 1 }]);
 }
 
+/** An item of a tree, and whether it is of the kind that goes above (an app's panel; a block of apps alone). */
+export interface Kinded {
+  item: string;
+  app: boolean;
+}
+
+/** `it`, shown but not in its task's arrangement, put where a panel of its kind goes: after the one before it among the
+ * panels shown of its kind (as a pane opened beside another goes right of it), else before the one after it, else after
+ * the last of its kind (one shown before); an app with none of its kind, above them all; an actor, below them all. */
+export function addItem(
+  tree: Node | null,
+  it: Kinded,
+  items: Kinded[],
+  isApp: (id: string) => boolean = (id) => id.startsWith("app:"),
+): Node {
+  if (!tree) return { id: it.item };
+  const has = new Set(leaves(tree)),
+    same = items.filter((i) => i.app === it.app),
+    at = same.indexOf(it);
+  const before = same
+    .slice(0, at)
+    .reverse()
+    .find((i) => has.has(i.item));
+  if (before) return insert(tree, before.item, it.item, "right");
+  const after = same.slice(at + 1).find((i) => has.has(i.item));
+  if (after) return insert(tree, after.item, it.item, "left");
+  const kin = [...has].filter((id) => isApp(id) === it.app).pop();
+  if (kin) return insert(tree, kin, it.item, "right");
+  const leaf: Node = { id: it.item };
+  return {
+    key: "",
+    dir: "col",
+    bar: 5,
+    kids: it.app ? [leaf, tree] : [tree, leaf],
+    sizes: [{ top: true }, { share: 1 }], // the apps above: as tall as the row dragged last
+  };
+}
+
 /** The tree as it shows the panels `keep` keeps: the others left out (a split left with one kid gives its place to it),
  * each split shown knowing the one it came from and where each of its kids is in it. */
 export function view(n: Node, keep: (id: string) => boolean): Node | null {
@@ -134,6 +172,16 @@ export function view(n: Node, keep: (id: string) => boolean): Node | null {
   return { key: n.key, dir: n.dir, bar: n.bar, kids, sizes, src: n, at };
 }
 
+/** The tree with only the panels `keep` keeps, as a tree to keep (view's, knowing nothing of where it came from). */
+export function prune(n: Node, keep: (id: string) => boolean): Node | null {
+  const clean = (m: Node): Node =>
+    isSplit(m)
+      ? { key: m.key, dir: m.dir, bar: m.bar, kids: m.kids.map(clean), sizes: m.sizes.map((z) => ({ ...z })) }
+      : m;
+  const v = view(n, keep);
+  return v && clean(v);
+}
+
 /** A split shown given its kids' sizes (a bar of it dragged): kept in the split it came from -- a share, or a length of
  * its own, for each kid it shows; the others' left as they were. */
 export function keepSizes(v: Split, sizes: Size[]): void {
@@ -148,9 +196,9 @@ export function keepSizes(v: Split, sizes: Size[]): void {
   });
 }
 
-/** Where a panel dropped at (x, y) over `r` goes: on the side the point is nearest, within a quarter of `r` from it; in
- * its place nearer the middle. */
-export function zoneAt(r: Rect, x: number, y: number): Zone {
+/** Where a panel dropped at (x, y) over `r` goes: on the side the point is nearest, within `edge` of `r` from it (a
+ * quarter; a half, always a side); in its place nearer the middle. */
+export function zoneAt(r: Rect, x: number, y: number, edge = 0.25): Zone {
   const fx = (x - r.x) / (r.w || 1),
     fy = (y - r.y) / (r.h || 1);
   const near: [Zone, number][] = [
@@ -160,7 +208,7 @@ export function zoneAt(r: Rect, x: number, y: number): Zone {
     ["bottom", 1 - fy],
   ];
   const [side, d] = near.reduce((a, b) => (b[1] < a[1] ? b : a));
-  return d < 0.25 ? side : "center";
+  return d < edge ? side : "center";
 }
 
 /** The room a panel dropped in `zone` of `r` would take: half of `r` on that side, or all of it. */

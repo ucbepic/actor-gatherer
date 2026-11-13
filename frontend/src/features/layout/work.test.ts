@@ -2,7 +2,7 @@
 // first time it shows (or from an older page's layout), a panel opened since put where its kind goes.
 import { describe, expect, it } from "vitest";
 import { leaves } from "./arrange";
-import { addItem, build, firstTree, leafId, type Shown } from "./work";
+import { addItem, build, firstTree, leafId, type Shown, type Shows } from "./work";
 import type { Node, Split } from "./tree";
 
 const at = (key: string | null, item: string): Shown<string> => ({
@@ -65,7 +65,7 @@ describe("the work area built", () => {
     const b = build([at(T, "c1"), at(T, "app:b"), at(U, "c9"), at(null, "shell-1")], kept, () => null, opts);
     expect(b.blocks).toEqual([T, U, "\u0002shell-1"]);
     const t = b.tree as Split;
-    expect(t.key).toBe("screen");
+    expect((t as Shows).screen).toBe(true); // the blocks' own split
     expect(t.kids.map(leaves)).toEqual([
       [leafId(T, "app:b"), leafId(T, "c1")],
       [leafId(U, "c9")],
@@ -102,7 +102,26 @@ describe("the work area built", () => {
       [leafId(lone, "app:n"), ["row", [leafId(T, "c1"), leafId(U, "c9")], [1, 1]]],
       [445, 1],
     ]);
-    expect([t.key, t.thick]).toEqual(["screen-band", true]);
+    expect([(t as Shows).screen, t.thick]).toEqual([true, true]);
+  });
+
+  it("puts a block of two panels or more under a strip while there are others, the blocks as they were arranged", () => {
+    const screen: Node = {
+      key: "",
+      dir: "col",
+      bar: 1,
+      kids: [{ id: U }, { id: T }],
+      sizes: [{ share: 1 }, { share: 2 }],
+    };
+    const strip = (b: string) => `strip of ${b}`;
+    const b = build([at(T, "c1"), at(U, "c9"), at(U, "app:x")], {}, () => null, { ...opts, screen, strip });
+    const t = b.tree as Split;
+    expect([t.dir, t.sizes.map((z) => z.share)]).toEqual(["col", [1, 2]]); // U above T, as kept
+    const s = leafId(U, "\u0003strip");
+    expect(shape(t.kids[0])).toEqual(["col", [s, ["col", [leafId(U, "app:x"), leafId(U, "c9")], [445, 1]]], [24, 1]]);
+    expect(b.nodes.get(s)).toBe(`strip of ${U}`);
+    expect([...b.strips.values()]).toEqual([U]); // T, of one pane, none: its pane's head moves it
+    expect(build([at(U, "c9"), at(U, "app:x")], {}, () => null, { ...opts, strip }).strips.size).toBe(0); // alone: none
   });
 
   it("knows each panel's element, its block and its item", () => {
