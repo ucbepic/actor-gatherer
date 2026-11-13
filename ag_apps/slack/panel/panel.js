@@ -5,6 +5,9 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   "use strict";
   const ag = await AgApp.connect();
   const $ = (id) => document.getElementById(id);
+  // Slack's emoji names, as Slack has them (emoji-datasource: emoji.json, made from it): {names: {name: character},
+  // groups: [[category, [name, ...]], ...]} -- the picker's order
+  const EMO = await fetch("emoji.json").then((r) => r.json()).catch(() => ({ names: {}, groups: [] }));
   const enc = encodeURIComponent;
 
   // ---------------------------------------------------------------- small helpers
@@ -16,6 +19,11 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     send: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2 8l12-6-4.5 12-1.6-4.6z"/></svg>',
     lock: '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>',
     caret: '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    more: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg>',
+    clock: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.6V8l2.4 1.6"/></svg>',
+    bell: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4 11.5V7.2a4 4 0 018 0v4.3l1.2 1.3H2.8z"/><path d="M6.5 14.2a1.6 1.6 0 003 0" stroke-linecap="round"/></svg>',
+    plus: '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    people: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="5.5" r="2.4"/><path d="M1.8 13.5c.5-2.4 2.2-3.6 4.2-3.6s3.7 1.2 4.2 3.6" stroke-linecap="round"/><path d="M10.6 3.4a2.3 2.3 0 010 4.3M12 9.9c1.2.5 2 1.6 2.3 3.6" stroke-linecap="round"/></svg>',
   };
   function icon(name) {
     const t = document.createElement("template");
@@ -69,6 +77,11 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     typed: new Map(keep.get("typed", [])),   // what was typed, per conversation (and thread), not yet sent
     folded: keep.get("folded", {}),          // the conversation list's sections folded: {drafts, channels, dms}
     newCount: 0, pinned: true, asked: null,
+    members: new Map(),       // conversation -> who is in it (ids), asked when it is opened
+    scheduled: new Map(),     // conversation -> its messages waiting to be posted
+    editing: null,            // {cid, ts, text}: one of the user's messages being edited, and what is typed so far
+    view: null,               // "threads" | "activity": shown over the conversation
+    badges: {},               // {threads, activity}: those rows' counts
   };
   const me = () => (S.setup && S.setup.me) || "";
   const SYSTEM = new Set(["channel_join", "channel_leave", "group_join", "group_leave", "channel_topic", "channel_purpose",
@@ -83,7 +96,25 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const p = String(name).trim().split(/\s+/).filter(Boolean);
     return ((p[0] || "?")[0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
   }
-  function avatar(m) { return el("span", { class: "av", "aria-hidden": "true", style: `--h:${hue(m.user || who(m))}` }, initials(who(m))); }
+  // a person's photo (Slack serves it to anyone), or their initials on a colour when there is none or it fails
+  function face(uid, label, cls = "av", key = uid) {
+    const u = uid && S.users[uid];
+    const fall = () => el("span", { class: cls, "aria-hidden": "true", style: `--h:${hue(key || label)}` }, initials(label));
+    if (!u || !u.image) return fall();
+    const img = el("img", { class: `${cls} pic`, src: u.image, alt: "", "aria-hidden": "true", loading: "lazy", referrerpolicy: "no-referrer" });
+    img.addEventListener("error", () => img.replaceWith(fall()), { once: true });
+    return img;
+  }
+  function avatar(m) { return face(m.bot_name ? "" : m.user, who(m), "av", m.user || who(m)); }
+  function statusOf(uid) {                       // a person's status, while it lasts
+    const st = uid && S.users[uid] && S.users[uid].status;
+    return st && !(st.until && st.until * 1000 < Date.now()) ? st : null;
+  }
+  function statusEl(uid) {
+    const st = statusOf(uid);
+    return st ? el("span", { class: "stat", title: st.text || st.emoji }, (st.emoji && emojiOf(st.emoji)) || "💬") : "";
+  }
+  function localTime(tz) { try { return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: tz }); } catch { return ""; } }
   function convName(c) {
     if (!c) return "";
     if (c.kind === "channel" || c.kind === "private") return c.name || c.id;
@@ -117,16 +148,32 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   }
 
   // ---------------------------------------------------------------- Slack's mrkdwn, drawn as nodes
-  const EMOJI = { "+1": "👍", thumbsup: "👍", "-1": "👎", thumbsdown: "👎", smile: "😄", slightly_smiling_face: "🙂",
-    grinning: "😀", joy: "😂", laughing: "😆", wink: "😉", heart: "❤️", tada: "🎉", white_check_mark: "✅", heavy_check_mark: "✔️",
-    x: "❌", eyes: "👀", pray: "🙏", fire: "🔥", rocket: "🚀", ok_hand: "👌", raised_hands: "🙌", clap: "👏", wave: "👋",
-    thinking_face: "🤔", "100": "💯", sweat_smile: "😅", sob: "😭", muscle: "💪", star: "⭐", warning: "⚠️", bulb: "💡",
-    memo: "📝", point_up: "☝️", sparkles: "✨", party_popper: "🎉", heart_eyes: "😍", upside_down_face: "🙃", sunglasses: "😎" };
+  let CUSTOM = {};             // the workspace's own emoji: name -> its picture's address, or "alias:<name>"
+  const EXTRA = { simple_smile: "🙂" };                    // Slack's own, not Unicode's
+  const TONES = { "skin-tone-2": "\u{1F3FB}", "skin-tone-3": "\u{1F3FC}", "skin-tone-4": "\u{1F3FD}", "skin-tone-5": "\u{1F3FE}", "skin-tone-6": "\u{1F3FF}" };
+  function emoji(name, depth = 0) {              // -> {char} | {url} | null
+    const c = CUSTOM[name];
+    if (typeof c === "string") return c.startsWith("alias:") ? (depth < 3 ? emoji(c.slice(6), depth + 1) : null) : { url: c };
+    const ch = EMO.names[name] || EXTRA[name];
+    return ch ? { char: ch } : null;
+  }
+  function emojiEl(name, tone, cls = "emoji") {
+    const e = emoji(name), title = `:${name}:`;
+    if (!e) return null;
+    if (e.url) return el("img", { class: `${cls} custom`, src: e.url, alt: title, title, loading: "lazy" });
+    return el("span", { class: cls, title, role: "img", "aria-label": title }, tone && TONES[tone] ? e.char.replace(/\uFE0F/g, "") + TONES[tone] : e.char);
+  }
+  function emojiOf(code) {                       // ":palm_tree:", "+1::skin-tone-2" -> its node, or null
+    const [nm, tone] = String(code || "").replace(/^:|:$/g, "").split("::");
+    return nm ? emojiEl(nm, tone) : null;
+  }
+  const EMOJI_ONLY = /^\s*(?::[a-z0-9_+'-]+:(?::skin-tone-[2-6]:)?\s*){1,23}$/;
+  const onlyEmoji = (text) => EMOJI_ONLY.test(text || "") && [...String(text).matchAll(/:([a-z0-9_+'-]+):/g)].every((x) => x[1].startsWith("skin-tone-") || emoji(x[1]));
   const unesc = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
   function safeHref(u) {
     try { const x = new URL(u); return ["http:", "https:", "mailto:"].includes(x.protocol) ? x.href : null; } catch { return null; }
   }
-  const TOKEN = /(`[^`\n]+`)|(<[^<>\n]+>)|((?<![\w*])\*(?!\s)[^*\n]+?(?<!\s)\*(?![\w*]))|((?<![\w_])_(?!\s)[^_\n]+?(?<!\s)_(?![\w_]))|((?<![\w~])~(?!\s)[^~\n]+?(?<!\s)~(?![\w~]))|(:[a-z0-9_+'-]+:)/g;
+  const TOKEN = /(`[^`\n]+`)|(<[^<>\n]+>)|((?<![\w*])\*(?!\s)[^*\n]+?(?<!\s)\*(?![\w*]))|((?<![\w_])_(?!\s)[^_\n]+?(?<!\s)_(?![\w_]))|((?<![\w~])~(?!\s)[^~\n]+?(?<!\s)~(?![\w~]))|(:[a-z0-9_+'-]+:(?::skin-tone-[2-6]:)?)/g;
   function ref(body) {
     const bar = body.indexOf("|");
     const r = bar < 0 ? body : body.slice(0, bar), label = bar < 0 ? "" : unesc(body.slice(bar + 1));
@@ -145,7 +192,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       if (m[1]) parent.append(el("code", null, unesc(t.slice(1, -1))));
       else if (m[2]) parent.append(ref(t.slice(1, -1)));
       else if (m[3] || m[4] || m[5]) { const n = el(m[3] ? "b" : m[4] ? "i" : "s"); inline(n, t.slice(1, -1)); parent.append(n); }
-      else parent.append(EMOJI[t.slice(1, -1)] || t);
+      else parent.append(emojiOf(t) || t);
       at = m.index + t.length;
     }
     if (at < s.length) parent.append(unesc(s.slice(at)));
@@ -320,14 +367,15 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   function glyph(c) {
     if (c.kind === "channel") return el("span", { class: "g", "aria-hidden": "true" }, "#");
     if (c.kind === "private") { const g = el("span", { class: "g", "aria-hidden": "true" }); g.append(icon("lock")); g.style.display = "grid"; g.style.placeItems = "center"; return g; }
+    if (c.kind === "im") return el("span", { class: "g", "aria-hidden": "true" }, face(c.user, convName(c), "g-av"));
     return el("span", { class: "g", "aria-hidden": "true" }, el("span", { class: "dot", style: `--h:${hue(c.user || c.id)};width:12px;height:12px;display:inline-block;vertical-align:-1px` }));
   }
   function convRow(c, when) {
     const [u, m] = S.unread[c.id] || [0, 0];
     const label = convName(c);
-    const b = el("button", { type: "button", class: `cv${u ? " unread" : ""}`, "aria-current": S.open === c.id ? "page" : null,
+    const b = el("button", { type: "button", class: `cv${u ? " unread" : ""}`, "aria-current": S.open === c.id && !S.view ? "page" : null,
       "aria-label": `${place(c)}${u ? `, ${u} unread` : ""}${m ? `, ${m} for you` : ""}`, onclick: () => open(c.id) },
-      glyph(c), el("span", { class: "nm" }, label));
+      glyph(c), el("span", { class: "nm" }, label), c.kind === "im" ? statusEl(c.user) : "");
     if (when && act(c)) b.append(el("time", { class: "when", datetime: tsDate(act(c)).toISOString(), title: tsDate(act(c)).toLocaleString() }, shortAgo(act(c))));
     if (m) b.append(el("span", { class: "badge", "aria-hidden": "true" }, m > 99 ? "99+" : String(m)));
     else if (u) b.append(el("span", { class: "count", "aria-hidden": "true" }, u > 99 ? "99+" : String(u)));
@@ -365,7 +413,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const chans = all.filter((c) => (c.kind === "channel" || c.kind === "private") && show(c)).sort((a, b) => convName(a).localeCompare(convName(b)));
     const dms = all.filter((c) => (c.kind === "im" || c.kind === "mpim") && show(c))
       .sort((a, b) => (num(b.latest_ts) - num(a.latest_ts)) || convName(a).localeCompare(convName(b)));
-    const kids = [];
+    const kids = q ? [] : sideViews();
     const drafts = [...S.drafts.values()];
     if (drafts.length && !q) {
       kids.push(...section("drafts", `Drafts to send (${drafts.length})`, drafts.map((d) => {
@@ -382,7 +430,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       const ch = list.filter(isChan), dm = list.filter((c) => !isChan(c));
       const shown = (l) => l.slice(0, RECENT_MAX).map((c) => ({ open: c.id === S.open, el: convRow(c, true) }));
       if (ch.length) kids.push(...section("channels", "Channels", shown(ch), ch));
-      if (dm.length) kids.push(...section("dms", "Direct messages", shown(dm), dm));
+      kids.push(...section("dms", "Direct messages", shown(dm), dm, newDMButton()));
       if (!list.length) {
         const s = S.setup || {};
         kids.push(el("div", { class: "sec-empty" }, s.status === "connecting" ? "Finding your recent conversations…" : `Nothing in the last ${RECENT_DAYS} days.`));
@@ -393,7 +441,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
           more ? `${more} more, and all ${S.convs.size} conversations` : `All ${S.convs.size} conversations`));
     } else {
       if (chans.length) kids.push(...section("channels", "Channels", rows(chans), chans));
-      if (dms.length) kids.push(...section("dms", "Direct messages", rows(dms), dms));
+      if (dms.length || !q) kids.push(...section("dms", "Direct messages", rows(dms), dms, q ? null : newDMButton()));
       if (!chans.length && !dms.length) kids.push(el("div", { class: "sec-empty" }, q || S.filter !== "all" ? "Nothing here" : "No conversations yet"));
     }
     const top = box.scrollTop;
@@ -402,7 +450,17 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   }
   // a section's heading, which folds it -- folded, only the conversation open stays, and the heading carries the
   // section's unread count -- and its rows ({el, open})
-  function section(key, label, rows, convs) {
+  function sideViews() {
+    const b = S.badges || {};
+    const row = (key, label, ic, n) => el("button", { type: "button", class: `cv view${n ? " unread" : ""}`, "aria-current": S.view === key ? "page" : null,
+      "aria-label": `${label}${n ? `, ${n} new` : ""}`, onclick: () => showView(key) },
+      el("span", { class: "g", "aria-hidden": "true" }, icon(ic)), el("span", { class: "nm" }, label),
+      n ? el("span", { class: "badge", "aria-hidden": "true" }, n > 99 ? "99+" : String(n)) : "");
+    return [row("threads", "Threads", "thread", b.threads), row("activity", "Activity", "bell", b.activity)];
+  }
+  const newDMButton = () => el("button", { type: "button", class: "sec-add", "aria-label": "New message", title: "New message",
+    onclick: (e) => newDM(e.currentTarget) }, icon("plus"));
+  function section(key, label, rows, convs, action) {
     const folded = !!S.folded[key];
     let u = 0, m = 0;
     for (const c of convs || []) { const x = S.unread[c.id] || [0, 0]; u += x[0]; m += x[1]; }
@@ -411,7 +469,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const head = el("button", { type: "button", class: "sec", "aria-expanded": String(!folded),
       onclick: () => { S.folded[key] = !folded; keep.set("folded", S.folded); drawConvs(); } },
       el("span", { class: "caret", "aria-hidden": "true" }, icon("caret")), el("span", { class: "lbl" }, label), sum);
-    return [head, ...(folded ? rows.filter((r) => r.open) : rows).map((r) => r.el)];
+    return [action ? el("div", { class: "sec-row" }, head, action) : head, ...(folded ? rows.filter((r) => r.open) : rows).map((r) => r.el)];
   }
   function drawStatus() {
     const s = S.setup || {}, box = $("status");
@@ -427,10 +485,50 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     box.replaceChildren(el("span", { class: "led", "aria-hidden": "true" }), el("span", null, text));
     $("team").textContent = s.team || "";
   }
+  // the open conversation's head: its name; a DM's person (status, title, their time) or a channel's topic; who is in it
   function drawHead() {
     const c = S.convs.get(S.open), head = $("conv-head");
     if (!c) { head.replaceChildren(); return; }
-    head.replaceChildren(el("span", { class: "nm" }, place(c)), c.topic ? el("span", { class: "topic", title: plainText(c.topic) }, plainText(c.topic)) : "");
+    const kids = [el("span", { class: "nm" }, place(c))];
+    if (c.kind === "im") {
+      const u = S.users[c.user] || {}, st = statusOf(c.user);
+      const bits = [u.title, u.tz && localTime(u.tz) && `${localTime(u.tz)} their time`].filter(Boolean);
+      const about = el("span", { class: "topic" });
+      if (st) about.append(emojiOf(st.emoji) || "", st.text ? ` ${st.text}` : "", bits.length ? " · " : "");
+      about.append(bits.join(" · "));
+      kids.push(about);
+    } else kids.push(el("span", { class: "topic", title: plainText(c.topic) }, c.topic ? plainText(c.topic) : ""));
+    const tools = el("span", { class: "head-tools" });
+    if (c.kind !== "im") {
+      const ids = S.members.get(c.id);
+      tools.append(el("button", { type: "button", class: "head-btn", title: "Members", "aria-label": `Members${ids ? ` (${ids.length})` : ""}`,
+        onclick: (e) => membersPop(e.currentTarget, c) }, icon("people"), ids ? el("span", null, String(ids.length)) : ""));
+    }
+    head.replaceChildren(...kids, tools);
+  }
+  async function loadMembers(cid) {
+    const c = S.convs.get(cid);
+    if (!c || c.kind === "im") return;
+    try { const got = await get(`members?conversation=${enc(cid)}`); S.members.set(cid, got.members || []); } catch { return; }
+    if (S.open === cid) drawHead();
+  }
+  function membersPop(anchor, c) {
+    openPop(anchor, (pop) => {
+      const ids = (S.members.get(c.id) || []).slice().sort((a, b) => uname(a).localeCompare(uname(b)));
+      const find = ids.length > 10 ? el("input", { type: "text", placeholder: `Find among ${ids.length}`, "aria-label": "Find a member" }) : null;
+      const list = el("div", { class: "people" });
+      const draw = () => {
+        const q = find ? find.value.trim().toLowerCase() : "";
+        list.replaceChildren(...ids.filter((id) => !q || uname(id).toLowerCase().includes(q) || ((S.users[id] || {}).handle || "").toLowerCase().includes(q)).slice(0, 200)
+          .map((id) => el("div", { class: "person" }, face(id, uname(id), "av sm"), el("span", { class: "pn" }, el("b", null, uname(id)), statusEl(id),
+            (S.users[id] || {}).title ? el("span", { class: "meta" }, ` ${S.users[id].title}`) : ""),
+          id === me() ? el("span", { class: "meta" }, "you") : el("button", { type: "button", class: "btn small quiet", onclick: () => { closePop(); openDM([id]).catch((e) => say(e.message)); } }, "Message"))));
+      };
+      pop.classList.add("wide");
+      pop.append(el("h3", null, `${ids.length || "No"} ${ids.length === 1 ? "member" : "members"} of ${place(c)}`), find || "", list);
+      if (find) find.addEventListener("input", draw);
+      draw();
+    });
   }
 
   // ---------------------------------------------------------------- the messages
@@ -441,17 +539,20 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const row = el("div", { class: `msg${cont ? "" : " first"}${mention ? " mention" : ""}`, "data-ts": m.ts });
     row.append(cont ? el("span", { class: "gut", "aria-hidden": "true" }, clock(tsDate(m.ts))) : avatar(m));
     const body = el("div", { class: "mb" });
-    if (!cont) body.append(el("div", { class: "who" }, el("b", null, who(m)), timeEl(m.ts)));
+    if (!cont) body.append(el("div", { class: "who" }, el("b", null, who(m)), m.bot_name ? "" : statusEl(m.user), timeEl(m.ts)));
     else body.append(el("span", { class: "sr" }, `${who(m)}, ${clock(tsDate(m.ts))}`));
-    const txt = el("div", { class: `txt${sys ? " sys" : ""}` });
-    txt.append(render(m.text));
-    if (m.edited) txt.append(" ", el("span", { class: "edited" }, "(edited)"));
-    body.append(txt);
+    if (S.editing && S.editing.cid === cid && S.editing.ts === m.ts) body.append(editor(cid, m));
+    else {
+      const txt = el("div", { class: `txt${sys ? " sys" : ""}${onlyEmoji(m.text) ? " jumbo" : ""}` });
+      txt.append(render(m.text));
+      if (m.edited) txt.append(" ", el("span", { class: "edited" }, "(edited)"));
+      body.append(txt);
+    }
     for (const a of m.attachments || []) body.append(el("div", { class: "att" }, a.title ? el("b", null, a.title, a.text ? "\n" : "") : "", render(a.text)));
     if ((m.files || []).length) body.append(el("div", { class: "files" }, m.files.map((f) => el("span", { class: "file" }, f.title || f.name))));
     if ((m.reactions || []).length) {
       body.append(el("div", { class: "reacts" }, m.reactions.map((r) => el("span", { class: `react${r.mine ? " mine" : ""}`,
-        title: `${r.count} reacted with :${r.name}:${r.mine ? " (you too)" : ""}` }, el("span", { "aria-hidden": "true" }, EMOJI[r.name] || `:${r.name}:`), el("span", null, String(r.count))))));
+        title: `${r.count} reacted with :${r.name}:${r.mine ? " (you too)" : ""}` }, el("span", { "aria-hidden": "true" }, emojiOf(r.name) || `:${r.name}:`), el("span", null, String(r.count))))));
     }
     if (!inThread && m.subtype === "thread_broadcast" && m.thread_ts) {
       body.append(el("button", { type: "button", class: "replies", onclick: () => openThread(cid, m.thread_ts) }, "Replied to a thread"));
@@ -468,10 +569,250 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       if (!inThread && topLevel(m) && m.subtype !== "thread_broadcast") {
         acts.append(el("button", { type: "button", class: "act", "aria-label": "Reply in thread", title: "Reply in thread", onclick: () => openThread(cid, m.ts) }, icon("thread")));
       }
+      acts.append(el("button", { type: "button", class: "act", "aria-label": "More actions", title: "More", "aria-haspopup": "menu",
+        onclick: (e) => msgMenu(e.currentTarget, cid, m) }, icon("more")));
       if (acts.children.length) row.append(acts);
     }
     return row;
   }
+  // ---------------------------------------------------------------- a message's menu: its link, and the user's own edited or deleted
+  function msgMenu(anchor, cid, m) {
+    openPop(anchor, (pop) => {
+      pop.classList.add("menu");
+      pop.setAttribute("role", "menu");
+      let url = "";
+      const copy = el("button", { type: "button", class: "mi", role: "menuitem", disabled: true, onclick: async () => {
+        closePop(); say((await copyText(url)) ? "Link copied" : url);
+      } }, "Copy link");
+      const visit = el("a", { class: "mi", role: "menuitem", href: "#", target: "_blank", rel: "noopener noreferrer", "aria-disabled": "true",
+        onclick: (e) => { if (!url) e.preventDefault(); else closePop(); } }, "Open in Slack");
+      get(`permalink?conversation=${enc(cid)}&ts=${enc(m.ts)}`)
+        .then((g) => { url = g.url || ""; if (url) { visit.href = url; visit.removeAttribute("aria-disabled"); copy.disabled = false; } })
+        .catch(() => { copy.textContent = "Copy link (Slack didn't give one)"; });
+      pop.append(copy, visit);
+      if (m.user && m.user === me() && !SYSTEM.has(m.subtype)) {
+        pop.append(el("hr"),
+          el("button", { type: "button", class: "mi", role: "menuitem", onclick: () => { closePop(); editMessage(cid, m); } }, "Edit message"),
+          el("button", { type: "button", class: "mi danger", role: "menuitem", onclick: () => confirmDelete(anchor, cid, m) }, "Delete message…"));
+      }
+    });
+  }
+  function confirmDelete(anchor, cid, m) {
+    openPop(anchor, (pop) => {
+      const err = el("div", { class: "note", role: "alert" });
+      const go = el("button", { type: "button", class: "btn small danger", onclick: async () => {
+        go.disabled = true;
+        try { await post("delete", { conversation: cid, ts: m.ts }); closePop(); } catch (e) { err.textContent = e.message; go.disabled = false; }
+      } }, "Delete");
+      pop.append(el("h3", null, "Delete this message?"), el("div", { class: "note" }, "It goes from Slack for everyone. This can't be undone."),
+        el("div", { class: "row" }, el("button", { type: "button", class: "btn small quiet", onclick: closePop }, "Cancel"), go), err);
+    });
+  }
+  // a message's text as the user would type it: people, channels and @here as names (they are made Slack's again when saved)
+  function editable(text) {
+    return String(text || "").replace(/<([@#!])([^<>|\n]+)(?:\|([^<>\n]*))?>/g, (all, sig, id, label) => {
+      if (sig === "@") return `@${uname(id)}`;
+      if (sig === "#") { const c = S.convs.get(id); return `#${label || (c && c.name) || id}`; }
+      const w = id.split("^")[0];
+      return ["here", "channel", "everyone"].includes(w) ? `@${w}` : all;
+    }).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  }
+  function redrawFor(cid) {
+    if (cid === S.open) drawLog("keep");
+    if (S.thread && S.thread.cid === cid) drawThread("keep");
+  }
+  function editMessage(cid, m) {
+    S.editing = { cid, ts: m.ts, text: null };
+    redrawFor(cid);
+  }
+  function grow(ta, most = 240) { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight + 2, most)}px`; }
+  function editor(cid, m) {
+    const ta = el("textarea", { class: "edit-ta", rows: "1", "aria-label": "Edit your message" });
+    const was = editable(m.text);
+    ta.value = S.editing.text !== null ? S.editing.text : was;
+    const err = el("div", { class: "under", role: "status" });
+    const done = () => { S.editing = null; redrawFor(cid); };
+    const save = async () => {
+      const text = ta.value.replace(/\s+$/, "");
+      if (text === was) { done(); return; }
+      if (!text.trim()) { err.textContent = "There's no text left: delete the message instead."; return; }
+      ta.disabled = true;
+      try { const got = await post("edit", { conversation: cid, ts: m.ts, text }); S.editing = null; landedEdit(cid, got.message); }
+      catch (e) { err.textContent = `Not saved: ${e.message}`; ta.disabled = false; }
+    };
+    const sg = attachSuggest(ta);
+    ta.addEventListener("input", () => { S.editing.text = ta.value; grow(ta); });
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(); }
+      else if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save(); }
+    });
+    requestAnimationFrame(() => { grow(ta); ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); });
+    return el("div", { class: "editing" }, el("div", { class: "cmp" }, sg, ta),
+      el("div", { class: "row" }, el("span", { class: "meta" }, "Enter to save, Esc to cancel"),
+        el("button", { type: "button", class: "btn small quiet", onclick: done }, "Cancel"),
+        el("button", { type: "button", class: "btn small primary", onclick: save }, "Save")), err);
+  }
+  function landedEdit(cid, m) {
+    if (!m) { redrawFor(cid); return; }
+    const st = S.msgs.get(cid);
+    if (st && st.loaded) { const i = st.list.findIndex((x) => x.ts === m.ts); if (i >= 0) st.list[i] = m; }
+    if (S.thread && S.thread.cid === cid) { const i = S.thread.list.findIndex((x) => x.ts === m.ts); if (i >= 0) S.thread.list[i] = m; }
+    redrawFor(cid);
+  }
+  function lastMine(cid, thread) {
+    const list = thread ? (S.thread && S.thread.cid === cid && S.thread.ts === thread ? S.thread.list.slice(1) : [])
+      : ((S.msgs.get(cid) || {}).list || []).filter(topLevel);
+    return [...list].reverse().find((m) => m.user === me() && !SYSTEM.has(m.subtype));
+  }
+  async function copyText(text) {
+    if (!text) return false;
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* no clipboard in this frame: the old way */ }
+    const t = el("textarea", { style: "position:fixed;opacity:0;top:0;left:0" });
+    t.value = text; document.body.append(t); t.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    t.remove();
+    return ok;
+  }
+  let sayTimer = null;
+  function say(text) {
+    const n = $("say");
+    n.textContent = text; n.hidden = false;
+    clearTimeout(sayTimer); sayTimer = setTimeout(() => { n.hidden = true; }, 3000);
+  }
+
+  // ---------------------------------------------------------------- suggestions as the user types: @people, #channels, :emoji:
+  const EMO_NAMES = Object.keys(EMO.names).filter((n) => !n.startsWith("skin-tone"));
+  function suggestions(sig, q) {
+    const starts = (x) => !!x && x.toLowerCase().startsWith(q);
+    const words = (x) => !!x && x.toLowerCase().split(/[\s._-]+/).some((w) => w.startsWith(q));
+    const out = [];
+    if (sig === "@") {
+      for (const sp of ["here", "channel", "everyone"]) {
+        if (q && sp.startsWith(q)) out.push({ rank: 3, label: `@${sp}`, sub: sp === "here" ? "everyone here who is active" : "everyone in the conversation", insert: `@${sp}` });
+      }
+      const seen = {};
+      for (const u of Object.values(S.users)) { const k = (u.name || "").toLowerCase(); seen[k] = (seen[k] || 0) + 1; }
+      for (const [id, u] of Object.entries(S.users)) {
+        if (u.deleted) continue;
+        const r = starts(u.handle) ? 0 : starts(u.name) ? 1 : words(u.name) || words(u.handle) ? 2 : -1;
+        if (r < 0) continue;
+        const shown = u.name || u.handle;
+        const typed = seen[(u.name || "").toLowerCase()] > 1 && u.handle ? u.handle : shown;   // a shared name: their handle
+        out.push({ rank: r, label: shown, sub: u.handle && u.handle !== shown ? `@${u.handle}` : "", insert: `@${typed}`, icon: () => face(id, shown, "sg-av") });
+      }
+    } else if (sig === "#") {
+      for (const c of S.convs.values()) {
+        if (c.kind !== "channel" && c.kind !== "private") continue;
+        const r = starts(c.name) ? 0 : words(c.name) ? 1 : -1;
+        if (r >= 0) out.push({ rank: r, label: `#${c.name}`, sub: plainText(c.topic || ""), insert: `#${c.name}` });
+      }
+    } else {
+      for (const n of [...Object.keys(CUSTOM), ...EMO_NAMES]) {
+        const r = n.startsWith(q) ? (n.length === q.length ? 0 : 1) : n.includes(q) ? 2 : -1;
+        if (r >= 0) out.push({ rank: r, label: `:${n}:`, insert: `:${n}:`, icon: () => emojiEl(n) || "" });
+        if (out.length > 400) break;
+      }
+    }
+    return out.sort((a, b) => a.rank - b.rank || a.label.length - b.label.length || a.label.localeCompare(b.label));
+  }
+  function attachSuggest(ta) {
+    const box = el("div", { class: "suggest", role: "listbox", "aria-label": "Suggestions", hidden: true });
+    let items = [], at = 0, span = null;
+    const close = () => { box.hidden = true; items = []; };
+    const pick = (i) => {
+      const it = items[i];
+      if (!it || !span) return;
+      const ins = `${it.insert} `;
+      ta.value = ta.value.slice(0, span[0]) + ins + ta.value.slice(span[1]);
+      const p = span[0] + ins.length;
+      ta.setSelectionRange(p, p);
+      close();
+      ta.dispatchEvent(new Event("input"));
+    };
+    const draw = () => {
+      box.replaceChildren(...items.map((it, i) => el("div", { class: `sg${i === at ? " on" : ""}`, role: "option", "aria-selected": String(i === at),
+        onmousedown: (e) => { e.preventDefault(); pick(i); } }, it.icon ? it.icon() : "", el("span", { class: "sg-l" }, it.label), it.sub ? el("span", { class: "sg-s" }, it.sub) : "")));
+      box.hidden = !items.length;
+    };
+    const update = () => {
+      const pos = ta.selectionStart;
+      if (pos !== ta.selectionEnd) { close(); return; }
+      const m = /(^|[\s(["'])([@#:])([^\s@#:<>]{0,40})$/.exec(ta.value.slice(0, pos));
+      if (!m || (m[2] === ":" && m[3].length < 2)) { close(); return; }
+      items = suggestions(m[2], m[3].toLowerCase()).slice(0, 8);
+      span = [pos - m[3].length - 1, pos]; at = 0;
+      draw();
+    };
+    ta.addEventListener("input", update);
+    ta.addEventListener("click", update);
+    ta.addEventListener("blur", () => setTimeout(close, 120));
+    ta.addEventListener("keydown", (e) => {                 // (added before the box's own Enter: it goes first)
+      if (box.hidden || !items.length) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { at = (at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length; draw(); }
+      else if ((e.key === "Enter" && !e.isComposing && e.keyCode !== 229) || e.key === "Tab") pick(at);
+      else if (e.key === "Escape") close();
+      else return;
+      e.preventDefault(); e.stopImmediatePropagation();
+    });
+    return box;
+  }
+
+  // ---------------------------------------------------------------- scheduled messages
+  function whenLabel(ms) {                       // a time ahead: "today at 3:16 PM", "tomorrow at 9:00 AM", "Monday at ..."
+    const d = new Date(ms), now = new Date();
+    const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+    const day = days === 0 ? "today" : days === 1 ? "tomorrow" : days > 1 && days < 7 ? d.toLocaleDateString([], { weekday: "long" })
+      : d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+    return `${day} at ${clock(d)}`;
+  }
+  const localInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  function schedulePop(anchor, cid, thread, ta, after) {
+    openPop(anchor, (pop) => {
+      const text = ta.value.replace(/\s+$/, "");
+      pop.append(el("h3", null, "Schedule message"));
+      if (!text.trim()) { pop.append(el("div", { class: "note" }, "Write the message first, then pick when it goes.")); return; }
+      const err = el("div", { class: "note", role: "alert" });
+      const go = async (ms) => {
+        err.textContent = "";
+        try {
+          await post("schedule", { conversation: cid, text, thread: thread || "", at: ms / 1000 });
+          closePop(); after(); say(`Scheduled for ${whenLabel(ms)}`); loadScheduled(cid);
+        } catch (e) { err.textContent = e.message; }
+      };
+      const now = new Date();
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0).getTime();
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (((8 - now.getDay()) % 7) || 7), 9, 0).getTime();
+      const opts = [["In 1 hour", Date.now() + 3600e3], ["Tomorrow morning", tomorrow]];
+      if (monday !== tomorrow) opts.push(["Monday morning", monday]);
+      for (const [label, ms] of opts) pop.append(el("button", { type: "button", class: "mi", onclick: () => go(ms) }, label, el("span", { class: "mi-s" }, whenLabel(ms))));
+      const pick = el("input", { type: "datetime-local", min: localInput(new Date(Date.now() + 60e3)), "aria-label": "Custom time" });
+      pop.append(el("hr"), el("label", { class: "col" }, "Or at", pick),
+        el("div", { class: "row" }, el("button", { type: "button", class: "btn small primary", onclick: () => {
+          const ms = new Date(pick.value).getTime();
+          if (!ms) { err.textContent = "Pick a date and a time."; return; }
+          go(ms);
+        } }, "Schedule")), err);
+    });
+  }
+  async function loadScheduled(cid) {
+    try { const got = await get(`scheduled?conversation=${enc(cid)}`); S.scheduled.set(cid, got.scheduled || []); } catch { S.scheduled.set(cid, []); }
+    if (cid === S.open) drawScheduled();
+  }
+  function drawScheduled() {
+    const box = $("sched"), cid = S.open;
+    const list = (S.scheduled.get(cid) || []).slice().sort((a, b) => a.post_at - b.post_at);
+    box.hidden = !cid || !list.length;
+    box.replaceChildren(...list.map((x) => el("div", { class: "sched" }, icon("clock"),
+      el("span", { class: "when" }, `Scheduled ${whenLabel(x.post_at * 1000)}${x.thread_ts ? " · in a thread" : ""}`),
+      el("span", { class: "s-txt", title: plainText(x.text) }, plainText(x.text)),
+      el("button", { type: "button", class: "btn small quiet", onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        try { await post("unschedule", { conversation: cid, id: x.id }); say("Scheduled message canceled"); } catch (z) { say(`Couldn't cancel it: ${z.message}`); }
+        loadScheduled(cid);
+      } }, "Cancel"))));
+  }
+
   function build(list, cid, { readAt, inThread } = {}) {
     const frag = document.createDocumentFragment();
     let prev = null, prevDay = null, newDone = readAt === undefined || readAt === "" || readAt === null;
@@ -583,6 +924,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     }
     reportView();
     drawConvs(); drawHead(); drawComposer();
+    if (!S.members.has(cid)) loadMembers(cid);
+    loadScheduled(cid);
     let st = S.msgs.get(cid);
     if (!st || !st.loaded) {
       st = { list: [], more: true, loaded: false };
@@ -679,6 +1022,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const where = thread ? "Reply…" : `Message ${place(c)}`;
     const ta = el("textarea", { rows: "1", "aria-label": where, placeholder: where });
     ta.value = S.typed.get(key) || "";
+    const sg = attachSuggest(ta);
     const sendBtn = el("button", { type: "button", class: "send", "aria-label": "Send" }, icon("send"));
     const bc = thread ? el("input", { type: "checkbox" }) : null;
     const err = el("div", { class: "under", role: "status" });
@@ -698,15 +1042,21 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     };
     ta.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
+      else if (e.key === "ArrowUp" && !ta.value && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+        const last = lastMine(cid, thread);                // as in Slack: up in an empty box edits your last message
+        if (last) { e.preventDefault(); editMessage(cid, last); }
+      }
     });
     sendBtn.addEventListener("click", send);
+    const schedBtn = el("button", { type: "button", class: "send sched-btn", "aria-label": "Schedule message", title: "Schedule message",
+      onclick: (e) => schedulePop(e.currentTarget, cid, thread, ta, () => { ta.value = ""; remember(); size(); }) }, icon("clock"));
     const draftBtn = el("button", { type: "button", class: "btn small", onclick: (e) => askClaude(e.currentTarget, {
       kind: "draft", cid, instruction: ta.value.trim(),
       message: (how) => `Draft a Slack message for me in ${place(c)}${thread ? " (a reply in a thread)" : ""} with slack_draft (conversation ${cid}${thread ? `, thread ${thread}` : ""}); I'll send it from the Slack panel.\n\nWhat to write: ${how}`,
       done: () => { ta.value = ""; remember(); size(); },
     }) }, icon("pen"), "Draft with Claude");
     requestAnimationFrame(size);
-    return el("div", null, el("div", { class: "box" }, ta, draftBtn, sendBtn),
+    return el("div", { class: "cmp" }, sg, el("div", { class: "box" }, ta, draftBtn, schedBtn, sendBtn),
       bc ? el("label", { class: "under" }, bc, `Also send to ${place(c)}`) : "", err);
   }
   function drawComposer() {
@@ -714,6 +1064,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     box.hidden = !S.open;
     box.replaceChildren(S.open ? composer(S.open, "") : "");
     drawAsked();
+    drawScheduled();
   }
   function landed(cid, m, thread) {                // the user's own message, sent: shown now (the live copy is the same one)
     if (!m || !m.ts) return;
@@ -795,7 +1146,144 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         el("span", { class: "txt" }, render(m.text))));
     }
   }
-  function closeResults() { searched++; $("results").hidden = true; $("results").replaceChildren(); }
+  function closeResults() {
+    searched++; $("results").hidden = true; $("results").replaceChildren();
+    if (S.view) { S.view = null; drawConvs(); }
+  }
+
+  // ---------------------------------------------------------------- Threads and Activity, shown over the conversation
+  async function showView(kind, quiet) {
+    const n = ++searched, box = $("results");
+    if (S.view !== kind) { S.view = kind; drawConvs(); }
+    box.hidden = false;
+    const head = el("div", { class: "results-h" }, el("span", null, kind === "threads" ? "Threads" : "Activity"),
+      el("span", { class: "meta" }, kind === "threads" ? "threads you started, replied in or follow" : "mentions of you, and reactions to your messages"),
+      el("button", { type: "button", class: "icon-btn", "aria-label": "Close", onclick: closeResults }, icon("x")));
+    if (!quiet) box.replaceChildren(head, el("div", { class: "older" }, "Loading…"));
+    let got;
+    try { got = await get(kind); } catch (e) { if (n === searched) box.replaceChildren(head, el("div", { class: "older" }, `Couldn't load it: ${e.message}`)); return; }
+    if (n !== searched) return;
+    if (kind === "threads") {
+      box.replaceChildren(head, ...(got.threads.length ? got.threads.map(threadRow) : [el("div", { class: "older" }, "No threads yet. Threads you start, reply in or follow show here.")]));
+    } else {
+      const items = got.items || [];
+      box.replaceChildren(head, ...(items.length ? items.map((x) => activityRow(x, got.seen)) : [el("div", { class: "older" }, "Nothing yet. Mentions of you and reactions to your messages show here.")]));
+      if (items[0] && items[0].at > got.seen) post("activity_seen", { at: items[0].at }).catch(() => {});
+    }
+  }
+  function threadRow(t) {
+    const c = S.convs.get(t.conversation), p = t.parent, l = t.last;
+    const line = (m, cls) => el("span", { class: `hit-m ${cls}` }, face(m.bot_name ? "" : m.user, who(m), "av sm", m.user), el("span", { class: "hm" },
+      el("b", null, who(m)), " ", el("span", { class: "meta" }, ago(m.ts)), el("span", { class: "txt clip" }, render(m.text))));
+    return el("button", { type: "button", class: `hit thr${t.unread ? " unread" : ""}`, onclick: () => open(t.conversation, { ts: p.ts, thread: p.ts }) },
+      el("span", { class: "meta" }, `${c ? place(c) : "Slack"} · ${p.reply_count || 1} ${(p.reply_count || 1) === 1 ? "reply" : "replies"}${t.unread ? " · new" : ""}`),
+      line(p, "parent"), line(l, "last"));
+  }
+  function activityRow(x, seen) {
+    const c = S.convs.get(x.conversation), m = x.message;
+    const name = uname(x.user), where = c ? ` in ${place(c)}` : "";
+    const what = x.kind === "reaction" ? [el("b", null, name), " reacted ", emojiOf(x.name) || `:${x.name}:`, ` to your message${where}`]
+      : [el("b", null, name), ` mentioned you${where}`];
+    const inThread = m && m.thread_ts && m.thread_ts !== m.ts;
+    return el("button", { type: "button", class: `hit act-row${x.at > seen ? " unread" : ""}`,
+      onclick: () => open(x.conversation, inThread ? { ts: m.thread_ts, thread: m.thread_ts } : { ts: x.ts }) },
+      el("span", { class: "hit-m" }, face(x.user, name, "av sm"), el("span", { class: "hm" }, ...what, " ", el("span", { class: "meta" }, ago(String(x.at))),
+        m ? el("span", { class: "txt clip" }, render(m.text)) : "")));
+  }
+
+  // ---------------------------------------------------------------- jump to (⌘K), and a new DM or group DM
+  async function openDM(users) {
+    const got = await post("open", { users });
+    const c = got.conversation;
+    if (!S.convs.has(c.id)) S.convs.set(c.id, c);
+    await open(c.id);
+  }
+  function openSwitcher() {
+    if ($("body").hidden) return;
+    closePop();
+    const box = $("switch");
+    const input = el("input", { type: "text", placeholder: "Jump to a conversation or person", "aria-label": "Jump to", autocomplete: "off", spellcheck: "false" });
+    const list = el("div", { class: "sw-list", role: "listbox" });
+    let items = [], at = 0;
+    const away = (e) => { if (!box.contains(e.target)) close(); };
+    const close = () => { box.hidden = true; box.replaceChildren(); document.removeEventListener("mousedown", away, true); };
+    const go = (it) => { close(); if (it.cid) open(it.cid); else openDM([it.uid]).catch((e) => say(e.message)); };
+    const draw = () => {
+      list.replaceChildren(...items.map((it, i) => el("div", { class: `sw${i === at ? " on" : ""}`, role: "option", "aria-selected": String(i === at),
+        onmousedown: (e) => { e.preventDefault(); go(it); } }, it.icon(), el("span", { class: "sg-l" }, it.label), it.sub ? el("span", { class: "sg-s" }, it.sub) : "")));
+      if (!items.length) list.append(el("div", { class: "sg-s pad" }, "Nothing matches"));
+    };
+    const update = () => {
+      const q = input.value.trim().toLowerCase();
+      const score = (x) => { x = (x || "").toLowerCase(); return !q ? 3 : x.startsWith(q) ? 0 : x.split(/[\s._-]+/).some((w) => w.startsWith(q)) ? 1 : x.includes(q) ? 2 : -1; };
+      const out = [];
+      const dmWith = new Set();
+      for (const c of S.convs.values()) {
+        if (c.kind === "im") dmWith.add(c.user);
+        const r = score(convName(c));
+        if (r >= 0) out.push({ r, a: act(c), cid: c.id, label: place(c), sub: c.kind === "mpim" ? "group DM" : c.kind === "im" ? "direct message" : "",
+          icon: () => glyph(c) });
+      }
+      if (q) {
+        for (const [id, u] of Object.entries(S.users)) {
+          if (u.deleted || u.bot || dmWith.has(id) || id === me()) continue;
+          const r = Math.min(...[score(u.name), score(u.handle)].map((v) => (v < 0 ? 9 : v)));
+          if (r < 9) out.push({ r: r + 0.5, a: 0, uid: id, label: u.name || u.handle, sub: "start a direct message", icon: () => el("span", { class: "g" }, face(id, u.name || u.handle, "g-av")) });
+        }
+      }
+      items = out.sort((x, y) => x.r - y.r || y.a - x.a || x.label.localeCompare(y.label)).slice(0, 12);
+      at = 0; draw();
+    };
+    input.addEventListener("input", update);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { at = items.length ? (at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length : 0; draw(); }
+      else if (e.key === "Enter" && !e.isComposing) { if (items[at]) go(items[at]); }
+      else if (e.key === "Escape") close();
+      else return;
+      e.preventDefault(); e.stopPropagation();
+    });
+    box.replaceChildren(el("div", { class: "sw-in", role: "dialog", "aria-label": "Jump to" }, input, list,
+      el("div", { class: "sg-s pad" }, "↑↓ to pick, Enter to open, Esc to close")));
+    box.hidden = false;
+    input.focus();
+    update();
+    setTimeout(() => document.addEventListener("mousedown", away, true), 0);
+  }
+  function newDM(anchor) {
+    openPop(anchor, (pop) => {
+      pop.classList.add("wide");
+      const chosen = new Map();
+      const input = el("input", { type: "text", placeholder: "Find people by name", "aria-label": "Find people" });
+      const chips = el("div", { class: "chips" });
+      const list = el("div", { class: "people" });
+      const err = el("div", { class: "note", role: "alert" });
+      const go = el("button", { type: "button", class: "btn small primary", disabled: true, onclick: async () => {
+        go.disabled = true;
+        try { await openDM([...chosen.keys()]); closePop(); } catch (e) { err.textContent = e.message; go.disabled = false; }
+      } }, "Message");
+      const draw = () => {
+        chips.replaceChildren(...[...chosen].map(([id, name]) => el("button", { type: "button", class: "chip", title: `Remove ${name}`,
+          onclick: () => { chosen.delete(id); draw(); } }, face(id, name, "sg-av"), name, icon("x"))));
+        go.disabled = !chosen.size;
+        go.textContent = chosen.size > 1 ? `Start a group DM (${chosen.size + 1} people)` : "Message";
+        const q = input.value.trim().toLowerCase();
+        const people = Object.entries(S.users).filter(([id, u]) => !u.deleted && !u.bot && id !== me() && !chosen.has(id)
+          && (!q || (u.name || "").toLowerCase().includes(q) || (u.handle || "").toLowerCase().includes(q)))
+          .sort((a, b) => (a[1].name || "").localeCompare(b[1].name || "")).slice(0, 40);
+        list.replaceChildren(...people.map(([id, u]) => el("button", { type: "button", class: "person pick", onclick: () => {
+          chosen.set(id, u.name || u.handle); input.value = ""; draw(); input.focus();
+        } }, face(id, u.name || u.handle, "av sm"), el("span", { class: "pn" }, el("b", null, u.name || u.handle), statusEl(id),
+          u.handle && u.handle !== u.name ? el("span", { class: "meta" }, ` @${u.handle}`) : ""))));
+        if (!people.length) list.append(el("div", { class: "note" }, q ? "Nobody by that name" : "Nobody else here"));
+      };
+      input.addEventListener("input", draw);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Backspace" && !input.value && chosen.size) { chosen.delete([...chosen.keys()].pop()); draw(); }
+      });
+      pop.append(el("h3", null, "New message"), chips, input, list, el("div", { class: "row" }, go), err);
+      draw();
+    });
+  }
 
   // ---------------------------------------------------------------- toasts
   function toast(x) {
@@ -922,11 +1410,17 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   }
   let noticeAsked = null;                  // a notification's conversation to open once the list has it
   ag.onMessage((x) => {
+    if (x.badges) S.badges = x.badges;
     switch (x.kind) {
       case "status": S.setup = x.setup; drawAll(); if (x.setup.status === "connected" && !S.convs.size) reload(); break;
       case "conversations": setLists(x); drawConvs(); drawHead(); if ($("setup").hidden === false && S.convs.size) drawAll(); if (noticeAsked) openNoticed(noticeAsked); break;
-      case "unread": S.unread = x.unread; drawConvs(); break;
-      case "message": case "reply": arrived(x); break;
+      case "unread": S.unread = x.unread; drawConvs(); if (S.view === "activity") showView("activity", true); break;
+      case "message": case "reply":
+        arrived(x);
+        if ((S.view === "threads" && x.kind === "reply") || (S.view === "activity" && x.mention)) showView(S.view, true);
+        break;
+      case "scheduled": if (x.conversation === S.open) loadScheduled(x.conversation); break;
+      case "threads": if (S.view === "threads") showView("threads", true); break;
       case "changed": {
         const st = S.msgs.get(x.conversation);
         if (st && st.loaded && st.list.some((m) => m.ts === x.message.ts)) { put(st.list, x.message); if (x.conversation === S.open) drawLog("keep"); }
@@ -1034,7 +1528,10 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   $("jump").addEventListener("click", () => { S.newCount = 0; scroller.scrollTop = scroller.scrollHeight; S.pinned = true; drawJump(); markRead(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") markRead(); });
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") { e.preventDefault(); openSwitcher(); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !$("switch").hidden) return;       // (the switcher's own box closes it)
     if (!$("pop").hidden) { e.stopPropagation(); closePop(); }
     else if (!$("results").hidden) { e.stopPropagation(); closeResults(); }
   }, true);
@@ -1055,6 +1552,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     let got;
     try { got = await get("state"); } catch { got = { setup: { status: "error", error: "the backend didn't answer" }, conversations: [], drafts: [] }; }
     S.setup = got.setup; S.settings = got.settings || {};
+    if (got.badges) S.badges = got.badges;
     setLists(got);
     S.drafts = new Map((got.drafts || []).map((d) => [d.id, d]));
     drawAll();

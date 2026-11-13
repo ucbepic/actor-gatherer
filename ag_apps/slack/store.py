@@ -8,9 +8,13 @@ gatherer's events: Slack's history is Slack's, and the gatherer gets only what i
                                                                         read_ts, read_known, latest_ts, active_ts,
                                                                         synced}
         active(id, ts)                                                  when it was last active
-        put_users(rows) / users()                                       {id: {name, real_name, bot}}
+        put_users(rows) / users()                                       {id: {name, real_name, bot, handle, image,
+                                                                        status, title, tz, deleted}}
         put_messages(channel, msgs) -> new ones / message(ch, ts) / history(ch, before, limit) / thread(ch, ts)
         change(channel, ts, fields) / delete(channel, ts)
+        threads(me, limit)                                              the threads the user started or replied in
+        mentions(me, limit)                                             messages that name the user
+        add_activity(...) / activity(limit)                             reactions to the user's messages
         read(channel, ts) / unread(me)                                  read marks; {channel: (unread, mentions)}
         guessed_reads() / take_read(channel, ts)                        read marks still the app's guess; Slack's taken
         draft(...) / drafts(status) / set_draft(id, **fields)
@@ -54,7 +58,12 @@ CREATE TABLE IF NOT EXISTS drafts (
     gatherer TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', made REAL NOT NULL,
     done REAL, sent_ts TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS activity (
+    n INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, channel TEXT NOT NULL, ts TEXT NOT NULL,
+    user TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', at REAL NOT NULL);
 """
+USER_COLUMNS = {"handle": "TEXT NOT NULL DEFAULT ''", "image": "TEXT NOT NULL DEFAULT ''", "status": "TEXT NOT NULL DEFAULT ''",
+                "title": "TEXT NOT NULL DEFAULT ''", "tz": "TEXT NOT NULL DEFAULT ''", "deleted": "INTEGER NOT NULL DEFAULT 0"}
 
 
 def _num(ts: str) -> float:
@@ -81,6 +90,10 @@ class Store:
                 self._db.execute("ALTER TABLE conversations ADD COLUMN active_ts TEXT NOT NULL DEFAULT ''")
             if "read_known" not in cols:                     # from before Slack's read cursors were taken: guesses
                 self._db.execute("ALTER TABLE conversations ADD COLUMN read_known INTEGER NOT NULL DEFAULT 0")
+            have = {r["name"] for r in self._db.execute("PRAGMA table_info(users)")}
+            for col, kind in USER_COLUMNS.items():          # from before photos and statuses were kept
+                if col not in have:
+                    self._db.execute(f"ALTER TABLE users ADD COLUMN {col} {kind}")
 
     def close(self) -> None:
         with self._lock:
@@ -162,13 +175,19 @@ class Store:
     def put_users(self, rows: List[dict]) -> None:
         with self._lock:
             self._db.executemany(
-                "INSERT INTO users (id, name, real_name, bot) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
-                "name = excluded.name, real_name = excluded.real_name, bot = excluded.bot",
-                [(r["id"], r.get("name") or "", r.get("real_name") or "", 1 if r.get("bot") else 0)
+                "INSERT INTO users (id, name, real_name, bot, handle, image, status, title, tz, deleted) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, "
+                "real_name = excluded.real_name, bot = excluded.bot, handle = excluded.handle, image = excluded.image, "
+                "status = excluded.status, title = excluded.title, tz = excluded.tz, deleted = excluded.deleted",
+                [(r["id"], r.get("name") or "", r.get("real_name") or "", 1 if r.get("bot") else 0,
+                  r.get("handle") or "", r.get("image") or "", json.dumps(r["status"]) if r.get("status") else "",
+                  r.get("title") or "", r.get("tz") or "", 1 if r.get("deleted") else 0)
                  for r in rows if r.get("id")])
 
     def users(self) -> Dict[str, dict]:
-        return {r["id"]: {"name": r["name"], "real_name": r["real_name"], "bot": bool(r["bot"])}
+        return {r["id"]: {"name": r["name"], "real_name": r["real_name"], "bot": bool(r["bot"]), "handle": r["handle"],
+                          "image": r["image"], "status": json.loads(r["status"]) if r["status"] else None,
+                          "title": r["title"], "tz": r["tz"], "deleted": bool(r["deleted"])}
                 for r in self._all("SELECT * FROM users")}
 
     # -- messages
@@ -252,6 +271,53 @@ class Store:
 
     def delete(self, channel: str, ts: str) -> bool:
         return self._do("UPDATE messages SET deleted = 1 WHERE channel = ? AND ts = ?", (channel, ts)) > 0
+
+    def threads(self, me: str, limit: int = 50) -> List[dict]:
+        """The threads (their parents) the user started or replied in, the one with the newest reply first; each with
+        `last`: its newest reply."""
+        rows = self._all(
+            "SELECT r.channel AS ch, r.thread_ts AS th, max(r.tsn) AS at FROM messages r JOIN conversations c ON "
+            "c.id = r.channel AND c.gone = 0 WHERE r.deleted = 0 AND r.thread_ts != '' AND r.thread_ts != r.ts AND "
+            "(r.user = ? OR EXISTS (SELECT 1 FROM messages p WHERE p.channel = r.channel AND p.ts = r.thread_ts AND "
+            "p.user = ?)) GROUP BY r.channel, r.thread_ts ORDER BY at DESC LIMIT ?", (me, me, max(1, int(limit))))
+        return self._threads_of([(r["ch"], r["th"]) for r in rows])
+
+    def thread_heads(self, keys: Iterable[tuple]) -> List[dict]:
+        """Threads named (conversation, thread ts), as threads() gives them -- those kept."""
+        return self._threads_of(list(keys))
+
+    def _threads_of(self, keys: List[tuple]) -> List[dict]:
+        out = []
+        for ch, th in keys:
+            parent = self.message(ch, th)
+            last = self._one("SELECT * FROM messages WHERE channel = ? AND thread_ts = ? AND ts != thread_ts AND "
+                             "deleted = 0 ORDER BY tsn DESC LIMIT 1", (ch, th))
+            if parent is not None and last is not None:
+                out.append({**parent, "last": self._msg(last)})
+        return out
+
+    def mentions(self, me: str, limit: int = 50) -> List[dict]:
+        """Others' messages that name the user (or @here, @channel, @everyone), newest first."""
+        rows = self._all(
+            "SELECT m.* FROM messages m JOIN conversations c ON c.id = m.channel AND c.gone = 0 WHERE m.deleted = 0 "
+            "AND m.user != ? AND (instr(m.text, ?) > 0 OR instr(m.text, '<!here') > 0 OR instr(m.text, '<!channel') > 0 "
+            "OR instr(m.text, '<!everyone') > 0) ORDER BY m.tsn DESC LIMIT ?", (me, f"<@{me}>", max(1, int(limit))))
+        return [self._msg(r) for r in rows]
+
+    def add_activity(self, kind: str, channel: str, ts: str, user: str, name: str = "", at: Optional[float] = None) -> None:
+        """Something done to the user's message (`kind` "reaction": `name` the emoji) -- one of each, kept."""
+        if self._one("SELECT 1 FROM activity WHERE kind = ? AND channel = ? AND ts = ? AND user = ? AND name = ?",
+                     (kind, channel, ts, user, name)) is None:
+            self._do("INSERT INTO activity (kind, channel, ts, user, name, at) VALUES (?, ?, ?, ?, ?, ?)",
+                     (kind, channel, ts, user, name, time.time() if at is None else at))
+
+    def drop_activity(self, kind: str, channel: str, ts: str, user: str, name: str = "") -> None:
+        self._do("DELETE FROM activity WHERE kind = ? AND channel = ? AND ts = ? AND user = ? AND name = ?",
+                 (kind, channel, ts, user, name))
+
+    def activity(self, limit: int = 50) -> List[dict]:
+        return [{k: r[k] for k in ("kind", "channel", "ts", "user", "name", "at")}
+                for r in self._all("SELECT * FROM activity ORDER BY at DESC LIMIT ?", (max(1, int(limit)),))]
 
     # -- read marks
 

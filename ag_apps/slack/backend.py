@@ -68,8 +68,22 @@ The panel's routes (on the app's origin, /api/...):
     POST connect {user_token, app_token} / disconnect
     POST notified {conversation, thread?}   the user opened a notification of it: its (the thread's) cleared
     POST settings {tell_agents?, notify_system?}
+    POST edit {conversation, ts, text} / delete {conversation, ts}   one of the user's own messages changed / deleted
+    GET  permalink?conversation=&ts=    {url}: Slack's link to a message
+    GET  members?conversation=      {members}: who is in it (ids)
+    POST schedule {conversation, text, thread?, at}   posted as the user at `at` (seconds) -> {scheduled}
+    GET  scheduled?conversation=    {scheduled}: what waits to be posted there; POST unschedule {conversation, id}
+    GET  threads                    {threads}: the threads the user follows, the newest reply first
+    GET  activity                   {items, seen}: mentions of the user and reactions to their messages, newest first;
+                                    POST activity_seen {at}: looked at up to `at`
+    POST open {users}               the DM (one person) or group DM (several) with them, opened -> {conversation}
 
-What the panels are told: {kind: status | conversations | message | reply | changed | deleted | draft | unread, ...}."""
+What the panels are told: {kind: status | conversations | message | reply | changed | deleted | draft | unread |
+scheduled | threads (more found: the Threads view drawn again), ...}; one carrying `unread` carries `badges` too ({threads, activity}: the Threads and Activity rows' counts).
+
+What the user writes -- in the panel, or an agent's draft they send -- has its names made Slack's (`linked`): "@Maya
+Chen" (a person's display name, full name or handle) a mention of her, "@here" Slack's, "#design" a link to the channel;
+never inside code or a link already Slack's."""
 
 import json
 import os
@@ -109,6 +123,12 @@ QUIET_EVERY = 120.0            # seconds: a conversation's quiet notification sa
 SYNC_MOST = 30                 # at most this many conversations' (and threads') read cursors asked of Slack a minute
 UNFOLLOWED_FOR = 600.0         # seconds a thread found not followed is taken as such before Slack is asked again
 REFUSED = ("invalid_auth", "not_authed", "token_revoked", "account_inactive", "missing_scope")   # not tried again
+SPECIAL = {"here": "<!here>", "channel": "<!channel>", "everyone": "<!everyone>"}
+KEEP = re.compile(r"```.*?```|`[^`\n]*`|<[^<>\n]*>", re.S)    # what `linked` leaves as written: code, Slack's links
+CHANNEL_REF = re.compile(r"(?<![\w<|/&#])#([a-z0-9][a-z0-9_.-]*)", re.I)
+MEMBERS_FOR = 300.0            # seconds a conversation's members are kept before Slack is asked again
+LOOK_EVERY = 300.0             # seconds between Slack's searches for the Threads and Activity views (when shown)
+LOOK_THREADS = 12              # at most this many threads the user replied in fetched a search
 NOT_NEWS = ("channel_join", "channel_leave", "group_join", "group_leave", "channel_topic", "channel_purpose",
             "channel_name", "group_topic", "group_purpose", "group_name", "pinned_item", "unpinned_item")
 
@@ -139,6 +159,10 @@ class SlackApp(App):
         self._threads: Dict[tuple, tuple] = {}               # (conversation, thread) -> (followed, when found so)
         self._copy_of: Optional[str] = None                  # the home the tokens are of, when this one is a copy
         self._remade_at = 0.0                                # when a line that missed messages was last made again
+        self._names = (None, None)                           # (the people it was made of, the @name pattern)
+        self._members: Dict[str, tuple] = {}                 # conversation -> (when asked, its members)
+        self._looked: Dict[str, float] = {}                  # "threads" / "activity" -> when Slack's search was asked
+        self._mention_hits: List[dict] = []                  # mentions of the user Slack's search found (not kept)
 
     # -- the host
 
@@ -651,6 +675,13 @@ class SlackApp(App):
     def _reaction(self, ev: dict, added: bool) -> None:
         item = ev.get("item") or {}
         ch, ts, name = item.get("channel") or "", item.get("ts") or "", ev.get("reaction") or ""
+        me, by = self.me.get("user_id", ""), ev.get("user") or ""
+        if ch and ts and name and me and ev.get("item_user") == me and by and by != me:   # to the user's message
+            if added:
+                self.store.add_activity("reaction", ch, ts, by, name, _num(ev.get("event_ts")) or None)
+            else:
+                self.store.drop_activity("reaction", ch, ts, by, name)
+            self._tell_all({"kind": "unread", "unread": self._unread()})
         m = self.store.message(ch, ts) if ch and ts else None
         if m is None or not name:
             return
@@ -791,6 +822,8 @@ class SlackApp(App):
             self._said[key] = now
             self._noticed[key] = m["ts"]
             self._keep_noticed()
+            if what == "thread":
+                self._tell_all({"kind": "unread", "unread": self._unread()})    # (the Threads row's count)
 
     def _clear(self, ch: str, thread: str = "") -> None:
         """The conversation read -- or, `thread`, a thread of it seen: replied in (then followed) or opened -- its
@@ -812,8 +845,10 @@ class SlackApp(App):
                     self.host.clear_notice(inst, key)
                 except AppError:
                     pass
-        self._noticed.pop(key, None)
+        had = self._noticed.pop(key, None) is not None
         self._keep_noticed()
+        if had and key.startswith("thread:"):
+            self._tell_all({"kind": "unread", "unread": self._unread()})        # (the Threads row's count)
 
     def _keep_noticed(self) -> None:
         if self.store is not None:
@@ -846,18 +881,70 @@ class SlackApp(App):
             return c.get("name") if c else None
         return plain(text, lambda u: self.name(u) if u in self._users else None, channel)
 
+    def linked(self, text: str) -> str:
+        """What the user wrote, its names made Slack's links: @here, @channel, @everyone; "@" and a person's display
+        name, full name or handle, a mention of them (the longest name that fits); "#" and a channel's name, a link to
+        it -- outside code and Slack's own <...> links."""
+        out, at = [], 0
+        for m in KEEP.finditer(text or ""):
+            out += [self._link_names(text[at:m.start()]), m.group(0)]
+            at = m.end()
+        return "".join(out + [self._link_names((text or "")[at:])])
+
+    def _link_names(self, part: str) -> str:
+        if "@" not in part and "#" not in part:
+            return part
+        users = self._users
+        if self._names[0] is not users:
+            people: Dict[str, str] = {}
+            for key in ("handle", "name", "real_name"):      # a handle first: it is the user's own
+                for uid, u in users.items():
+                    n = (u.get(key) or "").strip()
+                    if len(n) >= 2 and not u.get("deleted"):
+                        people.setdefault(n.lower(), uid)
+            alts = sorted(set(people) | set(SPECIAL), key=len, reverse=True)
+            pat = re.compile(r"(?<![\w<|/@.])@(" + "|".join(re.escape(n) for n in alts) + r")(?![\w-])", re.I)
+            self._names = (users, (pat, people))
+        pat, people = self._names[1]
+
+        def person(m: "re.Match") -> str:
+            n = m.group(1).lower()
+            return SPECIAL[n] if n in SPECIAL else f"<@{people[n]}>"
+        part = pat.sub(person, part)
+        if "#" in part:
+            chans = {c["name"].lower(): c["id"] for c in self.store.conversations()
+                     if c["kind"] in ("channel", "private") and c.get("name")}
+            part = CHANNEL_REF.sub(lambda m: f"<#{chans[m.group(1).lower()]}>" if m.group(1).lower() in chans
+                                   else m.group(0), part)
+        return part
+
     def _unread(self) -> Dict[str, list]:
         return {k: list(v) for k, v in self.store.unread(self.me.get("user_id", "")).items()}
+
+    def _badges(self) -> dict:
+        """The Threads and Activity rows' counts: threads with a reply for the user (a notification open), and
+        mentions and reactions since the user last looked at Activity."""
+        seen = _num(self.store.setting("activity_seen", 0))
+        if not seen:                                        # (counted from when Activity was first there)
+            seen = time.time()
+            self.store.set_setting("activity_seen", seen)
+        return {"threads": sum(1 for k in self._noticed if k.startswith("thread:")),
+                "activity": sum(1 for x in self._activity(30) if x["at"] > seen)}
 
     def _lists(self) -> dict:
         convs = self.store.conversations()
         return {"conversations": [{**c, "label": self.label(c)} for c in convs], "unread": self._unread(),
-                "users": {k: {"name": v["real_name"] or v["name"], "handle": v["name"], "bot": v["bot"]}
+                "badges": self._badges(),
+                "users": {k: {"name": v["real_name"] or v["name"], "handle": v["name"], "bot": v["bot"],
+                              "image": v.get("image") or "", "status": v.get("status"), "title": v.get("title") or "",
+                              "tz": v.get("tz") or "", "deleted": bool(v.get("deleted"))}
                           for k, v in self._users.items()}}
 
     def _tell_all(self, message: dict) -> None:
         if self.host is None:
             return
+        if "unread" in message and "badges" not in message:
+            message = {**message, "badges": self._badges()}
         for inst in self.host.instances():
             try:
                 self.host.tell_panel(inst, message)
@@ -1006,7 +1093,7 @@ class SlackApp(App):
             raise AppError("nothing to send")
         c = self.find(cid)
         try:
-            m = self._client().post(c["id"], text, thread_ts, broadcast)
+            m = self._client().post(c["id"], self.linked(text), thread_ts, broadcast)
         except slack.SlackError as exc:
             raise AppError(f"Slack didn't send it: {exc}") from None
         if self.store.put_messages(c["id"], [m]):
@@ -1017,6 +1104,134 @@ class SlackApp(App):
         self.store.read(c["id"], m["ts"])
         self._clear(c["id"], thread_ts)
         return {**m, "channel": c["id"]}
+
+    def _own(self, cid: str, ts: str) -> dict:
+        m = self.store.message(cid, ts)
+        if m is None:
+            raise AppError("no such message", 404)
+        if not m.get("user") or m["user"] != self.me.get("user_id"):
+            raise AppError("only your own messages", 403)
+        return m
+
+    def edit(self, cid: str, ts: str, text: str) -> dict:
+        """One of the user's own messages, its text replaced in Slack and here."""
+        if not str(text or "").strip():
+            raise AppError("an edit needs some text: delete the message instead")
+        self._own(cid, ts)
+        try:
+            got = self._client().update(cid, ts, self.linked(text))
+        except slack.SlackError as exc:
+            raise AppError(f"Slack didn't change it: {exc}") from None
+        m = self.store.change(cid, ts, {"text": got["text"]})
+        self._tell_all({"kind": "changed", "conversation": cid, "message": m})
+        return m
+
+    def delete(self, cid: str, ts: str) -> None:
+        self._own(cid, ts)
+        try:
+            self._client().delete(cid, ts)
+        except slack.SlackError as exc:
+            if str(exc) != "message_not_found":
+                raise AppError(f"Slack didn't delete it: {exc}") from None
+        self.store.delete(cid, ts)
+        self._tell_all({"kind": "deleted", "conversation": cid, "ts": ts, "unread": self._unread()})
+
+    def members(self, cid: str) -> List[str]:
+        got = self._members.get(cid)
+        if got and time.time() - got[0] < MEMBERS_FOR:
+            return got[1]
+        try:
+            ids = self._client().members(cid)
+        except slack.SlackError as exc:
+            raise AppError(f"Slack: {exc}") from None
+        self._members[cid] = (time.time(), ids)
+        return ids
+
+    def threads(self) -> List[dict]:
+        """The threads the user follows -- started or replied in (as kept here), or Slack said so -- each {conversation,
+        parent, last (its newest reply), unread (a notification of it open)}, the newest reply first."""
+        me = self.me.get("user_id", "")
+        got = self.store.threads(me, 60) if me else []
+        have = {(t["channel"], t["ts"]) for t in got}
+        more = [k for k, (followed, _) in self._threads.items() if followed and k not in have]
+        more += [tuple(k.split(":", 2)[1:]) for k in self._noticed if k.startswith("thread:")]
+        got += self.store.thread_heads(dict.fromkeys(k for k in more if k not in have))
+        got.sort(key=lambda t: -_num(t["last"]["ts"]))
+        return [{"conversation": t["channel"], "parent": {k: v for k, v in t.items() if k != "last"},
+                 "last": t["last"], "unread": f"thread:{t['channel']}:{t['ts']}" in self._noticed} for t in got[:60]]
+
+    def _look(self, what: str) -> None:
+        """What the Threads or Activity view shows, filled from Slack's search too -- in the background, at most every
+        LOOK_EVERY seconds -- since the app keeps only what it has seen: "threads", the threads the user replied in over
+        the last RECENT_DAYS days (their replies fetched); "activity", the messages that mention them. The panels are
+        told when more is found."""
+        cl, me = self.cl, self.me.get("user_id", "")
+        if cl is None or not me or time.time() - self._looked.get(what, 0) < LOOK_EVERY:
+            return
+        self._looked[what] = time.time()
+        day = time.strftime("%Y-%m-%d", time.localtime(time.time() - RECENT_DAYS * 86400))
+
+        def run() -> None:
+            try:
+                if what == "threads":
+                    have = {(t["channel"], t["ts"]) for t in self.store.threads(me, 200)}
+                    keys = [(h["channel"], h["thread_ts"]) for h in cl.search(f"from:<@{me}> after:{day}", 100)
+                            if h.get("thread_ts") and h["thread_ts"] != h["ts"]]
+                    got = 0
+                    for cid, th in [k for k in dict.fromkeys(keys) if k not in have][:LOOK_THREADS]:
+                        c = self.store.conversation(cid)
+                        if c is None or c.get("gone"):
+                            continue
+                        self.store.put_messages(cid, cl.replies(cid, th))
+                        got += 1
+                    if got:
+                        self._tell_all({"kind": "threads"})
+                else:
+                    hits = [h for h in cl.search(f"<@{me}> after:{day}", 100) if h.get("user") != me]
+                    self._mention_hits = hits
+                    self._tell_all({"kind": "unread", "unread": self._unread()})    # (Activity's count)
+            except Exception:  # noqa: BLE001 - looked for again next time the view is shown
+                self._looked[what] = 0.0
+        threading.Thread(target=run, name=f"ag-slack-{what}", daemon=True).start()
+
+    def _activity(self, limit: int = 60) -> List[dict]:
+        """Mentions of the user and reactions to their messages, newest first: each {kind, conversation, ts, at,
+        message (if kept, else as search found it), user, name (a reaction's)}."""
+        me = self.me.get("user_id", "")
+        out = [{"kind": "mention", "conversation": m["channel"], "ts": m["ts"], "at": _num(m["ts"]), "message": m,
+                "user": m.get("user") or "", "name": ""} for m in (self.store.mentions(me, limit) if me else [])]
+        kept = {(x["conversation"], x["ts"]) for x in out}
+        for h in self._mention_hits:
+            if (h["channel"], h["ts"]) not in kept and self.store.conversation(h["channel"]) is not None:
+                m = {"channel": h["channel"], "ts": h["ts"], "user": h["user"], "text": h["text"],
+                     "thread_ts": h.get("thread_ts") or ""}
+                out.append({"kind": "mention", "conversation": h["channel"], "ts": h["ts"], "at": _num(h["ts"]),
+                            "message": m, "user": h["user"], "name": ""})
+        for a in self.store.activity(limit):
+            out.append({"kind": a["kind"], "conversation": a["channel"], "ts": a["ts"], "at": a["at"],
+                        "message": self.store.message(a["channel"], a["ts"]), "user": a["user"], "name": a["name"]})
+        out.sort(key=lambda x: -x["at"])
+        return out[:limit]
+
+    def open_with(self, users: List[str]) -> dict:
+        """The DM with one person, or the group DM with several, opened if need be."""
+        users = [u for u in dict.fromkeys(str(u) for u in users or []) if u and u != self.me.get("user_id")]
+        if not users:
+            raise AppError("whom: one person or more")
+        if len(users) > 8:
+            raise AppError("a group DM is at most 8 people besides you")
+        cl = self._client()
+        if len(users) == 1:
+            got = next((c for c in self.store.conversations() if c["kind"] == "im" and c["user"] == users[0]), None)
+            if got:
+                return got
+        try:
+            made = cl.open_dm(users[0]) if len(users) == 1 else cl.open_group(users)
+        except slack.SlackError as exc:
+            raise AppError(f"Slack: {_why(exc)}") from None
+        self.store.add_conversation(made, read_ts=f"{time.time():.6f}")
+        self._tell_all({"kind": "conversations", **self._lists()})
+        return self.store.conversation(made["id"]) or made
 
     # -- the panel
 
@@ -1054,6 +1269,24 @@ class SlackApp(App):
         if path == "manifest":
             with open(MANIFEST_FILE, "rb") as f:
                 return Response(200, f.read(), {"Content-Type": "application/json"})
+        if path == "permalink":
+            try:
+                return Response.json({"url": self._client().permalink(q.get("conversation", ""), q.get("ts", ""))})
+            except slack.SlackError as exc:
+                raise AppError(f"Slack: {exc}") from None
+        if path == "members":
+            return Response.json({"members": self.members(q.get("conversation", ""))})
+        if path == "scheduled":
+            try:
+                return Response.json({"scheduled": self._client().scheduled(q.get("conversation", ""))})
+            except slack.SlackError as exc:
+                raise AppError(f"Slack: {exc}") from None
+        if path == "threads":
+            self._look("threads")
+            return Response.json({"threads": self.threads()})
+        if path == "activity":
+            self._look("activity")
+            return Response.json({"items": self._activity(), "seen": _num(self.store.setting("activity_seen", 0))})
         return Response(404, b"not found")
 
     def _post(self, instance, path, ask) -> Response:
@@ -1094,6 +1327,45 @@ class SlackApp(App):
             return Response.json({"message": m})
         if path == "draft":
             return Response.json({"draft": self._settle(instance, ask)})
+        if path == "edit":
+            return Response.json({"message": self.edit(str(ask.get("conversation") or ""), str(ask.get("ts") or ""),
+                                                       str(ask.get("text") or ""))})
+        if path == "delete":
+            self.delete(str(ask.get("conversation") or ""), str(ask.get("ts") or ""))
+            return Response.json({"ok": True})
+        if path == "schedule":
+            cid, text = str(ask.get("conversation") or ""), str(ask.get("text") or "")
+            at = _num(ask.get("at"))
+            if not text.strip():
+                raise AppError("nothing to schedule")
+            if at < time.time() + 30:
+                raise AppError("pick a time in the future")
+            if at > time.time() + 120 * 86400:
+                raise AppError("Slack schedules at most 120 days ahead")
+            c = self.find(cid)
+            try:
+                got = self._client().schedule(c["id"], self.linked(text), at, str(ask.get("thread") or ""))
+            except slack.SlackError as exc:
+                raise AppError(f"Slack didn't schedule it: {exc}") from None
+            self._tell_all({"kind": "scheduled", "conversation": c["id"]})
+            return Response.json({"scheduled": got})
+        if path == "unschedule":
+            cid = str(ask.get("conversation") or "")
+            try:
+                self._client().unschedule(cid, str(ask.get("id") or ""))
+            except slack.SlackError as exc:
+                raise AppError(f"Slack: {exc}") from None
+            self._tell_all({"kind": "scheduled", "conversation": cid})
+            return Response.json({"ok": True})
+        if path == "activity_seen":
+            self.store.set_setting("activity_seen", max(_num(ask.get("at")), _num(self.store.setting("activity_seen", 0))))
+            self._tell_all({"kind": "unread", "unread": self._unread()})
+            return Response.json({"ok": True})
+        if path == "open":
+            users = ask.get("users")
+            if not isinstance(users, list):
+                raise AppError("users: a list of people's ids")
+            return Response.json({"conversation": {**(c := self.open_with(users)), "label": self.label(c)}})
         if path == "connect":
             user, app = str(ask.get("user_token") or "").strip(), str(ask.get("app_token") or "").strip()
             if not user.startswith("xoxp-"):

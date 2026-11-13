@@ -47,9 +47,11 @@ class FakeSlack:
         self.convs = [{"id": "C1", "kind": "channel", "name": "paper-deadline", "user": "", "members": [],
                        "topic": "Camera-ready Fri"},
                       {"id": "D1", "kind": "im", "name": "", "user": MAYA, "members": [], "topic": ""}]
-        self.people = [{"id": ME, "name": "sep", "real_name": "Sep", "bot": False},
-                       {"id": MAYA, "name": "maya", "real_name": "Maya Chen", "bot": False},
-                       {"id": LEO, "name": "leo", "real_name": "Leo Park", "bot": False}]
+        self.people = [{"id": ME, "name": "sep", "real_name": "Sep", "bot": False, "handle": "sep"},
+                       {"id": MAYA, "name": "maya", "real_name": "Maya Chen", "bot": False, "handle": "maya",
+                        "image": "https://avatars.example/maya.png", "status": {"emoji": ":palm_tree:", "text": "Away",
+                                                                               "until": 0}, "tz": "Europe/Berlin"},
+                       {"id": LEO, "name": "leo", "real_name": "Leo Park", "bot": False, "handle": "lpark"}]
         old = ts_ago(3600)
         self.msgs = {"C1": [{"ts": old, "user": LEO, "text": "Added the citations.", "thread_ts": "", "reply_count": 0,
                              "latest_reply": "", "edited": False, "subtype": ""}], "D1": []}
@@ -67,6 +69,7 @@ class FakeSlack:
         self.others = {"USLACK": {"id": "USLACK", "name": "slack", "real_name": "Slack", "bot": True}}   # users.info only
         self.asked_user = []
         self.asked_history = []
+        self.updated, self.deleted, self.waiting = [], [], []
         FakeSlack.made.append(self)
 
     def who(self):
@@ -132,6 +135,36 @@ class FakeSlack:
 
     def open_dm(self, user):
         c = {"id": f"D-{user}", "kind": "im", "name": "", "user": user, "members": [], "topic": ""}
+        self.convs.append(c)
+        return dict(c)
+
+    def update(self, cid, ts, text):
+        self.updated.append((cid, ts, text))
+        return {"ts": ts, "text": text}
+
+    def delete(self, cid, ts):
+        self.deleted.append((cid, ts))
+
+    def permalink(self, cid, ts):
+        return f"https://lab.slack.com/archives/{cid}/p{ts.replace('.', '')}"
+
+    def members(self, cid):
+        return [ME, MAYA, LEO]
+
+    def schedule(self, cid, text, at, thread_ts=""):
+        x = {"id": f"Q{len(self.waiting) + 1}", "channel": cid, "post_at": int(at), "text": text, "thread_ts": thread_ts}
+        self.waiting.append(x)
+        return dict(x)
+
+    def scheduled(self, cid):
+        return [dict(x) for x in self.waiting if x["channel"] == cid]
+
+    def unschedule(self, cid, sid):
+        self.waiting = [x for x in self.waiting if x["id"] != sid]
+
+    def open_group(self, users):
+        c = {"id": "G-" + "-".join(users), "kind": "mpim", "name": "mpdm-" + "--".join(users), "user": "",
+             "members": [ME, *users], "topic": ""}
         self.convs.append(c)
         return dict(c)
 
@@ -1120,3 +1153,153 @@ class HomeTest(BackendBase):
             self.assertEqual(self.app._tokens(), ("xoxp-1", "xapp-1"))
         self.assertEqual(self.kept(self.dir)["home"], self.app._home())
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+
+
+class FeaturesTest(BackendBase):
+    """What the panel does besides reading and sending: names made mentions, the user's own messages edited and deleted,
+    messages scheduled, the Threads and Activity views, DMs and group DMs opened, people's photos and statuses."""
+
+    def test_names_typed_become_slacks_mentions_and_links_outside_code(self):
+        a = self.app
+        self.assertEqual(a.linked("@Maya Chen and @lpark, see #paper-deadline @here"),
+                         f"<@{MAYA}> and <@{LEO}>, see <#C1> @here".replace("@here", "<!here>"))
+        self.assertEqual(a.linked("`@maya` ```@leo #paper-deadline``` <https://x.org|@maya>"),
+                         "`@maya` ```@leo #paper-deadline``` <https://x.org|@maya>")      # code and links kept
+        self.assertEqual(a.linked("mail maya@lab.org, #nochannel, @nobody"), "mail maya@lab.org, #nochannel, @nobody")
+        self.assertEqual(a.linked("@Maya Chen's draft"), f"<@{MAYA}>'s draft")
+
+    def test_what_the_user_sends_and_drafts_they_send_carry_mentions(self):
+        self.post("send", {"conversation": "C1", "text": "@maya can you look?"})
+        self.assertEqual(self.slack.posted[-1]["text"], f"<@{MAYA}> can you look?")
+        self.call("draft", {"conversation": "C1", "text": "Thanks @Leo Park!"})
+        d = self.app.store.drafts()[0]
+        self.post("draft", {"id": d["id"], "action": "send"})
+        self.assertEqual(self.slack.posted[-1]["text"], f"Thanks <@{LEO}>!")
+
+    def test_the_user_edits_and_deletes_only_their_own_messages(self):
+        sent = json.loads(self.post("send", {"conversation": "C1", "text": "first try"}).body)["message"]
+        self.host.told.clear()
+        r = self.post("edit", {"conversation": "C1", "ts": sent["ts"], "text": "second try, @maya"})
+        self.assertEqual(r.status, 200, r.body)
+        self.assertEqual(self.slack.updated, [("C1", sent["ts"], f"second try, <@{MAYA}>")])
+        kept = self.app.store.message("C1", sent["ts"])
+        self.assertEqual((kept["text"], kept["edited"]), (f"second try, <@{MAYA}>", True))
+        self.assertEqual(self.kinds(), ["changed"])
+        theirs = self.slack.msgs["C1"][0]["ts"]
+        self.get("history", conversation="C1")
+        self.assertEqual(self.post("edit", {"conversation": "C1", "ts": theirs, "text": "x"}).status, 403)
+        self.assertEqual(self.post("delete", {"conversation": "C1", "ts": theirs}).status, 403)
+        self.assertEqual(self.post("edit", {"conversation": "C1", "ts": sent["ts"], "text": "  "}).status, 400)
+        self.assertEqual(self.post("delete", {"conversation": "C1", "ts": sent["ts"]}).status, 200)
+        self.assertEqual(self.slack.deleted, [("C1", sent["ts"])])
+        self.assertIsNone(self.app.store.message("C1", sent["ts"]))
+        self.assertEqual(self.kinds()[-1], "deleted")
+
+    def test_a_message_is_scheduled_listed_and_taken_back(self):
+        soon = time.time() + 3600
+        self.assertEqual(self.post("schedule", {"conversation": "C1", "text": "hi", "at": time.time() - 5}).status, 400)
+        self.assertEqual(self.post("schedule", {"conversation": "C1", "text": "hi", "at": time.time() + 200 * 86400}).status, 400)
+        r = self.post("schedule", {"conversation": "C1", "text": "standup @here", "at": soon})
+        self.assertEqual(r.status, 200, r.body)
+        self.assertEqual(self.slack.waiting[0]["text"], "standup <!here>")
+        self.assertEqual(self.kinds(), ["scheduled"])
+        got = self.get("scheduled", conversation="C1")["scheduled"]
+        self.assertEqual([(x["text"], x["post_at"]) for x in got], [("standup <!here>", int(soon))])
+        self.post("unschedule", {"conversation": "C1", "id": got[0]["id"]})
+        self.assertEqual(self.get("scheduled", conversation="C1")["scheduled"], [])
+
+    def test_threads_lists_the_ones_the_user_is_in_newest_reply_first(self):
+        parent = ts_ago(500)
+        self.live(channel="C1", user=LEO, text="Who has the slides?", ts=parent, channel_type="channel")
+        self.post("send", {"conversation": "C1", "text": "I do", "thread": parent})
+        self.live(channel="C1", user=MAYA, text="thanks!", ts=ts_ago(-1), thread_ts=parent, channel_type="channel")
+        self.live(channel="C1", user=LEO, text="unrelated", ts=ts_ago(400), channel_type="channel")
+        got = self.get("threads")["threads"]
+        self.assertEqual([(t["conversation"], t["parent"]["text"], t["last"]["text"]) for t in got],
+                         [("C1", "Who has the slides?", "thanks!")])
+        self.assertTrue(got[0]["unread"])                # a reply in a thread they follow: its notification open
+        self.assertEqual(self.app._badges()["threads"], 1)
+        self.post("view", {"conversation": "C1", "thread": parent})
+        self.assertFalse(self.get("threads")["threads"][0]["unread"])
+        self.assertEqual(self.host.told[-1].get("badges", {}).get("threads"), 0)
+
+    def test_activity_is_mentions_and_reactions_to_the_users_messages(self):
+        mine = json.loads(self.post("send", {"conversation": "C1", "text": "draft is up"}).body)["message"]
+        self.live(channel="C1", user=MAYA, text=f"<@{ME}> nice", ts=ts_ago(-1), channel_type="channel")
+        self.slack.on_event({"type": "reaction_added", "user": LEO, "reaction": "tada", "item_user": ME,
+                             "item": {"type": "message", "channel": "C1", "ts": mine["ts"]}, "event_ts": ts_ago(-2)})
+        self.slack.on_event({"type": "reaction_added", "user": ME, "reaction": "eyes", "item_user": ME,
+                             "item": {"type": "message", "channel": "C1", "ts": mine["ts"]}, "event_ts": ts_ago(-3)})
+        got = self.get("activity")
+        self.assertEqual([(x["kind"], x["user"], x["name"]) for x in got["items"]],
+                         [("reaction", LEO, "tada"), ("mention", MAYA, "")])     # not the user's own reaction
+        self.assertEqual(got["items"][0]["message"]["text"], "draft is up")
+        self.assertEqual(self.app._badges()["activity"], 2)
+        self.post("activity_seen", {"at": got["items"][0]["at"]})
+        self.assertEqual(self.app._badges()["activity"], 0)
+        self.slack.on_event({"type": "reaction_removed", "user": LEO, "reaction": "tada", "item_user": ME,
+                             "item": {"type": "message", "channel": "C1", "ts": mine["ts"]}})
+        self.assertEqual([x["kind"] for x in self.get("activity")["items"]], ["mention"])
+
+    def test_the_views_are_filled_from_slacks_search_too_in_the_background(self):
+        parent = ts_ago(9000)
+        self.slack.msgs["C1"].append({"ts": parent, "user": LEO, "text": "Old question", "thread_ts": "", "reply_count": 1,
+                                      "latest_reply": ts_ago(8000), "edited": False, "subtype": ""})
+        self.slack.threads[("C1", parent)] = [{"ts": ts_ago(8000), "user": ME, "text": "Old answer", "thread_ts": parent}]
+        asked = []
+
+        def search(query, limit=20):
+            asked.append(query)
+            if query.startswith("from:"):
+                return [{"channel": "C1", "channel_name": "paper-deadline", "ts": ts_ago(8000), "user": ME, "username": "sep",
+                         "text": "Old answer", "permalink": "", "thread_ts": parent}]
+            return [{"channel": "D1", "channel_name": "", "ts": ts_ago(7000), "user": MAYA, "username": "maya",
+                     "text": f"<@{ME}> ping", "permalink": "", "thread_ts": ""}]
+        self.slack.search = search
+        self.assertEqual(self.get("threads")["threads"], [])            # (what is kept, at once)
+        self.get("activity")
+        deadline = time.time() + 3
+        while time.time() < deadline and not (self.get("threads")["threads"] and self.app._mention_hits):
+            time.sleep(0.02)
+        self.assertEqual([t["last"]["text"] for t in self.get("threads")["threads"]], ["Old answer"])
+        self.assertEqual([x["message"]["text"] for x in self.get("activity")["items"]], [f"<@{ME}> ping"])
+        self.assertIn("threads", self.kinds())
+        self.assertEqual(asked[0].split(" ")[0], f"from:<@{ME}>")
+        n = len(asked)
+        self.get("threads"); self.get("activity")                        # not asked again for a while
+        self.assertEqual(len(asked), n)
+
+    def test_a_dm_or_group_dm_is_opened_with_people(self):
+        got = json.loads(self.post("open", {"users": [MAYA]}).body)["conversation"]
+        self.assertEqual(got["id"], "D1")                # the DM already kept
+        got = json.loads(self.post("open", {"users": [MAYA, LEO, ME]}).body)["conversation"]
+        self.assertEqual((got["kind"], got["id"]), ("mpim", f"G-{MAYA}-{LEO}"))
+        self.assertIn(got["id"], [c["id"] for c in self.app.store.conversations()])
+        self.assertEqual(self.post("open", {"users": []}).status, 400)
+
+    def test_the_panel_gets_peoples_photos_statuses_and_a_conversations_members_and_links(self):
+        users = self.get("state")["users"]
+        self.assertEqual((users[MAYA]["image"], users[MAYA]["status"]["text"], users[MAYA]["tz"]),
+                         ("https://avatars.example/maya.png", "Away", "Europe/Berlin"))
+        self.assertEqual(self.get("members", conversation="C1")["members"], [ME, MAYA, LEO])
+        self.assertTrue(self.get("permalink", conversation="C1", ts="1.000002")["url"].endswith("/C1/p1000002"))
+
+    def test_a_cache_from_before_photos_gains_their_columns(self):
+        path = os.path.join(self.dir, "old-users.db")
+        db = sqlite3.connect(path)
+        db.executescript("CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', real_name TEXT NOT "
+                         "NULL DEFAULT '', bot INTEGER NOT NULL DEFAULT 0); INSERT INTO users (id, name) VALUES ('U9', 'x');")
+        db.close()
+        old = Store(path)
+        self.assertEqual((old.users()["U9"]["name"], old.users()["U9"]["image"], old.users()["U9"]["status"]), ("x", "", None))
+        old.close()
+
+
+class PersonTest(unittest.TestCase):
+    def test_a_person_keeps_their_photo_status_and_handle(self):
+        got = be.slack.person({"id": "U1", "name": "mchen", "tz": "America/New_York", "profile": {
+            "display_name": "Maya", "real_name": "Maya Chen", "image_72": "https://a/72.png", "status_emoji": ":car:",
+            "status_text": "Driving", "status_expiration": 99, "title": "PhD student"}})
+        self.assertEqual((got["handle"], got["image"], got["status"], got["title"], got["deleted"]),
+                         ("mchen", "https://a/72.png", {"emoji": ":car:", "text": "Driving", "until": 99}, "PhD student", False))
+        self.assertIsNone(be.slack.person({"id": "U2", "profile": {}})["status"])

@@ -8,15 +8,22 @@
         conversation(id)            one, the same shape (None: not one the user can see)
         last_read(id)               the user's read cursor in it, as Slack keeps it: what they last read in Slack's
                                     own app ('' if none said)
-        users()                     the workspace's people: each {id, name, real_name, bot}
+        users()                     the workspace's people: each {id, name, real_name, bot, handle, image, status,
+                                    title, tz, deleted}
         user(id)                    one users() leaves out (Slack's own "Slack" account a DM can be with), the same
                                     shape (None: Slack won't say)
         history(id, latest, limit, oldest)  (messages newest first, more?) -- each message as `message` shapes it
         open_dm(user)               the DM with a person, opened if it wasn't
+        open_group(users)           the group DM with several (mpim:write)
         replies(id, ts)             a thread, its parent first
         thread_state(id, ts)        {subscribed, last_read}: whether the user follows a thread (started it, replied
                                     in it, followed it) and how far they read it in Slack's own app
         post(id, text, thread_ts, broadcast)   posted as the user -> the message
+        update(id, ts, text) / delete(id, ts)   one of the user's own messages edited / deleted (chat:write)
+        permalink(id, ts)           Slack's link to a message
+        members(id)                 who is in a conversation (user ids)
+        schedule(id, text, at, thread_ts)       a message posted as the user at `at` (seconds) -> {id, post_at, ...}
+        scheduled(id) / unschedule(id, sid)     the user's messages waiting to be posted there / one taken back
         search(query, limit)        search.messages: each {channel, channel_name, ts, user, username, text, permalink,
                                     thread_ts (the thread a reply is in, from its permalink; '' if none)}
         recent(after, pages)        the user's conversations' messages since a day, from search: each {channel, ts,
@@ -84,11 +91,17 @@ def conversation(c: dict) -> dict:
 
 
 def person(u: dict) -> dict:
-    """A person (or app) as Slack gives them, in the app's shape."""
+    """A person (or app) as Slack gives them, in the app's shape: `image` their photo's address (Slack serves it to
+    anyone), `status` {emoji, text, until} -- until 0: no end -- or None."""
     p = u.get("profile") or {}
+    emoji, text = p.get("status_emoji") or "", p.get("status_text") or ""
+    until = int(p.get("status_expiration") or 0)
     return {"id": u.get("id"), "name": p.get("display_name") or u.get("name") or "",
             "real_name": p.get("real_name") or u.get("real_name") or "",
-            "bot": bool(u.get("is_bot") or u.get("id") in ("USLACKBOT", "USLACK"))}
+            "bot": bool(u.get("is_bot") or u.get("id") in ("USLACKBOT", "USLACK")),
+            "handle": u.get("name") or "", "image": p.get("image_72") or p.get("image_48") or "",
+            "status": {"emoji": emoji, "text": text, "until": until} if (emoji or text) else None,
+            "title": p.get("title") or "", "tz": u.get("tz") or "", "deleted": bool(u.get("deleted"))}
 
 
 def message(m: dict, me: str = "") -> dict:
@@ -187,6 +200,12 @@ class Client:
         r = self._call("conversations_open", users=user, return_im=True)
         return conversation({**(r.get("channel") or {}), "is_im": True, "user": user})
 
+    def open_group(self, users: List[str]) -> dict:
+        r = self._call("conversations_open", users=",".join(users), return_im=True)
+        c = r.get("channel") or {}
+        got = self.conversation(c["id"]) if c.get("id") else None
+        return got or conversation({**c, "is_mpim": True})
+
     def replies(self, cid: str, ts: str, limit: int = 200) -> List[dict]:
         r = self._call("conversations_replies", channel=cid, ts=ts, limit=limit)
         return [message(m, self.me) for m in r.get("messages") or []]
@@ -201,6 +220,33 @@ class Client:
         r = self._call("chat_postMessage", channel=cid, text=text, thread_ts=thread_ts or None,
                        reply_broadcast=True if (thread_ts and broadcast) else None)
         return message({**(r.get("message") or {}), "ts": r.get("ts")}, self.me)
+
+    def update(self, cid: str, ts: str, text: str) -> dict:
+        r = self._call("chat_update", channel=cid, ts=ts, text=text)
+        return {"ts": r.get("ts") or ts, "text": (r.get("message") or {}).get("text") or text}
+
+    def delete(self, cid: str, ts: str) -> None:
+        self._call("chat_delete", channel=cid, ts=ts)
+
+    def permalink(self, cid: str, ts: str) -> str:
+        return self._call("chat_getPermalink", channel=cid, message_ts=ts).get("permalink") or ""
+
+    def members(self, cid: str) -> List[str]:
+        return [str(u) for u in self._pages("conversations_members", "members", channel=cid)]
+
+    def schedule(self, cid: str, text: str, at: float, thread_ts: str = "") -> dict:
+        r = self._call("chat_scheduleMessage", channel=cid, text=text, post_at=int(at), thread_ts=thread_ts or None)
+        return {"id": r.get("scheduled_message_id") or "", "channel": cid, "post_at": int(r.get("post_at") or at),
+                "text": text, "thread_ts": thread_ts or ""}
+
+    def scheduled(self, cid: str) -> List[dict]:
+        r = self._call("chat_scheduledMessages_list", channel=cid, limit=100)
+        return [{"id": m.get("id") or "", "channel": m.get("channel_id") or cid, "post_at": int(m.get("post_at") or 0),
+                 "text": m.get("text") or "", "thread_ts": m.get("thread_ts") or ""}
+                for m in r.get("scheduled_messages") or []]
+
+    def unschedule(self, cid: str, sid: str) -> None:
+        self._call("chat_deleteScheduledMessage", channel=cid, scheduled_message_id=sid)
 
     def search(self, query: str, limit: int = 20) -> List[dict]:
         r = self._call("search_messages", query=query, count=max(1, min(int(limit), 100)), sort="timestamp")

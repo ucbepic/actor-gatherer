@@ -23,9 +23,10 @@ your conversation.
 
 You never send anything to Slack. To reply or write for the user, call slack_draft with the conversation, your `text`
 (Slack's mrkdwn: *bold*, _italic_, `code`, <https://url|label>), and `thread` (the ts of the message you answer) to
-reply in its thread. The draft waits in the Slack panel, where the user sends it, edits it or discards it; you are told
-which. To change a draft still waiting, call slack_draft with its `draft` id and the new text. Write as the user would:
-it is posted as them. If you also have other Slack tools (a Slack connector), don't use them to post: replies go
+reply in its thread. To mention someone, write @ and their name as slack_read shows it ("@Maya Chen"; also @here,
+@channel), and #name for a channel: they become Slack's mentions and links when the user sends it. The draft waits in
+the Slack panel, where the user sends it, edits it or discards it; you are told which. To change a draft still waiting,
+call slack_draft with its `draft` id and the new text. Write as the user would: it is posted as them. If you also have other Slack tools (a Slack connector), don't use them to post: replies go
 through slack_draft."""
 
 [agent]

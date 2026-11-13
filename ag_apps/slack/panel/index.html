@@ -17,7 +17,7 @@
       <button type="button" role="tab" data-f="mentions" aria-selected="false">Mentions</button>
     </div>
     <label class="find"><span class="sr">Search conversations, or press Enter to search Slack</span>
-      <input id="find" type="search" placeholder="Find, or Enter to search Slack" autocomplete="off">
+      <input id="find" type="search" placeholder="Find, or Enter to search Slack (⌘K: jump to)" autocomplete="off">
     </label>
     <div id="agents" class="agents" aria-label="Agents working with Slack"></div>
     <button id="settings-btn" class="icon-btn" type="button" aria-label="Slack settings" aria-expanded="false"></button>
@@ -40,6 +40,7 @@
         <div id="here-drafts" class="drafts"></div>
       </div>
       <button id="jump" class="jump" type="button" hidden></button>
+      <div id="sched" class="scheds" hidden></div>
       <div id="composer" class="composer"></div>
       <div id="results" class="results" hidden></div>
       <div id="empty" class="empty" hidden></div>
@@ -51,6 +52,8 @@
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="pop" class="pop" hidden></div>
+  <div id="switch" class="switch" hidden></div>
+  <div id="say" class="say" role="status" aria-live="polite" hidden></div>
 </div>
 <script src="/_ag/app.js"></script>
 <script src="panel.js"></script>
