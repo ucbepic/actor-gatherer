@@ -23,6 +23,9 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     clock: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.6V8l2.4 1.6"/></svg>',
     bell: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4 11.5V7.2a4 4 0 018 0v4.3l1.2 1.3H2.8z"/><path d="M6.5 14.2a1.6 1.6 0 003 0" stroke-linecap="round"/></svg>',
     plus: '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    smile: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/><path d="M5.4 9.6c.7.9 1.6 1.4 2.6 1.4s1.9-.5 2.6-1.4"/><circle cx="6" cy="6.6" r=".5" fill="currentColor"/><circle cx="10" cy="6.6" r=".5" fill="currentColor"/></svg>',
+    clip: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 7.6l-5.3 5.3a3.2 3.2 0 01-4.5-4.5l5.6-5.6a2.1 2.1 0 013 3l-5.5 5.5a1 1 0 01-1.5-1.5l5-5"/></svg>',
+    pin: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M9.6 1.8l4.6 4.6-1.6.5-2.6 2.6.3 3-1.3 1.3-2.4-2.4-3.5 3.5M5.4 9.9L3 7.5l1.3-1.3 3 .3 2.6-2.6z"/></svg>',
     people: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="5.5" r="2.4"/><path d="M1.8 13.5c.5-2.4 2.2-3.6 4.2-3.6s3.7 1.2 4.2 3.6" stroke-linecap="round"/><path d="M10.6 3.4a2.3 2.3 0 010 4.3M12 9.9c1.2.5 2 1.6 2.3 3.6" stroke-linecap="round"/></svg>',
   };
   function icon(name) {
@@ -82,8 +85,14 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     editing: null,            // {cid, ts, text}: one of the user's messages being edited, and what is typed so far
     view: null,               // "threads" | "activity": shown over the conversation
     badges: {},               // {threads, activity}: those rows' counts
+    pins: new Map(),          // conversation -> its pinned messages
+    heldUnread: null,         // the conversation the user marked unread: not marked read again while it stays open
+    attach: null,             // the main box's: files dropped on the conversation, added to it
   };
   const me = () => (S.setup && S.setup.me) || "";
+  const can = (scope) => { const s = S.setup || {}; return !Array.isArray(s.scopes) || s.scopes.includes(scope); };   // (not said: try)
+  const fileUrl = (id, v, dl) => `/api/file?id=${enc(id)}&v=${v}${dl ? "&dl=1" : ""}&gatherer=${enc(ag.gatherer)}&instance=${enc(ag.instance)}`;
+  function bytes(n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`; }
   const SYSTEM = new Set(["channel_join", "channel_leave", "group_join", "group_leave", "channel_topic", "channel_purpose",
     "channel_name", "group_topic", "group_purpose", "group_name", "channel_archive", "channel_unarchive", "pinned_item", "unpinned_item"]);
   const topLevel = (m) => !m.thread_ts || m.thread_ts === m.ts || m.subtype === "thread_broadcast";
@@ -429,7 +438,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       const isChan = (c) => c.kind === "channel" || c.kind === "private";
       const ch = list.filter(isChan), dm = list.filter((c) => !isChan(c));
       const shown = (l) => l.slice(0, RECENT_MAX).map((c) => ({ open: c.id === S.open, el: convRow(c, true) }));
-      if (ch.length) kids.push(...section("channels", "Channels", shown(ch), ch));
+      kids.push(...section("channels", "Channels", shown(ch), ch, browseButton()));
       kids.push(...section("dms", "Direct messages", shown(dm), dm, newDMButton()));
       if (!list.length) {
         const s = S.setup || {};
@@ -440,7 +449,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         el("button", { type: "button", class: "all-link", onclick: () => setFilter("all") },
           more ? `${more} more, and all ${S.convs.size} conversations` : `All ${S.convs.size} conversations`));
     } else {
-      if (chans.length) kids.push(...section("channels", "Channels", rows(chans), chans));
+      if (chans.length || !q) kids.push(...section("channels", "Channels", rows(chans), chans, q ? null : browseButton()));
       if (dms.length || !q) kids.push(...section("dms", "Direct messages", rows(dms), dms, q ? null : newDMButton()));
       if (!chans.length && !dms.length) kids.push(el("div", { class: "sec-empty" }, q || S.filter !== "all" ? "Nothing here" : "No conversations yet"));
     }
@@ -458,6 +467,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       n ? el("span", { class: "badge", "aria-hidden": "true" }, n > 99 ? "99+" : String(n)) : "");
     return [row("threads", "Threads", "thread", b.threads), row("activity", "Activity", "bell", b.activity)];
   }
+  const browseButton = () => el("button", { type: "button", class: "sec-add", "aria-label": "Browse channels", title: "Browse channels",
+    onclick: () => showView("channels") }, icon("plus"));
   const newDMButton = () => el("button", { type: "button", class: "sec-add", "aria-label": "New message", title: "New message",
     onclick: (e) => newDM(e.currentTarget) }, icon("plus"));
   function section(key, label, rows, convs, action) {
@@ -504,7 +515,51 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       tools.append(el("button", { type: "button", class: "head-btn", title: "Members", "aria-label": `Members${ids ? ` (${ids.length})` : ""}`,
         onclick: (e) => membersPop(e.currentTarget, c) }, icon("people"), ids ? el("span", null, String(ids.length)) : ""));
     }
+    const pins = S.pins.get(c.id) || [];
+    if (pins.length) tools.prepend(el("button", { type: "button", class: "head-btn", title: "Pinned messages", "aria-label": `${pins.length} pinned`,
+      onclick: (e) => pinsPop(e.currentTarget, c) }, icon("pin"), el("span", null, String(pins.length))));
+    if ((c.kind === "channel" || c.kind === "private") && can("channels:write")) {
+      const more = el("button", { type: "button", class: "head-btn", title: "More", "aria-label": "More about this channel",
+        onclick: () => openPop(more, (pop) => {
+          pop.classList.add("menu");
+          pop.append(el("button", { type: "button", class: "mi danger", onclick: () => confirmLeave(more, c) }, `Leave ${place(c)}…`));
+        }) }, icon("more"));
+      tools.append(more);
+    }
     head.replaceChildren(...kids, tools);
+  }
+  async function loadPins(cid) {
+    if (!can("pins:read")) return;
+    try { const got = await get(`pins?conversation=${enc(cid)}`); S.pins.set(cid, got.messages || []); } catch { return; }
+    if (S.open === cid) drawHead();
+  }
+  function pinsPop(anchor, c) {
+    openPop(anchor, (pop) => {
+      pop.classList.add("wide");
+      const list = (S.pins.get(c.id) || []).slice().sort(byTs).reverse();
+      pop.append(el("h3", null, `Pinned in ${place(c)}`), el("div", { class: "people" }, ...list.map((m) => {
+        const inThread = m.thread_ts && m.thread_ts !== m.ts;
+        return el("button", { type: "button", class: "person pick pin-row", onclick: () => { closePop(); open(c.id, inThread ? { ts: m.thread_ts, thread: m.thread_ts } : { ts: m.ts }); } },
+          face(m.bot_name ? "" : m.user, who(m), "av sm", m.user), el("span", { class: "hm" }, el("b", null, who(m)), " ", el("span", { class: "meta" }, ago(m.ts)),
+            el("span", { class: "txt clip" }, render(m.text))));
+      })));
+    });
+  }
+  function confirmLeave(anchor, c) {
+    openPop(anchor, (pop) => {
+      const err = el("div", { class: "note", role: "alert" });
+      const go = el("button", { type: "button", class: "btn small danger", onclick: async () => {
+        go.disabled = true;
+        try {
+          await post("leave", { conversation: c.id });
+          closePop();
+          if (S.open === c.id) { S.open = null; keep.set("open", null); closeThread(); reportView(); drawAll(); }
+          say(`You left ${place(c)}`);
+        } catch (e) { err.textContent = e.message; go.disabled = false; }
+      } }, "Leave");
+      pop.append(el("h3", null, `Leave ${place(c)}?`), el("div", { class: "note" }, c.kind === "private" ? "It's private: you can come back only if someone adds you." : "You can join it again any time."),
+        el("div", { class: "row" }, el("button", { type: "button", class: "btn small quiet", onclick: closePop }, "Cancel"), go), err);
+    });
   }
   async function loadMembers(cid) {
     const c = S.convs.get(cid);
@@ -549,10 +604,17 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       body.append(txt);
     }
     for (const a of m.attachments || []) body.append(el("div", { class: "att" }, a.title ? el("b", null, a.title, a.text ? "\n" : "") : "", render(a.text)));
-    if ((m.files || []).length) body.append(el("div", { class: "files" }, m.files.map((f) => el("span", { class: "file" }, f.title || f.name))));
+    for (const f of m.files || []) body.append(fileEl(f));
     if ((m.reactions || []).length) {
-      body.append(el("div", { class: "reacts" }, m.reactions.map((r) => el("span", { class: `react${r.mine ? " mine" : ""}`,
-        title: `${r.count} reacted with :${r.name}:${r.mine ? " (you too)" : ""}` }, el("span", { "aria-hidden": "true" }, emojiOf(r.name) || `:${r.name}:`), el("span", null, String(r.count))))));
+      const by = (r) => { const names = (r.users || []).map((u) => (u === me() ? "you" : uname(u))); const more = r.count - names.length;
+        return names.length ? `${names.join(", ")}${more > 0 ? ` and ${more} more` : ""}` : `${r.count} ${r.count === 1 ? "person" : "people"}`; };
+      const may = can("reactions:write") && !SYSTEM.has(m.subtype);
+      body.append(el("div", { class: "reacts" }, m.reactions.map((r) => el(may ? "button" : "span", { type: may ? "button" : null, class: `react${r.mine ? " mine" : ""}`,
+        "aria-pressed": may ? String(!!r.mine) : null, title: `${by(r)} reacted with :${r.name}:`,
+        onclick: may ? () => react(cid, m, r.name, !r.mine) : null },
+        el("span", { "aria-hidden": "true" }, emojiOf(r.name) || `:${r.name}:`), el("span", null, String(r.count)))),
+        may ? el("button", { type: "button", class: "react add", "aria-label": "Add a reaction", title: "Add a reaction",
+          onclick: (e) => emojiPicker(e.currentTarget, (name) => react(cid, m, name, true)) }, icon("smile")) : ""));
     }
     if (!inThread && m.subtype === "thread_broadcast" && m.thread_ts) {
       body.append(el("button", { type: "button", class: "replies", onclick: () => openThread(cid, m.thread_ts) }, "Replied to a thread"));
@@ -569,6 +631,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       if (!inThread && topLevel(m) && m.subtype !== "thread_broadcast") {
         acts.append(el("button", { type: "button", class: "act", "aria-label": "Reply in thread", title: "Reply in thread", onclick: () => openThread(cid, m.ts) }, icon("thread")));
       }
+      if (can("reactions:write")) acts.append(el("button", { type: "button", class: "act", "aria-label": "Add a reaction", title: "Add a reaction",
+        onclick: (e) => emojiPicker(e.currentTarget, (name) => react(cid, m, name, true)) }, icon("smile")));
       acts.append(el("button", { type: "button", class: "act", "aria-label": "More actions", title: "More", "aria-haspopup": "menu",
         onclick: (e) => msgMenu(e.currentTarget, cid, m) }, icon("more")));
       if (acts.children.length) row.append(acts);
@@ -590,6 +654,17 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         .then((g) => { url = g.url || ""; if (url) { visit.href = url; visit.removeAttribute("aria-disabled"); copy.disabled = false; } })
         .catch(() => { copy.textContent = "Copy link (Slack didn't give one)"; });
       pop.append(copy, visit);
+      if (topLevel(m) && m.subtype !== "thread_broadcast") {
+        pop.append(el("button", { type: "button", class: "mi", role: "menuitem", onclick: async () => {
+          closePop();
+          try {
+            const got = await post("unread", { conversation: cid, ts: m.ts });
+            S.heldUnread = cid; S.readAt[cid] = got.read_ts;
+            redrawFor(cid); drawConvs();
+            say(got.in_slack ? "Marked unread, here and in Slack" : "Marked unread here");
+          } catch (e) { say(`Couldn't mark it unread: ${e.message}`); }
+        } }, "Mark unread"));
+      }
       if (m.user && m.user === me() && !SYSTEM.has(m.subtype)) {
         pop.append(el("hr"),
           el("button", { type: "button", class: "mi", role: "menuitem", onclick: () => { closePop(); editMessage(cid, m); } }, "Edit message"),
@@ -813,6 +888,81 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       } }, "Cancel"))));
   }
 
+  // ---------------------------------------------------------------- reactions, and the emoji picker
+  async function react(cid, m, name, on) {
+    try {
+      const got = await post("react", { conversation: cid, ts: m.ts, name, on });
+      if (got.message && got.message.ts) landedEdit(cid, got.message);
+      if (on) { const recent = [name, ...keep.get("recent-emoji", []).filter((x) => x !== name)].slice(0, 16); keep.set("recent-emoji", recent); }
+    } catch (e) { say(`Couldn't react: ${e.message}`); }
+  }
+  function emojiPicker(anchor, pick) {
+    openPop(anchor, (pop) => {
+      pop.classList.add("wide", "picker");
+      const find = el("input", { type: "text", placeholder: "Find an emoji", "aria-label": "Find an emoji", spellcheck: "false" });
+      const grid = el("div", { class: "egrid", role: "listbox" });
+      const one = (n) => el("button", { type: "button", class: "eb", title: `:${n}:`, "aria-label": `:${n}:`, onclick: () => { closePop(); pick(n); } }, emojiEl(n) || `:${n}:`);
+      const draw = () => {
+        const q = find.value.trim().toLowerCase().replace(/:/g, "");
+        if (q) {
+          const got = suggestions(":", q).slice(0, 120);
+          grid.replaceChildren(...(got.length ? got.map((x) => one(x.insert.slice(1, -1))) : [el("div", { class: "note" }, "No emoji by that name")]));
+          return;
+        }
+        const groups = [];
+        const recent = keep.get("recent-emoji", []).filter((n) => emoji(n));
+        if (recent.length) groups.push(["Recently used", recent]);
+        const own = Object.keys(CUSTOM).sort();
+        if (own.length) groups.push(["Your workspace's", own]);
+        groups.push(...EMO.groups);
+        grid.replaceChildren(...groups.flatMap(([label, names]) => [el("div", { class: "eh" }, label), ...names.map(one)]));
+      };
+      find.addEventListener("input", draw);
+      find.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); const b = grid.querySelector(".eb"); if (b) b.click(); } });
+      pop.append(find, grid);
+      draw();
+    });
+  }
+
+  // ---------------------------------------------------------------- files: pictures shown, others as cards; the picture viewer
+  function fileEl(f) {
+    if (!f.id) return el("div", { class: "files" }, el("span", { class: "file" }, f.title || f.name));   // (kept from before files' ids were)
+    if (f.gone) return el("div", { class: "files" }, el("span", { class: "file gone" }, `${f.title || f.name} (no longer in Slack)`));
+    const card = () => {
+      const ext = (f.filetype || f.name.split(".").pop() || "file").slice(0, 4).toUpperCase();
+      const links = can("files:read")
+        ? [el("a", { class: "btn small quiet", href: fileUrl(f.id, "full"), target: "_blank", rel: "noopener" }, "Open"),
+          el("a", { class: "btn small quiet", href: fileUrl(f.id, "full", true), download: f.name }, "Download")]
+        : f.permalink ? [el("a", { class: "btn small quiet", href: f.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open in Slack")] : [];
+      return el("div", { class: "fcard" }, el("span", { class: "fext", "aria-hidden": "true" }, ext),
+        el("span", { class: "fmeta" }, el("b", { title: f.name }, f.title || f.name), el("span", null, [f.kind, f.size ? bytes(f.size) : ""].filter(Boolean).join(" · "))),
+        ...links);
+    };
+    if (/^image\//.test(f.mimetype || "") && f.thumb && can("files:read")) {
+      const k = Math.min(1, 360 / (f.w || 360), 240 / (f.h || 240));
+      const img = el("img", { class: "fimg", src: fileUrl(f.id, "thumb"), alt: f.title || f.name, loading: "lazy",
+        width: f.w ? String(Math.round(f.w * k)) : null, height: f.h ? String(Math.round(f.h * k)) : null });
+      const b = el("button", { type: "button", class: "fthumb", title: f.title || f.name, onclick: () => lightbox(f) }, img);
+      img.addEventListener("error", () => b.replaceWith(card()), { once: true });
+      return b;
+    }
+    return card();
+  }
+  function lightbox(f) {
+    const box = $("lightbox");
+    const close = () => { box.hidden = true; box.replaceChildren(); document.removeEventListener("keydown", esc, true); };
+    const esc = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+    box.replaceChildren(
+      el("div", { class: "lb-bar" }, el("b", null, f.title || f.name), el("span", { class: "meta" }, [f.kind, f.size ? bytes(f.size) : ""].filter(Boolean).join(" · ")),
+        el("a", { class: "btn small", href: fileUrl(f.id, "full", true), download: f.name }, "Download"),
+        f.permalink ? el("a", { class: "btn small", href: f.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open in Slack") : "",
+        el("button", { type: "button", class: "icon-btn", "aria-label": "Close", onclick: close }, icon("x"))),
+      el("div", { class: "lb-pic", onclick: (e) => { if (e.target === e.currentTarget) close(); } }, el("img", { src: fileUrl(f.id, "full"), alt: f.title || f.name })));
+    box.hidden = false;
+    document.addEventListener("keydown", esc, true);
+    box.querySelector(".icon-btn").focus();
+  }
+
   function build(list, cid, { readAt, inThread } = {}) {
     const frag = document.createDocumentFragment();
     let prev = null, prevDay = null, newDone = readAt === undefined || readAt === "" || readAt === null;
@@ -895,7 +1045,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   }
   function markRead() {
     const cid = S.open, st = S.msgs.get(cid);
-    if (!cid || !st || !st.loaded || document.visibilityState !== "visible" || !S.pinned) return;
+    if (!cid || cid === S.heldUnread || !st || !st.loaded || document.visibilityState !== "visible" || !S.pinned) return;
     const last = [...st.list].reverse().find(topLevel);
     const [u] = S.unread[cid] || [0, 0];
     if (!last || !u) return;
@@ -917,7 +1067,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     closeResults();
     if (!S.convs.has(cid)) return;
     if (S.open !== cid) {
-      S.open = cid; S.newCount = 0; S.pinned = true;
+      S.open = cid; S.newCount = 0; S.pinned = true; S.heldUnread = null;
       S.readAt[cid] = S.convs.get(cid).read_ts || "";
       keep.set("open", cid);
       if (S.thread && S.thread.cid !== cid) closeThread();
@@ -926,6 +1076,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     drawConvs(); drawHead(); drawComposer();
     if (!S.members.has(cid)) loadMembers(cid);
     loadScheduled(cid);
+    loadPins(cid);
     let st = S.msgs.get(cid);
     if (!st || !st.loaded) {
       st = { list: [], more: true, loaded: false };
@@ -1022,22 +1173,51 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const where = thread ? "Reply…" : `Message ${place(c)}`;
     const ta = el("textarea", { rows: "1", "aria-label": where, placeholder: where });
     ta.value = S.typed.get(key) || "";
-    const sg = attachSuggest(ta);
+    const sg = attachSuggest(ta);                    // (the composer's: before its own keys)
+    const pending = [];                              // files to share with the message: {file, state}
+    const tray = el("div", { class: "tray", hidden: true });
+    const drawTray = () => {
+      tray.hidden = !pending.length;
+      tray.replaceChildren(...pending.map((p, i) => el("span", { class: `pend${p.state ? ` ${p.state}` : ""}` }, icon("clip"),
+        el("span", { class: "pn" }, p.file.name), el("span", { class: "meta" }, p.state === "up" ? "uploading…" : bytes(p.file.size)),
+        el("button", { type: "button", class: "icon-btn", "aria-label": `Remove ${p.file.name}`, onclick: () => { pending.splice(i, 1); drawTray(); size(); } }, icon("x")))));
+    };
+    const add = (files) => {
+      for (const f of files) {
+        if (f.size > 40 * 1048576) { err.textContent = `${f.name} is too large to share from here (40 MB at most): share it in Slack.`; continue; }
+        pending.push({ file: f, state: "" });
+      }
+      drawTray(); size(); ta.focus();
+    };
+    if (!thread) S.attach = can("files:write") ? add : null;
+    ta.addEventListener("paste", (e) => {
+      const files = [...((e.clipboardData && e.clipboardData.files) || [])];
+      if (files.length && can("files:write")) { e.preventDefault(); add(files); }
+    });
     const sendBtn = el("button", { type: "button", class: "send", "aria-label": "Send" }, icon("send"));
     const bc = thread ? el("input", { type: "checkbox" }) : null;
     const err = el("div", { class: "under", role: "status" });
-    const size = () => { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 180)}px`; sendBtn.classList.toggle("ready", !!ta.value.trim()); };
+    const size = () => { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 180)}px`; sendBtn.classList.toggle("ready", !!(ta.value.trim() || pending.length)); };
     const remember = () => { if (ta.value) S.typed.set(key, ta.value); else S.typed.delete(key); keep.set("typed", [...S.typed].slice(-50)); };
     ta.addEventListener("input", () => { size(); remember(); });
     const send = async () => {
       const text = ta.value.replace(/\s+$/, "");
-      if (!text.trim() || ta.dataset.busy) return;
+      if ((!text.trim() && !pending.length) || ta.dataset.busy) return;
       ta.dataset.busy = "1"; err.textContent = "";
       try {
-        const got = await post("send", { conversation: cid, text, thread: thread || "", broadcast: bc ? bc.checked : false });
-        ta.value = ""; remember(); size();
-        landed(cid, got.message, thread);
-      } catch (e) { err.textContent = `Not sent: ${e.message}`; }
+        const ids = [];
+        for (const p of pending) {
+          p.state = "up"; drawTray();
+          const r = await ag.api(`upload?name=${enc(p.file.name)}`, { method: "POST", body: p.file });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(`${p.file.name}: ${j.error || r.status}`);
+          ids.push(j.id);
+        }
+        const got = await post("send", { conversation: cid, text, thread: thread || "", broadcast: bc ? bc.checked : false, files: ids });
+        ta.value = ""; remember(); pending.length = 0; drawTray(); size();
+        if (got.message && got.message.ts) landed(cid, got.message, thread);
+        else if (ids.length) say("Shared: it shows here once Slack posts it");
+      } catch (e) { err.textContent = `Not sent: ${e.message}`; for (const p of pending) p.state = ""; drawTray(); }
       delete ta.dataset.busy;
     };
     ta.addEventListener("keydown", (e) => {
@@ -1056,13 +1236,23 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       done: () => { ta.value = ""; remember(); size(); },
     }) }, icon("pen"), "Draft with Claude");
     requestAnimationFrame(size);
-    return el("div", { class: "cmp" }, sg, el("div", { class: "box" }, ta, draftBtn, schedBtn, sendBtn),
+    const picker = el("input", { type: "file", multiple: true, hidden: true, onchange: () => { add([...picker.files]); picker.value = ""; } });
+    const clipBtn = can("files:write") ? el("button", { type: "button", class: "send sched-btn", "aria-label": "Attach files", title: "Attach files",
+      onclick: () => picker.click() }, icon("clip")) : "";
+    const wrap = el("div", { class: "cmp" }, sg, tray, el("div", { class: "box" }, clipBtn, picker, ta, draftBtn, schedBtn, sendBtn),
       bc ? el("label", { class: "under" }, bc, `Also send to ${place(c)}`) : "", err);
+    if (can("files:write")) {
+      wrap.addEventListener("dragover", (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); wrap.classList.add("drop"); } });
+      wrap.addEventListener("dragleave", () => wrap.classList.remove("drop"));
+      wrap.addEventListener("drop", (e) => { wrap.classList.remove("drop"); if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); e.stopPropagation(); add([...e.dataTransfer.files]); } });
+    }
+    return wrap;
   }
   function drawComposer() {
     const box = $("composer");
     box.hidden = !S.open;
     box.replaceChildren(S.open ? composer(S.open, "") : "");
+    S.composerFor = JSON.stringify((S.setup || {}).scopes || null);
     drawAsked();
     drawScheduled();
   }
@@ -1156,14 +1346,40 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const n = ++searched, box = $("results");
     if (S.view !== kind) { S.view = kind; drawConvs(); }
     box.hidden = false;
-    const head = el("div", { class: "results-h" }, el("span", null, kind === "threads" ? "Threads" : "Activity"),
-      el("span", { class: "meta" }, kind === "threads" ? "threads you started, replied in or follow" : "mentions of you, and reactions to your messages"),
+    const title = { threads: "Threads", activity: "Activity", channels: "Channels" }[kind];
+    const about = { threads: "threads you started, replied in or follow", activity: "mentions of you, and reactions to your messages",
+      channels: "your workspace's public channels" }[kind];
+    const head = el("div", { class: "results-h" }, el("span", null, title), el("span", { class: "meta" }, about),
       el("button", { type: "button", class: "icon-btn", "aria-label": "Close", onclick: closeResults }, icon("x")));
     if (!quiet) box.replaceChildren(head, el("div", { class: "older" }, "Loading…"));
     let got;
     try { got = await get(kind); } catch (e) { if (n === searched) box.replaceChildren(head, el("div", { class: "older" }, `Couldn't load it: ${e.message}`)); return; }
     if (n !== searched) return;
-    if (kind === "threads") {
+    if (kind === "channels") {
+      const find = el("input", { type: "text", class: "view-find", placeholder: "Find a channel", "aria-label": "Find a channel" });
+      const list = el("div");
+      const all = (got.channels || []).sort((a, b) => Number(b.member) - Number(a.member) || b.members - a.members);
+      const draw = () => {
+        const q = find.value.trim().toLowerCase();
+        const rows = all.filter((c) => !q || c.name.includes(q) || (c.purpose || c.topic || "").toLowerCase().includes(q)).slice(0, 200);
+        list.replaceChildren(...rows.map((c) => el("div", { class: "hit ch-row" },
+          el("span", { class: "hm" }, el("b", null, `#${c.name}`), el("span", { class: "meta" }, ` ${c.members} ${c.members === 1 ? "member" : "members"}${c.member ? " · joined" : ""}`),
+            (c.purpose || c.topic) ? el("span", { class: "txt clip" }, plainText(c.purpose || c.topic)) : ""),
+          c.member ? el("button", { type: "button", class: "btn small", onclick: () => open(c.id) }, "Open")
+            : el("button", { type: "button", class: "btn small primary", disabled: !can("channels:write"), title: can("channels:write") ? null : "Joining needs a permission your Slack app lacks",
+              onclick: async (e) => {
+                const b = e.currentTarget;
+                b.disabled = true;
+                try { const j = await post("join", { conversation: c.id }); if (!S.convs.has(c.id)) S.convs.set(c.id, j.conversation); open(c.id); say(`You joined #${c.name}`); }
+                catch (z) { say(`Couldn't join: ${z.message}`); b.disabled = false; }
+              } }, "Join"))));
+        if (!rows.length) list.append(el("div", { class: "older" }, "No channel by that name"));
+      };
+      find.addEventListener("input", draw);
+      box.replaceChildren(head, el("div", { class: "view-top" }, find), list);
+      draw();
+      if (!quiet) find.focus();
+    } else if (kind === "threads") {
       box.replaceChildren(head, ...(got.threads.length ? got.threads.map(threadRow) : [el("div", { class: "older" }, "No threads yet. Threads you start, reply in or follow show here.")]));
     } else {
       const items = got.items || [];
@@ -1366,6 +1582,48 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       el("div", { class: "row" }, go), err));
     try { const r = await ag.api("manifest"); pre.textContent = await r.text(); } catch { pre.textContent = "Couldn't load it."; }
   }
+  function drawUpgrade() {
+    const s = S.setup || {}, box = $("upgrade");
+    const missing = s.missing || [];
+    const said = missing.join(",");
+    box.hidden = !missing.length || !s.tokens || keep.get("upgrade-later", "") === said;
+    if (box.hidden) return;
+    const fors = s.missing_for || [];
+    const list = fors.length > 1 ? `${fors.slice(0, -1).join(", ")} and ${fors[fors.length - 1]}` : fors[0] || "some features";
+    box.replaceChildren(el("span", null, el("b", null, "Your Slack app needs more permissions"), ` for ${list}.`),
+      el("button", { type: "button", class: "btn small primary", onclick: (e) => upgradePop(e.currentTarget) }, "How to add them"),
+      el("button", { type: "button", class: "btn small quiet", onclick: () => { keep.set("upgrade-later", said); drawUpgrade(); } }, "Not now"));
+  }
+  function upgradePop(anchor) {
+    openPop(anchor, (pop) => {
+      pop.classList.add("wide", "upgrade-pop");
+      const pre = el("pre", null, "Loading…");
+      ag.api("manifest").then((r) => r.text()).then((t) => { pre.textContent = t; }).catch(() => { pre.textContent = "Couldn't load it."; });
+      const copy = el("button", { type: "button", class: "btn small", onclick: async () => { copy.textContent = (await copyText(pre.textContent)) ? "Copied" : "Select it and copy"; } }, "Copy the manifest");
+      const tok = el("input", { type: "password", placeholder: "xoxp-… (only if Slack shows a new one)", "aria-label": "New user token", autocomplete: "off" });
+      const err = el("div", { class: "note", role: "alert" });
+      const go = el("button", { type: "button", class: "btn small primary", onclick: async () => {
+        go.disabled = true; err.textContent = "Checking…";
+        try {
+          const got = await post("recheck", { user_token: tok.value.trim() });
+          S.setup = got.setup; drawAll();
+          const left = got.setup.missing || [];
+          err.textContent = left.length ? `Still missing: ${left.join(", ")}` : "All set.";
+          if (!left.length) setTimeout(closePop, 900);
+        } catch (e) { err.textContent = e.message; }
+        go.disabled = false;
+      } }, "Check again");
+      pop.append(el("h3", null, "Add the permissions"),
+        el("ol", { class: "steps" },
+          el("li", null, "Open ", el("a", { href: "https://api.slack.com/apps", target: "_blank", rel: "noopener noreferrer" }, "api.slack.com/apps"),
+            ", pick your ag app, then App Manifest. Replace it with this one and save:", pre, copy),
+          el("li", null, "Slack asks you to reinstall the app: do it (Install App, Reinstall to workspace). If your workspace needs an admin's approval, the request goes from there."),
+          el("li", null, "Your token usually stays the same. If Slack shows a new User OAuth Token, paste it here:", tok),
+          el("li", null, "Then check again.")),
+        el("div", { class: "note" }, `Missing now: ${((S.setup || {}).missing || []).join(", ")}`),
+        el("div", { class: "row" }, go), err);
+    });
+  }
   function drawAll() {
     const s = S.setup || {};
     const setup = !s.tokens || (s.status === "error" && !S.convs.size);
@@ -1373,7 +1631,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     $("body").hidden = setup;
     for (const id of ["filters", "find"]) $(id).closest(id === "find" ? ".find" : ".seg").hidden = setup;
     if (setup) drawSetup();
-    drawStatus(); drawAgents(); drawConvs(); drawHead(); drawLog("keep");
+    drawStatus(); drawAgents(); drawConvs(); drawHead(); drawLog("keep"); drawUpgrade();
+    if (S.open && JSON.stringify(s.scopes || null) !== S.composerFor) drawComposer();   // (what it offers changed)
     $("empty").replaceChildren(el("div", null, el("p", null, "Pick a conversation."),
       el("p", { class: "note" }, "Point at a message and choose Reply with Claude: an agent drafts the reply, and you send it.")));
   }
@@ -1421,6 +1680,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         break;
       case "scheduled": if (x.conversation === S.open) loadScheduled(x.conversation); break;
       case "threads": if (S.view === "threads") showView("threads", true); break;
+      case "emoji": CUSTOM = x.emoji || {}; if (S.open) redrawFor(S.open); break;
       case "changed": {
         const st = S.msgs.get(x.conversation);
         if (st && st.loaded && st.list.some((m) => m.ts === x.message.ts)) { put(st.list, x.message); if (x.conversation === S.open) drawLog("keep"); }
@@ -1517,6 +1777,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   $("find").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing && e.target.value.trim()) { e.preventDefault(); search(e.target.value.trim()); }
   });
+  $("main").addEventListener("dragover", (e) => { if (S.attach && S.open && e.dataTransfer && [...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+  $("main").addEventListener("drop", (e) => { if (S.attach && S.open && e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); S.attach([...e.dataTransfer.files]); } });
   const scroller = $("scroll");
   scroller.addEventListener("scroll", () => {
     S.pinned = atBottom(scroller);
@@ -1553,6 +1815,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     try { got = await get("state"); } catch { got = { setup: { status: "error", error: "the backend didn't answer" }, conversations: [], drafts: [] }; }
     S.setup = got.setup; S.settings = got.settings || {};
     if (got.badges) S.badges = got.badges;
+    if (got.emoji) CUSTOM = got.emoji;
     setLists(got);
     S.drafts = new Map((got.drafts || []).map((d) => [d.id, d]));
     drawAll();

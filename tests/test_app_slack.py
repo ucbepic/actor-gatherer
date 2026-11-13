@@ -40,6 +40,7 @@ class FakeSlack:
     """Slack, as client.Client gives it: a channel and a DM with old messages, and what was posted."""
 
     made = []
+    grant = None               # the token's permissions (None: all the app uses)
 
     def __init__(self, user_token, app_token=""):
         self.user_token, self.app_token = user_token, app_token
@@ -70,10 +71,14 @@ class FakeSlack:
         self.asked_user = []
         self.asked_history = []
         self.updated, self.deleted, self.waiting = [], [], []
+        self.reacted, self.downloads, self.uploads, self.marked = [], [], [], []
+        self.files, self.blobs = {}, {}
+        self.granted = set(be.NEEDED if FakeSlack.grant is None else FakeSlack.grant)
         FakeSlack.made.append(self)
 
     def who(self):
-        return {"user_id": ME, "user": "sep", "team": "Lab", "team_id": "T1", "url": "https://lab.slack.com/"}
+        return {"user_id": ME, "user": "sep", "team": "Lab", "team_id": "T1", "url": "https://lab.slack.com/",
+                "scopes": sorted(self.granted)}
 
     def conversations(self):
         return [dict(c) for c in self.convs]
@@ -161,6 +166,70 @@ class FakeSlack:
 
     def unschedule(self, cid, sid):
         self.waiting = [x for x in self.waiting if x["id"] != sid]
+
+    def react(self, cid, ts, name, on):
+        if "reactions:write" not in self.granted:
+            raise be.slack.SlackError("missing_scope")
+        self.reacted.append((cid, ts, name, on))
+        m = next(m for m in self.msgs.get(cid, []) if m["ts"] == ts)
+        rs = m.setdefault("reactions", [])
+        r = next((r for r in rs if r["name"] == name), None)
+        if on and r is None:
+            rs.append({"name": name, "count": 1, "users": [ME]})
+        elif on and ME not in r["users"]:
+            r["users"].append(ME); r["count"] += 1
+        elif not on and r is not None and ME in r["users"]:
+            r["users"].remove(ME); r["count"] -= 1
+            if not r["count"]:
+                rs.remove(r)
+
+    def reactions(self, cid, ts):
+        m = next(m for m in self.msgs.get(cid, []) if m["ts"] == ts)
+        return full({**m, "reactions": m.get("reactions") or []}).get("reactions") or []
+
+    def file(self, fid):
+        if fid not in self.files:
+            raise be.slack.SlackError("file_not_found")
+        return dict(self.files[fid])
+
+    def download(self, url, path, most):
+        self.downloads.append(url)
+        data, kind = self.blobs[url]
+        with open(path, "wb") as f:
+            f.write(data)
+        return kind
+
+    def upload(self, cid, files, text="", thread_ts=""):
+        fid = f"F0UP{len(self.uploads) + 1:04d}X"
+        self.uploads.append((cid, [(open(p, "rb").read(), n) for p, n in files], text, thread_ts))
+        m = {"ts": f"{time.time():.6f}", "user": ME, "text": text, "thread_ts": thread_ts, "subtype": "file_share",
+             "files": [{"id": fid, "name": files[0][1], "mimetype": "text/plain"}]}
+        if thread_ts:
+            self.threads.setdefault((cid, thread_ts), []).append(m)
+        else:
+            self.msgs.setdefault(cid, []).append(m)
+        return [fid]
+
+    def emoji(self):
+        return {"partyparrot": "https://emoji.example/parrot.gif", "parrot": "alias:partyparrot"}
+
+    def mark(self, cid, ts):
+        self.marked.append((cid, ts))
+
+    def channels(self):
+        return [{"id": "C1", "kind": "channel", "name": "paper-deadline", "user": "", "members": 4, "topic": "", "purpose": "", "member": True},
+                {"id": "C0LUNCH42", "kind": "channel", "name": "lunch", "user": "", "members": 12, "topic": "", "purpose": "food", "member": False}]
+
+    def join(self, cid):
+        c = {"id": cid, "kind": "channel", "name": "lunch", "user": "", "members": [], "topic": ""}
+        self.convs.append(c)
+        return dict(c)
+
+    def leave(self, cid):
+        self.convs = [c for c in self.convs if c["id"] != cid]
+
+    def pins(self, cid):
+        return [full(m) for m in self.msgs.get(cid, [])[:1]]
 
     def open_group(self, users):
         c = {"id": "G-" + "-".join(users), "kind": "mpim", "name": "mpdm-" + "--".join(users), "user": "",
@@ -341,6 +410,7 @@ class BackendBase(unittest.TestCase):
         self.dir = tempfile.mkdtemp()
         self.host = Host(self.dir)
         FakeSlack.made = []
+        FakeSlack.grant = None
         self.app = be.SlackApp(make_client=FakeSlack)
         self.app.start(self.host)
         self.assertEqual(self.app.status, "off")
@@ -486,9 +556,11 @@ class LiveTest(BackendBase):
         self.app.history("C1")
         self.slack.on_event({"type": "reaction_added", "user": ME, "reaction": "eyes", "item": {"channel": "C1", "ts": ts}})
         self.slack.on_event({"type": "reaction_added", "user": MAYA, "reaction": "eyes", "item": {"channel": "C1", "ts": ts}})
-        self.assertEqual(self.app.store.message("C1", ts)["reactions"], [{"name": "eyes", "count": 2, "mine": True}])
+        self.assertEqual(self.app.store.message("C1", ts)["reactions"], [{"name": "eyes", "count": 2, "mine": True, "users": [ME, MAYA]}])
+        self.slack.on_event({"type": "reaction_added", "user": MAYA, "reaction": "eyes", "item": {"channel": "C1", "ts": ts}})
+        self.assertEqual(self.app.store.message("C1", ts)["reactions"][0]["count"], 2)       # told twice: counted once
         self.slack.on_event({"type": "reaction_removed", "user": ME, "reaction": "eyes", "item": {"channel": "C1", "ts": ts}})
-        self.assertEqual(self.app.store.message("C1", ts)["reactions"], [{"name": "eyes", "count": 1, "mine": False}])
+        self.assertEqual(self.app.store.message("C1", ts)["reactions"], [{"name": "eyes", "count": 1, "mine": False, "users": [MAYA]}])
 
 
 class ToolsTest(BackendBase):
@@ -1303,3 +1375,124 @@ class PersonTest(unittest.TestCase):
         self.assertEqual((got["handle"], got["image"], got["status"], got["title"], got["deleted"]),
                          ("mchen", "https://a/72.png", {"emoji": ":car:", "text": "Driving", "until": 99}, "PhD student", False))
         self.assertIsNone(be.slack.person({"id": "U2", "profile": {}})["status"])
+
+
+class MorePermissionsTest(BackendBase):
+    """What needs the permissions added to the Slack app's manifest: reactions, files, the workspace's own emoji, read
+    marks in Slack, joining and leaving channels, pins -- and what the panel is told when the token lacks them."""
+
+    def test_the_manifest_asks_for_every_permission_the_app_uses(self):
+        self.assertTrue({"reactions:write", "files:read", "files:write", "emoji:read", "channels:write", "groups:write",
+                         "mpim:write", "pins:read"} <= set(be.NEEDED))
+        self.assertEqual(self.get("state")["setup"]["missing"], [])
+
+    def test_a_token_from_an_older_manifest_is_told_what_it_lacks(self):
+        FakeSlack.grant = set(be.NEEDED) - {"reactions:write", "files:read"}
+        r = self.post("recheck", {})
+        self.assertEqual(r.status, 200, r.body)
+        setup = json.loads(r.body)["setup"]
+        self.assertEqual(setup["missing"], ["reactions:write", "files:read"])
+        self.assertEqual(setup["missing_for"], ["reactions", "files"])
+        ts = FakeSlack.made[-1].msgs["C1"][0]["ts"]
+        self.get("history", conversation="C1")
+        r = self.post("react", {"conversation": "C1", "ts": ts, "name": "tada", "on": True})
+        self.assertEqual(r.status, 400)
+        self.assertIn("missing_scope", json.loads(r.body)["error"])
+
+    def test_the_user_reacts_and_slacks_word_of_it_after_changes_nothing(self):
+        ts = self.slack.msgs["C1"][0]["ts"]
+        self.get("history", conversation="C1")
+        got = json.loads(self.post("react", {"conversation": "C1", "ts": ts, "name": ":tada:", "on": True}).body)["message"]
+        self.assertEqual(got["reactions"], [{"name": "tada", "count": 1, "mine": True, "users": [ME]}])
+        self.slack.on_event({"type": "reaction_added", "user": ME, "reaction": "tada", "item": {"channel": "C1", "ts": ts}})
+        self.assertEqual(self.app.store.message("C1", ts)["reactions"][0]["count"], 1)
+        self.post("react", {"conversation": "C1", "ts": ts, "name": "tada", "on": False})
+        self.slack.on_event({"type": "reaction_removed", "user": ME, "reaction": "tada", "item": {"channel": "C1", "ts": ts}})
+        self.assertEqual(self.app.store.message("C1", ts).get("reactions", []), [])
+        self.assertEqual(self.post("react", {"conversation": "C1", "ts": ts, "name": "<b>"}).status, 400)
+
+    def test_a_file_is_fetched_once_with_the_users_token_and_served_to_the_panel(self):
+        self.slack.files["F0PIC1234"] = be.slack.file_of({
+            "id": "F0PIC1234", "name": "fig.png", "mimetype": "image/png", "size": 4, "pretty_type": "PNG",
+            "url_private": "https://files.slack.com/f/fig.png", "thumb_360": "https://files.slack.com/f/fig_360.png",
+            "thumb_360_w": 360, "thumb_360_h": 200})
+        self.slack.blobs = {"https://files.slack.com/f/fig.png": (b"\x89PNG", "image/png"),
+                            "https://files.slack.com/f/fig_360.png": (b"\x89PN", "image/png")}
+        r = self.app.request(self.host.inst, "GET", "file", {"id": "F0PIC1234", "v": "thumb"}, b"")
+        self.assertEqual((r.file["media_type"], r.file["download"]), ("image/png", False))
+        with open(r.file["path"], "rb") as f:
+            self.assertEqual(f.read(), b"\x89PN")
+        self.app.request(self.host.inst, "GET", "file", {"id": "F0PIC1234", "v": "thumb"}, b"")
+        r = self.app.request(self.host.inst, "GET", "file", {"id": "F0PIC1234", "dl": "1"}, b"")
+        self.assertEqual((r.file["filename"], r.file["download"]), ("fig.png", True))
+        self.assertEqual(self.slack.downloads, ["https://files.slack.com/f/fig_360.png", "https://files.slack.com/f/fig.png"])
+        self.assertEqual(self.get("file", id="../etc")[0], 400)
+        self.assertEqual(self.get("file", id="F0NOPE999")[0], 404)
+
+    def test_the_client_sends_the_token_to_slacks_file_hosts_only(self):
+        cl = be.slack.Client.__new__(be.slack.Client)
+        for url in ("http://files.slack.com/x", "https://evil.example/x", "https://files.slack.com.evil.example/x"):
+            with self.assertRaises(be.slack.SlackError):
+                cl.download(url, os.path.join(self.dir, "x"), 10)
+
+    def test_files_the_panel_stages_are_shared_with_the_text_and_kept_as_sent(self):
+        got = json.loads(self.app.request(self.host.inst, "POST", "upload", {"name": "../notes.txt"}, b"hello").body)
+        self.assertEqual((got["name"], got["size"]), ("notes.txt", 5))
+        r = self.post("send", {"conversation": "C1", "text": "see @maya", "files": [got["id"]]})
+        self.assertEqual(r.status, 200, r.body)
+        m = json.loads(r.body)["message"]
+        self.assertEqual(self.slack.uploads, [("C1", [(b"hello", "notes.txt")], f"see <@{MAYA}>", "")])
+        self.assertEqual((m["subtype"], m["files"][0]["name"]), ("file_share", "notes.txt"))
+        self.assertIsNotNone(self.app.store.message("C1", m["ts"]))
+        self.assertIn("notes.txt", self.streams()[-1]["payload"]["text"] if "payload" in self.streams()[-1]
+                      else json.dumps(self.streams()[-1]))
+        self.assertEqual(self.post("send", {"conversation": "C1", "text": "", "files": [got["id"]]}).status, 400)
+
+    def test_an_agent_reads_a_shared_files_text_or_picture(self):
+        self.slack.files["F0TXT1234"] = be.slack.file_of({"id": "F0TXT1234", "name": "plan.md", "mimetype": "text/markdown",
+                                                         "filetype": "markdown", "size": 9, "url_private": "https://files.slack.com/plan.md"})
+        self.slack.files["F0PIC5678"] = be.slack.file_of({"id": "F0PIC5678", "name": "a.png", "mimetype": "image/png", "size": 4,
+                                                         "url_private": "https://files.slack.com/a.png"})
+        self.slack.files["F0ZIP0000"] = be.slack.file_of({"id": "F0ZIP0000", "name": "a.zip", "mimetype": "application/zip",
+                                                         "size": 4, "url_private": "https://files.slack.com/a.zip", "pretty_type": "Zip"})
+        self.slack.blobs = {"https://files.slack.com/plan.md": (b"# The plan", "text/plain"),
+                            "https://files.slack.com/a.png": (b"\x89PNG", "image/png")}
+        got = self.call("read", {"file": "F0TXT1234"})
+        self.assertIn("# The plan", got.content[0]["text"])
+        got = self.call("read", {"file": "F0PIC5678"})
+        self.assertEqual([c["type"] for c in got.content], ["text", "image"])
+        self.assertIn("not a kind ag can read", self.call("read", {"file": "F0ZIP0000"}).content[0]["text"])
+
+    def test_reading_here_moves_slacks_read_cursor_and_a_message_is_marked_unread(self):
+        old = self.slack.msgs["C1"][0]["ts"]
+        new = ts_ago(-1)
+        self.live(channel="C1", user=LEO, text="news", ts=new, channel_type="channel")
+        with mock.patch.object(be, "MARK_WAIT", 0.01):
+            self.post("read", {"conversation": "C1", "ts": new})
+            deadline = time.time() + 2
+            while time.time() < deadline and not self.slack.marked:
+                time.sleep(0.01)
+        self.assertEqual(self.slack.marked, [("C1", new)])
+        self.get("history", conversation="C1")
+        got = json.loads(self.post("unread", {"conversation": "C1", "ts": new}).body)
+        self.assertEqual((got["read_ts"], got["in_slack"]), (old, True))
+        self.assertEqual(self.app.store.unread(ME)["C1"], (1, 0))
+        self.assertEqual(self.slack.marked[-1], ("C1", old))
+
+    def test_the_workspaces_own_emoji_reach_the_panel(self):
+        self.assertEqual(self.get("state")["emoji"]["partyparrot"], "https://emoji.example/parrot.gif")
+
+    def test_channels_are_browsed_joined_and_left_and_pins_read(self):
+        got = self.get("channels")["channels"]
+        self.assertEqual([(c["name"], c["member"]) for c in got], [("paper-deadline", True), ("lunch", False)])
+        self.post("join", {"conversation": "C0LUNCH42"})
+        self.assertIn("C0LUNCH42", [c["id"] for c in self.app.store.conversations()])
+        self.post("leave", {"conversation": "C0LUNCH42"})
+        self.assertNotIn("C0LUNCH42", [c["id"] for c in self.app.store.conversations()])
+        self.assertEqual([m["text"] for m in self.get("pins", conversation="C1")["messages"]], ["Added the citations."])
+
+    def test_an_agent_reads_files_ids_and_reactions_in_a_conversation(self):
+        self.slack.msgs["C1"].append({"ts": ts_ago(30), "user": MAYA, "text": "here", "reactions": [{"name": "eyes", "count": 1, "users": [LEO]}],
+                                      "files": [be.slack.file_of({"id": "F0DOC1111", "name": "draft.pdf", "pretty_type": "PDF"})]})
+        out = self.call("read", {"conversation": "C1"}).content[0]["text"]
+        self.assertIn("[file: draft.pdf (F0DOC1111, PDF)] [:eyes: 1]", out)

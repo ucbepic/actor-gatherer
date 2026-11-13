@@ -77,19 +77,38 @@ The panel's routes (on the app's origin, /api/...):
     GET  activity                   {items, seen}: mentions of the user and reactions to their messages, newest first;
                                     POST activity_seen {at}: looked at up to `at`
     POST open {users}               the DM (one person) or group DM (several) with them, opened -> {conversation}
+    POST react {conversation, ts, name, on}   the user's reaction added or taken off
+    GET  file?id=&v=thumb|full&dl=  a shared file (its preview), fetched from Slack once and kept (FILES_KEEP bytes in
+                                    all, the oldest let go); `dl` to save it
+    POST upload?name=  (the file's bytes)   a file to share, kept until sent -> {id}; POST send {..., files: [id]}
+    POST unread {conversation, ts}  the conversation marked unread from that message on, in Slack too
+    GET  channels                   {channels}: the workspace's public channels, to browse; POST join / leave
+                                    {conversation}
+    GET  pins?conversation=         {messages}: the messages pinned there
+    POST recheck {user_token?}      connected again with the tokens kept (or a new user token): the permissions the
+                                    token has, read again
+
+Some of these need permissions a Slack app made from an older manifest lacks (NEEDED): `setup` says which are
+missing, read from Slack's answer to auth.test, and the panel asks the user to add them and reinstall the app.
+Reading in the panel moves the user's read cursor in Slack too (conversations.mark), a moment after (MARK_WAIT).
 
 What the panels are told: {kind: status | conversations | message | reply | changed | deleted | draft | unread |
-scheduled | threads (more found: the Threads view drawn again), ...}; one carrying `unread` carries `badges` too ({threads, activity}: the Threads and Activity rows' counts).
+scheduled | emoji (the workspace's own emoji) | threads (more found: the Threads view drawn again), ...}; one carrying `unread` carries `badges` too ({threads, activity}: the Threads and Activity rows' counts).
 
 What the user writes -- in the panel, or an agent's draft they send -- has its names made Slack's (`linked`): "@Maya
 Chen" (a person's display name, full name or handle) a mention of her, "@here" Slack's, "#design" a link to the channel;
 never inside code or a link already Slack's."""
 
 import json
+import mimetypes
 import os
 import re
+import shutil
+import subprocess
 import threading
 import time
+import urllib.error
+import uuid
 from typing import Callable, Dict, List, Optional
 
 from app_kit import App, AppError, Caller, Instance, Response, ToolResult, context_stream
@@ -129,6 +148,26 @@ CHANNEL_REF = re.compile(r"(?<![\w<|/&#])#([a-z0-9][a-z0-9_.-]*)", re.I)
 MEMBERS_FOR = 300.0            # seconds a conversation's members are kept before Slack is asked again
 LOOK_EVERY = 300.0             # seconds between Slack's searches for the Threads and Activity views (when shown)
 LOOK_THREADS = 12              # at most this many threads the user replied in fetched a search
+with open(MANIFEST_FILE) as _f:
+    NEEDED = tuple(json.load(_f)["oauth_config"]["scopes"]["user"])   # the permissions every part of the app uses
+FEATURES = {"reactions:write": ("reactions",), "files:read": ("files",), "files:write": ("files",),
+            "emoji:read": ("custom emoji",), "channels:write": ("read marks in Slack", "joining channels"),
+            "groups:write": ("read marks in Slack",), "mpim:write": ("group DMs",), "pins:read": ("pins",)}
+FEATURE_ORDER = ("reactions", "files", "custom emoji", "read marks in Slack", "joining channels", "group DMs", "pins")
+FILE_ID = re.compile(r"^F[A-Z0-9]{6,}$")
+FILE_MOST = 200 * 1024 * 1024  # the largest file the panel fetches
+FILES_KEEP = 300 * 1024 * 1024 # the fetched files kept in all (the oldest let go)
+STAGED_FOR = 3600.0            # seconds a file the panel staged to share is kept, unsent
+FILE_INFO_FOR = 600.0          # seconds a file's details are kept before Slack is asked again
+EMOJI_EVERY = 6 * 3600.0       # seconds between reads of the workspace's own emoji
+MARK_WAIT = 1.5                # seconds after the user reads in the panel that Slack's read cursor is moved
+CHANNELS_FOR = 600.0           # seconds the workspace's channel list is kept
+UPLOAD_LOOKS = 6               # times Slack's history is looked at for the message files were shared in
+AGENT_TEXT = 60000             # at most this many characters of a file's text given to an agent
+AGENT_IMAGE = 4 * 1024 * 1024  # the largest picture given to an agent as one
+TEXT_KINDS = {"text", "markdown", "post", "python", "javascript", "json", "csv", "tsv", "html", "xml", "yaml", "shell",
+              "sql", "c", "cpp", "java", "go", "rust", "ruby", "php", "latex", "r", "diff", "css", "typescript",
+              "kotlin", "swift", "scala", "matlab", "perl", "bash", "toml", "ini", "plain"}
 NOT_NEWS = ("channel_join", "channel_leave", "group_join", "group_leave", "channel_topic", "channel_purpose",
             "channel_name", "group_topic", "group_purpose", "group_name", "pinned_item", "unpinned_item")
 
@@ -163,6 +202,15 @@ class SlackApp(App):
         self._members: Dict[str, tuple] = {}                 # conversation -> (when asked, its members)
         self._looked: Dict[str, float] = {}                  # "threads" / "activity" -> when Slack's search was asked
         self._mention_hits: List[dict] = []                  # mentions of the user Slack's search found (not kept)
+        self.scopes: Optional[List[str]] = None              # the token's permissions, as Slack said (None: not said)
+        self._emoji: Dict[str, str] = {}                     # the workspace's own emoji
+        self._emoji_at = 0.0
+        self._files: Dict[str, tuple] = {}                   # file id -> (when asked, its details)
+        self._kinds: Dict[str, str] = {}                     # a fetched file's path -> its content type
+        self._staged: Dict[str, dict] = {}                   # a file the panel staged to share: {path, name, at}
+        self._marks: Dict[str, str] = {}                     # conversation -> the read cursor to move Slack's to
+        self._mark_timers: Dict[str, threading.Timer] = {}
+        self._channels = (0.0, [])                           # (when, the workspace's public channels)
 
     # -- the host
 
@@ -170,6 +218,8 @@ class SlackApp(App):
         super().start(host)
         self.store = Store(os.path.join(host.folder(), "slack.db"))
         self._users = self.store.users()
+        got = self.store.setting("emoji", {}) or {}
+        self._emoji, self._emoji_at = dict(got.get("map") or {}), _num(got.get("at"))
         kept = self.store.setting("noticed", {}) or {}
         self._noticed = {str(k): str(v) for k, v in (kept.items() if isinstance(kept, dict) else ((k, "") for k in kept))}
         self._up_at = _num(self.store.setting("live_at", 0))
@@ -246,8 +296,11 @@ class SlackApp(App):
                 if gen != self._gen:
                     cl.close()
                     return
+                self.scopes = me.pop("scopes", None)
                 self.cl, self.me = cl, me
             self._refresh(cl)
+            if time.time() - self._emoji_at > EMOJI_EVERY or not self._emoji:
+                self._load_emoji(cl)
             if app:
                 cl.listen(lambda ev: self._event(gen, ev), lambda s: self._on_status(gen, s))
                 self._lost = False
@@ -519,6 +572,8 @@ class SlackApp(App):
             if gap:
                 self._later_catch_up(gen, cl, self._missed_after())
             self._seen_up(now)
+            if now - self._emoji_at > EMOJI_EVERY:
+                threading.Thread(target=self._load_emoji, args=(cl,), name="ag-slack-emoji", daemon=True).start()
             self._learn_reads(gen, cl, LEARN_MOST)
             self._sync_read(cl)
             if not gap:                                     # (a catch-up fetches those, and more)
@@ -592,6 +647,22 @@ class SlackApp(App):
         for m in newest.values():
             self._notify(ch, m, caught_up=True)
 
+    def missing(self) -> List[str]:
+        """The permissions the app uses that the token lacks ([] when Slack didn't say)."""
+        return [x for x in NEEDED if x not in self.scopes] if self.scopes is not None else []
+
+    def _load_emoji(self, cl) -> None:
+        """The workspace's own emoji, read again and told to the panels (kept: the next start has them at once)."""
+        if "emoji:read" in self.missing():
+            return
+        try:
+            got = cl.emoji()
+        except Exception:  # noqa: BLE001 - kept as they were; read again later
+            return
+        self._emoji, self._emoji_at = got, time.time()
+        self.store.set_setting("emoji", {"at": self._emoji_at, "map": got})
+        self._tell_all({"kind": "emoji", "emoji": got})
+
     def _client(self):
         cl = self.cl
         if cl is None:
@@ -604,9 +675,11 @@ class SlackApp(App):
         status = self.status
         if status == "connected" and app and not self._line_up():
             status = "disconnected"                         # said connected once, its line gone since
+        missing = self.missing()
         return {"sdk": slack.available(), "tokens": bool(user), "live": bool(app), "status": status,
                 "error": self.error, "me": self.me.get("user_id", ""), "team": self.me.get("team", ""),
-                "url": self.me.get("url", ""), "copy_of": self._copy_of or ""}
+                "url": self.me.get("url", ""), "copy_of": self._copy_of or "", "scopes": self.scopes,
+                "missing": missing, "missing_for": [f for f in FEATURE_ORDER if any(f in FEATURES.get(x, ()) for x in missing)]}
 
     # -- what comes in
 
@@ -682,26 +755,61 @@ class SlackApp(App):
             else:
                 self.store.drop_activity("reaction", ch, ts, by, name)
             self._tell_all({"kind": "unread", "unread": self._unread()})
-        m = self.store.message(ch, ts) if ch and ts else None
-        if m is None or not name:
+        if ch and ts and name and by:
+            self._apply_reaction(ch, ts, name, by, added)
+
+    def _apply_reaction(self, ch: str, ts: str, name: str, by: str, added: bool) -> None:
+        """`by`'s reaction `name` added to (or taken off) a kept message -- once: a reaction Slack tells of twice (the
+        user's own, kept as they made it, then told on the line) counted once, by who reacted, as far as known."""
+        m = self.store.message(ch, ts)
+        if m is None:
             return
-        mine = ev.get("user") == self.me.get("user_id")
+        me = self.me.get("user_id", "")
         reactions = [dict(r) for r in m.get("reactions") or []]
         r = next((r for r in reactions if r["name"] == name), None)
+        users = list((r or {}).get("users") or [])
         if added:
             if r is None:
-                reactions.append({"name": name, "count": 1, "mine": mine})
+                reactions.append({"name": name, "count": 1, "mine": by == me, "users": [by]})
+            elif by not in users:
+                r.update(count=r["count"] + 1, users=users + [by], mine=bool(r.get("mine") or by == me))
             else:
-                r["count"] += 1
-                r["mine"] = r.get("mine") or mine
-        elif r is not None:
-            r["count"] -= 1
-            if mine:
-                r["mine"] = False
+                return
+        else:
+            if r is None:
+                return
+            if by in users:
+                users.remove(by)
+            elif r["count"] <= len(users):                  # (not among them, and they are all of them)
+                return
+            r.update(count=r["count"] - 1, users=users, mine=bool(r.get("mine")) and by != me)
             if r["count"] <= 0:
                 reactions.remove(r)
         self.store.put_messages(ch, [{**m, "reactions": reactions}])
         self._tell_all({"kind": "changed", "conversation": ch, "message": self.store.message(ch, ts)})
+
+    def react(self, cid: str, ts: str, name: str, on: bool) -> dict:
+        """The user's reaction added (`on`) or taken off; the message's reactions read again from Slack after, so the
+        line's own word of it changes nothing."""
+        name = str(name or "").strip().strip(":")
+        if not name or not re.match(r"^[a-z0-9_+'-]+(::skin-tone-[2-6])?$", name):
+            raise AppError("which emoji: its name, as :name:")
+        cl = self._client()
+        try:
+            cl.react(cid, ts, name, on)
+        except slack.SlackError as exc:
+            if str(exc) not in ("already_reacted", "no_reaction"):
+                raise AppError(f"Slack: {_why(exc)}") from None
+        m = self.store.message(cid, ts)
+        if m is not None:
+            try:
+                fresh = cl.reactions(cid, ts)
+            except slack.SlackError:
+                self._apply_reaction(cid, ts, name, self.me.get("user_id", ""), on)
+            else:
+                self.store.put_messages(cid, [{**m, "reactions": fresh}])
+                self._tell_all({"kind": "changed", "conversation": cid, "message": self.store.message(cid, ts)})
+        return self.store.message(cid, ts) or {}
 
     def _later_refresh(self) -> None:
         cl = self.cl
@@ -729,8 +837,7 @@ class SlackApp(App):
         reply = bool(m["thread_ts"] and m["thread_ts"] != m["ts"])
         where = self.label(c) + (" (in a thread)" if reply else "")
         text = self.plain(m["text"])
-        if m.get("files"):
-            text += "".join(f" [file: {f['name']}]" for f in m["files"])
+        text += self._files_said(m)
         text += f"  [conversation {ch}, ts {m['ts']}" + (f", thread {m['thread_ts']}" if reply else "") + "]"
         author = self.who(m)
         for inst in self.host.instances():
@@ -1061,6 +1168,12 @@ class SlackApp(App):
             raise AppError(f"no conversation {cid}")
         kept = self.store.history(cid, before, limit)
         more = True
+        if self.cl is not None and kept and any(not f.get("id") for m in kept for f in m.get("files") or []):
+            try:                                            # (files kept from before their ids were): read again
+                self.store.put_messages(cid, self.cl.history(cid, latest=before, limit=limit)[0])
+                kept = self.store.history(cid, before, limit)
+            except slack.SlackError:
+                pass
         if self.cl is not None and (not c["synced"] or len(kept) < limit):
             oldest_kept = kept[0]["ts"] if kept else before
             try:
@@ -1085,10 +1198,13 @@ class SlackApp(App):
                     raise AppError(f"Slack: {exc}") from None
         return self.store.thread(cid, ts)
 
-    def send(self, cid: str, text: str, thread_ts: str = "", broadcast: bool = False, skip: Optional[str] = None) -> dict:
-        """`text` posted as the user, kept, and told to the agents working with Slack as Slack's own copy of it would
-        have been (that copy, arriving after, is one already seen) -- but to `skip`, the agent whose draft it was,
-        which is told so instead."""
+    def send(self, cid: str, text: str, thread_ts: str = "", broadcast: bool = False, skip: Optional[str] = None,
+             files: Optional[List[str]] = None) -> dict:
+        """`text` posted as the user (with `files` the panel staged, shared with it), kept, and told to the agents
+        working with Slack as Slack's own copy of it would have been (that copy, arriving after, is one already seen) --
+        but to `skip`, the agent whose draft it was, which is told so instead."""
+        if files:
+            return self._share(cid, text, thread_ts, files)
         if not str(text or "").strip():
             raise AppError("nothing to send")
         c = self.find(cid)
@@ -1104,6 +1220,186 @@ class SlackApp(App):
         self.store.read(c["id"], m["ts"])
         self._clear(c["id"], thread_ts)
         return {**m, "channel": c["id"]}
+
+    def _share(self, cid: str, text: str, thread_ts: str, ids: List[str]) -> dict:
+        """Files the panel staged, shared in `cid` (its thread) with `text`; the message they came in looked for in
+        Slack's history a few times (Slack posts it a moment after) and kept, as a sent message is. -> it, or one with
+        no ts when Slack hadn't posted it yet (the line brings it)."""
+        staged = [self._staged.get(i) for i in ids]
+        if not ids or any(x is None for x in staged):
+            raise AppError("a file to share is no longer here: attach it again")
+        c = self.find(cid)
+        cl = self._client()
+        try:
+            fids = cl.upload(c["id"], [(x["path"], x["name"]) for x in staged], self.linked(text or ""), thread_ts)
+        except slack.SlackError as exc:
+            raise AppError(f"Slack didn't share it: {_why(exc)}") from None
+        for i, x in zip(ids, staged):
+            self._staged.pop(i, None)
+            try:
+                os.remove(x["path"])
+            except OSError:
+                pass
+        me = self.me.get("user_id", "")
+        for n in range(UPLOAD_LOOKS):
+            try:
+                msgs = cl.replies(c["id"], thread_ts) if thread_ts else cl.history(c["id"], limit=10)[0]
+            except slack.SlackError:
+                break
+            m = next((m for m in msgs if m.get("user") == me and fids and
+                      any(f.get("id") in fids for f in m.get("files") or [])), None)
+            if m is not None:
+                if self.store.put_messages(c["id"], [m]):
+                    if thread_ts:
+                        self.store.replied(c["id"], thread_ts, m["ts"])
+                    self._tell_agents(c["id"], m)
+                self.store.active(c["id"], m["ts"])
+                self.store.read(c["id"], m["ts"])
+                self._clear(c["id"], thread_ts)
+                return {**m, "channel": c["id"]}
+            time.sleep(0.4 + 0.3 * n)
+        return {"ts": "", "user": me, "text": text or "", "thread_ts": thread_ts, "channel": c["id"], "files": []}
+
+    def stage(self, name: str, body: bytes) -> dict:
+        """A file the panel will share, kept in the app's folder until it is sent (or STAGED_FOR seconds)."""
+        if not body:
+            raise AppError("an empty file")
+        folder = os.path.join(self.host.folder(), "uploads")
+        os.makedirs(folder, exist_ok=True)
+        now = time.time()
+        for k, x in list(self._staged.items()):
+            if now - x["at"] > STAGED_FOR:
+                self._staged.pop(k, None)
+                try:
+                    os.remove(x["path"])
+                except OSError:
+                    pass
+        sid = uuid.uuid4().hex
+        path = os.path.join(folder, sid)
+        with open(path, "wb") as f:
+            f.write(body)
+        name = os.path.basename(str(name or "").replace("\\", "/")).strip() or "file"
+        self._staged[sid] = {"path": path, "name": name[:200], "at": now}
+        return {"id": sid, "name": name[:200], "size": len(body)}
+
+    def _file_info(self, fid: str) -> dict:
+        if not FILE_ID.match(fid or ""):
+            raise AppError("not a Slack file's id", 400)
+        got = self._files.get(fid)
+        if got and time.time() - got[0] < FILE_INFO_FOR:
+            return got[1]
+        try:
+            info = self._client().file(fid)
+        except slack.SlackError as exc:
+            if str(exc) == "missing_scope":
+                raise AppError("seeing files needs the files:read permission: update your Slack app", 403) from None
+            raise AppError(f"Slack: {exc}", 404 if str(exc) == "file_not_found" else 502) from None
+        self._files[fid] = (time.time(), info)
+        return info
+
+    def fetch_file(self, fid: str, variant: str = "full") -> tuple:
+        """A shared file (`variant` "thumb": its preview), fetched from Slack once and kept -> (path, content type,
+        its details)."""
+        info = self._file_info(fid)
+        if info.get("gone"):
+            raise AppError("Slack no longer shows this file", 410)
+        thumb = variant == "thumb" and bool(info.get("thumb"))
+        url = info["thumb"] if thumb else info.get("url")
+        if not url:
+            raise AppError("this file isn't kept in Slack (an outside link?)", 404)
+        if not thumb and info.get("size", 0) > FILE_MOST:
+            raise AppError("this file is too large to fetch here: open it in Slack", 413)
+        folder = os.path.join(self.host.folder(), "files")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"{fid}-{'thumb' if thumb else 'full'}")
+        if not os.path.isfile(path):
+            try:
+                self._kinds[path] = self._client().download(url, path, FILE_MOST)
+            except slack.SlackError as exc:
+                if str(exc) == "missing_scope":
+                    raise AppError("seeing files needs the files:read permission: update your Slack app", 403) from None
+                raise AppError(f"Slack: {exc}", 502) from None
+            except (OSError, urllib.error.URLError) as exc:
+                raise AppError(f"couldn't fetch it from Slack: {exc}", 502) from None
+            self._trim_files(folder)
+        kind = (self._kinds.get(path) or "").split(";")[0].strip()
+        if not kind or kind == "application/octet-stream":
+            kind = (info.get("mimetype") if not thumb else mimetypes.guess_type(url.split("?")[0])[0]) or \
+                "application/octet-stream"
+        return path, kind, info
+
+    @staticmethod
+    def _trim_files(folder: str) -> None:
+        """The fetched files kept to FILES_KEEP bytes in all, the longest unused let go."""
+        try:
+            got = sorted(((e.stat().st_atime, e.stat().st_size, e.path) for e in os.scandir(folder) if e.is_file()),
+                         reverse=True)
+        except OSError:
+            return
+        total = 0
+        for _, size, path in got:
+            total += size
+            if total > FILES_KEEP:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+    def _mark_later(self, cid: str, ts: str) -> None:
+        """Slack's own read cursor of `cid` moved to `ts`, a moment after the user read it here (MARK_WAIT: reading
+        on, they move it once)."""
+        if self.cl is None or self._copy_of is not None or not self._can_mark(cid):
+            return
+        self._marks[cid] = ts
+        if cid not in self._mark_timers:
+            t = threading.Timer(MARK_WAIT, self._mark_now, args=(cid,))
+            t.daemon = True
+            self._mark_timers[cid] = t
+            t.start()
+
+    def _can_mark(self, cid: str) -> bool:
+        c = self.store.conversation(cid) or {}
+        need = {"channel": "channels:write", "private": "groups:write", "mpim": "mpim:write", "im": "im:write"}.get(c.get("kind"))
+        return bool(need) and need not in self.missing()
+
+    def _mark_now(self, cid: str) -> None:
+        self._mark_timers.pop(cid, None)
+        ts, cl = self._marks.pop(cid, None), self.cl
+        if ts and cl is not None:
+            try:
+                cl.mark(cid, ts)
+            except Exception:  # noqa: BLE001 - Slack's cursor stays; the app's moved
+                pass
+
+    def channels(self) -> List[dict]:
+        """The workspace's public channels (kept CHANNELS_FOR seconds), each said whether the user is in it."""
+        at, got = self._channels
+        if time.time() - at > CHANNELS_FOR or not got:
+            try:
+                got = self._client().channels()
+            except slack.SlackError as exc:
+                raise AppError(f"Slack: {exc}") from None
+            self._channels = (time.time(), got)
+        mine = {c["id"] for c in self.store.conversations()}
+        return [{**c, "member": c["id"] in mine} for c in got]
+
+    def join(self, cid: str) -> dict:
+        try:
+            got = self._client().join(cid)
+        except slack.SlackError as exc:
+            raise AppError(f"Slack didn't add you: {_why(exc)}") from None
+        info = (self.cl.conversation(cid) if self.cl is not None else None) or got
+        self.store.add_conversation(info, read_ts=f"{time.time():.6f}")
+        self._tell_all({"kind": "conversations", **self._lists()})
+        return self.store.conversation(cid) or info
+
+    def leave(self, cid: str) -> None:
+        try:
+            self._client().leave(cid)
+        except slack.SlackError as exc:
+            raise AppError(f"Slack didn't let you leave: {_why(exc)}") from None
+        self.store.leave(cid)
+        self._tell_all({"kind": "conversations", **self._lists()})
 
     def _own(self, cid: str, ts: str) -> dict:
         m = self.store.message(cid, ts)
@@ -1237,6 +1533,8 @@ class SlackApp(App):
 
     def request(self, instance, method, path, query, body):
         try:
+            if method == "POST" and path == "upload":       # (the file's own bytes, not JSON)
+                return Response.json(self.stage(query.get("name", ""), body or b""))
             if method == "GET":
                 return self._get(instance, path, query)
             if method == "POST":
@@ -1255,7 +1553,7 @@ class SlackApp(App):
             if self.cl is not None and time.time() - self._refreshed > REFRESH_EVERY:
                 self._later_refresh()
             return Response.json({"setup": self.setup(), "settings": self._settings(), **self._lists(),
-                                  "drafts": self._drafts()})
+                                  "drafts": self._drafts(), "emoji": self._emoji})
         if path == "history":
             return Response.json(self.history(q.get("conversation", ""), q.get("before", ""),
                                               int(q.get("limit") or 50)))
@@ -1281,6 +1579,16 @@ class SlackApp(App):
                 return Response.json({"scheduled": self._client().scheduled(q.get("conversation", ""))})
             except slack.SlackError as exc:
                 raise AppError(f"Slack: {exc}") from None
+        if path == "file":
+            fpath, kind, info = self.fetch_file(q.get("id", ""), q.get("v", "full"))
+            return Response.file_at(fpath, kind, filename=info.get("name") or "file", download=bool(q.get("dl")))
+        if path == "channels":
+            return Response.json({"channels": self.channels()})
+        if path == "pins":
+            try:
+                return Response.json({"messages": self._client().pins(q.get("conversation", ""))})
+            except slack.SlackError as exc:
+                raise AppError(f"Slack: {_why(exc)}") from None
         if path == "threads":
             self._look("threads")
             return Response.json({"threads": self.threads()})
@@ -1305,7 +1613,24 @@ class SlackApp(App):
                 self.store.read(cid, ts)
                 self._clear(cid)
                 self._tell_all({"kind": "unread", "unread": self._unread()})
+                self._mark_later(cid, ts)
             return Response.json({"ok": True})
+        if path == "unread":
+            cid, ts = str(ask.get("conversation") or ""), str(ask.get("ts") or "")
+            if self.store.conversation(cid) is None or not ts:
+                raise AppError("which conversation and message")
+            back = self.store.before(cid, ts)
+            self.store.set_read(cid, back)
+            self._marks.pop(cid, None)
+            self._tell_all({"kind": "unread", "unread": self._unread()})
+            synced = False
+            if self.cl is not None and self._can_mark(cid):
+                try:
+                    self.cl.mark(cid, back)
+                    synced = True
+                except slack.SlackError:
+                    pass
+            return Response.json({"read_ts": back, "in_slack": synced})
         if path == "notified":
             cid, thread = str(ask.get("conversation") or ""), str(ask.get("thread") or "")
             if thread:
@@ -1316,8 +1641,9 @@ class SlackApp(App):
                 self._clear(cid)
             return Response.json({"ok": True})
         if path == "send":
+            files = ask.get("files") if isinstance(ask.get("files"), list) else None
             m = self.send(str(ask.get("conversation") or ""), str(ask.get("text") or ""),
-                          str(ask.get("thread") or ""), bool(ask.get("broadcast")))
+                          str(ask.get("thread") or ""), bool(ask.get("broadcast")), files=[str(f) for f in files or []])
             self._record(instance, "slack.sent", {"conversation": m["channel"], "ts": m["ts"], "draft": None,
                                                   "text": m["text"]})
             self._tell_all({"kind": "reply" if ask.get("thread") else "message", "conversation": m["channel"],
@@ -1357,6 +1683,28 @@ class SlackApp(App):
                 raise AppError(f"Slack: {exc}") from None
             self._tell_all({"kind": "scheduled", "conversation": cid})
             return Response.json({"ok": True})
+        if path == "react":
+            return Response.json({"message": self.react(str(ask.get("conversation") or ""), str(ask.get("ts") or ""),
+                                                        str(ask.get("name") or ""), ask.get("on") is not False)})
+        if path == "join":
+            c = self.join(str(ask.get("conversation") or ""))
+            return Response.json({"conversation": {**c, "label": self.label(c)}})
+        if path == "leave":
+            self.leave(str(ask.get("conversation") or ""))
+            return Response.json({"ok": True})
+        if path == "recheck":
+            user, app = self._tokens()
+            if not user:
+                raise AppError("Slack isn't connected")
+            new = str(ask.get("user_token") or "").strip()     # (reinstalling the app may have given a new one)
+            if new:
+                if not new.startswith("xoxp-"):
+                    raise AppError("the user token starts xoxp- (OAuth & Permissions)")
+                if self._copy_of is None:
+                    self._save_tokens(new, app)
+                user = new
+            self._connect(user, app, wait=True)
+            return Response.json({"setup": self.setup()})
         if path == "activity_seen":
             self.store.set_setting("activity_seen", max(_num(ask.get("at")), _num(self.store.setting("activity_seen", 0))))
             self._tell_all({"kind": "unread", "unread": self._unread()})
@@ -1477,6 +1825,8 @@ class SlackApp(App):
 
     def call(self, instance: Instance, tool: str, args: dict, caller: Caller) -> ToolResult:
         try:
+            if tool == "read" and args.get("file"):
+                return self._file_tool(str(args["file"]))
             if tool == "read":
                 return ToolResult.text(self._read_tool(instance, args))
             if tool == "search":
@@ -1489,10 +1839,17 @@ class SlackApp(App):
             return ToolResult.error(f"Slack: {exc}")
         raise AppError(f"{tool}: not a tool of Slack")
 
+    @staticmethod
+    def _files_said(m: dict) -> str:
+        """A message's files as an agent reads them: their names, and the id slack_read takes to read one."""
+        return "".join(f" [file: {f['name']}" + (f" ({f['id']}, {f.get('kind') or 'file'})" if f.get("id") else "") + "]"
+                       for f in m.get("files") or [])
+
     def _line(self, m: dict, indent: str = "") -> str:
         out = f"{indent}[{m['ts']}] {self.who(m)}: {self.plain(m['text'])}"
-        if m.get("files"):
-            out += "".join(f" [file: {f['name']}]" for f in m["files"])
+        out += self._files_said(m)
+        if m.get("reactions"):
+            out += " [" + ", ".join(f":{r['name']}: {r['count']}" for r in m["reactions"]) + "]"
         if m.get("reply_count") and m.get("ts") == (m.get("thread_ts") or m["ts"]):
             out += f"  ({m['reply_count']} replies: thread {m['ts']})"
         if m.get("edited"):
@@ -1531,6 +1888,47 @@ class SlackApp(App):
         head = f"{self.label(c)} ({c['id']}){member}" + (f", topic: {c['topic']}" if c.get("topic") else "")
         return f"The latest {len(got['messages'])} messages in {head}, oldest first:\n" + \
             "\n".join(self._line(m) for m in got["messages"])
+
+    def _file_tool(self, fid: str) -> ToolResult:
+        """A shared file, for an agent: a text or code file's text, a PDF's (pdftotext, where it is installed), a
+        picture as one; what it is, for anything else."""
+        info = self._file_info(fid.strip())
+        what = f"{info['name']} ({fid}, {info.get('kind') or 'file'}, {info.get('size', 0):,} bytes)"
+        mt, ft = (info.get("mimetype") or "").lower(), (info.get("filetype") or "").lower()
+        if mt.startswith("image/") and mt.split("/")[1] in ("png", "jpeg", "gif", "webp"):
+            path, kind, _ = self.fetch_file(fid, "full" if info.get("size", 0) <= AGENT_IMAGE else "thumb")
+            if os.path.getsize(path) > AGENT_IMAGE:
+                return ToolResult.text(f"{what}: a picture too large to give you; ask the user to look at it.")
+            with open(path, "rb") as f:
+                data = f.read()
+            got = ToolResult.image(data, kind if kind.startswith("image/") else mt)
+            return ToolResult([{"type": "text", "text": f"The picture {what}:"}] + got.content)
+        if mt == "application/pdf" or ft == "pdf":
+            tool = shutil.which("pdftotext")
+            if not tool:
+                return ToolResult.text(f"{what}: a PDF, and there is no pdftotext here to read it; ask the user.")
+            path, _, _ = self.fetch_file(fid)
+            try:
+                out = subprocess.run([tool, "-layout", "-q", path, "-"], capture_output=True, timeout=60).stdout
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return ToolResult.error(f"couldn't read the PDF {what}: {exc}")
+            return ToolResult.text(self._cut(f"The text of the PDF {what}:", out.decode("utf-8", "replace")))
+        textual = mt.startswith("text/") or ft in TEXT_KINDS or mt in (
+            "application/json", "application/xml", "application/javascript", "application/x-sh", "application/x-yaml",
+            "application/x-tex", "application/sql")
+        if textual:
+            path, _, _ = self.fetch_file(fid)
+            with open(path, "rb") as f:
+                raw = f.read(AGENT_TEXT * 4)
+            return ToolResult.text(self._cut(f"The text of {what}:", raw.decode("utf-8", "replace")))
+        return ToolResult.text(f"{what}: not a kind ag can read (only text and code files, PDFs and pictures); ask the "
+                               "user to open it.")
+
+    @staticmethod
+    def _cut(head: str, text: str) -> str:
+        if len(text) <= AGENT_TEXT:
+            return f"{head}\n{text}"
+        return f"{head} (its first {AGENT_TEXT:,} of {len(text):,} characters)\n{text[:AGENT_TEXT]}"
 
     def _search_tool(self, args: dict) -> str:
         q = str(args.get("query") or "").strip()

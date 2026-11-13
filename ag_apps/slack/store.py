@@ -16,6 +16,8 @@ gatherer's events: Slack's history is Slack's, and the gatherer gets only what i
         mentions(me, limit)                                             messages that name the user
         add_activity(...) / activity(limit)                             reactions to the user's messages
         read(channel, ts) / unread(me)                                  read marks; {channel: (unread, mentions)}
+        set_read(channel, ts) / before(channel, ts)                     a read mark moved back (marked unread)
+        leave(channel)                                                  the user left it: gone
         guessed_reads() / take_read(channel, ts)                        read marks still the app's guess; Slack's taken
         draft(...) / drafts(status) / set_draft(id, **fields)
         setting(k, default) / set_setting(k, v)
@@ -326,6 +328,19 @@ class Store:
         no longer the app's guess."""
         self._do("UPDATE conversations SET read_ts = CASE WHEN CAST(read_ts AS REAL) < ? THEN ? ELSE read_ts END, "
                  "read_known = 1 WHERE id = ?", (_num(ts), ts, channel))
+
+    def set_read(self, channel: str, ts: str) -> None:
+        """The read mark put at `ts`, back too: the user marked a message unread."""
+        self._do("UPDATE conversations SET read_ts = ?, read_known = 1 WHERE id = ?", (ts, channel))
+
+    def before(self, channel: str, ts: str) -> str:
+        """The newest top-level message of `channel` kept before `ts` (just before `ts` if none)."""
+        r = self._one("SELECT ts FROM messages WHERE channel = ? AND deleted = 0 AND tsn < ? AND (thread_ts = '' OR "
+                      "thread_ts = ts OR subtype = 'thread_broadcast') ORDER BY tsn DESC LIMIT 1", (channel, _num(ts)))
+        return r["ts"] if r else f"{_num(ts) - 1e-6:.6f}"
+
+    def leave(self, channel: str) -> None:
+        self._do("UPDATE conversations SET gone = 1 WHERE id = ?", (channel,))
 
     def guessed_reads(self) -> List[str]:
         """The conversations the user is in whose read mark is still the app's guess, the most recently active first."""
