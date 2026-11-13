@@ -46,7 +46,7 @@ export interface WorkHooks {
   /** The task in focus (tabs.ts). */
   focus: () => string | null;
   /** These tasks shown in place of those shown, as they were left: a screen tab shown (tabs.ts). */
-  enter: (tasks: string[], focus: string | null, live: () => boolean) => Promise<void>;
+  enter: (tasks: string[], focus: string | null) => Promise<void>;
   /** A task's key as it is now (tabs.ts's): a lone item's since put in a task, the task's; null, gone. */
   canon?: (key: string) => string | null;
   /** What the actors of these tasks do, all told: "asking", "error", "working", or "". */

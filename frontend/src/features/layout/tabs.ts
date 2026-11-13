@@ -23,9 +23,9 @@ export interface TabsHooks {
   shown: () => string[];
   /** The task in focus. */
   focus: () => string | null;
-  /** Show these tasks (`focus` first, the others beside it), as they were left, in place of the tasks shown -- one by
-   * one, while `live` (another tab shown meanwhile: no more). */
-  enter: (tasks: string[], focus: string | null, live: () => boolean) => Promise<void>;
+  /** Show these tasks (`focus` first, the others beside it), as they were left, in place of the tasks shown: their panes
+   * opened, not waiting on what each loads to show. */
+  enter: (tasks: string[], focus: string | null) => Promise<void>;
   /** A task's key as it is now (a lone item since put in a task: the task's), null if it is gone: a tab keeps keys,
    * and a key changes as its items join or leave a task. */
   canon?: (task: string) => string | null;
@@ -55,8 +55,8 @@ const newId = (): string => `s${Date.now().toString(36)}${(made++).toString(36)}
 export class Tabs {
   private tabs: Tab[];
   private current: string;
-  private switching = false; // a tab being shown, its tasks opened one by one (the screen held as it is meanwhile)
-  private turn = 0; // the latest switch: one overtaken by another stops opening its tasks
+  private switching = false; // a tab being shown, its tasks' panes opened one by one (the screen held as it is meanwhile)
+  private settling: Promise<void> = Promise.resolve(); // the tab being shown (or made): done
   private started = false; // the page's first tab shown as it was left (start): the tab shown kept as it changes since
   private readonly strip: HTMLElement;
   private readonly list: HTMLElement;
@@ -95,6 +95,15 @@ export class Tabs {
   height(): number {
     return TABS_H;
   }
+  /** Whether a tab is being shown (its tasks' panes opened one by one): a click waits (settled) before it goes anywhere --
+   * a moment, the panes not waiting on what they load. */
+  busy(): boolean {
+    return this.switching;
+  }
+  /** Once the tab being shown, or made, is. */
+  settled(): Promise<void> {
+    return this.settling;
+  }
 
   /** The page opened, what it shows known: the tab shown's tasks shown as it was left, if the page shows others (the
    * actor it opens on by itself) -- true if so. From then on the tab shown is kept as it changes, for a reload. */
@@ -107,7 +116,7 @@ export class Tabs {
     if (!kept.length || (kept.length === shown.length && kept.every((k) => shown.includes(k)))) return false;
     const focus = tab.focus && this.hooks.canon ? this.hooks.canon(tab.focus) : tab.focus;
     this.hooks.setScreen(tab.screen);
-    await this.switch((live) => this.hooks.enter(kept, focus, live));
+    await this.switch(() => this.hooks.enter(kept, focus));
     return true;
   }
   // the tab shown kept as it is now, once started: its tasks, their arrangement, the one in focus (a reload shows it so)
@@ -130,7 +139,8 @@ export class Tabs {
    * focus; open nowhere, a new tab for it -- the tab shown, if it shows nothing (or, `idle`, only what the page opened
    * on by itself). */
   async route(task: string, idle = false): Promise<void> {
-    const here = this.tasksOf(this.tab()); // (one being shown: the tasks it is opening)
+    if (this.switching) await this.settling;
+    const here = this.tasksOf(this.tab());
     if (here.includes(task)) return;
     const holding = this.tabs.find((t) => t.id !== this.current && this.tasksOf(t).includes(task));
     if (holding) return this.show(holding.id, task);
@@ -139,7 +149,6 @@ export class Tabs {
 
   /** ⌥+click: the task out of any other tab (one left with none closed, unless named), to be the tab shown's alone. */
   take(task: string): void {
-    this.stop();
     for (const t of this.tabs) if (t.id !== this.current) t.tasks = this.tasksOf(t).filter((k) => k !== task);
     this.tabs = this.tabs.filter((t) => t.id === this.current || t.tasks.length > 0 || t.name);
     this.save();
@@ -150,7 +159,6 @@ export class Tabs {
    * still there till what is shown next replaces them (blank: closed at once). */
   fresh(): void {
     const left = this.leave();
-    this.stop();
     const at = this.tabs.indexOf(left);
     const tab: Tab = { id: newId(), name: "", tasks: [], screen: null, focus: null };
     this.tabs.splice(at + 1, 0, tab);
@@ -163,12 +171,14 @@ export class Tabs {
 
   /** "+": a new tab, shown empty -- the tab left kept as it is, its panels closed. */
   async blank(): Promise<void> {
+    if (this.switching) await this.settling;
     this.fresh();
     await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
   }
 
   /** The tab `id` shown, `focus` in focus (else the task in focus when it was left). */
   async show(id: string, focus: string | null = null): Promise<void> {
+    if (this.switching) await this.settling; // one at a time
     const to = this.tabs.find((t) => t.id === id);
     if (!to || id === this.current) return;
     const tasks = this.tasksOf(to),
@@ -178,33 +188,25 @@ export class Tabs {
     this.drop(left);
     this.save();
     this.hooks.setScreen(to.screen);
-    await this.switch((live) => this.hooks.enter(tasks, focus ?? kept, live));
+    await this.switch(() => this.hooks.enter(tasks, focus ?? kept));
   }
 
-  // The panels of the tab shown changed (`work`), the tasks' arrangement held as it is till they are -- unless another tab
-  // is shown (or made) meanwhile, a click not waiting on this one: this one's work then stops (`live` false), and the tab
-  // it was opening keeps the tasks it was being given
-  private async switch(work: (live: () => boolean) => Promise<void>): Promise<void> {
-    const turn = ++this.turn;
+  // the panels of the tab shown changed (`work`): the tasks' arrangement held as it is, nothing routed, till it is done
+  private async switch(work: () => Promise<void>): Promise<void> {
     this.switching = true;
     this.hooks.hold(true);
     this.draw();
-    try {
-      await work(() => turn === this.turn);
-    } finally {
-      if (turn === this.turn) {
+    const done = (async () => {
+      try {
+        await work();
+      } finally {
         this.switching = false;
         this.hooks.hold(false);
         this.hooks.changed();
       }
-    }
-  }
-  // a switch under way overtaken: its work stops, the screen no longer held for it
-  private stop(): void {
-    if (!this.switching) return;
-    this.turn++;
-    this.switching = false;
-    this.hooks.hold(false);
+    })();
+    this.settling = done.catch(() => {});
+    await done;
   }
 
   /** The tab next to the one shown (`by` -1: before it), shown. */
@@ -215,6 +217,7 @@ export class Tabs {
 
   /** A tab closed (not the only one): the one shown, the next shown first. Its actors go on. */
   async close(id: string): Promise<void> {
+    if (this.switching) await this.settling;
     if (this.tabs.length < 2) return;
     if (id === this.current) {
       const at = this.tabs.findIndex((t) => t.id === id);
@@ -272,15 +275,11 @@ export class Tabs {
 
   // the tab shown kept as it is left: its tasks (each kept as it is: hooks.remember), their arrangement, the one in focus
   // -- none of them in another tab now (one left with none closed, unless named)
-  // -- one left while it was being shown keeps the tasks it was being given, not the few opened so far
   private leave(): Tab {
     const tab = this.tab(),
-      opening = this.switching,
-      tasks = opening ? this.tasksOf(tab) : this.hooks.shown();
-    if (!opening) {
-      this.hooks.remember?.(tasks);
-      Object.assign(tab, { tasks, screen: this.hooks.screen(), focus: this.hooks.focus() });
-    }
+      tasks = this.hooks.shown();
+    this.hooks.remember?.(tasks);
+    Object.assign(tab, { tasks, screen: this.hooks.screen(), focus: this.hooks.focus() });
     for (const t of this.tabs) if (t !== tab) t.tasks = this.tasksOf(t).filter((k) => !tasks.includes(k));
     this.tabs = this.tabs.filter((t) => t === tab || t.tasks.length > 0 || t.name);
     return tab;

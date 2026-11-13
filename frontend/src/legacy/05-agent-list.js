@@ -880,6 +880,7 @@ async function openTask(gname, id, focus = null, ev = null) {
   const g = state.home.gatherers.find((x) => x.name === gname);
   if (!g) return;
   const k = `${gname}\u0000t${id}`, sel = focusedActor(), was = taskLayout(k);
+  const wait = !(ev && ev.inTabs);                   // a tab being shown (07-panes.js's enterTasks): its actor's Chat not waited on
   const ok = (c) => !!c && taskActors(g, id).some((a) => a.channel === c);
   // as it was left: its panes in their order (the first in this page's own), the one in focus then in focus again
   const first = focus || (was && ok(was.actors[0]) ? was.actors[0] : null) || (was && ok(was.focus) ? was.focus : null)
@@ -894,11 +895,11 @@ async function openTask(gname, id, focus = null, ev = null) {
   }
   if (!there && ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT) return openTaskBeside(gname, k, first);   // the whole task, beside
   if (!appsOnly && sel && taskKey(sel[0], sel[1]) === k) {   // shown already: as it is, once laid out
-    if (focus) await show(gname, focus);
-    else if (!tasksLaidOut.has(k)) await show(gname, sel[1]);   // shown by chance (as the page opened): laid out now (enterTask)
+    if (focus) await show(gname, focus, null, wait);
+    else if (!tasksLaidOut.has(k)) await show(gname, sel[1], null, wait);   // shown by chance (as the page opened): laid out now (enterTask)
     return;
   }
-  await show(gname, first);
+  await show(gname, first, null, wait);
   const back = !focus && was && ok(was.focus) && was.focus !== first && actorPanes().find((p) => isAt([p.g, p.c], gname, was.focus));
   if (back) focusPane(back);
   if (!focus && was && was.focusApp) {                     // an app selected in it when it was left: selected again

@@ -223,14 +223,15 @@ async function openTaskApps(g, c, to, only = null, beside = false) {
   if (opened) { saveAppPanes(); renderAgents(); }
 }
 // The actor in the pane in focus -- in `view`, if given; one open already, its pane focused instead. Of another task than
-// the one shown: the panels changed for it first (enterTask).
-async function show(g, c, view = null) {
+// the one shown: the panels changed for it first (enterTask). `wait` false: done once it is in its pane, what it shows
+// (its Chat) loading still.
+async function show(g, c, view = null, wait = true) {
   if (isAt(hereAway, g, c)) hereAway = null;         // asked for: in sight again (and in its task's tab shown)
   const entered = enterTask(g, c);
-  await showIn(g, c, view || (entered && entered.view) || null);
+  await showIn(g, c, view || (entered && entered.view) || null, wait);
   if (entered) entered.after();
 }
-async function showIn(g, c, view = null) {
+async function showIn(g, c, view = null, wait = true) {
   const there = actorPanes().find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
   if (there) showActorsApp(g, c);                    // shown already: its app's panel, closed since, opened again
   const p = there || panes.focus;
@@ -241,9 +242,10 @@ async function showIn(g, c, view = null) {
     return;
   }
   focusPane(panes.here);
-  if (there) { if (view) await setChatView(view); return; }
+  const loaded = (work) => { if (wait) return work; work.catch(() => {}); return null; };   // waited on, or left to load
+  if (there) { if (view) await loaded(setChatView(view)); return; }
   if (view) setViewHere(view);
-  await select(g, c);
+  await loaded(select(g, c));
 }
 function setViewHere(id) {
   state.chatViewId = id;
@@ -418,9 +420,9 @@ function startPlacing() {
 let autoShown = null;
 async function viaTabs(k, ev, item = null) {
   if (!workPlacer || !k || !ev || ev.inTabs || SNAPSHOT || ev.shiftKey) return false;
-  // (a tab still being shown -- its actors' chats loading -- is overtaken: the click goes on at once, from the tasks it was
-  // being given)
-  const tabs = workPlacer.tabs, at = tabs.where(k);
+  const tabs = workPlacer.tabs;
+  if (tabs.busy()) await tabs.settled();             // a tab still being shown (its panes opened one by one): once it is
+  const at = tabs.where(k);
   const chance = !!autoShown && shownPanels().every((s) => !s.key || s.key === autoShown);
   autoShown = null;
   if (ev.ctrlKey || ev.metaKey) {
@@ -486,9 +488,9 @@ async function clearWork() {
 // A tab shown: its tasks in place of those shown, each as it was left -- the first of them with an actor (`focus`, if it
 // has one) entered as a click on its row does, closing the rest (terminals kept), the others opened beside it, as ⌘+click
 // does: those with actors first, those of apps alone after (one entered first would put the actors' panes out of sight,
-// and the actors opened beside it would not be shown); `focus` in focus after. Another tab shown meanwhile (`live`
-// false: a click goes on at once, not waiting on what an actor shown loads), no more opened.
-async function enterTasks(keys, focus, live = () => true) {
+// and the actors opened beside it would not be shown); `focus` in focus after. Their panes opened, not waiting on what
+// each loads to show (a Chat at times slow): a click while a tab is shown waits for this (viaTabs).
+async function enterTasks(keys, focus) {
   const all = [focus, ...keys].filter((k, i, them) => k && them.indexOf(k) === i);
   const actor = (k) => {
     const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
@@ -497,7 +499,6 @@ async function enterTasks(keys, focus, live = () => true) {
   };
   const order = [...all.filter(actor), ...all.filter((k) => !actor(k))];
   for (const [i, k] of order.entries()) {
-    if (!live()) return;
     const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
     if (!gg || id === undefined) continue;
     const beside = i > 0;
@@ -505,14 +506,14 @@ async function enterTasks(keys, focus, live = () => true) {
       const t = Number(id.slice(1));
       if (!taskById(g, t)) continue;
       if (beside && !taskLead(gg, t)) await openTaskApps(g, null, k, (taskLayout(k) || {}).apps || null, true);   // apps alone
-      else await openTask(g, t, null, beside ? { metaKey: true, inTabs: true } : null);   // (the tab's own: not routed)
+      else await openTask(g, t, null, { metaKey: beside, inTabs: true });   // (the tab's own: not routed, not waited on)
     } else if (isAppItem(id)) {
       if (!appInfo(g, id.slice(APP_ITEM.length))) continue;
       if (beside) await openTaskApps(g, null, k, null, true);
       else { enterAppTask(g, k); await taskAppsOpening; }
-    } else if (gg.agents.some((a) => a.channel === id)) await (beside ? openTaskBeside(g, k, id) : show(g, id));
+    } else if (gg.agents.some((a) => a.channel === id)) await (beside ? openTaskBeside(g, k, id) : show(g, id, null, false));
   }
-  if (live()) focusTask(focus);
+  focusTask(focus);
 }
 // A task's key as it is now: a lone item's -- an actor's, an app's -- the task it has been put in since, if it has (taskKey);
 // any other, as it is (a task's; one not known yet, its apps not read). A screen tab keeps the keys of the tasks it was
