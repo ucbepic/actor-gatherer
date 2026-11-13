@@ -13,6 +13,11 @@ What the user is interested in, and the agent:
   - The user marks papers relevant or not. Every FEEDBACK_EVERY of their words since the summary was written, the agent
     is asked to write it again from what they told the app, the summary as it is and that feedback.
   - A message the agent's terminal can't take now (a dialog open in it) waits and is sent again (SEND_RETRY).
+  - An ask to pick that never came back is asked again (`_ask_again`, the "picks" schedule, every 30 minutes): the
+    message may never have reached the agent (typed into its terminal as the computer went back to sleep, 2026-11-13),
+    or its turn may have ended before it saved any. The newest day only, once its ask is STALE, its agent has used none
+    of the app's tools for as long (still at it, else) and no ask of it waits for the terminal: at most ASKS_TAKEN asks
+    the agent took up (used a tool after) and ASKS_MAX in all, a day.
 
 A run (`fetch`, the schedule's and the panel's "Fetch now"):
   1. The feed (one request for every category): the day it carries, kept if it is new to the app. Empty for the day
@@ -67,6 +72,8 @@ LIST_DEFAULT, LIST_MAX = 100, 500
 PAPERS_MAX = 20
 FEEDBACK_EVERY = 20          # the user's words on papers that make the agent write the summary again
 STALE = 1800.0               # an ask of the agent not answered in this long is shown as not answered, to ask again
+ASKS_TAKEN = 2               # asks to pick a day that its agent took up (used a tool after), then no more of that day
+ASKS_MAX = 48                # and asks of a day in all, taken up or not (a day of the "picks" schedule's checks)
 SEND_RETRY, SEND_TRIES = 60.0, 30   # a message its agent's terminal couldn't take: tried again this often, this often
 AGENT_NAME = "Paper news"
 LISTED = ("new", "cross")
@@ -83,7 +90,7 @@ class PaperNewsApp(App):
         self._run = threading.Lock()                      # one run at a time
         self._state = threading.Lock()
         self._again: Optional[threading.Timer] = None      # a run of its own tried again (not the schedule's)
-        self._outbox: List[list] = []                      # messages to its agent not taken yet: [text, tries]
+        self._outbox: List[list] = []                      # messages to its agent not taken yet: [text, tries, key]
         self._outbox_timer: Optional[threading.Timer] = None
         self._stopped = False
         self.status = {"fetching": False, "waiting": None, "error": None, "checked": None}
@@ -111,6 +118,9 @@ class PaperNewsApp(App):
     # -- a run
 
     def scheduled(self, schedule: str, due: float) -> Optional[float]:
+        if schedule == "picks":
+            self._ask_again()
+            return None
         if schedule != "listing":
             return None
         self._wait_again(None)                            # the schedule tries its run again itself
@@ -263,9 +273,10 @@ class PaperNewsApp(App):
         inst = next((i for i in found if i.id == a.get("instance")), found[0] if found else None)
         return (inst, a["channel"]) if inst is not None else None
 
-    def _tell_agent(self, text: str, instance: Optional[Instance] = None) -> bool:
+    def _tell_agent(self, text: str, instance: Optional[Instance] = None, key: Optional[str] = None) -> bool:
         """`text` to its agent -- one started with it, in `instance` (else the first open), if it has none. A terminal
-        that can't take it now: kept, sent again later. -> whether it went, or waits to."""
+        that can't take it now: kept, sent again later -- in place of one of the same `key` kept. -> whether it went,
+        or waits to."""
         got = self._agent()
         try:
             if got is not None:
@@ -280,14 +291,14 @@ class PaperNewsApp(App):
             return True
         except AppError as exc:
             if exc.status == 409:
-                self._later(text)
+                self._later(text, key)
                 return True
             self._set(error=f"couldn't reach the Paper news agent: {exc}")
             return False
 
-    def _later(self, text: str) -> None:
+    def _later(self, text: str, key: Optional[str] = None) -> None:
         with self._state:
-            self._outbox.append([text, 0])
+            self._outbox = [m for m in self._outbox if key is None or m[2] != key] + [[text, 0, key]]
             if self._outbox_timer is None and not self._stopped:
                 self._outbox_timer = threading.Timer(SEND_RETRY, self._send_later)
                 self._outbox_timer.daemon = True
@@ -297,17 +308,18 @@ class PaperNewsApp(App):
         with self._state:
             self._outbox_timer = None
             waiting, self._outbox = self._outbox, []
-        for text, tries in waiting:
+        for text, tries, key in waiting:
             got = self._agent()
             try:
                 if got is None:
-                    self._tell_agent(text)
+                    self._tell_agent(text, key=key)
                 else:
                     self.host.send_agent(got[0], got[1], text)
             except AppError as exc:
                 if exc.status == 409 and tries + 1 < SEND_TRIES:
                     with self._state:
-                        self._outbox.append([text, tries + 1])
+                        if key is None or all(m[2] != key for m in self._outbox):    # not one newer of it, meanwhile
+                            self._outbox.append([text, tries + 1, key])
         with self._state:
             if self._outbox and self._outbox_timer is None and not self._stopped:
                 self._outbox_timer = threading.Timer(SEND_RETRY, self._send_later)
@@ -334,9 +346,10 @@ class PaperNewsApp(App):
             raise AppError("the Paper news agent couldn't be reached" + (f": {self.status['error']}"
                                                                      if self.status.get("error") else ""), 502)
 
-    def _ask_judge(self, day: str, instance: Optional[Instance] = None) -> bool:
+    def _ask_judge(self, day: str, instance: Optional[Instance] = None, again: bool = False) -> bool:
         """The agent asked to pick `day`'s papers related to the user: False if there's no summary yet, or no such
-        day. A day with no new papers is judged at once, with none."""
+        day. A day with no new papers is judged at once, with none. Not `again` (`_ask_again`'s): the day's asks
+        counted from this one."""
         prof = self.store.get("profile")
         info = self.store.day(day)
         if not prof or not info or info["status"] != "got":
@@ -346,8 +359,36 @@ class PaperNewsApp(App):
         if not papers:
             self.store.pick(day, [])
             return True
-        self.store.asked(day)
-        return self._tell_agent(it.judge_message(_said(day), day, info["categories"], prof["fields"], papers), instance)
+        self.store.asked(day, self._clock())
+        if not again:
+            self.store.put("asks", {"day": day, "asks": 1, "taken": 0})
+        return self._tell_agent(it.judge_message(_said(day), day, info["categories"], prof["fields"], papers), instance,
+                                key=f"judge:{day}")
+
+    def _ask_again(self) -> None:
+        """The newest day's ask to pick, not answered: asked again (module doc) -- STALE after it, its agent idle as long,
+        none of it waiting for the terminal; at most ASKS_TAKEN asks it took up, ASKS_MAX in all."""
+        day = self._latest()
+        if day is None or not self.store.get("profile"):
+            return
+        j = self.store.judged(day) or {}
+        asked = j.get("asked_at")
+        if not asked or j.get("done_at"):
+            return
+        now, used = self._clock(), self.store.get("agent_used") or 0
+        if now - asked < STALE or now - used < STALE:          # asked lately, or its agent still at it
+            return
+        with self._state:
+            if any(m[2] == f"judge:{day}" for m in self._outbox):
+                return                                          # still waiting for its terminal
+        a = self.store.get("asks") or {}
+        if a.get("day") != day:
+            a = {"day": day, "asks": 1, "taken": 0}
+        taken = a["taken"] + (used > asked)                     # the last ask taken up: a tool used after it
+        if taken >= ASKS_TAKEN or a["asks"] >= ASKS_MAX:
+            return
+        self.store.put("asks", {"day": day, "asks": a["asks"] + 1, "taken": taken})
+        self._ask_judge(day, again=True)
 
     def _latest(self) -> Optional[str]:
         return next((d["day"] for d in self.store.days() if d["status"] == "got"), None)
@@ -488,10 +529,8 @@ class PaperNewsApp(App):
     def state(self) -> dict:
         self._look_if_missing()
         now = self._clock()
-        nxt = None
-        if self.manifest is not None:
-            times = [s.next(now) for s in self.manifest.schedules]
-            nxt = min((t for t in times if t), default=None)
+        fetches = [s for s in self.manifest.schedules if s.name == "listing"] if self.manifest else []   # not "picks"
+        nxt = min((t for t in (s.next(now) for s in fetches) if t), default=None)
         with self._state:
             status = dict(self.status)
         prof = self.store.get("profile")
@@ -502,7 +541,7 @@ class PaperNewsApp(App):
                                   prof["feedback_seq"] if prof else 0)), "every": FEEDBACK_EVERY,
                               "agent": (self._agent() or (None, None))[1]},
                 "status": {**status, "next": nxt, "expected": feed.listing_day(now),
-                           "schedule": [s.to_dict()["said"] for s in self.manifest.schedules] if self.manifest else []}}
+                           "schedule": [s.to_dict()["said"] for s in fetches]}}
 
     def request(self, instance, method, path, query, body):
         try:
@@ -589,6 +628,9 @@ class PaperNewsApp(App):
     # -- agents
 
     def call(self, instance: Instance, tool: str, args: dict, caller: Caller) -> ToolResult:
+        a = self.store.get("agent")
+        if a and caller.channel and caller.channel == a.get("channel"):
+            self.store.put("agent_used", self._clock())        # its agent at work: `_ask_again` waits
         if tool == "list":
             return ToolResult.text(self._list(args))
         if tool == "paper":
