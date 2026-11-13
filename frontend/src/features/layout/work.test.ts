@@ -137,7 +137,7 @@ describe("the work area built", () => {
     const t = b.tree as Split;
     expect([t.dir, t.sizes.map((z) => z.share)]).toEqual(["col", [1, 2]]); // U above T, as kept
     const s = leafId(U, "\u0003strip");
-    expect(shape(t.kids[0])).toEqual(["col", [s, ["col", [leafId(U, "app:x"), leafId(U, "c9")], [445, 1]]], [24, 1]]);
+    expect(shape(t.kids[0])).toEqual(["col", [s, ["col", [leafId(U, "app:x"), leafId(U, "c9")], [445, 1]]], [34, 1]]);
     expect(b.nodes.get(s)).toBe(`strip of ${U}`);
     expect([...b.strips.values()]).toEqual([U]); // T, of one pane, none: its pane's head moves it
     expect(build([at(U, "c9"), at(U, "app:x")], {}, () => null, { ...opts, strip }).strips.size).toBe(0); // alone: none

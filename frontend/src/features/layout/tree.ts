@@ -31,6 +31,8 @@ export interface Split {
   still?: boolean;
   /** its bars drawn as a band, not a line */
   thick?: boolean;
+  /** its bars the room between two tasks' cards: drawn as nothing, a line only while pointed at or dragged */
+  gap?: boolean;
   /** a split of the panels shown (arrange.ts's view): the one kept it came from, and where each of its kids is in it */
   src?: Split;
   at?: number[];

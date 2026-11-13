@@ -3,7 +3,7 @@
 // makes pages of its own and puts them out of the notebook, for good, before it ends.
 import type { FrameLocator } from "@playwright/test";
 import { expect, test } from "./test";
-import { open } from "./home";
+import { CODEX, open } from "./home";
 import { binPage, call, newPage, openNotes } from "./notes-home";
 
 /** The open page's blocks: each its type and what it says (a list's number included). */
@@ -127,6 +127,12 @@ test("Enter splits a block at the caret, Backspace at its start joins it back, a
 test("a block dragged by its grip moves, and what one window types shows in another", async ({ page }) => {
   await open(page);
   const { panel } = await openNotes(page);
+  // Codex beside it, under it: the panel in the top half (a second window open, headless Chrome takes no click into the
+  // bottom of a frame of another origin -- the trash's, at the panel's foot)
+  await page
+    .locator("#agents button.agent", { hasText: CODEX })
+    .click({ modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+  await expect(page.locator("#pane-here")).toBeVisible();
   await newPage(page, panel, "Order");
   const kb = page.keyboard;
   for (const t of ["one", "two", "three"]) {

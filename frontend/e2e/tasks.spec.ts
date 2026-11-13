@@ -312,7 +312,7 @@ test("⌘/Ctrl+click on a task opens it whole beside the one shown: its actor an
   await codex.click();
   await addNotepad(page, codex);
   await expect(notes).toHaveCount(1); // Codex's app, in its task
-  await claude.click(); // another task: Codex's Notepad goes with Codex
+  await claude.click({ modifiers: ["Alt"] }); // another task in its place (⌥): Codex's Notepad goes with Codex
   await expect(notes).toHaveCount(0);
   await expect(panes).toHaveCount(1);
   await codex.click({ modifiers: [beside] }); // Codex's task beside Claude's: Codex in a pane of its own, its Notepad above
@@ -376,7 +376,7 @@ test("an app is selected as an actor is: one thing selected, the panes below lef
   await expect(notes).toHaveClass(/focused/);
   await expect(task).toHaveAttribute("aria-current", "true");
   await page.mouse.move(0, 0);
-  await codex.click();
+  await codex.click({ modifiers: ["Alt"] }); // Codex in Claude's task's place (⌥): Claude's open in no tab
   await expect(notes).toHaveCount(0);
   await (await app()).click({ modifiers: [beside] }); // ⌘: beside, no task entered
   await expect(notes).toHaveCount(1);

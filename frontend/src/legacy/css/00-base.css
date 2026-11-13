@@ -5,6 +5,7 @@
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --t-call: #1f8a3b; --t-output: #74c487; --t-gatherer: #e8b600;
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
+  --well: #e7e6e0;                   /* the well the work area's tasks sit in, under the tabs' bar */
   --pick: var(--s7);                 /* actors selected to move together: violet, not the blue of the one shown */
   /* the Transcript view's terminal: the page's own surface, so the history is part of the page in either theme */
   --term-bg: var(--surface); --term-ink: #2b2a27; --term-dim: #6f6c65; --term-faint: #a09d95; --term-user: #efeee9; --term-ok: #2f9a4c;
@@ -22,7 +23,7 @@
     color-scheme: dark;
     --page: #111110; --surface: #1f1f1d; --side: #121211; --side-rule: rgba(255,255,255,0.14); --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16); --well: #0a0a09;
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;
@@ -38,7 +39,7 @@
   color-scheme: dark;
   --page: #111110; --surface: #1f1f1d; --side: #121211; --side-rule: rgba(255,255,255,0.14); --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16); --well: #0a0a09;
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;

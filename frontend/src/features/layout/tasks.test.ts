@@ -54,7 +54,12 @@ describe("a task's tabs", () => {
     t.set(T, { id: "c1" });
     t.addTab(T, { id: "c2" });
     const e = document.createElement("div");
-    drawStrip(e, "Parser work", t.tabs(T), { show: () => {}, close: () => {}, rename: () => {}, add: () => {} });
+    drawStrip(e, { name: "Parser work", faces: [], about: "" }, t.tabs(T), {
+      show: () => {},
+      close: () => {},
+      rename: () => {},
+      add: () => {},
+    });
     expect(e.querySelector(".lay-sname")!.textContent).toBe("Parser work");
     expect([...e.querySelectorAll(".lay-ttab")].map((c) => [c.textContent, c.getAttribute("aria-selected")])).toEqual([
       ["Tab 1×", "true"],
