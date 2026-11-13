@@ -10,6 +10,7 @@ import { addItem, keepSizes, leaves, move, swap, toSide, view, type Side, type Z
 import { arrangeBlocks, type Put } from "./blocks";
 import { Mover } from "./move";
 import { Placer } from "./place";
+import { Tabs } from "./tabs";
 import { isSplit, type Node, type Rect, type Size, type Split } from "./tree";
 
 /** A panel shown: its task's key (null: a block of its own, kept nowhere -- a terminal, the page with no actor), its item
@@ -239,6 +240,12 @@ export interface WorkHooks {
   label: (block: string) => string;
   /** A task dropped on the work area from the list: opened beside the tasks shown (it goes where it was dropped). */
   open: (key: string) => void;
+  /** The task in focus (tabs.ts). */
+  focus: () => string | null;
+  /** These tasks shown in place of those shown, as they were left: a screen tab shown (tabs.ts). */
+  enter: (tasks: string[], focus: string | null) => Promise<void>;
+  /** What the actors of these tasks do, all told: "asking", "error", "working", or "". */
+  status: (tasks: string[]) => string;
 }
 /** What a panel (or a task, by its strip) can be moved to from its menu: a side, or another's place; `task`: the task is
  * moved (its strip, or the head of its only panel shown). */
@@ -262,6 +269,9 @@ export class Work {
   private readonly stripBox: HTMLElement;
   private readonly placer: Placer;
   private readonly mover: Mover;
+  /** The screen tabs (tabs.ts). */
+  readonly tabs: Tabs;
+  private holding = false; // a tab being shown: the tasks' arrangement held as it is meanwhile
 
   constructor(
     work: HTMLElement,
@@ -279,10 +289,25 @@ export class Work {
     this.stripBox = document.createElement("div");
     this.stripBox.className = "lay-strips";
     work.append(this.stripBox);
+    this.tabs = new Tabs(work, {
+      shown: () => (this.last?.blocks || []).filter((b) => !b.startsWith("\u0002")),
+      focus: hooks.focus,
+      enter: hooks.enter,
+      name: hooks.label,
+      status: hooks.status,
+      screen: () => this.screen,
+      setScreen: (screen) => {
+        this.screen = screen;
+        this.saveScreen();
+      },
+      hold: (on) => (this.holding = on),
+      changed: () => this.place(),
+    });
     this.placer = new Placer(work, {
       tree: (box) => this.tree(box),
       node: (id) => this.last?.nodes.get(id) ?? null,
       resized: (key, sizes, done) => this.resized(key, sizes, done),
+      inset: () => this.tabs.height(),
     });
     this.mover = new Mover(work, {
       rects: () => this.rects(),
@@ -357,8 +382,9 @@ export class Work {
     for (const [k, t] of Object.entries(built.added)) this.trees[k] = { tree: t, at: Date.now() };
     if (Object.keys(built.added).length) this.save();
     if (this.put && leaves(built.screen).includes(this.put.key)) this.put = null; // put where it was dropped
-    if (!this.hooks.known()) {
-      // (no task known yet, each panel a block of its own: the tasks' arrangement kept as it is till they are)
+    if (!this.hooks.known() || this.holding) {
+      // (no task known yet, each panel a block of its own -- or a tab being shown, its tasks coming one by one: the
+      // tasks' arrangement kept as it is till they are)
     } else if (JSON.stringify(built.screen) !== JSON.stringify(this.screen)) {
       this.screen = built.screen;
       this.saveScreen();
@@ -370,6 +396,7 @@ export class Work {
         this.strips.delete(b);
       }
     this.last = built;
+    this.tabs.draw();
     return built.tree;
   }
 

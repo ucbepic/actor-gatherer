@@ -26,6 +26,8 @@ export interface PlaceHooks {
   node: (id: string) => HTMLElement | null;
   /** A split's sizes, its bar dragged (`done`: let go) or double-clicked: the page keeps them, and places again. */
   resized: (key: string, sizes: Size[], done: boolean) => void;
+  /** How much of the box's top is taken (the screen tabs' strip): the panels under it. */
+  inset?: () => number;
 }
 
 const SPOT = ["left", "top", "width", "height", "bottom"] as const;
@@ -72,7 +74,8 @@ export class Placer {
       this.drawBars();
       return;
     }
-    const laid = lay(tree, { x: 0, y: 0, ...box }, (kid, cross) => this.natural(kid, cross));
+    const top = Math.min(box.h, this.hooks.inset ? this.hooks.inset() : 0);
+    const laid = lay(tree, { x: 0, y: top, w: box.w, h: box.h - top }, (kid, cross) => this.natural(kid, cross));
     const now = new Map<string, HTMLElement>();
     for (const [id, r] of laid.rects) {
       const e = this.hooks.node(id);

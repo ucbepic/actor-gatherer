@@ -24,8 +24,8 @@ function paneOf(win) { return panes.others.find((p) => p.frame.contentWindow ===
 // A row of the list clicked: shown in the pane in focus, or (Ctrl/⌘) beside it.
 // An actor that is a task of its own (07-panes.js's TASKS), with ⌘/Ctrl: it and its apps beside (openTaskBeside); one in a
 // task with others, it alone beside.
-function pick(g, c, ev) {
-  if (!(ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT)) return show(g, c);
+async function pick(g, c, ev) {
+  if (!(ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT)) { await viaTabs(taskKey(g, c), ev); return show(g, c); }
   const k = taskKey(g, c);
   return k && !k.startsWith(`${g}\u0000t`) ? openTaskBeside(g, k, c) : openBeside(g, c);
 }
@@ -385,7 +385,8 @@ function startPlacing() {
   if (PANE || SNAPSHOT || workPlacer) return;
   const work = document.querySelector(".work");
   workPlacer = window.agNext.layout.work(work, { shown: shownPanels, min: chatMin, narrow: () => NARROW.matches,
-    old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped });
+    old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped,
+    focus: selectedTask, enter: enterTasks, status: tasksStatus });
   NARROW.addEventListener("change", placeWork);
   // a task's row dragged from the list over the work area (05-agent-list.js's listDrag): moved there, if it is shown, else
   // opened beside the tasks shown, on the side of the one it is dropped on
@@ -395,6 +396,55 @@ function startPlacing() {
   });
   placeWork();
 }
+// SCREEN TABS (features/layout/tabs.ts). A click in the list on an item of task `k` (`ev`, no key held): another tab
+// holding it shown first; else, the tab shown kept (two tasks or more, or named), a new tab for it; ⌥: a new tab, always.
+// Then shown as the click would anyway.
+async function viaTabs(k, ev) {
+  if (!workPlacer || !k || !ev || SNAPSHOT || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+  if (ev.altKey) workPlacer.tabs.fresh();
+  else await workPlacer.tabs.route(k);
+}
+// A tab shown: its tasks in place of those shown, each as it was left -- `focus` (else its first) entered as a click on its
+// row does, closing the rest (terminals kept), the others opened beside it, as ⌘+click does
+async function enterTasks(keys, focus) {
+  const order = [focus, ...keys].filter((k, i, all) => k && all.indexOf(k) === i);
+  for (const [i, k] of order.entries()) {
+    const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+    if (!gg || id === undefined) continue;
+    const beside = i > 0;
+    if (/^t\d+$/.test(id)) {
+      const t = Number(id.slice(1));
+      if (!taskById(g, t)) continue;
+      if (beside && !taskLead(gg, t)) await openTaskApps(g, null, k, (taskLayout(k) || {}).apps || null, true);   // apps alone
+      else await openTask(g, t, null, beside ? { metaKey: true } : null);
+    } else if (isAppItem(id)) {
+      if (!appInfo(g, id.slice(APP_ITEM.length))) continue;
+      if (beside) await openTaskApps(g, null, k, null, true);
+      else { enterAppTask(g, k); await taskAppsOpening; }
+    } else if (gg.agents.some((a) => a.channel === id)) await (beside ? openTaskBeside(g, k, id) : show(g, id));
+  }
+}
+// what the actors of tasks `keys` do, all told: one asking the reader, one failed, one at work
+function tasksStatus(keys) {
+  const said = new Set();
+  for (const k of keys) {
+    const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+    if (!gg || id === undefined || isAppItem(id)) continue;
+    const actors = /^t\d+$/.test(id) ? taskActors(gg, Number(id.slice(1))) : gg.agents.filter((a) => a.channel === id);
+    for (const a of actors) said.add(statusOf(a)[0]);
+  }
+  return said.has("asking") ? "asking" : said.has("error") || said.has("failed") ? "error"
+    : said.has("running") || said.has("background") ? "working" : "";
+}
+// ⌃Tab (⌃⇧Tab: back) in the ag app -- a browser keeps those keys for its own tabs: the next screen tab shown
+if (!SNAPSHOT) document.addEventListener("keydown", (ev) => {
+  if (!ev.ctrlKey || ev.metaKey || ev.altKey || ev.key !== "Tab") return;
+  let app = false;
+  try { app = !!window.top.agApp; } catch (e) { /* not ours */ }
+  if (!app) return;
+  ev.preventDefault();
+  if (PANE) PANE.tab(window, ev.shiftKey ? -1 : 1); else if (workPlacer) workPlacer.tabs.step(ev.shiftKey ? -1 : 1);
+}, true);
 // What a block of the work area is called on its strip (shown while there are others): its task's name, an actor's, an
 // app's; a terminal's, the coordinator agent's (no task)
 function blockName(k) {
@@ -945,6 +995,7 @@ if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
   close(win) { const p = paneOf(win); if (p) closePane(p); },
   openLink(win, url) { const p = paneOf(win); return !!p && openLink(p.g, p.c, url); },   // a link clicked in it (linkClicked)
   move(win, on) { const p = paneOf(win); if (!on) { moveEnd(); return true; } return !!p && moveStart(p.node); },   // its head dragged
+  tab(win, by) { if (workPlacer) workPlacer.tabs.step(by); },   // ⌃Tab in it (the ag app): the next screen tab
   menu(win, x, y) {                                  // its head right-clicked, at (x, y) in its frame
     const p = paneOf(win), r = p && p.frame.getBoundingClientRect();
     return !!p && moveMenu(p.node, r.left + p.frame.clientLeft + x, r.top + p.frame.clientTop + y);
