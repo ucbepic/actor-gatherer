@@ -213,6 +213,61 @@ class GroupsTest(unittest.TestCase):
         host._write_one(("self:c1", {}, [{"type": "app_attached"}], []))
         self.assertEqual(ran[-1], "a")
 
+    def sessions_here(self):
+        started = sessions.Sessions()
+        self.addCleanup(started.close)
+        return started
+
+    def test_an_actor_started_on_its_own_is_one_before_its_first_call(self):
+        """Its record is in before ag's first of the conversation, which ag writes only when it has none: so its first
+        call is built with its own context alone, and it is listed on its own from the start."""
+        started = self.sessions_here()
+        s = groups.start_alone(started, "b", self.tmp.name, "claude")
+        sid = s["session_id"]
+        self.assertEqual((s["gatherer"], s["cwd"], s["harness"]), ("self:" + sid, os.path.abspath(self.tmp.name), "claude"))
+        [(via, [event])] = self.recorded                                   # one call to ag, as the group it runs under
+        self.assertEqual((via, event["properties"]), ("b", {"channel": sid}))
+        self.assertEqual(event["payload"], {"group": "self:" + sid, "under": "b", "name": "", "folder": None})
+        self.assertNotIn("was", event["payload"])                          # from no group: told of no move
+        self.assertEqual((self.members("self:" + sid), self.members("b")), ([sid], ["c2"]))
+        self.assertEqual(groups.launch_group(sid, "self:" + sid), "b")    # ag runs it in the group it was started under
+        listed = {g["name"]: (g.get("alone", False), sorted(a["channel"] for a in g["agents"]))
+                  for g in data.home(started.list())["gatherers"]}
+        self.assertEqual(listed["self:" + sid], (True, [sid]))
+        self.assertEqual(listed["b"], (False, ["c2"]))
+
+    def test_listed_on_its_own_while_its_record_is_still_being_written(self):
+        started = self.sessions_here()
+        sid = started.create("a", self.tmp.name, harness="claude", alone=True)["session_id"]
+        listed = {g["name"]: (g.get("alone", False), sorted(a["channel"] for a in g["agents"]))
+                  for g in data.home(started.list())["gatherers"]}
+        self.assertEqual(listed["self:" + sid], (True, [sid]))
+        self.assertEqual(listed["a"], (False, ["c1", "c3"]))
+
+    def test_forgotten_before_its_first_message_it_is_listed_nowhere(self):
+        started = self.sessions_here()
+        sid = groups.start_alone(started, "a", self.tmp.name, "claude")["session_id"]
+        started.discard(sid)
+        self.assertEqual(data.alone_names(), ["self:" + sid])              # its record stays: ag keeps every event
+        self.assertNotIn("self:" + sid, [g["name"] for g in data.home(started.list())["gatherers"]])
+
+    def test_not_started_on_its_own_when_ag_does_not_take_its_record(self):
+        started = self.sessions_here()
+        with unittest.mock.patch.object(actions, "insert", side_effect=RuntimeError("no")):
+            with self.assertRaises(groups.GroupError):
+                groups.start_alone(started, "a", self.tmp.name, "claude")
+        self.assertEqual(started.list(), [])
+
+    def test_not_started_on_its_own_on_a_harness_that_names_its_session_at_its_first_call(self):
+        started = self.sessions_here()
+        for harness in ("codex", "antigravity"):
+            with self.assertRaisesRegex(groups.GroupError, "names its session only at its first call"):
+                groups.start_alone(started, "a", self.tmp.name, harness)
+        for under in ("nowhere", "self:c1"):
+            with self.assertRaises(groups.GroupError):
+                groups.start_alone(started, under, self.tmp.name, "claude")
+        self.assertEqual((started.list(), self.recorded), ([], []))
+
     def test_refused_for_no_such_group_or_its_own(self):
         for to in ("a", "nowhere"):
             with self.assertRaises(groups.GroupError):
@@ -222,6 +277,10 @@ class GroupsTest(unittest.TestCase):
         os.remove(paths.home_db())
         with self.assertRaises(groups.GroupError):
             groups.plan("a", "b", ["c1"])
+        started = self.sessions_here()
+        with self.assertRaises(groups.GroupError):
+            groups.start_alone(started, "a", self.tmp.name, "claude")
+        self.assertEqual(started.list(), [])
 
 
 

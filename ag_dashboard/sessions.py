@@ -133,6 +133,7 @@ PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk
 CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
 COORDINATOR = "coordinator"                    # the role of a gatherer's gatherer agent (coordination.py)
 ROLES = (COORDINATOR,)
+ALONE = "self:"                                 # an actor on its own's group of one, `self:<channel>` (groups.py)
 SENT_KEPT = 20                                  # a session's latest messages from Chat kept in memory (`send`)
 #: What tells a command an actor runs which actor runs it, and which dashboard delivers its messages (coordination.py,
 #: `ag actors`): set in every session the dashboard starts (`actor_env`), as each harness also says (its own session's
@@ -819,10 +820,11 @@ class Sessions:
             return out
 
     def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = harness_kit.DEFAULT,
-               model: Optional[str] = None, role: Optional[str] = None) -> dict:
+               model: Optional[str] = None, role: Optional[str] = None, alone: bool = False) -> dict:
         """A new session of `harness` in `gatherer` (a new gatherer if none has the name), to run in `cwd`
         on `model` (None: the harness's default), for `role` (`known_role`; None: an actor like any other). Its agent starts
-        with its first message."""
+        with its first message. `alone`: listed on its own, its row's group its group of one (`self:<its id>`), run under
+        `gatherer` -- its `group` record is the caller's to write (groups.py's `start_alone`)."""
         gatherer = (gatherer or "").strip()
         if not GATHERER.fullmatch(gatherer):
             raise SessionError("a gatherer's name may hold letters, digits, '.', '_' and '-' only")
@@ -842,11 +844,11 @@ class Sessions:
         conn = self._db()
         try:
             conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0, ?)",
-                         (session_id, gatherer, harness, cwd, permission_mode, _now(), model,
-                          session_id if picks_id(harness) else None, role))
+                         (session_id, ALONE + session_id if alone else gatherer, harness, cwd, permission_mode, _now(),
+                          model, session_id if picks_id(harness) else None, role))
         finally:
             conn.close()
-        self._changed(gatherer, session_id)
+        self._changed(ALONE + session_id if alone else gatherer, session_id)
         return self._row(session_id)
 
     def adopt(self, gatherer: str, session_id: str) -> dict:

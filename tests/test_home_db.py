@@ -252,6 +252,14 @@ class FirstGroupTest(test_server.HomeBase):
         self.put("a", "c1", test_server.user("q", 1))                     # a new process: nothing known of c1
         self.assertEqual(self.groups(), [("c1", "a"), ("c1", "x")])
 
+    def test_none_over_the_record_of_an_actor_started_on_its_own(self):
+        """The dashboard puts its record in before its first call (groups.py's `start_alone`), through ag as the group it
+        runs under: that record is the conversation's first, and ag adds none at its first call."""
+        self.ask({"op": "insert", "gatherer": "a", "properties": {"channel": "c1"},
+                  "events": [{"type": "group", "id": "group:c1:alone", "payload": {"group": "self:c1", "under": "a"}}]})
+        self.put("a", "c1", test_server.DEV, test_server.user("q", 1))
+        self.assertEqual(self.groups(), [("c1", "self:c1")])             # never in `a`, not even before it
+
     def test_none_while_each_gatherer_has_a_database_of_its_own(self):
         os.remove(paths.home_db())
         self.put("a", "c1", test_server.DEV)

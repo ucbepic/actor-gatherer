@@ -33,6 +33,9 @@ across groups is refused.
                                             (`self:<channel>`) -- it shares with no one, no one with it, and it has no
                                             coordinator agent -- with the apps of its task (none of its actors but it),
                                             and its app's own window if it is an app's agent; `move` brings it back
+    start_alone(started, gatherer, cwd, harness)   a new actor on its own from its start (the list's "+" beside
+                                            "+ New group"): its session made (sessions.py's `create`, `alone`) and its
+                                            `group` record in before its first call, so it never shares
     runs_under(group)                       the group ag runs a write of `group`'s under: an actor on its own's, the
                                             group it left (`launch_group`) -- ag keeps a config for the home's groups,
                                             and would make one for a name it does not know
@@ -45,6 +48,7 @@ import secrets
 import sqlite3
 from typing import Dict, Iterable, List, Optional
 
+import harness_kit
 from app_kit import AppError
 
 from . import actions, data, folders, home, sessions, tasks, titles
@@ -416,6 +420,36 @@ def alone(gatherer: str, channel: str) -> dict:
     return {"group": to, "actors": [channel], "apps": moved, "from": gatherer}
 
 
+def start_alone(started, gatherer: str, cwd: str, harness: str, permission_mode: str = "auto",
+                model: Optional[str] = None) -> dict:
+    """A new actor on its own from its start: a session of `harness` in `cwd` (`started`'s `create`), listed as its group
+    of one and run under `gatherer`, a group of the home's -- ag runs every session in one (`launch_group`) -- with its
+    `group` record, {group: self:<channel>, under: gatherer, name: "", folder: none}, put in before its first call as the
+    conversation's first record -- ag writes one of its own only when it has none (ag_harness's `grouped`), and none
+    with an insert that brings one -- so even its first call is built with its own context alone. No `was`: it came from no group, so it is never told it left one (the policy's
+    `group_changes`). -> the session. GroupError: not on the home's one database, no such group, or a harness that
+    names its session only at its first call (codex's thread, agy's conversation: no channel to record before then);
+    or ag did not take the record (the session forgotten)."""
+    if not home.merged():
+        raise GroupError("an actor on its own needs the home's one database: run `ag home merge` first")
+    if is_alone(gatherer) or gatherer not in data.gatherer_names():
+        raise GroupError(f"no group {gatherer!r} to run it under")
+    if sessions.picks_id(harness):
+        rules = harness_kit.get(harness)
+        raise GroupError(f"{rules.label if rules else harness} names its session only at its first call: "
+                         "start it in a group, then drag it out of the group")
+    s = started.create(gatherer, cwd, permission_mode, harness, model, alone=True)
+    channel = s["session_id"]
+    event = {"type": GROUP, "id": f"{GROUP}:{channel}:{secrets.token_hex(6)}", "properties": {"channel": channel},
+             "payload": {"group": ALONE + channel, "under": gatherer, "name": "", "folder": None}}
+    try:
+        actions.insert(gatherer, [event])
+    except (RuntimeError, OSError, ValueError) as exc:
+        started.discard(channel)
+        raise GroupError(f"ag did not take it: {exc}; nothing was started") from None
+    return s
+
+
 def runs_under(group: str) -> str:
     """The group ag runs a write of `group`'s under (`ag home insert`, module doc): `group` -- or, for an actor on its
     own, the group it left (`launch_group`)."""
@@ -424,8 +458,9 @@ def runs_under(group: str) -> str:
 
 def launch_group(channel: str, group: str) -> str:
     """The group a session's process starts under (`ag --gatherer`, sessions.py): its own -- or, for an actor on its
-    own, the group it left, as its latest `group` record says: ag runs a session in a group of the home, and what the
-    actor shares is its record's, no one's. Else the home's first group."""
+    own, the group it left, as its latest `group` record says (`was`; one started on its own: the one it was started
+    under, `under`): ag runs a session in a group of the home, and what the actor shares is its record's, no one's.
+    Else the home's first group."""
     if not is_alone(group):
         return group
     path = home.home_db()
@@ -439,7 +474,8 @@ def launch_group(channel: str, group: str) -> str:
             row = None
         finally:
             conn.close()
-        was = (folders._payload(row[0]) or {}).get("was") if row else None
+        p = (folders._payload(row[0]) or {}) if row else {}
+        was = p.get("was") or p.get("under")
         if was and not is_alone(str(was)):
             return str(was)
     names = data.gatherer_names()

@@ -247,6 +247,68 @@ test("in the home's one database, an actor dragged outside every group asks firs
   });
 });
 
+// An actor on its own from its start (05-group-moves.js's aloneNew): the list head's "+" beside "+ New group" opens a
+// box -- the directory the latest active actor works in, the harnesses that can start on their own (Codex names its
+// session only at the first call: said, not offered) -- and starts one on its own, run under the shown actor's group,
+// listed as its own row; with a database per gatherer there is none
+async function startingAlone(page: Page, merged: boolean, started: string) {
+  const state = { started: false };
+  await page.route("**/api/home", async (route) => {
+    const home = await (await route.fetch()).json();
+    const demo = home.gatherers.find((x: Group) => x.name === GATHERER) as Group;
+    for (const a of demo.agents) a.cwd = "/work/demo";
+    home.harnesses = ["claude", "codex"];
+    for (const h of home.harnesses) home.harness_info[h] = { ...home.harness_info[h], runs: true };
+    home.harness_info.codex.picks_id = true;
+    if (state.started) {
+      const claude = demo.agents.find((a) => a.harness === "claude")!;
+      const fresh = { ...claude, channel: started, status: "idle", last_user_message: null, name: null, last: null };
+      home.gatherers.push({ ...demo, name: `self:${started}`, alone: true, agents: [fresh] });
+    }
+    home.merged = merged;
+    await route.fulfill({ json: home });
+  });
+  await streamsAsRequests(page);
+  await page.route("**/api/stream*", (route) => route.abort());
+  const asked: Record<string, unknown>[] = [];
+  await page.route("**/api/sessions", async (route) => {
+    asked.push(route.request().postDataJSON());
+    state.started = true;
+    await route.fulfill({ json: { session_id: started, gatherer: `self:${started}`, harness: "claude" } });
+  });
+  return asked;
+}
+
+test("in the home's one database, the list head's + starts an actor on its own", async ({ page }) => {
+  const started = "a1012e00-0000-4000-8000-0000000000f1";
+  const asked = await startingAlone(page, true, started);
+  await open(page);
+  await expect(page.locator("#agents .gatherer.alone")).toHaveCount(0);
+  const plus = page.locator(".aside-head button.alone-new");
+  await expect(plus).toHaveAttribute("title", "New actor on its own: it shares context with no group");
+  await plus.click();
+  const box = page.locator(".dw-menu.alone-box");
+  await expect(box.locator(".head")).toHaveText("New actor on its own");
+  await expect(box.getByRole("textbox", { name: "Working directory" })).toHaveValue("/work/demo");
+  await expect(box.locator("button.go")).toHaveCount(1); // Codex not offered: said why
+  await expect(box.locator("button.go")).toContainText("Claude Code");
+  await expect(box).toContainText(
+    "Codex names its session only at the first call: start it in a group, then drag it out.",
+  );
+  await box.locator("button.go").click();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toEqual({ gatherer: GATHERER, cwd: "/work/demo", harness: "claude", alone: true });
+  await expect(box).toBeHidden();
+  await expect(page.locator("#agents .gatherer.alone button.agent")).toHaveCount(1);
+});
+
+test("with a database per gatherer, the list head has no + for an actor on its own", async ({ page }) => {
+  await startingAlone(page, false, "a1012e00-0000-4000-8000-0000000000f2");
+  await open(page);
+  await expect(page.locator(".aside-head").getByRole("button", { name: "+ New group" })).toBeVisible();
+  await expect(page.locator(".aside-head button.alone-new")).toHaveCount(0);
+});
+
 // An actor on its own (05-group-moves.js's aloneShut): open, its row at the top with its ×; closed, it leaves the top for
 // a line at the list's end, "1 closed", folded till opened (kept in this browser) -- never "hidden" as a
 // group is; in the rail, that line only once its foot shows the closed ones

@@ -435,8 +435,9 @@ class Server:
         those the harness had taken back and sends again (`kept`), in reads again. Events given their time (`at`):
         each stored at it, in one transaction, no rows said."""
         manager = manager or self.manager(gatherer)
-        self.grouped(manager, gatherer, properties)
-        stored = self.events_of(manager, gatherer, events, properties)
+        if not any(isinstance(e, dict) and e.get("type") == GROUP for e in events):   # one it is given: its first, if
+            self.grouped(manager, gatherer, properties)                             # it has none (an actor started
+        stored = self.events_of(manager, gatherer, events, properties)              # on its own: the dashboard's)
         times = [e.get("at") if isinstance(e, dict) and isinstance(e.get("at"), str) else None for e in events]
         if any(times):
             manager.insert_at(gatherer, stored, times)

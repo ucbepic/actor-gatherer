@@ -420,6 +420,7 @@ function renderAgents() {
   // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (05-gatherer-folders.js)
   aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }), outsideDrop(),
     SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new group" }, "+ New group"),
+    aloneNew(),                                      // an actor on its own (05-group-moves.js)
     SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep groups in",
       "aria-label": "New folder, to keep groups in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
