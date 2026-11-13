@@ -123,7 +123,10 @@ async function refresh(userAction = false) {
     if (!panes.checked) restorePanes();
     if (!state.selected) {
       const first = state.home.gatherers.find((g) => g.agents.length && !isHidden(g)) || state.home.gatherers.find((g) => g.agents.length);
-      if (first) state.selected = [first.name, firstAgent(first).channel];
+      if (first) {
+        state.selected = [first.name, firstAgent(first).channel];
+        if (!PANE) autoShown = taskKey(...state.selected);   // shown by itself: the tab's as if empty (07-panes.js's viaTabs)
+      }
     }
     if (state.selected && !PANE) showActorsApp(...state.selected);   // an app's actor (19-app-actors.js): its panel above
     await loadAgent().catch(() => { state.agent = null; });   // a session started here may have no database yet

@@ -525,8 +525,9 @@ const isCoordinator = (a) => !!a && a.role === "coordinator";
 function agentRow(g, a, group) {
   const [cls, label] = statusOf(a);
   const pk = picked(g, a);
-  const current = !appSelected() && !appsOnly && isAt(focusedActor(), g.name, a.channel);   // an app selected: it is, not the actor
-  const open = !current && !appsOnly && openActors().some((sel) => isAt(sel, g.name, a.channel));   // (out of sight: not)
+  const away = isAway() && isAt(state.selected, g.name, a.channel);   // this page's own pane's, out of sight (an empty tab)
+  const current = !away && !appSelected() && !appsOnly && isAt(focusedActor(), g.name, a.channel);   // an app selected: it is, not the actor
+  const open = !current && !away && !appsOnly && openActors().some((sel) => isAt(sel, g.name, a.channel));   // (out of sight: not)
   const naming = !!state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, a.channel);
   const named = a.name && a.name.text;
   // its name -- else what it was last asked -- double-clicked once it is the one shown (or F2): named there. Not a single
@@ -560,7 +561,7 @@ function agentRow(g, a, group) {
       branchChip(g, a),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null),
-    el("span", { class: "a-face" }, pickMark(g, a, plainFace(a))));
+    el("span", { class: "a-face" }, tabMark(taskKey(g.name, a.channel)), pickMark(g, a, plainFace(a))));
   return naming || isCoordinator(a) ? row : dropOnItem(dragRow(row, g, a), g, a.channel);
 }
 // TASKS (tasks.py, `home.tasks`: {gatherer: {tasks: [{id, name}], tasked: {item: task id}}}): what the reader works with
@@ -714,6 +715,14 @@ const appFace = (o) => el("span", { class: "logo app-face", title: appTitle(o) }
   ? el("img", { src: `/apps/mark/${encodeURIComponent(o.app.name)}.svg`, alt: "", draggable: "false" }) : strokeIcon(ICONS.app, 16));
 // several apps' marks, stacked over one another as faces are (`most` at most); none: nothing
 const appStack = (list, most = 3) => list.length ? el("span", { class: "t-apps" }, ...list.slice(0, most).map(appMarkOf)) : null;
+// Where a row's task is OPEN (07-panes.js's screen tabs): its tab's number -- filled, the tab shown; ringed, another.
+// None, open nowhere: a click opens it in a tab of its own, and it can be dragged onto the work area.
+function tabMark(k) {
+  const at = k && workPlacer && !SNAPSHOT ? workPlacer.tabs.where(k) : null;
+  if (!at) return null;
+  const said = at.here ? `Open here, in tab ${at.n}` : `Open in tab ${at.n}: a click brings it forward`;
+  return el("span", { class: "tab-no" + (at.here ? " here" : ""), title: said, "aria-label": said }, String(at.n));
+}
 // an actor's face alone, no harness's badge (actorLogo's): its avatar, else its harness's mark
 function plainFace(a) {
   const svg = SNAPSHOT && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
@@ -758,7 +767,7 @@ function taskRow(g, t, group) {
   el("div", {},
     naming ? nameBox() : el("div", { class: "name", text: name, ...nameOnDouble(g, k) }),
     rowActs(first ? addButton(g, first) : null, taskSaveButton(g, t), taskCloseButton(g, t))),
-  el("span", { class: "t-faces" }, ...taskFaces(g, t.id)));
+  el("span", { class: "t-faces" }, tabMark(`${g.name}\u0000t${t.id}`), ...taskFaces(g, t.id)));
   return naming || !first ? row : dropOnItem(dragItems(row, g, () => taskItems(g, t.id)), g, first);
 }
 // A task SAVED: every actor in it saved for later, as an actor's bookmark saves it -- the bookmark filled once every one
@@ -814,7 +823,7 @@ function appRow(g, o) {
     naming ? nameBox() : el("div", { class: "name", text: appShown(o), ...nameOnDouble(g, k) }),
     rowActs(addButton(g, k), SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}: the app closed`, "aria-label": `Close ${o.app.label}` },
       () => closeApp(g.name, o), closeIcon()))),
-  el("span", { class: "a-face" }, appFace(o)));
+  el("span", { class: "a-face" }, tabMark(taskKey(g.name, k)), appFace(o)));
   return naming ? row : dropOnItem(dragItems(row, g, () => [k]), g, k);
 }
 // An app SELECTED, as an actor is (07-panes.js's selectAppPane): its task entered first, if another is shown -- as a click
@@ -822,10 +831,10 @@ function appRow(g, o) {
 // selected. ⌘/Ctrl: no task entered, its panel added beside the ones shown.
 async function selectApp(gname, o, ev = null) {
   if (!state.home.gatherers.some((x) => x.name === gname)) return;
-  await viaTabs(taskKey(gname, appItem(o.id)), ev);  // its screen tab, or a new one (07-panes.js)
+  const there = await viaTabs(taskKey(gname, appItem(o.id)), ev, appItem(o.id));   // where its task is open (07-panes.js)
   const g = state.home.gatherers.find((x) => x.name === gname);
   if (!g) return;
-  if (!(ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT)) {
+  if (there || !(ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT)) {
     const k = taskKey(gname, appItem(o.id));
     if (selectedTask() !== k) {
       const id = appTaskOf(gname, o.id), lead = id === null ? null : taskLead(g, id);
@@ -867,7 +876,7 @@ async function closeApp(gname, o) {
 // ⌘/Ctrl: the whole task beside the one shown (07-panes.js's openTaskBeside).
 async function openTask(gname, id, focus = null, ev = null) {
   if (!state.home.gatherers.some((x) => x.name === gname)) return;
-  await viaTabs(`${gname}\u0000t${id}`, ev);         // its screen tab, or a new one (07-panes.js)
+  const there = await viaTabs(`${gname}\u0000t${id}`, ev);   // where it is open (07-panes.js)
   const g = state.home.gatherers.find((x) => x.name === gname);
   if (!g) return;
   const k = `${gname}\u0000t${id}`, sel = focusedActor(), was = taskLayout(k);
@@ -883,7 +892,7 @@ async function openTask(gname, id, focus = null, ev = null) {
     if (p) selectAppPane(p);
     return;
   }
-  if (ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT) return openTaskBeside(gname, k, first);   // the whole task, beside
+  if (!there && ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT) return openTaskBeside(gname, k, first);   // the whole task, beside
   if (!appsOnly && sel && taskKey(sel[0], sel[1]) === k) {   // shown already: as it is, once laid out
     if (focus) await show(gname, focus);
     else if (!tasksLaidOut.has(k)) await show(gname, sel[1]);   // shown by chance (as the page opened): laid out now (enterTask)
@@ -920,12 +929,12 @@ function addButton(g, k, label = null) {
   el("span", { class: "task-add-in", "aria-hidden": "true" }, "+", label ? el("span", { class: "t-lbl", text: label }) : null));
   return b;
 }
-// the task of item `k` shown, if another is: entered as a click on it would
+// the task of item `k` shown, if another is: entered as a click on it would -- where it is open, else in a tab of its own
 async function showItemsTask(g, k) {
   if (selectedTask() === taskKey(g.name, k)) return;
   const id = itemTaskOf(g, k), a = isAppItem(k) ? null : actorOf(g, k);
-  if (a) await (id === null ? show(g.name, a.channel) : openTask(g.name, id));
-  else { const o = appInfo(g.name, k.slice(APP_ITEM.length)); if (o) await selectApp(g.name, o); }
+  if (a) await (id === null ? pick(g.name, a.channel, {}) : openTask(g.name, id, null, {}));
+  else { const o = appInfo(g.name, k.slice(APP_ITEM.length)); if (o) await selectApp(g.name, o, {}); }
 }
 // The task shown, its key changed by a change of the tasks (a lone item made one with others, or one joined): laid out
 // still, and still the one entered, under its new key

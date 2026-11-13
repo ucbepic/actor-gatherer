@@ -73,6 +73,7 @@ function streamTake(name, data, mine = () => true, sel = null) {
           const first = got.gatherers.find((g) => g.agents.length);
           if (first) {
             state.selected = [first.name, firstAgent(first).channel];
+            autoShown = taskKey(...state.selected);   // shown by itself: the tab's as if empty (07-panes.js's viaTabs)
             showActorsApp(...state.selected);        // an app's actor: its panel above (19-app-actors.js)
             await loadAgent(); render(true); connect();
           }

@@ -78,8 +78,8 @@ export function firstTree(items: Shown<unknown>[], old: Old | null): Node | null
 }
 
 export const leafId = (block: string, item: string): string => `${block}\u0001${item}`;
-const STRIP = "\u0003strip", // a block's strip, as an item of it
-  STRIP_H = 24;
+const STRIP = "\u0003strip", // a block's strip, as an item of it: the head of its card
+  STRIP_H = 34;
 
 /** The work area's tree for the panels `shown`, the arrangements kept (`trees`) and an older page's (`old`): a block for
  * each task shown, arranged as `screen` says (blocks.ts; `put`, where one newly shown goes), each under its `strip` while
@@ -96,6 +96,8 @@ export function build<N>(
     put?: Put | null;
     strip?: (block: string) => N;
     tabbed?: (block: string) => boolean;
+    /** the room between two blocks (their cards apart); none given, a line -- a band under blocks of apps alone */
+    gap?: number;
   },
 ): Built<N> {
   const out: Built<N> = {
@@ -197,8 +199,9 @@ export function build<N>(
     const s: Shows = {
       key: `b${out.splits.size}`,
       dir: v.dir,
-      bar: band ? TOP_BAND : 1,
+      bar: opts.gap ?? (band ? TOP_BAND : 1),
       thick: band,
+      gap: opts.gap !== undefined,
       kids,
       sizes,
       src: v.src,

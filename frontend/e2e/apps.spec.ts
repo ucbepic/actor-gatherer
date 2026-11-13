@@ -34,11 +34,9 @@ const notepadFrame = (page: Page) => page.frames().find((f) => /^http:\/\/notepa
 
 test("an app opens above the panes, with no agent attached, its panel on an origin of its own", async ({ page }) => {
   await openActor(page, CLAUDE);
-  const { pane, panel } = await openNotepad(page);
-  await expect(page.locator("#panes > .pane")).toHaveCount(1); // the actor's pane alone, below it
-  const above = (await pane.boundingBox())!,
-    below = (await page.locator("#panes > .pane").boundingBox())!;
-  expect(above.y + above.height).toBeLessThanOrEqual(below.y);
+  const { pane, panel } = await openNotepad(page); // a task of its own: in a tab of its own, alone
+  await expect(page.locator(".lay-tabs .lay-tab")).toHaveCount(2);
+  await expect(page.locator("#pane-here")).toBeHidden();
   await expect(pane.locator(".app-head")).toContainText("Notepad"); // the test home's actors name no folder: its one
   expect(await pane.locator("iframe").getAttribute("src")).toMatch(/^http:\/\/notepad\.localhost:\d+\/\?/);
   // the actor in focus not attached: attaching puts the two in one task (task_links.py), and opening an app from the
@@ -129,9 +127,10 @@ test("an intent opens the app that takes it and tells its panel; one no app take
 
 test("the panel follows the actor in focus, and the agents attached from its head", async ({ page }) => {
   await openActor(page, CLAUDE);
-  const { pane, panel } = await openNotepad(page);
+  const { pane, panel } = await openNotepad(page); // in a tab of its own, Claude's left in the first
   await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
-  await expect(page.locator("#panes > .pane")).toHaveCount(2);
+  await expect(page.locator("#pane-here")).toBeVisible(); // Codex under it, in this page's own pane
+  await expect(page.locator("#panes > .pane")).toHaveCount(1);
   await expect(panel.locator("#focus")).toHaveText(CODEX_CHANNEL); // the actor's pane in focus now
   await attach(pane, CODEX, /1 agent/);
   await expect(panel.locator("#agents")).toContainText(CODEX_CHANNEL);
