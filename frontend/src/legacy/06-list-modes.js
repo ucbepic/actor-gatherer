@@ -635,9 +635,11 @@ function taskCard(g, t) {
         el("button", { class: "act take-out", type: "button", title: "Take it out of the task: an actor on its own again, detached from the task's apps",
           "aria-label": `Take ${actorTitle(a)} out of the task`, onclick: (ev) => { ev.stopPropagation(); takeOut(g.name, a.channel); } },
         strokeIcon(ICONS.takeOut, 13)));
-    }), ...apps.map((o) => el("div", { class: "c-task-row c-app-row" },
-      el("button", { class: "c-row", type: "button", title: `${o.app.label}: select it, its panel above the panes`,
-        onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); } },
+    }), ...apps.map((o) => el("div", { class: "c-task-row c-app-row", "data-instance": o.id },
+      el("button", { class: "c-row", type: "button", title: `${o.app.label}: select it, its panel above the panes · right-click: move or close its panel`,
+        onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); },
+        // its panel's menu opened: the card put away, as a click puts it away
+        oncontextmenu: (ev) => { appPanelMenu(g.name, o, ev); if (ev.defaultPrevented) cardHide(ev); } },
       appMarkOf(o), el("span", { class: "nm", text: o.name || o.app.label }), el("span", { class: "st", text: o.title || "" })),
       SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}: the app closed, and out of the task`, "aria-label": `Close ${o.app.label}` },
         () => closeApp(g.name, o), closeIcon()),

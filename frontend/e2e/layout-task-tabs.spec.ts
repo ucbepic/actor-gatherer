@@ -3,7 +3,7 @@
 // task's strip (⌥: copied); a tab pressed shows its panels, the task's others closed; closing a panel takes it out of
 // that tab only, and a tab left with none goes; a tab is named by a double-click. Kept in this browser.
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "./test";
+import { closePanel, expect, panelMenu, test } from "./test";
 import { CLAUDE, open } from "./home";
 import { addNotepad } from "./task-home";
 
@@ -11,19 +11,16 @@ const box = async (l: Locator) => (await l.boundingBox())!;
 const notes = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]");
 const here = (page: Page) => page.locator("#pane-here");
 const chips = (page: Page) => page.locator(".lay-strip:visible .lay-ttab");
-const menuItem = (page: Page, name: string | RegExp) =>
-  page.locator(".row-menu[role=menu][aria-label='Move this panel']").getByRole("menuitem", { name });
 
-// Claude and its Notepad, one task; Notepad moved to a new tab of it from its head's menu
+// Claude and its Notepad, one task; Notepad moved to a new tab of it from its menu (its row in the task's card)
 async function notepadInItsOwnTab(page: Page) {
   await open(page);
   const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   await expect(notes(page)).toHaveCount(1);
-  const n = await box(notes(page));
-  await page.mouse.click(n.x + 40, n.y + 12, { button: "right" });
-  await menuItem(page, "To a new tab of this task").click();
+  await (await panelMenu(page, notes(page))).getByRole("menuitem", { name: "To a new tab of this task" }).click();
+  await page.mouse.move(0, 0);
   await expect(chips(page)).toHaveCount(2);
 }
 
@@ -76,7 +73,7 @@ test("closing a panel takes it out of its tab only; a tab left with none goes, i
   page,
 }) => {
   await notepadInItsOwnTab(page);
-  await notes(page).locator(".app-close").click(); // Tab 2's only panel
+  await closePanel(page, notes(page)); // Tab 2's only panel
   await expect(chips(page)).toHaveCount(0); // its tab gone: one tab left, the task as before
   await expect(here(page)).toBeVisible();
   await expect(notes(page)).toHaveCount(0);

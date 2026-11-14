@@ -808,16 +808,18 @@ async function closeTask(gname, id) {
   renderAgents();
 }
 // An app in no task, a task of its own: its row, as an actor's -- what it shows (its title, else its kind) and its kind
-// under it, its "+" and its × (closeApp), its face at its right. Pressed: selected (selectApp); dragged onto another item's
-// row, put in its task, as an item dropped on it is put in one with it.
+// under it, its "+" and its × (closeApp), its face at its right. Pressed: selected (selectApp); right-clicked, its panel's
+// menu (07-panes.js's appPanelMenu: moved, or closed); dragged onto another item's row, put in its task, as an item
+// dropped on it is put in one with it.
 function appRow(g, o) {
   const chosen = appSelected() === o.id, shown = !chosen && panes.apps.some((p) => !p.held && p.instance.id === o.id), k = appItem(o.id);
   const told = appStatusOf(g.name, o.id), last = told && appNotices(g.name, o.id)[0], naming = renamingItem(g.name, k);
   const row = el(naming ? "div" : "button", { class: "agent app-row" + (naming ? " renaming" : ""), ...(naming ? {} : { type: "button" }),
-    "aria-current": chosen ? "true" : "false", "data-key": `${g.name}/${k}`,
+    "aria-current": chosen ? "true" : "false", "data-key": `${g.name}/${k}`, "data-instance": o.id,
     "data-group": OPEN, ...(shown ? { "data-open": "true" } : {}), ...(naming ? {} : { "data-card": appKey(g.name, o.id) }),
-    ...(HOVERS.matches ? {} : { title: `${o.name ? `${o.name} · ` : ""}${o.title ? `${o.app.label} · ${o.title}` : o.app.label}${last ? `\n${last.title}` : ""}${o.folder ? `\n${o.folder}` : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: beside the ones shown\nDouble-click its name (or F2) to ${o.name ? "rename" : "name"} it`}` }),
-    ...(naming ? {} : { onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); }, onkeydown: (ev) => renameKey(ev, g, k) }) },
+    ...(HOVERS.matches ? {} : { title: `${o.name ? `${o.name} · ` : ""}${o.title ? `${o.app.label} · ${o.title}` : o.app.label}${last ? `\n${last.title}` : ""}${o.folder ? `\n${o.folder}` : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: beside the ones shown\nRight-click: move or close its panel\nDouble-click its name (or F2) to ${o.name ? "rename" : "name"} it`}` }),
+    ...(naming ? {} : { onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); }, onkeydown: (ev) => renameKey(ev, g, k),
+      oncontextmenu: (ev) => appPanelMenu(g.name, o, ev) }) },
   told ? el("span", { class: `dot ${told[0]}`, "aria-label": told[1] }) : el("span", { class: "dot-none", "aria-hidden": "true" }),
   el("div", {},
     naming ? nameBox() : el("div", { class: "name", text: appShown(o), ...nameOnDouble(g, k) }),
@@ -861,7 +863,6 @@ async function closeApp(gname, o) {
   for (const p of panes.apps.filter((q) => q.instance.id === o.id)) {
     panes.apps.splice(panes.apps.indexOf(p), 1);
     p.panel.destroy(); p.node.remove();
-    topRow(p, null);
   }
   appsOnlyLeft();
   topLayout(); saveAppPanes();

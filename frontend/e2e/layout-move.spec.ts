@@ -1,9 +1,9 @@
-// A task's panels moved (features/layout/): a pane or an app's panel dragged by its head (a pane's head put in its Chat
-// bar: its grip) onto a side of another panel of its task -- the two then side by side, or one over the other -- or onto
-// its middle, the two swapped; or moved from its head's menu. Each task's arrangement kept in this browser: as it was when
+// A task's panels moved (features/layout/): a pane dragged by its head (a pane's head put in its Chat bar: its grip)
+// onto a side of another panel of its task -- the two then side by side, or one over the other -- or onto its middle,
+// the two swapped; or moved from its head's menu (an app's panel, which has no head: from its row's, in the list). Each task's arrangement kept in this browser: as it was when
 // the task is opened again, or the page loaded again. Each task shown a block of its own, its panels together.
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "./test";
+import { expect, panelMenu, test } from "./test";
 import { CLAUDE, CODEX, open } from "./home";
 import { addNotepad, taskHome } from "./task-home";
 
@@ -62,25 +62,28 @@ test("a pane dragged by its grip onto the left of its task's app: the two side b
 
 test("a panel dropped on another's middle takes its place, and the other its own", async ({ page }) => {
   const { notes, here } = await claudeAndNotepad(page);
-  await drag(page, { x: (await box(notes)).x + 40, y: (await box(notes)).y + 12 }, middle(await box(here))); // its head
+  await drag(page, middle(await box(here.locator(".fl-grip"))), middle(await box(notes))); // the chat's grip
   await expect.poll(async () => (await box(here)).y < (await box(notes)).y).toBe(true); // the chat above, Notepad under it
 });
 
-test("a panel moved from its head's menu: along a side of its task, or in another's place", async ({ page }) => {
+test("a panel moved from its menu: along a side of its task, or in another's place", async ({ page }) => {
   const { notes, here } = await claudeAndNotepad(page);
-  const n = await box(notes);
-  await page.mouse.click(n.x + 40, n.y + 12, { button: "right" }); // Notepad's head
-  const menu = page.locator(".row-menu[role=menu][aria-label='Move this panel']");
-  await expect(menu.getByRole("menuitem")).toHaveText([
+  await expect(notes.locator(".app-top, .app-head")).toHaveCount(0); // no head of its own: its row's menu
+  const appMenu = await panelMenu(page, notes);
+  await expect(appMenu).toHaveAttribute("aria-label", "Move Notepad");
+  await expect(appMenu.getByRole("menuitem")).toHaveText([
     /To the left/,
     /To the right/,
     /To the top/,
     /To the bottom/,
     /^⇄Swap with Parser fixes/,
     /To a new tab of this task/,
+    /Close its panel/,
   ]);
-  await menu.getByRole("menuitem", { name: "To the right" }).click();
-  await expect(menu).toHaveCount(0);
+  await appMenu.getByRole("menuitem", { name: "To the right" }).click();
+  await expect(appMenu).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  const menu = page.locator(".row-menu[role=menu][aria-label='Move this panel']");
   await expect.poll(async () => (await box(notes)).x > (await box(here)).x).toBe(true);
   expect(Math.abs((await box(notes)).y - (await box(here)).y)).toBeLessThan(1);
   await page.locator("#pane-here .fl-grip").click({ button: "right" }); // the chat's grip: the same menu
