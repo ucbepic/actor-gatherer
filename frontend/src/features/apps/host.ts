@@ -1,6 +1,7 @@
 // The page's side of an app's panel (app_kit/DESIGN.md, "Panels"; app_kit/js/app.js is the panel's side): an app's
-// pane -- its iframe on the app's own origin, with no head over it (the list's row closes it, attaches agents by its
-// task, names it and moves it) -- and the bridge between them. Everything the panel asks goes through here, by postMessage, and on to the dashboard's routes
+// pane -- its iframe on the app's own origin, with no head over it, and a small × over its top right corner that closes
+// the panel (the list's row closes the app, attaches agents by its task, names it and moves it) -- and the bridge
+// between them. Everything the panel asks goes through here, by postMessage, and on to the dashboard's routes
 // (/api/apps/...), which check it against the app's manifest; what the panel is told (events, its backend's messages,
 // the theme, the agent in focus, an intent) comes back the same way. The old page (src/legacy/07-panes.js) keeps the
 // pane among its others, as it keeps an actor's.
@@ -237,7 +238,16 @@ export class AppPane {
       "sandbox",
       "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals",
     );
-    this.node.append(this.frame);
+    // its panel closed (the app left open): a small × over its frame's top right corner, which the panel keeps clear
+    // (app_kit/js/app.js's --ag-corner)
+    const x = el("button", "app-x", "×");
+    x.type = "button";
+    x.title = x.ariaLabel = `Close this ${app.label} panel (the app stays open)`;
+    x.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      hooks.close();
+    });
+    this.node.append(this.frame, x);
     window.addEventListener("message", this.onMessage);
   }
 
