@@ -170,6 +170,59 @@ describe("screen tabs", () => {
     expect(work.querySelectorAll(".lay-close").length).toBe(0);
   });
 
+  it("the close key: the tab shown closed, the next shown; the only one emptied, a new tab -- already one, as it is", async () => {
+    const t = tabs();
+    t.fresh();
+    shown = ["b"];
+    await t.closeShown(); // two tabs: the one shown (b's) closed, a's shown
+    expect(shown).toEqual(["a"]);
+    expect(strip(t)).toEqual(["A *"]);
+    remembered = [];
+    t.rename(ids()[0], "Mine");
+    await t.closeShown(); // the only one: emptied, its tasks kept as they were, its name gone
+    expect(shown).toEqual([]);
+    expect(remembered).toEqual([["a"]]);
+    expect(strip(t)).toEqual(["New tab *"]);
+    await t.closeShown(); // showing nothing already: as it is
+    expect(strip(t)).toEqual(["New tab *"]);
+    await t.route("a"); // a open nowhere now: it goes in the empty tab, not a new one
+    shown = ["a"];
+    expect(strip(t)).toEqual(["A *"]);
+  });
+
+  it("a new tab's draft is kept with it: left with one, it stays (and has it shown again); left with none, it goes", async () => {
+    const t = tabs();
+    await t.blank(); // tab 2, empty
+    t.setDraft("fix the parser");
+    expect(t.shownTab().draft).toBe("fix the parser");
+    const drafted = t.shownTab().id;
+    shown = [];
+    await t.route("b"); // open nowhere: a tab of its own, not this one with something typed in it
+    expect(t.shownTab().id).not.toBe(drafted);
+    shown = ["b"];
+    expect(strip(t)).toEqual(["A", "New tab", "B *"]);
+    await t.route("a"); // a, in tab 1: tab 3 left, b in it
+    expect(strip(t)).toEqual(["A *", "New tab", "B"]);
+    await t.show(drafted); // shown again: the panels shown closed, its page
+    expect(shown).toEqual([]);
+    expect(t.shownTab()).toEqual({ id: drafted, draft: "fix the parser" });
+    shown = [];
+    t.filling(true); // what its page opens: in it, whatever is typed
+    await t.route("c");
+    t.filling(false);
+    expect(t.shownTab().id).toBe(drafted);
+    t.setDraft(""); // sent, or cleared
+    await t.route("a");
+    expect(strip(t)).toEqual(["A *", "B"]); // left with nothing in it: gone
+    await t.blank();
+    t.setDraft("next"); // a reload on a new tab with something typed: its page, not what the page opened on
+    const again = tabs();
+    shown = ["z"];
+    expect(await again.start()).toBe(true);
+    expect(shown).toEqual([]);
+    expect(again.shownTab().draft).toBe("next");
+  });
+
   it("each task's state marked on its face, its most pressing item's; past three faces, or with none, after its name", () => {
     const t = tabs();
     const st = (mark: string, said: string): State => ({ mark, said });

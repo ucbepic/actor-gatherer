@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { appToken, Link, Pages, type Dialog, type Stage } from "./browsers.ts";
 import { connect, DEFAULT_PORT, homeOf, loginEnv } from "./dashboard.ts";
+import { appMenu } from "./keys.ts";
 import { editItems, spellingItems, tidy } from "./menu.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -205,7 +206,21 @@ ipcMain.on("ag:raise", (event) => {
   app.focus({ steal: true });
 });
 
-app.whenReady().then(open);
+// The menu: Cmd+T and Cmd+W the dashboard's screen tabs' (keys.ts's appMenu) -- the page's, in the main window; in a window
+// of a dashboard page a link opened (no preload, so no tabs of its own), Close Tab closes it, as a browser's last tab.
+function menu(): void {
+  Menu.setApplicationMenu(Menu.buildFromTemplate(appMenu(process.platform === "darwin", (key, w) => {
+    const bw = w instanceof BrowserWindow ? w : BrowserWindow.getFocusedWindow();
+    if (!bw || bw.isDestroyed()) return;
+    if (bw === win) bw.webContents.send("ag:key", key);
+    else if (key === "closeTab") bw.close();
+  })));
+}
+
+app.whenReady().then(() => {
+  menu();
+  open();
+});
 app.on("before-quit", () => (quitting = true)); // Cmd+Q: the window closes, its pages with it (the Browsers pause)
 app.on("activate", () => {
   if (!win) open();

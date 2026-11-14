@@ -1,7 +1,7 @@
 // desktop/src/keys.ts: a browser's own keys on a Browser's native page, and Chrome's zoom steps.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { browserKey, zoomStep, ZOOMS } from "../src/keys.ts";
+import { appMenu, browserKey, zoomStep, ZOOMS } from "../src/keys.ts";
 
 const press = (key: string, mods: Partial<{ meta: boolean; control: boolean; shift: boolean; alt: boolean }> = {}, type = "keyDown") =>
   ({ type, key, meta: false, control: false, shift: false, alt: false, ...mods });
@@ -50,4 +50,24 @@ test("zoom goes by Chrome's steps, and stops at its ends", () => {
   assert.equal(zoomStep(1.05, -1), 1);
   assert.equal(zoomStep(5, 1), 5);
   assert.equal(zoomStep(ZOOMS[0], -1), ZOOMS[0]);
+});
+
+test("the app's menu: Cmd+T and Cmd+W the page's screen tabs, Shift+Cmd+W the window, as in Chrome", () => {
+  const got: string[] = [];
+  const file = (mac: boolean) => {
+    const m = appMenu(mac, (key) => got.push(key)).find((x) => x.label === "File")!;
+    return m.submenu as { label?: string; accelerator?: string; role?: string; click?: (...a: unknown[]) => void }[];
+  };
+  const mac = file(true);
+  assert.deepEqual(mac.filter((x) => x.accelerator).map((x) => [x.label, x.accelerator]),
+    [["New Tab", "CmdOrCtrl+T"], ["Close Tab", "CmdOrCtrl+W"], ["Close Window", "Shift+CmdOrCtrl+W"]]);
+  mac[0].click!({}, undefined);
+  mac[1].click!({}, undefined);
+  assert.deepEqual(got, ["newTab", "closeTab"]);
+  assert.equal(mac.find((x) => x.label === "Close Window")!.role, "close");
+  // nothing else in the menu takes Cmd+W (Electron's Window menu's Close does, off a Mac)
+  const all = (mac: boolean) => appMenu(mac, () => {}).flatMap((x) => (Array.isArray(x.submenu) ? x.submenu : []));
+  for (const m of [true, false]) assert.equal(all(m).filter((x) => x.role === "close" || x.accelerator === "CmdOrCtrl+W").length, 2);
+  assert.equal(appMenu(true, () => {})[0].role, "appMenu");
+  assert.ok(file(false).some((x) => x.role === "quit"));
 });

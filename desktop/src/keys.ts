@@ -1,5 +1,6 @@
-// A browser's own keys and zoom steps, as Chrome has them, for the Browser's native pages (browsers.ts): kept apart from
-// Electron so the unit tests can load them.
+// A browser's own keys and zoom steps, as Chrome has them, for the Browser's native pages (browsers.ts), and the app's
+// menu: kept apart from Electron so the unit tests can load them.
+import type { BaseWindow, MenuItemConstructorOptions } from "electron";
 
 /** A key as Electron's before-input-event gives it. */
 export type KeyInput = { type: string; key: string; meta: boolean; control: boolean; shift: boolean; alt: boolean };
@@ -39,4 +40,30 @@ export function browserKey(input: KeyInput, mac: boolean = process.platform === 
   const keys: Record<string, string> = { t: "newTab", w: "closeTab", "9": "tab:last", "[": "back", "]": "forward",
     l: "address", r: "reload", "=": "zoom:1", "+": "zoom:1", "-": "zoom:-1", "0": "zoom:0" };
   return keys[key] ?? null;
+}
+
+/** A key of the app's menu the dashboard's page does: a new screen tab, the one shown closed. */
+export type TabKey = "newTab" | "closeTab";
+/** The app's menu (main.ts): Electron's own but for File -- New Tab (Cmd+T) and Close Tab (Cmd+W), the dashboard's screen
+ * tabs, done by the page (`page`, with the window the key was pressed in), and Close Window on Shift+Cmd+W, as in Chrome
+ * -- so Cmd+W closes a tab, not the window. Ctrl for Cmd off a Mac. A Browser panel's native page keeps them for its own
+ * tabs (browsers.ts: its keys never reach the menu). */
+export function appMenu(mac: boolean, page: (key: TabKey, win: BaseWindow | undefined) => void): MenuItemConstructorOptions[] {
+  const file: MenuItemConstructorOptions[] = [
+    { label: "New Tab", accelerator: "CmdOrCtrl+T", click: (_item, win) => page("newTab", win) },
+    { label: "Close Tab", accelerator: "CmdOrCtrl+W", click: (_item, win) => page("closeTab", win) },
+    { type: "separator" },
+    { role: "close", label: "Close Window", accelerator: "Shift+CmdOrCtrl+W" },
+    ...(mac ? [] : ([{ type: "separator" }, { role: "quit" }] as MenuItemConstructorOptions[])),
+  ];
+  const window: MenuItemConstructorOptions[] = mac
+    ? [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }]
+    : [{ role: "minimize" }];
+  return [
+    ...(mac ? ([{ role: "appMenu" }] as MenuItemConstructorOptions[]) : []),
+    { label: "File", submenu: file },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { label: "Window", submenu: window },
+  ];
 }

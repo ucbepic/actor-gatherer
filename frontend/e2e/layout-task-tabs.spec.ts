@@ -4,7 +4,7 @@
 // that tab only, and a tab left with none goes; a tab is named by a double-click. Kept in this browser.
 import type { Locator, Page } from "@playwright/test";
 import { closePanel, expect, panelMenu, test } from "./test";
-import { CLAUDE, open } from "./home";
+import { CLAUDE, open, settledBox } from "./home";
 import { addNotepad } from "./task-home";
 
 const box = async (l: Locator) => (await l.boundingBox())!;
@@ -52,7 +52,8 @@ test("a panel dropped on another tab's name goes into that tab; with ⌥, a copy
   await chips(page).nth(0).click(); // Tab 1: Claude's pane
   await expect(here(page)).toBeVisible();
   const drop = async (alt: boolean) => {
-    const g = await box(page.locator("#pane-here .fl-grip:visible, #pane-here > .pane-top:visible").first()); // its grip, or head
+    // its grip, or head (measured once drawn: the page may draw it again as the tab is shown)
+    const g = await settledBox(page.locator("#pane-here .fl-grip:visible, #pane-here > .pane-top:visible").first());
     const c = await box(chips(page).nth(1));
     await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
     await page.mouse.down();

@@ -9,6 +9,8 @@
 // It also lets the page ask the spellchecker of the user's system (the one drawing the red underline under a word in a
 // text box) about a word: whether it is misspelled, and its fixes (app_kit's ag.spelling, for apps' panels: a word
 // clicked in a Notes line), and add one to the user's dictionary.
+//
+// And it hands the page the app menu's tab keys (New Tab, Close Tab: keys.ts's appMenu), for its screen tabs.
 import { contextBridge, ipcRenderer, webFrame } from "electron";
 
 type Stage = { x: number; y: number; w: number; h: number; target: string; covered: boolean; app?: string; key?: string };
@@ -19,6 +21,18 @@ ipcRenderer.on("ag:still", (_event, still: Still) => {
   for (const cb of stills) {
     try {
       cb(still);
+    } catch {
+      // (the page's own trouble)
+    }
+  }
+});
+
+// The app menu's tab keys (main.ts: New Tab, Close Tab), for the page to do on its screen tabs (07-new-tab.js's tabKey)
+const tabKeys = new Set<(key: string) => void>();
+ipcRenderer.on("ag:key", (_event, key: unknown) => {
+  for (const cb of tabKeys) {
+    try {
+      cb(String(key));
     } catch {
       // (the page's own trouble)
     }
@@ -52,4 +66,7 @@ contextBridge.exposeInMainWorld("agApp", {
     return { misspelled, suggestions: misspelled ? webFrame.getWordSuggestions(w).slice(0, FIXES) : [] };
   },
   learn: (word: unknown) => ipcRenderer.send("ag:learn", aWord(word)),
+  onKey: (cb: (key: string) => void) => {
+    if (typeof cb === "function") tabKeys.add(cb);
+  },
 });

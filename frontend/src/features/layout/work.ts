@@ -6,7 +6,7 @@
 // showing others too, goes to another screen tab dragged onto the tabs' bar, or from its menu (toScreenTab).
 // Drawn so a task reads as one thing, a tab as another: the tabs' bar on top, the tasks under it in a well of their own,
 // each task a card (its frame drawn over its panels, the well showing between cards), its panels split by a line only;
-// a tab showing nothing, a note saying so.
+// a tab showing nothing, the page's new-tab page (hooks.blank: a box to message a new actor, its apps), or a note.
 import { addItem, keepSizes, leaves, mark, move, remove, swap, toSide, type Side, type Zone } from "./arrange";
 import { type Put } from "./blocks";
 import { APP, build, TOP_BAND, type Built, type Old, type Shown } from "./build";
@@ -71,6 +71,9 @@ export interface WorkHooks {
   about?: (block: string) => string;
   /** Where the tasks are open changed (a tab shown, made, closed; a task opened or closed): the list marked again. */
   listed?: () => void;
+  /** The tab shown, showing nothing: its new-tab page drawn in `box` (placed in the whole well) -- each time it comes in
+   * sight, or another tab showing nothing is shown (`tab`, its id). None: a note says to click a task in the list. */
+  blank?: (box: HTMLElement, tab: string) => void;
 }
 /** What a panel (or a task, by its strip) can be moved to from its menu: a side, or another's place; `task`: the task is
  * moved (its strip, or the head of its only panel shown); another tab of its task, or a new one (`split`); a task, the
@@ -112,6 +115,7 @@ export class Work {
   private unders = new Set<HTMLElement>();
   private readonly cards = new Cards(); // each block's card: its frame, drawn over its panels
   private readonly empty: HTMLElement;
+  private blankFor = ""; // the tab whose new-tab page `empty` shows ("": none in sight)
   private listedFor = "";
 
   constructor(
@@ -134,11 +138,13 @@ export class Work {
     this.empty = document.createElement("div");
     this.empty.className = "lay-empty";
     this.empty.hidden = true;
-    const head = document.createElement("strong"),
-      line = document.createElement("span");
-    head.textContent = "Nothing open in this tab";
-    line.textContent = "Click a task in the list to open it here.";
-    this.empty.append(head, line);
+    if (!hooks.blank) {
+      const head = document.createElement("strong"),
+        line = document.createElement("span");
+      head.textContent = "Nothing open in this tab";
+      line.textContent = "Click a task in the list to open it here.";
+      this.empty.append(head, line);
+    }
     work.append(this.stripBox, this.cards.el, this.empty);
     this.tabs = new Tabs(work, {
       // the tasks shown, by their keys now (the panels', not as last placed: a lone item put in a task since has its
@@ -331,6 +337,10 @@ export class Work {
     this.mins = now;
     this.unders = under;
     this.empty.hidden = !!built.tree;
+    const blank = built.tree ? "" : this.tabs.shownTab().id;
+    if (blank && blank !== this.blankFor && this.hooks.blank)
+      queueMicrotask(() => this.hooks.blank!(this.empty, blank));
+    this.blankFor = blank;
     if (built.tree) return built.tree;
     built.nodes.set(EMPTY, this.empty); // nothing open: the note, in the whole well
     return { id: EMPTY };

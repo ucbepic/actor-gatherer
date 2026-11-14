@@ -10,3 +10,4 @@ import "./css/07-top.css";
 import "./css/08-docwriter.css";
 import "./css/11-files-view.css";
 import "./css/12-notices.css";
+import "./css/13-new-tab.css";

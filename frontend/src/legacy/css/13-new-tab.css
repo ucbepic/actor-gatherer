@@ -1,0 +1,35 @@
+/* A new tab's page (07-new-tab.js): in the well as a task's card would be, its message box and the apps under it */
+.work.placed > .lay-empty.nt:not([hidden]) { justify-content: flex-start; padding: max(24px, 12vh) 24px 24px; overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); background: var(--surface); color: var(--ink-2); }
+.nt-page { width: min(640px, 100%); display: grid; gap: 14px; }
+.nt-ask { display: grid; gap: 8px; padding: 10px 12px 8px; border: 1px solid var(--grid); border-radius: 12px; background: var(--page);
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.nt-ask:focus-within { border-color: color-mix(in srgb, var(--s1) 55%, var(--grid)); }
+.nt-text { width: 100%; box-sizing: border-box; min-height: calc(2lh + 4px); max-height: calc(8lh + 4px); resize: none; overflow-y: auto;
+  padding: 2px 0; border: 0; outline: none; background: none; color: var(--ink); font: 14.5px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.nt-text::placeholder { color: var(--muted); }
+.nt-text:disabled { opacity: .6; }
+.nt-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-height: 26px; font-size: 12px; }
+.nt-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; padding: 3px 8px; border: 1px solid var(--ring);
+  border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.nt-chip:hover:not(:disabled), .nt-chip[aria-expanded="true"] { background: var(--wash); border-color: var(--grid); }
+.nt-chip:disabled { cursor: default; }
+.nt-chip .lbl { color: var(--muted); }
+.nt-chip .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.nt-chip .val.dir { max-width: 300px; font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.nt-chip .badge { width: 14px; height: 14px; flex: none; }
+.nt-chip .caret { color: var(--muted); font-size: 9px; }
+.nt-none, .nt-busy { color: var(--muted); padding: 3px 2px; }
+.nt-err:empty { display: none; }
+.nt-err { color: var(--critical); font-size: 12.5px; margin-top: -6px; }
+.nt-apps { display: grid; gap: 6px; }
+.nt-apps:empty { display: none; }
+.nt-lbl { color: var(--muted); font-size: 11.5px; }
+.nt-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.nt-app { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 7px; border: 1px solid var(--ring); border-radius: 8px;
+  background: var(--page); color: var(--ink); font: inherit; font-size: 12.5px; line-height: 1.2; cursor: pointer; }
+.nt-app:hover:not(:disabled) { background: var(--wash); border-color: var(--grid); }
+.nt-app:disabled { opacity: .5; cursor: default; }
+.nt-app :is(img, svg) { width: 16px; height: 16px; flex: none; color: var(--ink-2); }
+.nt-hint { color: var(--muted); font-size: 12px; }
+.nt-menu { max-height: min(420px, calc(100vh - 32px)); overflow-y: auto; }
