@@ -227,7 +227,7 @@ async function openTaskApps(g, c, to, only = null, beside = false) {
 // focus, as soon as it is in its pane -- not once what it shows (its Chat) has loaded: a click meanwhile (an app
 // selected, another pane) would lose its focus to it. `wait` false: done then, its Chat loading still.
 async function show(g, c, view = null, wait = true) {
-  if (isAt(hereAway, g, c)) hereAway = null;         // asked for: in sight again (and in its task's tab shown)
+  if (isAt(hereAway, g, c)) backInSight();          // asked for: in sight again (and in its task's tab shown)
   const entered = enterTask(g, c);
   const shown = await showIn(g, c, view || (entered && entered.view) || null, false);
   if (entered) entered.after();
@@ -373,6 +373,8 @@ let workPlacer = null;
 // This page's own pane AWAY: its actor not in its task's tab shown (none of the tab's to show in it instead: TASK TABS),
 // out of sight till it shows another, or the reader asks for that one (show).
 let hereAway = null;
+// this page's own pane in sight again: its actor looked at now (04-seen.js), the list and the tabs' marks drawn so
+function backInSight() { hereAway = null; markSeen(); if (state.home) renderAgents(); }
 const isAway = () => !!hereAway && isAt(state.selected, hereAway[0], hereAway[1]);
 function shownPanels() {
   const known = !!state.home, out = [], actor = (g, c, node) => out.push({ key: known ? taskKey(g, c) : null, item: c, node, app: false });
@@ -401,7 +403,7 @@ function startPlacing() {
   const work = document.querySelector(".work");
   workPlacer = window.agNext.layout.work(work, { shown: shownPanels, narrow: () => NARROW.matches,
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
-    focus: selectedTask, enter: enterTasks, status: tasksStatus, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
+    focus: selectedTask, enter: enterTasks, status: taskStates, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
     faces: blockFaces, about: blockAbout, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); } });
   NARROW.addEventListener("change", placeWork);
@@ -562,17 +564,22 @@ function keyNow(k) {
   if (id === undefined || /^t\d+$/.test(id) || !state.home) return k;
   return taskKey(g, id) || k;
 }
-// what the actors of tasks `keys` do, all told: one asking the reader, one failed, one at work
-function tasksStatus(keys) {
-  const said = new Set();
-  for (const k of keys) {
-    const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
-    if (!gg || id === undefined || isAppItem(id)) continue;
-    const actors = /^t\d+$/.test(id) ? taskActors(gg, Number(id.slice(1))) : gg.agents.filter((a) => a.channel === id);
-    for (const a of actors) said.add(statusOf(a)[0]);
-  }
-  return said.has("asking") ? "asking" : said.has("error") || said.has("failed") ? "error"
-    : said.has("running") || said.has("background") ? "working" : "";
+// A TASK'S STATES, for its face in its screen tab (tabs.ts marks the most pressing): each of its actors' (statusOf),
+// its lead's first, and its apps' notifications not seen -- each as a mark (tabs.ts's MARKS: a turn, a build, a start
+// all "working"; idle, closed none) and its word as the list says it
+const TAB_MARK = { asking: "asking", error: "error", failed: "error", notified: "notified", finished: "finished",
+  running: "working", building: "working", background: "background" };
+function taskStates(k) {
+  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  if (!gg || id === undefined || isShell(id)) return [];
+  const told = (o) => appStatusOf(g, o.id), t = /^t\d+$/.test(id) ? Number(id.slice(1)) : null;
+  const one = isAppItem(id) ? appInfo(g, id.slice(APP_ITEM.length)) : null;
+  const lead = t !== null ? taskLead(gg, t) : null;
+  const actors = t !== null ? [lead, ...taskMembers(gg, t).filter((a) => a !== lead)].filter(Boolean)
+    : one ? [] : gg.agents.filter((a) => a.channel === id);
+  const apps = t !== null ? taskApps(gg, t) : one ? [one] : [];
+  return [...actors.map(statusOf), ...apps.map(told).filter(Boolean)]
+    .map(([cls, said]) => ({ mark: TAB_MARK[cls] || "", said }));
 }
 // TASK TABS (features/layout/tasks.ts). A task's tab shown: `items` of task `k` open, each in the view it showed, and
 // the task's other panels closed -- this page's own pane given another of the tab's actors, if it showed one not in it
@@ -587,7 +594,7 @@ async function showTaskItems(k, items) {
     if (next) { focusPane(panes.here); await showIn(g, next, views[next] || null); }
     else if (actorPanes().length) await closeHere();
     else hereAway = state.selected;                  // none to show in it: away while this tab shows
-  } else if (isAway() && want.has(state.selected[1])) hereAway = null;
+  } else if (isAway() && want.has(state.selected[1])) backInSight();
   for (const c of actors) if (!open(c) && allPanes().length < MAX_PANES) openBeside(g, c, views[c] || null);
   const apps = items.filter(isAppItem).map((it) => appInfo(g, it.slice(APP_ITEM.length))).filter(Boolean)
     .map((o) => ({ app: o.app.name, id: o.id, inst: o.inst }));

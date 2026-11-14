@@ -381,14 +381,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* a state's mark (tabs.ts's MARKS), as the list marks it: on a task's face at its lower right, or after the tab's name */
+.lay-fmark {
+  position: relative;
+  flex: none;
+  display: grid;
+}
+.lay-faces > .lay-fmark + .lay-fmark {
+  margin-left: 3px;
+}
 .lay-dot {
   flex: none;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
   border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--face-ring, var(--side));
 }
-.lay-dot[data-status=""] {
-  display: none;
+.lay-fmark > .lay-dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+}
+.lay-tab > .lay-dot {
+  box-shadow: none;
 }
 .lay-dot[data-status="asking"] {
   background: var(--warning);
@@ -396,8 +412,34 @@
 .lay-dot[data-status="error"] {
   background: var(--critical);
 }
-.lay-dot[data-status="working"] {
+.lay-dot[data-status="notified"] {
+  background: var(--notice);
+}
+.lay-dot[data-status="finished"] {
+  background: var(--s1);
+}
+.lay-dot[data-status="background"] {
   background: var(--good);
+}
+.lay-dot[data-status="working"] {
+  width: 10px;
+  height: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--face-ring, var(--side));
+  color: var(--good);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+}
+.lay-dot[data-status="working"]::before {
+  content: "✻";
+  animation: term-spin 1.2s steps(1) infinite;
+  animation-delay: var(--spin-at, 0s);
+}
+.lay-fmark > .lay-dot[data-status="working"] {
+  right: -4px;
+  bottom: -4px;
 }
 .lay-close {
   flex: none;
