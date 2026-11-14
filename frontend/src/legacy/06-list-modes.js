@@ -9,6 +9,7 @@ const LIST_ICONS = {
   full: "M9.75 2.25h4v4M13.75 2.25l-4.5 4.5M6.25 13.75h-4v-4M2.25 13.75l4.5-4.5",
   unfull: "M13.75 2.25l-4.5 4.5M9.25 3v3.75H13M2.25 13.75l4.5-4.5M6.75 13V9.25H3",
   fold: "M11 6l-2 2 2 2", unfold: "M9 6l2 2-2 2",
+  hide: "M2.75 2.75v10.5M11 5L8 8l3 3M8 8h5.25", keep: "M2.75 2.75v10.5M8.5 5l3 3-3 3M11.5 8H5.5",
 };
 function setListMode(mode, keep = true) {
   if (PANE || !["list", "folded", "full"].includes(mode)) mode = "list";
@@ -66,7 +67,48 @@ function listButtons() {
       strokeIcon(full ? LIST_ICONS.unfull : LIST_ICONS.full)),
     full ? null : el("button", { class: "list-btn lb-fold", type: "button", "aria-expanded": folded ? "false" : "true", title: fold,
       "aria-label": fold, onclick: () => setListMode(folded ? "list" : "folded") },
-      strokeIcon(ICONS.sidebar + (folded ? LIST_ICONS.unfold : LIST_ICONS.fold)))];
+      strokeIcon(ICONS.sidebar + (folded ? LIST_ICONS.unfold : LIST_ICONS.fold))),
+    full || PANE ? null : el("button", { class: "list-btn lb-hide", type: "button", "aria-pressed": listHidden ? "true" : "false",
+      title: listHidden ? "Keep the list open" : "Hide the list: it slides out when the pointer reaches the page's left edge",
+      "aria-label": listHidden ? "Keep the list open" : "Hide the list", onclick: () => setListHidden(!listHidden) },
+      strokeIcon(listHidden ? LIST_ICONS.keep : LIST_ICONS.hide))];
+}
+// THE LIST HIDDEN (its button; kept in this browser), whatever its shape (the list, the rail): out of the way, the panes
+// the page's whole width, a thin edge at the page's left. The pointer on that edge (or the keys in the list), it slides
+// out over the panes; it slides back a moment after the pointer has left it -- not while a menu or a card of it is
+// open, a name is being typed in it, or a row dragged from it.
+const HIDE_KEY = "ag-dashboard-list-hidden";
+let listHidden = false, peekTimer = null;
+function setListHidden(on, keep = true) {
+  listHidden = !!on && !PANE;
+  document.documentElement.classList.toggle("list-hidden", listHidden);
+  peekList(listHidden && !!document.querySelector(".side:hover"));   // (hidden from its own button: out once left)
+  drawListButtons();
+  if (keep) { try { localStorage.setItem(HIDE_KEY, listHidden ? "1" : ""); } catch (e) { /* this page only */ } }
+}
+function peekList(on) {
+  clearTimeout(peekTimer);
+  document.documentElement.classList.toggle("list-peek", on && listHidden);
+}
+function unpeekSoon() {
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => {
+    const busy = listDrag || document.querySelector(".side:hover, .list-edge:hover, .row-menu, #actor-card.live:hover, "
+      + ".side :is(input, textarea, [contenteditable]):focus");
+    if (busy) unpeekSoon(); else peekList(false);
+  }, 400);
+}
+if (!PANE && !SNAPSHOT) {
+  const side = document.querySelector(".side"), edge = el("div", { class: "list-edge", "aria-hidden": "true" });
+  side.after(edge);
+  for (const e of [side, edge]) {
+    e.addEventListener("pointerenter", () => peekList(true));
+    e.addEventListener("pointerleave", unpeekSoon);
+  }
+  side.addEventListener("focusin", () => peekList(true));
+  side.addEventListener("focusout", unpeekSoon);
+  try { listHidden = localStorage.getItem(HIDE_KEY) === "1"; } catch (e) { /* none kept */ }
+  document.documentElement.classList.toggle("list-hidden", listHidden);
 }
 function drawListButtons() { document.getElementById("list-btns").replaceChildren(...listButtons().filter(Boolean)); }
 const leaveFull = () => setListMode(listFrom === "full" ? "list" : listFrom);

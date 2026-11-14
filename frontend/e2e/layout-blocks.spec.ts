@@ -55,6 +55,23 @@ test("with other tasks shown, a task of two panels or more is under a strip with
   await expect(strip).toHaveCount(0);
 });
 
+test("a task's card head's × closes the task here, its agents going on; the last one closed, the tab says it is empty", async ({
+  page,
+}) => {
+  const { notes, codex, strip } = await twoTasks(page);
+  await strip.locator(".lay-sclose").click(); // Claude's task: its Notepad and its pane closed, Codex left
+  await expect(notes).toHaveCount(0);
+  await expect(codex).toHaveCount(0); // (Codex now in this page's own pane)
+  await expect(page.locator("#agents button.agent", { hasText: CODEX })).toHaveAttribute("aria-current", "true");
+  await expect(page.locator("#agents button.agent", { hasText: CLAUDE }).locator(".tab-no")).toHaveCount(0); // open nowhere
+  await expect(page.locator("#agents button.agent", { hasText: CLAUDE })).toHaveCount(1); // still listed, as it was
+  await page.locator("#agents button.agent", { hasText: CLAUDE }).click({ modifiers: [beside] }); // beside again
+  await expect(notes).toHaveCount(1); // as it was left: its Notepad back
+  await strip.locator(".lay-sclose").click();
+  await expect(notes).toHaveCount(0);
+  await expect(page.locator(".lay-empty")).toBeHidden(); // Codex still shown
+});
+
 test("a task's strip dragged onto the bottom of another task: the two one over the other, kept so", async ({
   page,
 }) => {

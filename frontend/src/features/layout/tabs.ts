@@ -44,6 +44,8 @@ export interface TabsHooks {
   hold: (on: boolean) => void;
   /** A tab shown, made, closed: the work area placed again (and the list marked again). */
   changed: () => void;
+  /** A tab's name picked up to be dragged (its id), or let go (null): dropped on the work area, its tasks open there. */
+  dragged?: (id: string | null) => void;
 }
 
 const TABS_KEY = "ag-dashboard-screen-tabs";
@@ -228,6 +230,22 @@ export class Tabs {
     this.hooks.changed();
   }
 
+  /** The tasks of tab `id`, not the one shown -- none, the one shown. */
+  held(id: string): string[] {
+    const t = this.tabs.find((x) => x.id === id);
+    return t && id !== this.current ? this.tasksOf(t) : [];
+  }
+  /** Tab `id` (not the one shown) dropped on the work area: gone from the bar, its tasks -- open nowhere now -- to be
+   * opened in the tab shown (work.ts). */
+  merge(id: string): string[] {
+    const tasks = this.held(id);
+    if (!tasks.length) return [];
+    this.tabs = this.tabs.filter((t) => t.id !== id);
+    this.save();
+    this.hooks.changed();
+    return tasks;
+  }
+
   rename(id: string, name: string): void {
     const tab = this.tabs.find((t) => t.id === id);
     if (!tab) return;
@@ -342,7 +360,9 @@ export class Tabs {
     e.addEventListener("dragstart", (ev) => {
       ev.dataTransfer?.setData("application/x-ag-tab", t.id);
       if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+      this.hooks.dragged?.(t.id); // (onto the work area: its tasks there)
     });
+    e.addEventListener("dragend", () => this.hooks.dragged?.(null));
     e.addEventListener("dragover", (ev) => {
       if (ev.dataTransfer?.types.includes("application/x-ag-tab")) ev.preventDefault();
     });
