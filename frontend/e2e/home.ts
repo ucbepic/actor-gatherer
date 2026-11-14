@@ -1,5 +1,5 @@
 // What the tests share: the test home's actors (tests/web_home.py) and the page opened on them at its fixed clock.
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 /** When the test home's sessions were stored (web_home.py's AT), in seconds. */
 export const AT = 1790874000;
@@ -26,3 +26,11 @@ export async function openActor(page: Page, text: string) {
 
 /** What a screenshot covers: the home's path (a temporary folder, other on each run). */
 export const masks = (page: Page) => [page.locator("#home"), page.locator(".cfg-path")];
+
+/** `l`'s box once it has one. A row of the list is drawn again as what is shown changes (tab numbers, the task shown),
+ * and one measured just as it is replaced has no box: measured again, on the row drawn now. */
+export async function settledBox(l: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  let b: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  await expect.poll(async () => (b = await l.boundingBox()) !== null).toBe(true);
+  return b!;
+}
