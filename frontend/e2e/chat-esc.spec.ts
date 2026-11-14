@@ -13,8 +13,8 @@ const ASK = {
   questions: [{ question: "Which fruit do you prefer?", options: [{ label: "Apple" }, { label: "Pear" }] }],
 };
 
-/** The Claude Code actor, its terminal run by the dashboard, at work (`asking`: asking you ASK); the keys typed into
- * its terminal, as sent. */
+/** The Claude Code actor, its terminal run by the dashboard and its message box open, at work (`asking`: asking you
+ * ASK) -- once the page shows it so: an Esc before that is rightly not sent; the keys typed into its terminal, as sent. */
 async function actorAtWork(page: Page, asking: boolean) {
   const keys: string[] = [];
   await page.route("**/api/terminal/input", async (route) => {
@@ -30,9 +30,10 @@ async function actorAtWork(page: Page, asking: boolean) {
               ...((a.session as object) || {}),
               session_id: CLAUDE_CHANNEL,
               terminal: true,
-              status: "running",
+              status: "idle", // the terminal's session: its agent's state its own (a running session reads as Running)
             },
             running: true,
+            chattable: true,
             ...(asking ? { status: "asking", asking: ASK } : { status: "running" }),
           });
     return home;
@@ -40,6 +41,8 @@ async function actorAtWork(page: Page, asking: boolean) {
   await openActor(page, CLAUDE);
   await expect.poll(() => homes.sent()).toBe(true);
   homes.again();
+  const dot = page.locator("#agents button.agent", { hasText: CLAUDE }).locator(":scope > .dot");
+  await expect(dot).toHaveAttribute("aria-label", asking ? "Waiting for you" : "Running");
   return keys;
 }
 
@@ -62,7 +65,10 @@ test("Esc on a question's card, after a click on one of its choices, dismisses i
   await expect.poll(() => keys).toEqual(["\u001b"]);
   // and from the message box, as before (a second later: one a second)
   await page.waitForTimeout(1100);
-  await page.locator("#composer-text").focus();
+  const box = page.locator("#composer-text");
+  await expect(box).toBeEnabled();
+  await box.focus();
+  await expect(box).toBeFocused();
   await page.keyboard.press("Escape");
   await expect.poll(() => keys).toEqual(["\u001b", "\u001b"]);
 });
