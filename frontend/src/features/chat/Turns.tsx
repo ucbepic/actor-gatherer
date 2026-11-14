@@ -8,6 +8,7 @@
 import { useLayoutEffect } from "react";
 import { plural } from "../../core/format";
 import { useChat } from "./context";
+import { placed } from "./follow";
 import { OpenedTurn } from "./Pending";
 import { drawn } from "./pull";
 import { useTurns } from "./store";
@@ -51,6 +52,7 @@ export function Turns({ interrupting }: { interrupting: boolean }) {
       useTurns.getState().setShown(at);
       const talk = cur.parentElement; // .fl-talk: its offset parent
       talk.scrollTop = (drawn.feed ?? feed).picked === null ? talk.scrollHeight : cur.offsetTop;
+      placed(talk);
     });
   });
   return (

@@ -1,6 +1,7 @@
 // Moving about the conversation as the reader does: a turn's replies or its files shown or folded from its message,
 // that message kept where it was on the screen; and the earlier turns pulled in as the reader scrolls up past the top,
 // what they look at kept in place.
+import { placed } from "./follow";
 import { TURNS_MORE, useTurns } from "./store";
 import type { ChatFeed, ChatHost } from "./types";
 
@@ -25,6 +26,7 @@ export async function keepTurn(n: number, change: () => unknown): Promise<void> 
   const now = talkNow(),
     again = document.getElementById(`fl-turn-${n}`);
   if (y !== null && now && again) now.scrollTop += top(again) - top(now) - y;
+  if (now) placed(now); // not at its end, if it is no longer: the message stays where it is as the box changes size
 }
 
 /** More of the conversation above where the reader is (`change`, then the page drawn again), what they look at kept in

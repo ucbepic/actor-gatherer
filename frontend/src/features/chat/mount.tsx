@@ -3,10 +3,11 @@
 // draw to draw -- the page's patch() finds it where it is and leaves it there (its data-sig: the actor's) -- so its React
 // root stays and React changes in place only what changed, the actor's stage among it keeping its animations running.
 // Drawn when the page draws, and at once (flushSync): the page's keepingPlace() keeps the conversation's scroll, and its
-// end followed, around the draw as it did.
+// end followed, around the draw as it did; and its end kept as its box changes size (follow.ts).
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { ChatContext } from "./context";
+import { followEnd } from "./follow";
 import { FirstTurns } from "./Hello";
 import { drawn, listenForPulls } from "./pull";
 import { TURNS_SHOWN, useTurns } from "./store";
@@ -24,6 +25,7 @@ export function drawTurns(feed: ChatFeed, host: ChatHost): HTMLDivElement {
     const node = document.createElement("div");
     talk = { node, root: createRoot(node) };
     talks.set(feed.key, talk);
+    followEnd(node);
   }
   useTurns.getState().forFiles(feed.files);
   const turns = turnsOf(feed),
