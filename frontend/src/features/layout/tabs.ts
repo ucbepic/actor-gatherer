@@ -11,6 +11,10 @@
 // put elsewhere; and a "+" for a new tab, empty. A task of the tab shown, the tab showing others too, moved to another
 // tab (put): dragged by its card head onto another tab's name, into that tab -- anywhere else on the bar ("New tab" shown
 // there meanwhile), into a new tab -- or from its menu; the tab shown stays shown.
+// A new tab ("+", or the new-tab key) shows the page's new-tab page (work.ts's `blank` hook): a message box for a new
+// actor, its apps. What is typed there is the tab's DRAFT, kept with it: a tab with one is kept when left, as one with
+// tasks is, and a task clicked in the list goes in a tab of its own, as from a tab with tasks -- but what its page opens
+// (filling) goes in it. The close key closes the tab shown (closeShown) -- the only one, emptied: a new tab again.
 import type { Node } from "./tree";
 
 export interface Tab {
@@ -20,6 +24,8 @@ export interface Tab {
   tasks: string[];
   screen: Node | null;
   focus: string | null;
+  /** what its new-tab page's message box holds (a tab showing nothing): kept as it is */
+  draft?: string;
 }
 export interface TabsHooks {
   /** The tasks the work area shows, in order. */
@@ -90,6 +96,7 @@ export class Tabs {
   private switching = false; // a tab being shown, its tasks' panes opened one by one (the screen held as it is meanwhile)
   private settling: Promise<void> = Promise.resolve(); // the tab being shown (or made): done
   private started = false; // the page's first tab shown as it was left (start): the tab shown kept as it changes since
+  private fill = false; // the tab shown's new-tab page opening something in it: its draft does not keep it from it
   private readonly strip: HTMLElement;
   private readonly list: HTMLElement;
   private readonly add: HTMLButtonElement;
@@ -169,6 +176,10 @@ export class Tabs {
     const tab = this.tab(),
       kept = this.tasksOf({ ...tab, id: "" }),
       shown = this.hooks.shown();
+    if (!kept.length && tab.draft && shown.length) {
+      await this.switch(() => this.hooks.clear?.() ?? Promise.resolve()); // a new tab left with something typed: its page
+      return true;
+    }
     if (!kept.length || (kept.length === shown.length && kept.every((k) => shown.includes(k)))) return false;
     const focus = tab.focus && this.hooks.canon ? this.hooks.canon(tab.focus) : tab.focus;
     this.hooks.setScreen(tab.screen);
@@ -200,13 +211,18 @@ export class Tabs {
     if (here.includes(task)) return;
     const holding = this.tabs.find((t) => t.id !== this.current && this.tasksOf(t).includes(task));
     if (holding) return this.show(holding.id, task);
-    if (here.length && !idle) this.fresh();
+    if ((here.length || (this.tab().draft && !this.fill)) && !idle) this.fresh();
+  }
+  /** The tab shown's new-tab page opening something (an actor, an app), or done: meanwhile, a task routed goes in it,
+   * whatever is typed there. */
+  filling(on: boolean): void {
+    this.fill = on;
   }
 
   /** ⌥+click: the task out of any other tab (one left with none closed, unless named), to be the tab shown's alone. */
   take(task: string): void {
     for (const t of this.tabs) if (t.id !== this.current) t.tasks = this.tasksOf(t).filter((k) => k !== task);
-    this.tabs = this.tabs.filter((t) => t.id === this.current || t.tasks.length > 0 || t.name);
+    this.tabs = this.tabs.filter((t) => t.id === this.current || t.tasks.length > 0 || t.name || t.draft);
     this.save();
     this.hooks.changed();
   }
@@ -244,7 +260,10 @@ export class Tabs {
     this.drop(left);
     this.save();
     this.hooks.setScreen(to.screen);
-    await this.switch(() => this.hooks.enter(tasks, focus ?? kept));
+    // (one showing nothing -- a new tab kept for what is typed in it: the panels shown closed)
+    await this.switch(() =>
+      tasks.length ? this.hooks.enter(tasks, focus ?? kept) : (this.hooks.clear?.() ?? Promise.resolve()),
+    );
   }
 
   // the panels of the tab shown changed (`work`): the tasks' arrangement held as it is, nothing routed, till it is done
@@ -282,6 +301,33 @@ export class Tabs {
     this.tabs = this.tabs.filter((t) => t.id !== id);
     this.save();
     this.hooks.changed();
+  }
+  /** The close key: the tab shown closed, the next shown -- the only one, emptied (its tasks kept as they were, its name
+   * and draft gone): a new tab again. Its actors go on. */
+  async closeShown(): Promise<void> {
+    if (this.switching) await this.settling;
+    if (this.tabs.length > 1) return this.close(this.current);
+    const tab = this.tab();
+    if (!this.hooks.shown().length && !tab.name && !tab.draft) return;
+    this.leave();
+    Object.assign(tab, { tasks: [], screen: null, focus: null, name: "", draft: "" });
+    this.hooks.setScreen(null);
+    this.save();
+    await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
+  }
+
+  /** The tab shown: its id, and its new-tab page's draft. */
+  shownTab(): { id: string; draft: string } {
+    const t = this.tab();
+    return { id: t.id, draft: t.draft || "" };
+  }
+  /** What the new-tab page's box of tab `id` (the tab shown's, by default) holds now, kept with it (none: dropped). */
+  setDraft(text: string, id = this.current): void {
+    const t = this.tabs.find((x) => x.id === id);
+    if (!t || (t.draft || "") === text) return;
+    if (text) t.draft = text;
+    else delete t.draft;
+    this.save();
   }
 
   /** The tasks of tab `id`, not the one shown -- none, the one shown. */
@@ -417,12 +463,12 @@ export class Tabs {
     this.hooks.remember?.(tasks);
     Object.assign(tab, { tasks, screen: this.hooks.screen(), focus: this.hooks.focus() });
     for (const t of this.tabs) if (t !== tab) t.tasks = this.tasksOf(t).filter((k) => !tasks.includes(k));
-    this.tabs = this.tabs.filter((t) => t === tab || t.tasks.length > 0 || t.name);
+    this.tabs = this.tabs.filter((t) => t === tab || t.tasks.length > 0 || t.name || t.draft);
     return tab;
   }
-  // a tab left showing nothing, unnamed (a new one, nothing opened in it): closed
+  // a tab left showing nothing, unnamed, nothing typed in its new-tab page (a new one, nothing opened in it): closed
   private drop(left: Tab): void {
-    if (!left.tasks.length && !left.name) this.tabs = this.tabs.filter((t) => t !== left);
+    if (!left.tasks.length && !left.name && !left.draft) this.tabs = this.tabs.filter((t) => t !== left);
   }
 
   private save(): void {

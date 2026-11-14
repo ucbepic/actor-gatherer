@@ -452,6 +452,7 @@ function renderAgents() {
   renderPickBar();
   placeIfShown();                                    // an actor or an app put in a task, or taken out: its block now
   if (workPlacer) workPlacer.tabs.draw();            // what each screen tab's actors do
+  refreshNewTab();                                   // a new tab's page: its groups, folders, harnesses as they are now
   const servers = state.home.hook_servers || [];     // in the dashboard's panel (the header's button)
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";

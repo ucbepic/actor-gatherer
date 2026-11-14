@@ -194,12 +194,14 @@ test("an app selected while the actor shown just before still loads its Chat sta
   await expect(lone(page)).toHaveAttribute("aria-current", "true");
 });
 
-test('"+" opens a new tab, empty, the next task clicked shown in it; left empty, it goes', async ({ page }) => {
+test('"+" opens a new tab, its page shown, the next task clicked shown in it; left empty, it goes', async ({
+  page,
+}) => {
   await open(page);
   await row(page, CLAUDE).click();
   await page.locator(".lay-tab-add").click();
   await expect(tabs(page)).toHaveCount(2);
-  await expect(page.locator(".lay-empty")).toContainText("Nothing open in this tab");
+  await expect(page.locator(".lay-empty").getByRole("textbox", { name: "Message a new actor" })).toBeVisible(); // its page
   await expect(row(page, CLAUDE)).not.toHaveAttribute("aria-current", "true");
   await expect(mark(page, CLAUDE)).toHaveText("1");
   await row(page, CODEX).click(); // open nowhere: shown in the empty tab, not a third

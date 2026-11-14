@@ -376,13 +376,16 @@ let hereAway = null;
 // this page's own pane in sight again: its actor looked at now (04-seen.js), the list and the tabs' marks drawn so
 function backInSight() { hereAway = null; markSeen(); if (state.home) renderAgents(); }
 const isAway = () => !!hereAway && isAt(state.selected, hereAway[0], hereAway[1]);
+// No actor to show in it at all (none yet), the home come: out of sight too -- the tab, showing nothing, shows its
+// new-tab page (07-new-tab.js), not this pane's "No actors yet".
 function shownPanels() {
   const known = !!state.home, out = [], actor = (g, c, node) => out.push({ key: known ? taskKey(g, c) : null, item: c, node, app: false });
-  panes.here.node.classList.toggle("lay-away", isAway());
+  const none = known && !state.selected && !!workPlacer;
+  panes.here.node.classList.toggle("lay-away", isAway() || none);
   if (!appsOnly) {
     if (state.selected && isAway()) { /* out of sight */ }
     else if (state.selected) actor(state.selected[0], state.selected[1], panes.here.node);
-    else out.push({ key: null, item: "here", node: panes.here.node, app: false });
+    else if (!none) out.push({ key: null, item: "here", node: panes.here.node, app: false });
     for (const p of actorPanes()) actor(p.g, p.c, p.node);
   }
   for (const p of panes.apps) if (!p.held) out.push({ key: known ? appPaneTask(p) : null, item: appItem(p.instance.id), node: p.node, app: true });
@@ -405,7 +408,8 @@ function startPlacing() {
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
     focus: selectedTask, enter: enterTasks, status: taskStates, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
-    faces: blockFaces, about: blockAbout, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); } });
+    faces: blockFaces, about: blockAbout, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); },
+    blank: drawNewTab });                            // a tab showing nothing: its new-tab page (07-new-tab.js)
   NARROW.addEventListener("change", placeWork);
   // a task's row dragged from the list over the work area (05-agent-list.js's listDrag): one open in no tab, opened beside
   // the tasks shown, on the side of the one it is dropped on
@@ -1232,6 +1236,7 @@ if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
   openLink(win, url) { const p = paneOf(win); return !!p && openLink(p.g, p.c, url); },   // a link clicked in it (linkClicked)
   move(win, on) { const p = paneOf(win); if (!on) { moveEnd(); return true; } return !!p && moveStart(p.node); },   // its head dragged
   tab(win, by) { if (workPlacer) workPlacer.tabs.step(by); },   // ⌃Tab in it (the ag app): the next screen tab
+  tabKey(win, what) { tabKey(what); },               // the new-tab or close key in it (07-new-tab.js)
   menu(win, x, y) {                                  // its head right-clicked, at (x, y) in its frame
     const p = paneOf(win), r = p && p.frame.getBoundingClientRect();
     return !!p && moveMenu(p.node, r.left + p.frame.clientLeft + x, r.top + p.frame.clientTop + y);
@@ -1630,12 +1635,15 @@ async function addSession(g, harness) {
 // shown: drawn at once, the box there to take the focus.
 // `join`, for one added to a task (05-agent-list.js's addToTask): what puts it there, once started -- where it is filed --
 // and it shown beside the actor it was added to, the rest as any other's. `alone`: an actor on its own from its start,
-// run under `gatherer` (05-group-moves.js's aloneNew): filed in no folder, listed as its group of one.
+// run under `gatherer` (05-group-moves.js's aloneNew): filed in no folder, listed as its group of one. -> the session.
+// Where it started kept for the next new tab (07-new-tab.js's keptStart), but for one added to a task.
 async function startSession(gatherer, cwd, harness, join = null, alone = false) {
   state.starting = { gatherer: alone ? ALONE_NEW : gatherer, harness };
   renderAgents();
+  let s = null;
   try {
-    const s = await post("/api/sessions", { gatherer, cwd, harness, ...(alone ? { alone: true } : {}) });
+    s = await post("/api/sessions", { gatherer, cwd, harness, ...(alone ? { alone: true } : {}) });
+    if (!join) { keptStart(gatherer, alone); keptHarness(harness); }
     if (join) await join(s); else if (!alone) await fileStarted(gatherer, s.session_id);
     state.adding = null;
     collapsed.delete(s.gatherer);
@@ -1645,6 +1653,7 @@ async function startSession(gatherer, cwd, harness, join = null, alone = false) 
   } finally { state.starting = null; renderAgents(); }
   const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
+  return s;
 }
 // One of an app with an agent of its own started (app_agents.py's `start`): its actor listed and shown, its panel above.
 async function startWithApp(gatherer, cwd, name, harness) {
@@ -1652,6 +1661,7 @@ async function startWithApp(gatherer, cwd, name, harness) {
   renderAgents();
   try {
     const got = await window.agNext.apps.start(name, gatherer, cwd, harness);
+    keptStart(gatherer);
     await fileStarted(gatherer, got.session.session_id);
     state.adding = null;
     collapsed.delete(gatherer);
@@ -1676,6 +1686,7 @@ async function startShell(gatherer, cwd) {
     const size = term.opened && term.host && term.host.isConnected ? { cols: term.xterm.cols, rows: term.xterm.rows } : {};
     const folder = shellFolder(gatherer);            // opened in the folder aimed at, listed there
     const s = await post("/api/shells", { gatherer, cwd, ...size, ...(folder !== null ? { folder } : {}) });
+    keptStart(gatherer, false, folder);
     state.adding = null;
     collapsed.delete(gatherer);
     await loadHome();                                // listed before it is shown: its pane's head says where it is

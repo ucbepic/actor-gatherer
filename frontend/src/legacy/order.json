@@ -10,7 +10,8 @@
     "07-top.css",
     "08-docwriter.css",
     "11-files-view.css",
-    "12-notices.css"
+    "12-notices.css",
+    "13-new-tab.css"
   ],
   "js": [
     "00-preamble.js",
@@ -23,6 +24,7 @@
     "05-group-moves.js",
     "06-list-modes.js",
     "07-panes.js",
+    "07-new-tab.js",
     "07-notices.js",
     "08-charts.js",
     "09-selected-agent.js",

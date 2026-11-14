@@ -123,6 +123,7 @@ function chatCard(info) {
     }
     finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
   };
+  state.chatSend.draft = draft;                      // whose it is: a new tab's first message sent by it (07-new-tab.js)
   // The text box a composer is built around: Enter sends it, Shift+Enter starts a new line, and what is
   // typed in it survives the tab being drawn again (keepingPlace finds it by its id), and the reader going to another
   // actor or view and back (it starts with the actor's draft). A line high, growing with the lines typed (fitBox).
