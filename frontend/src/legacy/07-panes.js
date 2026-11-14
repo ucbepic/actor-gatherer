@@ -675,16 +675,17 @@ function openDropped(k) {
   if (/^t\d+$/.test(id)) openTask(g, Number(id.slice(1)), null, { metaKey: true });
   else if (!isAppItem(id)) openTaskBeside(g, k, id);
 }
-// A panel's head dragged -- this page's own pane's, its Chat bar's grip (the head put there), an app's panel's; in a
-// frame, the page around it told -- picks it up (none from a press on a button in it, nor one with nowhere to go); let
-// go, it is put down. Right-clicked: what it can be moved to, as a menu.
-const MOVE_FROM = "#pane-here > .pane-top, .fl-grip, .app-pane > .app-top, .lay-strip";
+// A panel's head dragged -- this page's own pane's, its Chat bar's grip (the head put there); in a frame, the page
+// around it told -- picks it up (none from a press on a button in it, nor one with nowhere to go); let go, it is put
+// down. Right-clicked: what it can be moved to, as a menu. An app's panel has no head: its row in the list, right-clicked,
+// opens that menu for it (appPanelMenu).
+const MOVE_FROM = "#pane-here > .pane-top, .fl-grip, .lay-strip";
 let movePress = null;                                // what the last press was on: a drag starting from a button is none
 if (!SNAPSHOT) {
   const head = document.querySelector("#pane-here > .pane-top");
   if (head) head.draggable = true;
   const from = (ev) => (ev.target.closest ? ev.target.closest(MOVE_FROM) : null);
-  const panel = (f) => (f.matches(".lay-strip") ? f : f.closest(".app-pane, #pane-here"));   // a task's strip: the task
+  const panel = (f) => (f.matches(".lay-strip") ? f : f.closest("#pane-here"));   // a task's strip: the task
   const busy = () => !!(movePress && movePress.closest && movePress.closest("button, input, textarea, select, a, [contenteditable]"));
   document.addEventListener("pointerdown", (ev) => { movePress = ev.target; }, true);
   document.addEventListener("dragstart", (ev) => {
@@ -704,30 +705,47 @@ if (!SNAPSHOT) {
 function moveStart(node) { return !!workPlacer && !!node && workPlacer.startMove(node); }
 function moveEnd() { if (workPlacer) workPlacer.endMove(); }
 // The menu a panel's head right-clicked opens at (x, y): which side of its task's block it goes along, or whose place it
-// takes. None for a panel with no other of its task shown.
+// takes. None for a panel with no other of its task shown -- unless `more` ({head, items}) gives it items of its own.
 // (a task's strip, or the head of its only panel shown: the task moved among the tasks shown)
 const MOVE_SIDES = [["left", "←", "To the left"], ["right", "→", "To the right"], ["top", "↑", "To the top"], ["bottom", "↓", "To the bottom"]];
-function moveMenu(node, x, y) {
+function moveMenu(node, x, y, more = null) {
   const m = workPlacer && node && workPlacer.moves(node);
-  if (!m) return false;
+  if (!m && !more) return false;
   let at = document.getElementById("lay-anchor");    // what the menu hangs from: the point pressed
   if (!at) { at = el("span", { id: "lay-anchor", class: "lay-anchor", "data-pop": "lay-move", "aria-hidden": "true" }); document.body.append(at); }
   at.style.left = `${Math.round(x)}px`; at.style.top = `${Math.round(y)}px`;
   const mark = (t) => el("span", { class: "lay-mark", "aria-hidden": "true", text: t });
-  openPop("lay-move", at, popMenu(m.task ? "Move this task" : "Move this panel", [
+  const moves = !m ? [] : [
     ...MOVE_SIDES.filter(([side]) => m.sides.includes(side))
       .map(([side, arrow, text]) => ({ mark: mark(arrow), text, run: () => workPlacer.toSide(node, side) })),
     ...m.others.map((o) => ({ mark: mark("⇄"), text: `Swap with ${panelName(o)}`, run: () => workPlacer.swapWith(node, o) })),
     ...m.tabs.map((t) => ({ mark: mark("⇥"), text: `To ${t.name}`, run: () => workPlacer.toTab(node, t.id) })),
-    ...(m.split ? [{ mark: mark("+"), text: "To a new tab of this task", run: () => workPlacer.toNewTab(node) }] : [])]));
+    ...(m.split ? [{ mark: mark("+"), text: "To a new tab of this task", run: () => workPlacer.toNewTab(node) }] : [])];
+  const head = more ? more.head(m) : m.task ? "Move this task" : "Move this panel";
+  openPop("lay-move", at, popMenu(head, [...moves, ...(more ? more.items(mark) : [])]));
   return true;
+}
+// An app's row in the list (05-agent-list.js's appRow), or its row in its task's card, right-clicked: its panel's menu,
+// as a head's -- where the panel can be moved (moveMenu), and the panel closed, the app left open (its row, or its task,
+// opens it again). Its panel not shown: the browser's own menu.
+function appPanelMenu(gname, o, ev) {
+  if (SNAPSHOT) return;
+  const p = panes.apps.find((q) => q.g === gname && q.instance.id === o.id && !q.held && !q.node.hidden);
+  if (!p) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const name = appShown(o);
+  moveMenu(p.node, ev.clientX, ev.clientY, {
+    head: (m) => (!m ? name : m.task ? `Move ${name}'s task` : `Move ${name}`),
+    items: (mark) => [{ mark: mark("×"), text: "Close its panel (the app stays open)", run: () => { workClosed(p.node); closeAppPane(p); } }],
+  });
 }
 // what a panel is called in the menu: an app's as its head names it, an actor's as the list does
 function panelName(node) {
   if (node.matches(".lay-strip")) return node.dataset.name || "this task";
   const app = panes.apps.find((p) => p.node === node);
   const short = (t) => (t.length > 48 ? `${t.slice(0, 47)}…` : t);
-  if (app) { const w = node.querySelector(".app-who"); return short((w && w.textContent.trim()) || app.app.label); }
+  if (app) return short(app.instance.name || app.instance.title || app.app.label);
   const q = actorPanes().find((p) => p.node === node), at = node === panes.here.node ? state.selected : q ? [q.g, q.c] : null;
   if (!at) return "this pane";
   if (isShell(at[1])) return "the terminal";
@@ -922,8 +940,7 @@ function appFocusAgent(g, c) {
 function addAppPane(app, instance, size = 1, held = false) {
   const p = { app, instance, g: instance.gatherer, size, held };
   p.panel = window.agNext.apps.pane(app, instance, {
-    close: () => { workClosed(p.node); closeAppPane(p); },
-    focus: () => selectAppPane(p),                   // a press on its head: selected
+    close: () => { workClosed(p.node); closeAppPane(p); },   // its panel asking (ag.close)
     intent: (kind, data, from) => appIntent(kind, data, from.instance.gatherer),
     selection: () => appsSelection(),
     agents: (g) => ((state.home && state.home.gatherers.find((x) => x.name === g)) || { agents: [] }).agents     // a gatherer's own
@@ -931,15 +948,11 @@ function addAppPane(app, instance, size = 1, held = false) {
       .map((a) => ({ channel: a.channel, name: (a.name && a.name.text) || a.last_user_message || a.channel })),
     agentState: appAgentState, send: appSend, answer: appAnswer, interrupt: appInterrupt, focusAgent: appFocusAgent,
     actors: appActors, sendActor: appSendActor, startActor: appStartActor, showActor: appShowActor,
-    named: (i) => readApps(i.gatherer, true),       // named in its head: the list's name for it too
   });
   p.node = p.panel.node; p.frame = p.panel.frame;
-  const head = p.node.querySelector(".app-top");     // dragged, the panel moved (MOVE_FROM)
-  if (head) head.draggable = true;
   p.node.hidden = held;
   topRowEl().append(p.node);
   panes.apps.push(p);
-  watchTop(p.node.querySelector(".app-head"), p);
   topLayout();
   p.panel.refresh();                                 // its agents, as the host has them
   topChanged();
@@ -956,7 +969,6 @@ function swapAppPane(p, inst) {
   panes.apps.splice(i, 1, q);
   p.panel.destroy();
   p.node.remove();
-  topRow(p, null);
   markSelected(); topLayout(); saveAppPanes(); topChanged();
   return q;
 }
@@ -965,7 +977,6 @@ function holdAppPane(p, held) {
   p.held = held;
   if (held) unselectApp(p.instance.id);
   p.node.hidden = held;
-  if (held) topRow(p, null);
   topLayout(); saveAppPanes(); topChanged();
 }
 function closeAppPane(p) {
@@ -976,7 +987,6 @@ function closeAppPane(p) {
   unselectApp(p.instance.id);
   p.panel.destroy();                                 // its streams go; the instance stays open
   p.node.remove();
-  topRow(p, null);
   appsOnlyLeft();
   saveAppPanes(); renderAgents(); topChanged();
 }

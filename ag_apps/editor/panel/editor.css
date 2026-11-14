@@ -1370,3 +1370,6 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 @media (max-width: 1100px) { .hist .h-grid, .hist .h-grid:has(> .h-side.open) { grid-template-columns: minmax(0, 1fr); }
   .hist .h-grid:has(> .h-side.open) { grid-template-rows: minmax(0, 1fr) minmax(0, 42%); }
   .hist .h-side { border-left: 0; border-top: 1px solid var(--ring); } .hist .h-status { display: none; } }
+
+/* the page's × over the panel's top right corner (app_kit/js/app.js's --ag-corner): the file's head keeps it clear */
+.ed-top .ed-head { padding-right: max(12px, var(--ag-corner, 0px)); }

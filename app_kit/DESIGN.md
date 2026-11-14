@@ -231,7 +231,8 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   channel; an agent's attachments are the latest one per instance. They replace the session's `role`. A stored role
   `{"browser": key}` is copied to an `app_attached` once, as the harness migration copied old tables.
 - **Who attaches:**
-  - the user, from a panel's agents menu, or by starting a new actor from a panel;
+  - the user, by putting an actor in the app's task (dropped on its row in the list, or its "+"), or by starting a new
+    actor from a panel;
   - the gatherer agent, with `ag actors new --app <name>` or `ag apps attach`. `--browser` and `--docwriter` stay as
     aliases.
   - an agent itself, by calling a tool that opens an instance.
@@ -456,9 +457,11 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - The SDK, `app_kit/js/app.js`, served on every app's origin at `/_ag/app.js`: events (read, subscribe, insert),
      tools (answer, call), agents, intents, the selection, the theme (its colours set on the panel's `:root`), the
      backend's messages, its own `/api/`; Esc and ⌘/Ctrl keys it leaves unhandled go on to the page.
-   - The page's side, `frontend/src/features/apps/host.ts`: an app's pane (its head: the app, its instance, the agents
-     attached -- a menu attaches and detaches them -- and ×) and the bridge to its frame, which checks every message's
-     source and origin. A panel has one stream for its backend's messages, a tool call among them, and one per
+   - The page's side, `frontend/src/features/apps/host.ts`: an app's pane -- its frame, with no head over it, and a
+     small × over its top right corner that closes the panel (the app left open); the panel keeps that corner clear,
+     its bars along the top padded at their right by `var(--ag-corner)`, which the SDK sets. Its row in the list (or in
+     its task's card) names it, closes it and puts agents in its task, and right-clicked, moves its panel or closes it
+     (07-panes.js's `appPanelMenu`) -- and the bridge to its frame, which checks every message's source and origin. A panel has one stream for its backend's messages, a tool call among them, and one per
      subscription; an intent for a panel not yet connected waits for it.
    - Apps are opened from a gatherer's "+ ⋯" menu, beside the pane in focus, the actor in focus attached. An app's
      pane is kept with the page's panes and opened again on a reload, if its instance is still open.

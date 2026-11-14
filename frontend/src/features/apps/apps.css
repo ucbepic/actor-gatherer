@@ -1,34 +1,11 @@
-/* An app's panel (host.ts) in the row above the panes (07-panes.js): its head, as tall as the page's top row (--top-h),
-   then its frame; the bar before it (features/layout/place.css), dragged to share the row's width with the panel before it. */
+/* An app's panel (host.ts) in the row above the panes (07-panes.js): its frame alone, no head over it; the bar before it
+   (features/layout/place.css), dragged to share the row's width with the panel before it. */
 .top-row > .app-pane {
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.app-pane > .app-top {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: var(--top-h, 0px);
-  box-sizing: border-box;
-  background: var(--surface);
-  border-bottom: 1px solid var(--ring);
-  color: var(--ink-2);
-  font-size: 13px;
-}
-.app-pane.focused > .app-top {
-  background: color-mix(in srgb, var(--ink) 9%, var(--surface));
-  color: var(--ink);
-}
-.app-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  position: relative;
-  padding: 6px 10px 6px 16px;
 }
 .app-pane > .app-frame {
   flex: 1 1 auto;
@@ -38,107 +15,32 @@
   border: 0;
   background: var(--surface);
 }
-.app-who {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.app-who b {
-  font-weight: 600;
-  color: var(--ink);
-}
-.app-where {
-  margin-left: 8px;
-  color: var(--muted);
-}
-/* the user's name for it (naming.ts): darker than a title or folder its app gave it */
-.app-where.named {
-  color: var(--ink-2);
-}
-/* its name being given: a box in its head's place */
-.app-name-box {
-  width: 100%;
-  box-sizing: border-box;
-  font: inherit;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--ring);
-  border-radius: 6px;
-  padding: 2px 6px;
-  outline: none;
-}
-.app-name-box:focus {
-  border-color: var(--ink-2);
-}
-.app-name-box::placeholder {
-  color: var(--muted);
-  font-weight: 400;
-}
-.app-agents,
-.app-close {
-  flex: none;
-  border: 1px solid var(--ring);
-  background: transparent;
-  color: inherit;
-  border-radius: 6px;
-  font: inherit;
-  padding: 2px 8px;
-  cursor: pointer;
-}
-.app-close {
-  border-color: transparent;
-  font-size: 16px;
-  line-height: 1;
-  padding: 2px 6px;
-}
-.app-agents:hover,
-.app-close:hover {
-  background: var(--wash);
-}
-.app-menu {
+/* its × (host.ts): over its frame's top right corner, small -- its panel closed, the app left open. A panel's bars along
+   its top keep that corner clear (app_kit/js/app.js's --ag-corner: 34px, this 22px and 6px in). */
+.app-pane > .app-x {
   position: absolute;
-  top: calc(100% - 2px);
-  right: 36px;
-  z-index: 20;
-  min-width: 200px;
-  max-height: 320px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  background: var(--surface);
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid var(--ring);
-  border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
-}
-.app-menu-item {
-  max-width: 340px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  padding: 6px 10px;
   border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
   cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }
-.app-menu-item:hover {
+.app-pane > .app-x:hover {
   background: var(--wash);
+  color: var(--ink);
 }
-.app-menu-item.on {
-  font-weight: 600;
-}
-.app-menu-none {
-  padding: 6px 10px;
-  color: var(--muted);
-}
-
 /* an app's mark (its manifest's `mark`): in a menu, a button that starts it */
 .app-mark {
   width: 16px;

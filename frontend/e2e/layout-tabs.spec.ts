@@ -8,7 +8,7 @@
 // Kept in this browser.
 import type { Locator, Page } from "@playwright/test";
 import { expect, homeAs, test } from "./test";
-import { CLAUDE, CODEX, GATHERER, open } from "./home";
+import { CLAUDE, CODEX, GATHERER, open, settledBox } from "./home";
 import { addNotepad } from "./task-home";
 
 const CLAUDE_CHANNEL = "5f0c2a2e-8d1b-4c7e-9a3f-1b2c3d4e5f60";
@@ -216,7 +216,7 @@ test('"+" opens a new tab, empty, the next task clicked shown in it; left empty,
 test("a task's row open in a tab is not dropped onto the work area", async ({ page }) => {
   await twoTabs(page); // Claude's task in tab 1, Codex in tab 2 (shown)
   const area = await box(page.locator("#pane-here"));
-  const r = await box(row(page, CLAUDE));
+  const r = await settledBox(row(page, CLAUDE)); // (the list drawn again as the tabs settle)
   await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
   await page.mouse.down();
   await page.mouse.move(r.x + r.width / 2 + 10, r.y + r.height / 2 + 10, { steps: 3 });
