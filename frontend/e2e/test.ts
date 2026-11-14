@@ -2,7 +2,7 @@
 // script would otherwise pass unseen, its view drawn as far as it got). And after each, every agent it attached to an
 // app's instance detached again: an actor opened opens the apps it is attached to with it (its task's, 07-panes.js's
 // openTaskApps), so one a test left attached would open above a later test's view. The instances stay.
-import { expect, test as base, type Page, type WebSocketRoute } from "@playwright/test";
+import { expect, test as base, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
 
 export const test = base.extend({
   page: async ({ page }, use) => {
@@ -32,6 +32,43 @@ async function clearApps(page: Page) {
       await page.request.post("/api/tasks", { data: { gatherer: g, do: "out", items: Object.keys(t.tasked) } });
 }
 export { expect };
+
+/** An app's panel's menu (07-panes.js's appPanelMenu: where it can be moved, and "Close its panel"), opened as the reader
+ * opens it -- an app's panel has no head: its row in the list right-clicked (an app in a task: its row in the task's
+ * card, the task's row hovered). */
+export async function panelMenu(page: Page, pane: Locator): Promise<Locator> {
+  const src = (await pane.locator("iframe").getAttribute("src")) || "";
+  const id = new URL(src).searchParams.get("instance") || "";
+  let row = page.locator(`#agents .app-row[data-instance="${id}"]`);
+  if (!(await row.count())) {
+    const tasks = page.locator("#agents button.agent.task");
+    for (let i = 0; i < (await tasks.count()); i++) {
+      await page.mouse.move(0, 0); // the pointer come from off the list: the card shown afresh
+      await tasks.nth(i).hover();
+      const card = page.locator("#actor-card.live");
+      await expect(card).toBeVisible();
+      row = card.locator(`.c-app-row[data-instance="${id}"] .c-row`);
+      if (await row.count()) break;
+    }
+  }
+  await row.click({ button: "right" });
+  const menu = page.locator(".row-menu[role=menu]");
+  await expect(menu).toHaveCount(1);
+  return menu;
+}
+
+/** An app's panel (`pane`) closed, the app left open: "Close its panel" picked from its menu (panelMenu). */
+export async function closePanel(page: Page, pane: Locator) {
+  await (await panelMenu(page, pane)).getByRole("menuitem", { name: /Close its panel/ }).click();
+  await page.mouse.move(0, 0); // the task's card, if one was shown for it, put away
+}
+
+/** An agent attached to an app's instance (or detached), as attaching it to the app's task does -- what the panel's
+ * head's agents menu asked, before panels had no head. */
+export async function attachTo(page: Page, gatherer: string, instance: string, channel: string, on = true) {
+  const r = await page.request.post(`/api/apps/${on ? "attach" : "detach"}`, { data: { gatherer, instance, channel } });
+  expect(r.ok()).toBe(true);
+}
 
 /** The page's streams each its own HTTP request, as before they shared a WebSocket (src/core/api/stream.ts): the socket
  * refused, so the page opens each as an EventSource -- which `page.route` can hold back or answer, as a socket's

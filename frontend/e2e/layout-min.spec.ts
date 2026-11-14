@@ -2,7 +2,7 @@
 // below it -- the others left whole; panes side by side all minimized, their row only as tall as their message boxes.
 // Kept in its task's arrangement: moved where nothing is above or below it, shown whole; moved back, minimized again.
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "./test";
+import { expect, panelMenu, test } from "./test";
 import { CLAUDE, open } from "./home";
 import { addNotepad, taskHome, taskRow } from "./task-home";
 
@@ -43,9 +43,8 @@ test("a minimized pane moved beside its app is whole; moved back under it, minim
   await minimize(page).click();
   await expect(mini).toHaveCount(1);
   const menu = async (name: string) => {
-    const n = await box(notes(page));
-    await page.mouse.click(n.x + 40, n.y + 12, { button: "right" }); // Notepad's head
-    await page.locator(".row-menu[aria-label='Move this panel']").getByRole("menuitem", { name }).click();
+    await (await panelMenu(page, notes(page))).getByRole("menuitem", { name }).click(); // Notepad's, from its task's card
+    await page.mouse.move(0, 0);
   };
   await menu("To the right"); // side by side: nothing above Claude's pane
   await expect(mini).toHaveCount(0);

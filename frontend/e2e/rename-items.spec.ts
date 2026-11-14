@@ -44,9 +44,7 @@ test("a task named from its row and from its card; nothing typed: named by what 
   await expect(row.locator(".name")).not.toHaveText("");
 });
 
-test("an app named from its row, its panel's head and its card; nothing typed: its own title again", async ({
-  page,
-}) => {
+test("an app named from its row and its card, its panel told; nothing typed: its own title again", async ({ page }) => {
   await taskHome(page, false);
   await open(page);
   const gatherer = page.locator("#agents .gatherer-row").first(); // a Notepad with no agent: a row of its own
@@ -69,27 +67,17 @@ test("an app named from its row, its panel's head and its card; nothing typed: i
   await page.keyboard.press("Enter");
   await expect(row.locator(".name")).toHaveText("Groceries");
   await expect.poll(named).toBe("Groceries"); // kept with its instance
-  await expect(pane.locator(".app-where.named")).toHaveText("Groceries"); // its panel's head told
-
-  await pane.locator(".app-who").dblclick(); // named in its panel's head
-  const head = pane.locator("input.app-name-box");
-  await expect(head).toBeFocused();
-  await expect(head).toHaveValue("Groceries");
-  await head.fill("Weekly shop");
-  await page.keyboard.press("Enter");
-  await expect(pane.locator(".app-where.named")).toHaveText("Weekly shop");
-  await expect(row.locator(".name")).toHaveText("Weekly shop"); // and the list's name for it
-  await expect.poll(named).toBe("Weekly shop");
+  await expect(pane).toHaveAttribute("aria-label", "Notepad · Groceries"); // its panel told
 
   await page.mouse.move(0, 0);
   await row.hover(); // its card's pencil
   const card = page.locator("#actor-card.live");
-  await expect(card.locator(".c-nm")).toHaveText("Weekly shop");
+  await expect(card.locator(".c-nm")).toHaveText("Groceries");
   await card.locator(".act.rename").click();
   await card.locator("input.c-box").fill("");
   await page.keyboard.press("Enter"); // nothing typed: its own title again
   await expect.poll(named).toBe("");
   await expect(row.locator(".name")).toHaveText(title);
-  await expect(pane.locator(".app-where.named")).toHaveCount(0);
+  await expect(pane).not.toHaveAttribute("aria-label", /Groceries/);
   await expect(page.locator("#agents button.agent", { hasText: CLAUDE })).toHaveCount(1); // the actors as they were
 });
