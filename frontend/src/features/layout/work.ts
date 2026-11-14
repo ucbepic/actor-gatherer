@@ -11,7 +11,7 @@ import { type Put } from "./blocks";
 import { APP, build, TOP_BAND, type Built, type Old, type Shown } from "./build";
 import { Mover } from "./move";
 import { Placer } from "./place";
-import { TABS_H, Tabs } from "./tabs";
+import { TABS_H, Tabs, type State } from "./tabs";
 import { drawStrip, Tasks } from "./tasks";
 import type { Node, Rect, Size } from "./tree";
 
@@ -49,8 +49,8 @@ export interface WorkHooks {
   enter: (tasks: string[], focus: string | null) => Promise<void>;
   /** A task's key as it is now (tabs.ts's): a lone item's since put in a task, the task's; null, gone. */
   canon?: (key: string) => string | null;
-  /** What the actors of these tasks do, all told: "asking", "error", "working", or "". */
-  status: (tasks: string[]) => string;
+  /** The states of a task's items, its lead's first: on its face in its tab (tabs.ts's State). */
+  status?: (key: string) => State[];
   /** A task's tab shown: these of its panels open, its others closed. */
   showItems: (key: string, items: string[]) => Promise<void>;
   /** A task's lead actor (a new tab of it holds it). */

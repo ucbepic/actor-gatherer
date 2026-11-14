@@ -3,8 +3,8 @@
 // dismissed from its card, cleared by the app; and an actor that comes to wait for the reader, or stops on an error,
 // popped up the same way, unless it is in front of them or they turned actors' pop-ups off. The app is Notepad
 // (tests/apps/notepad/, `notify`), sent its notifications through the route its panel's SDK calls.
-import type { Locator, Page, WebSocketRoute } from "@playwright/test";
-import { attachTo, closePanel, expect, test } from "./test";
+import type { Locator, Page } from "@playwright/test";
+import { attachTo, closePanel, expect, homeAs, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, openActor } from "./home";
 
 const CODEX_CHANNEL = "019a1f2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b";
@@ -36,28 +36,6 @@ async function openOnServer(page: Page, instance: string): Promise<string[]> {
   const home = (await (await page.request.get("/api/home")).json()) as Home;
   const g = home.gatherers.find((x) => x.name === GATHERER);
   return ((g && g.apps && g.apps[instance]) || { notices: [] }).notices.map((n) => n.title);
-}
-
-/** The page's homes as the server sends them, each passed through `change`; `again()` sends the latest again, changed
- * as `change` changes it now. */
-async function homeAs(page: Page, change: (home: Record<string, unknown>) => Record<string, unknown>) {
-  const last = new Map<string, Record<string, unknown>>();
-  let socket: WebSocketRoute | null = null;
-  await page.routeWebSocket(/\/api\/ws$/, (ws) => {
-    socket = ws;
-    const server = ws.connectToServer();
-    server.onMessage((m) => {
-      const [id, name, ...data] = typeof m === "string" ? m.split("\n") : [];
-      if (name !== "home") return ws.send(m);
-      last.set(id, JSON.parse(data.join("\n")));
-      ws.send(`${id}\nhome\n${JSON.stringify(change(structuredClone(last.get(id)!)))}`);
-    });
-  });
-  return {
-    again: () => {
-      for (const [id, h] of last) socket?.send(`${id}\nhome\n${JSON.stringify(change(structuredClone(h)))}`);
-    },
-  };
 }
 
 test("an app's notification: its row's status, counted, popped up, in its card; its panel shown, seen", async ({

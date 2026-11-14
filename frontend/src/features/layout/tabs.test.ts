@@ -2,7 +2,7 @@
 // task open nowhere (the tab shown, if empty); ⌥ takes a task out of the other tabs; a tab shown again given back its
 // tasks, their arrangement and the one in focus; a tab left kept so (each task remembered).
 import { beforeEach, describe, expect, it } from "vitest";
-import { Tabs, type TabsHooks } from "./tabs";
+import { MARKS, pressing, Tabs, type State, type TabsHooks } from "./tabs";
 import type { Node } from "./tree";
 
 let shown: string[],
@@ -10,7 +10,9 @@ let shown: string[],
   entered: [string[], string | null][],
   work: HTMLElement,
   remembered: string[][],
-  now: Record<string, string>; // a key's key now (a lone item put in a task since)
+  now: Record<string, string>, // a key's key now (a lone item put in a task since)
+  states: Record<string, State[]>, // each task's items' states
+  faced: Set<string>; // the tasks with a face
 function tabs(): Tabs {
   const hooks: TabsHooks = {
     shown: () => shown,
@@ -25,7 +27,8 @@ function tabs(): Tabs {
     remember: (k) => remembered.push(k),
     canon: (k) => now[k] ?? k,
     name: (k) => k.toUpperCase(),
-    status: () => "",
+    status: (k) => states[k] || [],
+    faces: (k) => (faced.has(k) ? [Object.assign(document.createElement("img"), { alt: k })] : []),
     screen: () => screen,
     setScreen: (s) => (screen = s),
     hold: () => {},
@@ -50,6 +53,8 @@ beforeEach(() => {
   entered = [];
   remembered = [];
   now = {};
+  states = {};
+  faced = new Set();
 });
 
 describe("screen tabs", () => {
@@ -157,5 +162,56 @@ describe("screen tabs", () => {
     expect(shown).toEqual(["a"]);
     expect(strip(t)).toEqual(["A *"]);
     expect(work.querySelectorAll(".lay-close").length).toBe(0);
+  });
+
+  it("each task's state marked on its face, its most pressing item's; past three faces, or with none, after its name", () => {
+    const t = tabs();
+    const st = (mark: string, said: string): State => ({ mark, said });
+    shown = ["a", "b", "c", "d", "e"];
+    faced = new Set(["a", "b", "c", "d"]);
+    states = {
+      a: [st("", "Idle"), st("working", "Running"), st("finished", "Finished")], // done since looked: before at work
+      b: [st("", "Idle")], // idle: no mark
+      c: [st("background", "Background"), st("notified", "Notification")],
+      d: [st("asking", "Waiting for you")], // past three faces: after the name
+      e: [st("error", "Error")], // no face: after the name too
+    };
+    t.draw();
+    const tab = work.querySelector<HTMLElement>(".lay-tab")!;
+    const marks = [...tab.querySelectorAll<HTMLElement>(".lay-fmark")].map(
+      (f) => `${f.querySelector("img")!.alt}:${f.querySelector<HTMLElement>(".lay-dot")?.dataset.status || ""}`,
+    );
+    expect(marks).toEqual(["a:finished", "b:", "c:notified"]);
+    expect(tab.querySelector(".lay-more")!.textContent).toBe("+1");
+    expect(tab.querySelector<HTMLElement>(":scope > .lay-dot")!.dataset.status).toBe("asking"); // d before e
+    expect(tab.querySelector<HTMLElement>(".lay-fmark")!.title).toBe("A · Finished");
+    expect(tab.title.split("\n")).toEqual([
+      "A, B +3 · double-click to name it",
+      "A · Finished",
+      "B · Idle",
+      "C · Notification",
+      "D · Waiting for you",
+      "E · Error",
+    ]);
+    states = {}; // nothing to mark: no mark after the name
+    t.draw();
+    expect(work.querySelector(".lay-tab > .lay-dot")).toBe(null);
+  });
+
+  it("marks ranked: what waits on the reader before what is at work", () => {
+    expect(MARKS).toEqual(["asking", "error", "notified", "finished", "working", "background"]);
+    expect(
+      pressing([
+        { mark: "working", said: "Running" },
+        { mark: "finished", said: "Finished" },
+      ]).said,
+    ).toBe("Finished");
+    expect(
+      pressing([
+        { mark: "", said: "Idle" },
+        { mark: "", said: "Closed" },
+      ]).said,
+    ).toBe("Idle"); // none: the lead's
+    expect(pressing([])).toEqual({ mark: "", said: "" });
   });
 });

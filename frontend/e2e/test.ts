@@ -96,3 +96,27 @@ export async function chatAs(page: Page, change: (view: Record<string, unknown>)
     },
   };
 }
+
+/** The page's homes as the server sends them, each passed through `change`; `again()` sends the latest again, changed
+ * as `change` changes it now -- once the stream has sent one (`sent()`): the page's first home comes from /api/home, and
+ * the stream sends one only when the home changes. */
+export async function homeAs(page: Page, change: (home: Record<string, unknown>) => Record<string, unknown>) {
+  const last = new Map<string, Record<string, unknown>>();
+  let socket: WebSocketRoute | null = null;
+  await page.routeWebSocket(/\/api\/ws$/, (ws) => {
+    socket = ws;
+    const server = ws.connectToServer();
+    server.onMessage((m) => {
+      const [id, name, ...data] = typeof m === "string" ? m.split("\n") : [];
+      if (name !== "home") return ws.send(m);
+      last.set(id, JSON.parse(data.join("\n")));
+      ws.send(`${id}\nhome\n${JSON.stringify(change(structuredClone(last.get(id)!)))}`);
+    });
+  });
+  return {
+    again: () => {
+      for (const [id, h] of last) socket?.send(`${id}\nhome\n${JSON.stringify(change(structuredClone(h)))}`);
+    },
+    sent: () => last.size > 0,
+  };
+}
