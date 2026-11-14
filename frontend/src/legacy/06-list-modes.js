@@ -73,42 +73,56 @@ function listButtons() {
       "aria-label": listHidden ? "Keep the list open" : "Hide the list", onclick: () => setListHidden(!listHidden) },
       strokeIcon(listHidden ? LIST_ICONS.keep : LIST_ICONS.hide))];
 }
-// THE LIST HIDDEN (its button; kept in this browser), whatever its shape (the list, the rail): out of the way, the panes
-// the page's whole width, a thin edge at the page's left. The pointer on that edge (or the keys in the list), it slides
-// out over the panes; it slides back a moment after the pointer has left it -- not while a menu or a card of it is
-// open, a name is being typed in it, or a row dragged from it.
-const HIDE_KEY = "ag-dashboard-list-hidden";
+// THE LIST HIDDEN (its button; kept in this browser), whatever its shape (the list, the rail): out of the way at once,
+// the panes the page's whole width, a thin edge at the page's left. The pointer on that edge (or the keys in the list),
+// it slides out over the panes, and stays while the pointer is on it -- still or moving -- or on a menu or card of it,
+// a name is typed in it or a row dragged from it; it slides back a moment after the pointer has left. Where the pointer
+// is, is asked of the page at its last place (elementFromPoint): a list slid in under a still pointer is under it,
+// though the browser's own hover may not say so till it moves -- and a pointer over a pane's frame moves unseen.
+const HIDE_KEY = "ag-dashboard-list-hidden", UNPEEK_MS = 300;
 let listHidden = false, peekTimer = null;
+const pointerAt = { x: -1, y: -1 };
 function setListHidden(on, keep = true) {
   listHidden = !!on && !PANE;
   document.documentElement.classList.toggle("list-hidden", listHidden);
-  peekList(listHidden && !!document.querySelector(".side:hover"));   // (hidden from its own button: out once left)
+  peekList(false);                                   // pressed to hide it: hidden now, out again at the edge
   drawListButtons();
   if (keep) { try { localStorage.setItem(HIDE_KEY, listHidden ? "1" : ""); } catch (e) { /* this page only */ } }
 }
 function peekList(on) {
   clearTimeout(peekTimer);
+  const was = document.documentElement.classList.contains("list-peek");
   document.documentElement.classList.toggle("list-peek", on && listHidden);
+  // out over the panes, it floats over them (features/apps/native.ts): a Browser's own page under it, in the ag app,
+  // pictured in its place from the first frame it is over any of it
+  document.querySelector(".side").classList.toggle("floats", on && listHidden);
+  if (on && listHidden && !was) unpeekSoon();        // (left again at once, never come onto it: back too)
+}
+// in use: the pointer on it (or a menu or card of it), a name typed in it, a row dragged from it
+function listInUse() {
+  if (listDrag || document.querySelector(".row-menu, .side :is(input, textarea, [contenteditable]):focus")) return true;
+  const at = pointerAt.x < 0 ? null : document.elementFromPoint(pointerAt.x, pointerAt.y);
+  return !!(at && at.closest(".side, .list-edge, .row-menu, #actor-card"));
 }
 function unpeekSoon() {
   clearTimeout(peekTimer);
-  peekTimer = setTimeout(() => {
-    const busy = listDrag || document.querySelector(".side:hover, .list-edge:hover, .row-menu, #actor-card.live:hover, "
-      + ".side :is(input, textarea, [contenteditable]):focus");
-    if (busy) unpeekSoon(); else peekList(false);
-  }, 400);
+  peekTimer = setTimeout(() => { if (listInUse()) unpeekSoon(); else peekList(false); }, UNPEEK_MS);
 }
 if (!PANE && !SNAPSHOT) {
   const side = document.querySelector(".side"), edge = el("div", { class: "list-edge", "aria-hidden": "true" });
   side.after(edge);
-  for (const e of [side, edge]) {
-    e.addEventListener("pointerenter", () => peekList(true));
-    e.addEventListener("pointerleave", unpeekSoon);
-  }
+  const at = (ev) => { pointerAt.x = ev.clientX; pointerAt.y = ev.clientY; };
+  document.addEventListener("pointermove", at, { capture: true, passive: true });
+  edge.addEventListener("pointerenter", (ev) => { at(ev); peekList(true); });
+  edge.addEventListener("pointermove", (ev) => { at(ev); if (!document.documentElement.classList.contains("list-peek")) peekList(true); });
+  side.addEventListener("pointerleave", (ev) => { at(ev); if (listHidden) unpeekSoon(); });   // (onto a frame: its last place)
   side.addEventListener("focusin", () => peekList(true));
-  side.addEventListener("focusout", unpeekSoon);
+  side.addEventListener("focusout", () => { if (listHidden) unpeekSoon(); });
   try { listHidden = localStorage.getItem(HIDE_KEY) === "1"; } catch (e) { /* none kept */ }
-  document.documentElement.classList.toggle("list-hidden", listHidden);
+  const root = document.documentElement;
+  root.classList.add("list-still");                  // the page opened with it hidden: hidden, not sliding away
+  root.classList.toggle("list-hidden", listHidden);
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("list-still")));
 }
 function drawListButtons() { document.getElementById("list-btns").replaceChildren(...listButtons().filter(Boolean)); }
 const leaveFull = () => setListMode(listFrom === "full" ? "list" : listFrom);

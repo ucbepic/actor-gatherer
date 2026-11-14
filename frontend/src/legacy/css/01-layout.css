@@ -554,3 +554,4 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
   background: var(--side-rule); transition: background .12s; }
 :root.list-hidden:not(.list-full) .list-edge:hover::after { background: var(--s1); }
 @media (prefers-reduced-motion: reduce) { :root.list-hidden .side { transition: none; } }
+:root.list-still .side { transition: none !important; }   /* (the page opened with it hidden: no slide away) */
