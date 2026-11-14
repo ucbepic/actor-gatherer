@@ -5,17 +5,11 @@
 // this browser.
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./test";
-import { CLAUDE, CODEX, open } from "./home";
+import { CLAUDE, CODEX, open, settledBox } from "./home";
 import { addNotepad } from "./task-home";
 
 const beside = process.platform === "darwin" ? "Meta" : "Control";
 const box = async (l: Locator) => (await l.boundingBox())!;
-// its box once it has one: a row of the list, drawn again as what is shown changes, is measured on the row now
-async function settledBox(l: Locator): Promise<Box> {
-  let b: Box | null = null;
-  await expect.poll(async () => (b = await l.boundingBox()) !== null).toBe(true);
-  return b!;
-}
 type Box = { x: number; y: number; width: number; height: number };
 async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
   await page.mouse.move(from.x, from.y);
