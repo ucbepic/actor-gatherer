@@ -7,7 +7,9 @@
 // shows nothing). ⌥+click makes the tab shown the task's alone (take: out of any other tab; the page closes the rest).
 // The tabs' bar, over the work area always: each tab its tasks' faces, its name (its tasks', or one given it by a
 // double-click), a dot for what its actors do (asking, failed, working), its × (none, the only one); pressed, shown;
-// dragged, put elsewhere; and a "+" for a new tab, empty.
+// dragged, put elsewhere; and a "+" for a new tab, empty. A task of the tab shown, the tab showing others too, moved to
+// another tab (put): dragged by its card head onto another tab's name, into that tab -- anywhere else on the bar ("New tab"
+// shown there meanwhile), into a new tab -- or from its menu; the tab shown stays shown.
 import type { Node } from "./tree";
 
 export interface Tab {
@@ -46,6 +48,12 @@ export interface TabsHooks {
   changed: () => void;
   /** A tab's name picked up to be dragged (its id), or let go (null): dropped on the work area, its tasks open there. */
   dragged?: (id: string | null) => void;
+  /** The task of the tab shown being dragged (by its card head, or its only panel's) that can go to another tab, if one
+   * is: the tab showing other tasks too. */
+  carried?: () => string | null;
+  /** That task let go on the bar: on another tab's name (`to`, its id), into that tab; anywhere else on it (null), into a
+   * new tab at its end. */
+  carry?: (task: string, to: string | null) => void;
 }
 
 const TABS_KEY = "ag-dashboard-screen-tabs";
@@ -63,6 +71,7 @@ export class Tabs {
   private readonly strip: HTMLElement;
   private readonly list: HTMLElement;
   private readonly add: HTMLButtonElement;
+  private readonly ghost: HTMLElement; // "New tab", while a task that can go to another tab is dragged
 
   constructor(
     work: HTMLElement,
@@ -89,8 +98,31 @@ export class Tabs {
     this.add.textContent = "+";
     this.add.title = this.add.ariaLabel = "New tab, empty: what you open next goes in it";
     this.add.addEventListener("click", () => void this.blank());
-    this.strip.append(this.list, this.add);
+    this.ghost = document.createElement("div");
+    this.ghost.className = "lay-tab-ghost";
+    this.ghost.textContent = "New tab";
+    this.ghost.hidden = true;
+    this.strip.append(this.list, this.ghost, this.add);
     work.append(this.strip);
+    // a task dragged over the bar: where it would go marked; let go, it goes there
+    this.strip.addEventListener("dragover", (ev) => {
+      if (!this.hooks.carried?.()) return;
+      const to = this.carriedTo(ev);
+      this.markCarry(to);
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = to ? "move" : "none";
+      if (to) ev.preventDefault();
+    });
+    this.strip.addEventListener("dragleave", (ev) => {
+      if (!this.strip.contains(ev.relatedTarget as globalThis.Node | null)) this.markCarry(null);
+    });
+    this.strip.addEventListener("drop", (ev) => {
+      const task = this.hooks.carried?.(),
+        to = task ? this.carriedTo(ev) : null;
+      this.markCarry(null);
+      if (!task || !to) return;
+      ev.preventDefault();
+      this.hooks.carry?.(task, to === "new" ? null : to.dataset.id!);
+    });
   }
 
   /** How tall the tabs' bar is. */
@@ -244,6 +276,46 @@ export class Tabs {
     this.save();
     this.hooks.changed();
     return tasks;
+  }
+
+  /** The tabs but the one shown: each one's id, number (from 1) and name, as the bar shows them. */
+  others(): { id: string; n: number; name: string }[] {
+    return this.tabs.flatMap((t, i) =>
+      t.id === this.current ? [] : [{ id: t.id, n: i + 1, name: this.look(t).name }],
+    );
+  }
+  /** Task `task`, just closed in the tab shown (kept as it was: its panels, its tabs), put in tab `to` (another), last --
+   * or, none, in a new tab: after the tab shown, or (`last`) at the bar's end. Not shown: shown, the tab opens it again
+   * as it was. */
+  put(task: string, to: string | null, last = false): void {
+    let tab = to && to !== this.current ? this.tabs.find((t) => t.id === to) : undefined;
+    if (!tab) {
+      tab = { id: newId(), name: "", tasks: [], screen: null, focus: task };
+      this.tabs.splice(last ? this.tabs.length : this.tabs.findIndex((t) => t.id === this.current) + 1, 0, tab);
+    }
+    for (const t of this.tabs)
+      if (t !== tab && t.id !== this.current) t.tasks = this.tasksOf(t).filter((k) => k !== task);
+    tab.tasks = [...this.tasksOf(tab).filter((k) => k !== task), task];
+    tab.focus ||= task;
+    this.save();
+    this.hooks.changed();
+  }
+  /** A task that can go to another tab picked up (work.ts), or put down: "New tab" shown in the bar meanwhile. */
+  carrying(on: boolean): void {
+    this.ghost.hidden = !on;
+    if (!on) this.markCarry(null);
+  }
+  // where a task dragged over the bar would go: on another tab's name, that tab; on the tab shown's, nowhere; anywhere
+  // else, a new tab
+  private carriedTo(ev: DragEvent): HTMLElement | "new" | null {
+    const chip = ev.target instanceof Element ? ev.target.closest<HTMLElement>(".lay-tab[data-id]") : null;
+    if (!chip) return "new";
+    return chip.dataset.id === this.current ? null : chip;
+  }
+  private markCarry(to: HTMLElement | "new" | null): void {
+    for (const e of this.list.querySelectorAll(".lay-into")) if (e !== to) e.classList.remove("lay-into");
+    if (to instanceof HTMLElement) to.classList.add("lay-into");
+    this.ghost.classList.toggle("lay-into", to === "new");
   }
 
   rename(id: string, name: string): void {

@@ -2,13 +2,15 @@
 // laid out as its task's arrangement says -- kept per task in this browser, with its tabs (tasks.ts) -- the blocks as
 // the tasks' arrangement says (blocks.ts), all built afresh from the panels shown each time the work area is placed
 // (build.ts), in one of several screens (tabs.ts). A bar dragged keeps its sizes in the arrangement it is of; a panel
-// dragged by its head, or a task by its strip (move.ts), or either moved from its menu, changes it.
+// dragged by its head, or a task by its strip (move.ts), or either moved from its menu, changes it. A task, the tab
+// showing others too, goes to another screen tab dragged onto the tabs' bar, or from its menu (toScreenTab).
 // Drawn so a task reads as one thing, a tab as another: the tabs' bar on top, the tasks under it in a well of their own,
 // each task a card (its frame drawn over its panels, the well showing between cards), its panels split by a line only;
 // a tab showing nothing, a note saying so.
 import { addItem, keepSizes, leaves, mark, move, remove, swap, toSide, type Side, type Zone } from "./arrange";
 import { type Put } from "./blocks";
 import { APP, build, TOP_BAND, type Built, type Old, type Shown } from "./build";
+import { Cards, withBlocks } from "./cards";
 import { Mover } from "./move";
 import { Placer } from "./place";
 import { TABS_H, Tabs } from "./tabs";
@@ -61,8 +63,9 @@ export interface WorkHooks {
   remember?: (keys: string[]) => void;
   /** A task of another tab, dropped with it on the work area: opened beside the tasks shown (where `put` says). */
   openBeside?: (key: string) => Promise<void>;
-  /** A task closed by its card head's ×: its panels out of the tab shown (its agents go on). */
-  closeTask?: (key: string) => void;
+  /** A task closed by its card head's ×, or moved to another tab: its panels out of the tab shown, kept as they are (its
+   * agents go on). */
+  closeTask?: (key: string) => void | Promise<void>;
   /** A block's faces (its task's actors', its apps' marks) and what is in it, in words: on its card's head, its tab. */
   faces?: (block: string) => HTMLElement[];
   about?: (block: string) => string;
@@ -70,13 +73,15 @@ export interface WorkHooks {
   listed?: () => void;
 }
 /** What a panel (or a task, by its strip) can be moved to from its menu: a side, or another's place; `task`: the task is
- * moved (its strip, or the head of its only panel shown); another tab of its task, or a new one (`split`). */
+ * moved (its strip, or the head of its only panel shown); another tab of its task, or a new one (`split`); a task, the
+ * tab shown showing others too, another screen tab, or a new one (`screens`: the others; null, none). */
 export interface Moves {
   sides: Side[];
   others: HTMLElement[];
   task: boolean;
   tabs: { id: string; name: string }[];
   split: boolean;
+  screens: { id: string; n: number; name: string }[] | null;
 }
 
 const SCREEN_KEY = "ag-dashboard-screen";
@@ -105,8 +110,7 @@ export class Work {
   private holding = false; // a tab being shown: the tasks' arrangement held as it is meanwhile
   private mins = new Set<HTMLElement>(); // the panes minimized, as last placed; those that can be
   private unders = new Set<HTMLElement>();
-  private readonly cardBox: HTMLElement; // each block's card: its frame, drawn over its panels
-  private readonly cards = new Map<string, HTMLElement>();
+  private readonly cards = new Cards(); // each block's card: its frame, drawn over its panels
   private readonly empty: HTMLElement;
   private listedFor = "";
 
@@ -127,8 +131,6 @@ export class Work {
     work.prepend(well); // (first: under every panel)
     this.stripBox = document.createElement("div");
     this.stripBox.className = "lay-strips";
-    this.cardBox = document.createElement("div");
-    this.cardBox.className = "lay-cards";
     this.empty = document.createElement("div");
     this.empty.className = "lay-empty";
     this.empty.hidden = true;
@@ -137,7 +139,7 @@ export class Work {
     head.textContent = "Nothing open in this tab";
     line.textContent = "Click a task in the list to open it here.";
     this.empty.append(head, line);
-    work.append(this.stripBox, this.cardBox, this.empty);
+    work.append(this.stripBox, this.cards.el, this.empty);
     this.tabs = new Tabs(work, {
       // the tasks shown, by their keys now (the panels', not as last placed: a lone item put in a task since has its
       // task's key, whether or not the work area was placed again)
@@ -167,6 +169,8 @@ export class Work {
         if (id && this.hooks.openBeside && this.tabs.held(id).length) this.mover.start(TABS + id);
         else if (!id) this.mover.end();
       },
+      carried: () => this.carried(),
+      carry: (task, to) => void this.carry(task, to, true),
     });
     this.placer = new Placer(work, {
       tree: (box) => this.tree(box),
@@ -174,7 +178,10 @@ export class Work {
       resized: (key, sizes, done) => this.resized(key, sizes, done),
       inset: () => ({ top: TABS_H + PAD, right: WELL + PAD, bottom: WELL + PAD, left: WELL + PAD }),
       fitted: (id) => !!this.last?.minimized.has(id),
-      placed: () => this.drawCards(),
+      placed: () => {
+        const rects = this.last ? this.rects() : new Map<string, Rect>();
+        this.cards.draw(this.last?.blocks || [], (b) => rects.get(BLOCK + b));
+      },
     });
     this.mover = new Mover(work, {
       rects: () => this.rects(),
@@ -192,10 +199,14 @@ export class Work {
   /** A panel's head dragged, or a task's strip: false if it has nowhere to go (its task's only panel shown). */
   startMove(node: HTMLElement): boolean {
     const id = this.idOf(node);
-    return !!id && this.mover.start(id);
+    if (!id || !this.mover.start(id)) return false;
+    // (not as the drag starts, as the cover: a page changed under a drag then can end it)
+    if (this.carried()) setTimeout(() => this.tabs.carrying(!!this.carried()), 0);
+    return true;
   }
   endMove(): void {
     this.mover.end();
+    this.tabs.carrying(false);
   }
   /** A task's row dragged from the list over the work area: opened where it is dropped -- one open in a tab, none. */
   offer(key: string): boolean {
@@ -235,8 +246,31 @@ export class Work {
       task: id.startsWith(BLOCK),
       tabs: tabs ? tabs.tabs.filter((t) => t.id !== tabs.shown).map((t) => ({ id: t.id, name: t.name })) : [],
       split: !!of && others.length > 0, // into a new tab: its tab keeps the others
+      screens: id.startsWith(BLOCK) && this.movable(id.slice(1)) ? this.tabs.others() : null,
     };
     return moves.sides.length || moves.tabs.length || moves.split ? moves : null;
+  }
+  /** A task (by its strip, or its only panel's head) out of the tab shown, into screen tab `to` -- none, a new one after
+   * the tab shown -- its panels closed here, kept as they are, opened so when that tab is shown. The tab shown stays. */
+  toScreenTab(node: HTMLElement, to: string | null): void {
+    const id = this.idOf(node);
+    if (id?.startsWith(BLOCK)) void this.carry(id.slice(1), to);
+  }
+  private async carry(key: string, to: string | null, last = false): Promise<void> {
+    if (!this.movable(key)) return;
+    this.endMove(); // (dragged: its panels closed, the head it was dragged by goes, and its drag's end goes unheard)
+    await this.hooks.closeTask!(key);
+    this.tabs.put(key, to, last);
+  }
+  // whether task `key` can go to another tab: shown here, a task's block (not a terminal's), others shown beside it
+  private movable(key: string): boolean {
+    const blocks = this.last?.blocks || [];
+    return !!this.hooks.closeTask && blocks.length > 1 && blocks.includes(key) && !key.startsWith("\u0002");
+  }
+  // the task being dragged, if it can go to another tab
+  private carried(): string | null {
+    const id = this.mover.held();
+    return id.startsWith(BLOCK) && this.movable(id.slice(1)) ? id.slice(1) : null;
   }
   toSide(node: HTMLElement, side: Side): void {
     const id = this.idOf(node);
@@ -302,33 +336,6 @@ export class Work {
     return { id: EMPTY };
   }
 
-  // Each block's card: a frame round its panels (its strip with them), where they were placed -- over them, letting the
-  // pointer by; none at a phone's width
-  private drawCards(): void {
-    const rects = this.last ? this.rects() : new Map<string, Rect>(),
-      now = new Set<string>();
-    for (const b of this.last?.blocks || []) {
-      const r = rects.get(BLOCK + b);
-      if (!r) continue;
-      now.add(b);
-      let e = this.cards.get(b);
-      if (!e) {
-        e = document.createElement("div");
-        e.className = "lay-card";
-        e.setAttribute("aria-hidden", "true");
-        this.cardBox.append(e);
-        this.cards.set(b, e);
-      }
-      const s = e.style;
-      [s.left, s.top, s.width, s.height] = [r.x, r.y, r.w, r.h].map((n) => `${n}px`);
-    }
-    for (const [b, e] of this.cards)
-      if (!now.has(b)) {
-        e.remove();
-        this.cards.delete(b);
-      }
-  }
-
   // PANES MINIMIZED, each on its own: only its message box, where something of its task is above or below it
   /** Whether a pane is minimized now. */
   isMin(node: HTMLElement): boolean {
@@ -353,7 +360,7 @@ export class Work {
       e = document.createElement("div");
       e.className = "lay-strip";
       e.draggable = true;
-      e.title = "Drag to move this task beside another · right-click: move it";
+      e.title = "Drag to move this task: beside another, or onto the tab bar · right-click: move it";
       this.stripBox.append(e);
       this.strips.set(b, e);
     }
@@ -366,7 +373,7 @@ export class Work {
         this.tasks.save();
         this.place();
       },
-      closeTask: this.hooks.closeTask && !b.startsWith("\u0002") ? () => this.hooks.closeTask!(b) : null,
+      closeTask: this.hooks.closeTask && !b.startsWith("\u0002") ? () => void this.hooks.closeTask!(b) : null,
       add: this.hooks.lead(b)
         ? () => {
             const lead = this.hooks.lead(b);
@@ -450,23 +457,10 @@ export class Work {
   }
   // where each panel is, and each block (all its panels, its strip with them)
   private rects(): Map<string, Rect> {
-    const out = new Map(this.placer.rects());
-    for (const [id, r] of this.placer.rects()) {
+    const out = withBlocks(this.placer.rects(), (id) => {
       const b = this.last?.items.get(id)?.block ?? this.last?.strips.get(id);
-      if (b === undefined) continue;
-      const was = out.get(BLOCK + b);
-      if (!was) out.set(BLOCK + b, { ...r });
-      else {
-        const x = Math.min(was.x, r.x),
-          y = Math.min(was.y, r.y);
-        out.set(BLOCK + b, {
-          x,
-          y,
-          w: Math.max(was.x + was.w, r.x + r.w) - x,
-          h: Math.max(was.y + was.h, r.y + r.h) - y,
-        });
-      }
-    }
+      return b === undefined ? undefined : BLOCK + b;
+    });
     const box = this.work.getBoundingClientRect(); // and each tab's name in a task's strip
     for (const [b, e] of this.strips)
       for (const chip of e.querySelectorAll<HTMLElement>(".lay-ttab[data-tab]")) {

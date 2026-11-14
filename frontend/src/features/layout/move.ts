@@ -44,6 +44,11 @@ export class Mover {
     return true;
   }
 
+  /** What is being dragged (its id), if anything. */
+  held(): string {
+    return this.id;
+  }
+
   end(): void {
     this.id = "";
     this.cover?.remove();

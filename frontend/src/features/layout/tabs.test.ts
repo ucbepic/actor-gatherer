@@ -10,7 +10,9 @@ let shown: string[],
   entered: [string[], string | null][],
   work: HTMLElement,
   remembered: string[][],
-  now: Record<string, string>; // a key's key now (a lone item put in a task since)
+  now: Record<string, string>, // a key's key now (a lone item put in a task since)
+  dragging: string | null, // the task being dragged by its card head, if one can go to another tab
+  carried: [string, string | null][]; // each let go on the bar: the task, the tab it goes in (null: a new one)
 function tabs(): Tabs {
   const hooks: TabsHooks = {
     shown: () => shown,
@@ -30,6 +32,8 @@ function tabs(): Tabs {
     setScreen: (s) => (screen = s),
     hold: () => {},
     changed: () => {},
+    carried: () => dragging,
+    carry: (k, to) => carried.push([k, to]),
   };
   return new Tabs(work, hooks);
 }
@@ -50,6 +54,8 @@ beforeEach(() => {
   entered = [];
   remembered = [];
   now = {};
+  dragging = null;
+  carried = [];
 });
 
 describe("screen tabs", () => {
@@ -157,5 +163,61 @@ describe("screen tabs", () => {
     expect(shown).toEqual(["a"]);
     expect(strip(t)).toEqual(["A *"]);
     expect(work.querySelectorAll(".lay-close").length).toBe(0);
+  });
+
+  it("a task put in a new tab: after the tab shown, or last; the tab shown stays; shown, the new tab opens it", async () => {
+    const t = tabs();
+    t.fresh();
+    shown = ["b", "c", "d", "e"]; // tab 1: a; tab 2 (shown): b, c, d, e
+    shown = ["b", "d", "e"]; // c closed here (the page's), then put
+    t.put("c", null);
+    expect(strip(t)).toEqual(["A", "B, D +1 *", "C"]);
+    shown = ["b", "e"];
+    t.put("d", null, true); // dropped on the bar: at its end
+    shown = ["b"];
+    t.put("e", null); // from the menu: after the tab shown
+    expect(strip(t)).toEqual(["A", "B *", "E", "C", "D"]);
+    await t.route("c"); // shown: c opened, in focus
+    expect(entered).toEqual([[["c"], "c"]]);
+    expect(strip(t)).toEqual(["A", "B", "E", "C *", "D"]);
+  });
+
+  it("a task put in another tab, last, that tab's focus kept; the tabs to go to, the others", async () => {
+    const t = tabs();
+    t.fresh();
+    shown = ["b", "c", "d"];
+    strip(t);
+    const [first, second] = ids();
+    expect(t.others()).toEqual([{ id: first, n: 1, name: "A" }]);
+    shown = ["b", "d"];
+    t.put("c", first);
+    shown = ["b"];
+    t.put("d", second); // the tab shown: no tab to go in -- a new one
+    expect(strip(t)).toEqual(["A, C", "B *", "D"]);
+    await t.show(first);
+    expect(entered).toEqual([[["a", "c"], "a"]]);
+  });
+
+  it("a task dragged onto the bar: on another tab's name, into it; on the tab shown's, nowhere; elsewhere, a new tab", () => {
+    const t = tabs();
+    t.fresh();
+    shown = ["b", "c"];
+    strip(t);
+    const [first] = ids();
+    const drop = (on: Element): boolean => on.dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+    const chip = (i: number): Element => work.querySelectorAll(".lay-tab")[i];
+    expect(drop(chip(0))).toBe(true); // nothing dragged: not taken
+    dragging = "c";
+    t.carrying(true);
+    expect(work.querySelector<HTMLElement>(".lay-tab-ghost")!.hidden).toBe(false); // "New tab" shown
+    expect(drop(chip(1))).toBe(true); // the tab shown's: nowhere
+    expect(drop(chip(0))).toBe(false);
+    expect(drop(work.querySelector(".lay-tab-add")!)).toBe(false);
+    expect(carried).toEqual([
+      ["c", first],
+      ["c", null],
+    ]);
+    t.carrying(false);
+    expect(work.querySelector<HTMLElement>(".lay-tab-ghost")!.hidden).toBe(true);
   });
 });

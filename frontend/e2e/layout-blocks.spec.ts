@@ -94,7 +94,8 @@ test("a task of one panel moved by its head's menu: in the other task's place", 
   const grip = await box(codex.frameLocator("iframe").locator(".fl-grip")); // its head, in its Chat bar (an app shown)
   await page.mouse.click(grip.x + grip.width / 2, grip.y + grip.height / 2, { button: "right" });
   const menu = page.locator(".row-menu[role=menu][aria-label='Move this task']");
-  await expect(menu.getByRole("menuitem").last()).toHaveText(`⇄Swap with ${CLAUDE}`);
+  await expect(menu.getByRole("menuitem").nth(-2)).toHaveText(`⇄Swap with ${CLAUDE}`);
+  await expect(menu.getByRole("menuitem").last()).toHaveText("+To a new tab"); // (layout-tabs.spec.ts)
   await menu.getByRole("menuitem", { name: `Swap with ${CLAUDE}` }).click();
   await expect.poll(async () => (await box(codex)).x < (await box(strip)).x).toBe(true); // Codex at the left now
 });

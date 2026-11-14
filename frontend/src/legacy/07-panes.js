@@ -496,9 +496,9 @@ async function openTaskHereBeside(k) {
   if (isAppItem(id)) { if (appInfo(g, id.slice(APP_ITEM.length))) await openTaskApps(g, null, k, null, true); return; }
   if (gg.agents.some((a) => a.channel === id)) await openTaskBeside(g, k, id);
 }
-// A task CLOSED HERE (its card head's ×): kept as it is now (rememberTask), its panes and panels closed -- its agents go on
-// -- this page's own pane given the next pane's actor if it showed one of k's, else out of sight (the tab showing nothing
-// else: its note says so)
+// A task CLOSED HERE (its card head's ×, or moved to another tab): kept as it is now (rememberTask), its panes and panels
+// closed -- its agents go on -- this page's own pane given the next pane's actor if it showed one of k's, else out of
+// sight (the tab showing nothing else: its note says so); the focus, if it was k's, on the next task shown
 async function closeTaskHere(k) {
   const mine = (g, c) => taskKey(g, c) === k;
   if (tasksLaidOut.has(k)) rememberTask(k);
@@ -512,6 +512,8 @@ async function closeTaskHere(k) {
     else hereAway = state.selected;
   }
   if (taskNow === k) taskNow = null;
+  const next = shownPanels().map((s) => s.key).find((x) => x && x !== k);
+  if (next && (!selectedTask() || selectedTask() === k)) focusTask(next);
   placeWork(); renderAgents();
 }
 // A new tab, empty ("+" on the tabs' bar): the tasks shown kept as they are (the tab left keeps them: hooks.remember),
@@ -698,7 +700,8 @@ function moveStart(node) { return !!workPlacer && !!node && workPlacer.startMove
 function moveEnd() { if (workPlacer) workPlacer.endMove(); }
 // The menu a panel's head right-clicked opens at (x, y): which side of its task's block it goes along, or whose place it
 // takes. None for a panel with no other of its task shown.
-// (a task's strip, or the head of its only panel shown: the task moved among the tasks shown)
+// (a task's strip, or the head of its only panel shown: the task moved among the tasks shown -- or, others shown with it,
+// to another screen tab, or a new one)
 const MOVE_SIDES = [["left", "←", "To the left"], ["right", "→", "To the right"], ["top", "↑", "To the top"], ["bottom", "↓", "To the bottom"]];
 function moveMenu(node, x, y) {
   const m = workPlacer && node && workPlacer.moves(node);
@@ -712,7 +715,9 @@ function moveMenu(node, x, y) {
       .map(([side, arrow, text]) => ({ mark: mark(arrow), text, run: () => workPlacer.toSide(node, side) })),
     ...m.others.map((o) => ({ mark: mark("⇄"), text: `Swap with ${panelName(o)}`, run: () => workPlacer.swapWith(node, o) })),
     ...m.tabs.map((t) => ({ mark: mark("⇥"), text: `To ${t.name}`, run: () => workPlacer.toTab(node, t.id) })),
-    ...(m.split ? [{ mark: mark("+"), text: "To a new tab of this task", run: () => workPlacer.toNewTab(node) }] : [])]));
+    ...(m.split ? [{ mark: mark("+"), text: "To a new tab of this task", run: () => workPlacer.toNewTab(node) }] : []),
+    ...(m.screens || []).map((t) => ({ mark: mark("⇥"), text: `To tab ${t.n} · ${t.name.length > 40 ? `${t.name.slice(0, 39)}…` : t.name}`, run: () => workPlacer.toScreenTab(node, t.id) })),
+    ...(m.screens ? [{ mark: mark("+"), text: "To a new tab", run: () => workPlacer.toScreenTab(node, null) }] : [])]));
   return true;
 }
 // what a panel is called in the menu: an app's as its head names it, an actor's as the list does
