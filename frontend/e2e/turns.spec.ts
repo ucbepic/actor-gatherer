@@ -53,6 +53,8 @@ test("says how many earlier turns are not drawn, and draws them as the reader sc
 
 test("keeps what the reader looks at in place as earlier turns come in above it", async ({ page }) => {
   await openActor(page, CLAUDE);
+  // its turns drawn: the actor shown before it, made smaller too, is kept at its end as well
+  await expect(page.locator("#main .fl-earlier")).toHaveText("10 earlier turns · scroll up for more");
   await page.setViewportSize({ width: 1300, height: 440 }); // the conversation longer than its box
   await expect.poll(() => talk(page).evaluate((n) => n.scrollTop)).toBeGreaterThan(0); // kept at its end, smaller
   await talk(page).evaluate((n) => (n.scrollTop = 0));
