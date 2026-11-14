@@ -223,14 +223,18 @@ async function openTaskApps(g, c, to, only = null, beside = false) {
   if (opened) { saveAppPanes(); renderAgents(); }
 }
 // The actor in the pane in focus -- in `view`, if given; one open already, its pane focused instead. Of another task than
-// the one shown: the panels changed for it first (enterTask). `wait` false: done once it is in its pane, what it shows
-// (its Chat) loading still.
+// the one shown: the panels changed for it first (enterTask), and the rest of its task laid out beside it, its pane in
+// focus, as soon as it is in its pane -- not once what it shows (its Chat) has loaded: a click meanwhile (an app
+// selected, another pane) would lose its focus to it. `wait` false: done then, its Chat loading still.
 async function show(g, c, view = null, wait = true) {
   if (isAt(hereAway, g, c)) hereAway = null;         // asked for: in sight again (and in its task's tab shown)
   const entered = enterTask(g, c);
-  await showIn(g, c, view || (entered && entered.view) || null, wait);
+  const shown = await showIn(g, c, view || (entered && entered.view) || null, false);
   if (entered) entered.after();
+  if (wait && shown) await shown.loading;
 }
+// `c` shown in the pane in focus, or its own pane focused: what it shows (its Chat) loaded first -- `wait` false, not
+// waited on: then {loading}, the load under way, if one is
 async function showIn(g, c, view = null, wait = true) {
   const there = actorPanes().find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
   if (there) showActorsApp(g, c);                    // shown already: its app's panel, closed since, opened again
@@ -239,13 +243,16 @@ async function showIn(g, c, view = null, wait = true) {
     focusPane(p);
     if (!there) { Object.assign(p, { g, c, view: view || p.view }); savePanes(); connect(); renderAgents(); p.call("select", g, c, view); }
     else if (view) p.call("view", view);
-    return;
+    return null;
   }
   focusPane(panes.here);
-  const loaded = (work) => { if (wait) return work; work.catch(() => {}); return null; };   // waited on, or left to load
-  if (there) { if (view) await loaded(setChatView(view)); return; }
-  if (view) setViewHere(view);
-  await loaded(select(g, c));
+  let loading = null;
+  if (there) { if (view) loading = setChatView(view); }
+  else { if (view) setViewHere(view); loading = select(g, c); }
+  if (!loading) return null;
+  if (wait) { await loading; return null; }
+  loading.catch(() => {});
+  return { loading };
 }
 function setViewHere(id) {
   state.chatViewId = id;
