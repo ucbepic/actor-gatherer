@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag_dashboard import data, files  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
+words = lambda replies: [{k: v for k, v in r.items() if k != "after"} for r in replies]   # what they say, not where
+
 
 class ShellReadsTest(unittest.TestCase):
     """What a shell command read, told from its output."""
@@ -201,10 +203,26 @@ class FilesTest(unittest.TestCase):
         self.assertEqual([t["text"] for t in got["turns"]], ["look at a.py", "change g"])
         self.assertEqual(got["turn"], 1)
         self.assertEqual([t["replies"] for t in got["turns"]],              # what the agent thought and said back
-                         [[{"kind": "thinking", "texts": ["Read it first."]}, {"kind": "text", "text": "It returns 1."}], []])
+                         [[{"kind": "thinking", "texts": ["Read it first."], "after": 0},
+                           {"kind": "text", "text": "It returns 1.", "after": 1}], []])
         self.assertEqual([t["now"] for t in got["turns"]], [None, None])    # done: nothing under way
         self.assertEqual([f["path"] for f in got["files"]], ["/w/a.py", "/w/b.py", "/w/new.py", "/w/notes.md", "/w/shot.png"])
         self.assertIn("error", files.files("nope", "c1"))
+
+    def test_each_reply_says_how_many_of_its_turn_s_calls_came_before_it(self):
+        # the order the agent spoke and worked in, which the turns' replies and their commands, listed apart, lose
+        self.add(asked("fix it"), said("Looking first."),
+                 call("x1", "Bash", {"command": "ls", "description": "List"}), result("x1", "a.py"),
+                 thought("Odd."), call("x2", "Bash", {"command": "cat a.py", "description": "Show a.py"}), result("x2", "x = 1"),
+                 said("Found it."), call("x3", "Edit", {"file_path": "/w/a.py", "old_string": "x = 1", "new_string": "x = 2"}),
+                 result("x3", "ok"), said("Fixed."))
+        got = files.files("g", "c1", cwd="/w")
+        t = got["turns"][-1]
+        self.assertEqual([(r["kind"], r["after"]) for r in t["replies"]],
+                         [("text", 0), ("thinking", 1), ("text", 2), ("text", 3)])
+        self.assertEqual([c["text"] for c in got["commands"]], ["List", "Show a.py", "Edit a.py"])   # the 1st, 2nd and 3rd
+        earlier = files.files("g", "c1", 0, cwd="/w")["turns"][0]["replies"]                  # an earlier turn's, the same
+        self.assertEqual([r["after"] for r in earlier], [0, 1])
 
     def test_a_turn_ends_at_its_last_event(self):
         self.add(asked("and now?"), at="2026-10-24 09:00:00")
@@ -231,7 +249,7 @@ class FilesTest(unittest.TestCase):
 
     def test_what_the_agent_is_doing_while_its_turn_runs(self):
         self.add(asked("and now?"), thought(""))
-        self.assertEqual(files.files("g", "c1")["turns"][-1]["replies"], [{"kind": "thinking", "texts": []}])   # encrypted
+        self.assertEqual(words(files.files("g", "c1")["turns"][-1]["replies"]), [{"kind": "thinking", "texts": []}])   # encrypted
         self.assertEqual(files.files("g", "c1")["turns"][-1]["now"], {"kind": "thinking"})
         self.add(call("b9", "Bash", {"command": "make", "description": "Build it"}))
         self.assertEqual(files.files("g", "c1")["turns"][-1]["now"], {"kind": "call", "id": "b9", "text": "Build it"})
@@ -510,7 +528,7 @@ class FilesTest(unittest.TestCase):
         turns = files.files("g", "c1", cwd="/w")["turns"][2:]
         self.assertEqual([t["text"][:16] for t in turns], ["Greet Alice. Use", "/greet Bob", "! echo hi", "Count the files "])
         self.assertEqual([t["kind"] for t in turns], ["user", "user_command", "user_command", "user"])   # as typed
-        alice, bob, bang, count = [t["replies"] for t in turns]
+        alice, bob, bang, count = [words(t["replies"]) for t in turns]
         self.assertEqual((alice, bob), ([{"kind": "text", "text": "Ahoy, Alice!"}], [{"kind": "text", "text": "Ahoy, Bob!"}]))
         instructions = "# Greeting\n\nReply with exactly: \"Ahoy, <name>!\""             # a skill loaded: among the commands
         self.assertEqual([(c["text"], c["output"]) for c in files.files("g", "c1", 2, cwd="/w")["commands"]],
@@ -536,7 +554,7 @@ class FilesTest(unittest.TestCase):
         conn.close()
         got = files.files("g", "c1", cwd="/w")
         self.assertEqual(got["turns"][-1]["text"], "Draw the pipeline.")         # not a turn of the user's own
-        self.assertEqual(got["turns"][-1]["replies"], [{"kind": "text", "text": "Drawn."}])
+        self.assertEqual(words(got["turns"][-1]["replies"]), [{"kind": "text", "text": "Drawn."}])
         self.assertEqual([(c["text"], c["output"]) for c in got["commands"]],
                          [("Load skill artifact-diagramming", "Draw as the engineer who has to live with the decision.")])
 
@@ -560,7 +578,7 @@ class FilesTest(unittest.TestCase):
                 "</cross-session-message>\n\nThis came from another Claude session \u2014 not typed by your user ...")
         self.add(asked("Build the hamster."), said("Building it."), note(peer), said("The other session is right."))
         replies = files.files("g", "c1", cwd="/w")["turns"][-1]["replies"]
-        self.assertEqual(replies, [{"kind": "text", "text": "Building it."},
+        self.assertEqual(words(replies), [{"kind": "text", "text": "Building it."},
                                    {"kind": "peer", "name": "ucbepic-actor-gatherer-6c", "text": "Your branch predates #108.\n\nMerge main."},
                                    {"kind": "text", "text": "The other session is right."}])
 

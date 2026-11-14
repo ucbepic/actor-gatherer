@@ -306,7 +306,7 @@ class TurnTest(RecordBase):
     def test_one_turn_with_both_messages_and_both_calls(self):
         got = files.files("g", SESSION, 0, cwd="/w")
         self.assertEqual(self.turns()[:2], [("look at a.py", ["and b.py"]), ("now c.py", [])])
-        self.assertEqual(got["turns"][0]["replies"], [{"kind": "text", "text": "Both read."}])
+        self.assertEqual(got["turns"][0]["replies"], [{"kind": "text", "text": "Both read.", "after": 2}])   # after both calls
         self.assertEqual([f["path"] for f in got["files"]], ["/w/a.py", "/w/b.py"])
 
     def test_held_until_the_turn_ended_part_of_it(self):

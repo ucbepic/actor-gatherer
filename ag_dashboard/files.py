@@ -27,6 +27,7 @@ replaced. An edit is placed by finding that text among the lines seen of the fil
 session (earlier turns too); one that is not found is listed apart. The files themselves are never
 read here: they show what the agent saw then, not what is there now."""
 import base64
+import bisect
 import binascii
 import difflib
 import json
@@ -385,6 +386,7 @@ class _Turn:
         self.current: Optional[dict] = None              # the call being read, as `commands` lists it
         self.went_on: Optional[float] = None             # when a message written as it ran last joined it (ag stored it)
         self.at_call: Optional[float] = None             # when it was made (its sources' `at`)
+        self.marks: List[tuple] = []                     # (place among the session's calls, its `calls` counted by then)
 
     def file(self, path: str) -> dict:
         f = self.files.get(path)
@@ -602,7 +604,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     ran ({row_id, at, text}: sent mid-turn, or held until it ended; data.py's `meanwhile`) -- part of it, not a turn of its own; what the agent
     said back and thought, in order -- each {kind: "text", text} or {kind: "thinking", texts} (a run of
     thinking between two replies, its readable words: none when encrypted), and among them a subagent's report
-    handed back (`_note`): {kind: "report", name (what the subagent was started for, else ""), text}; `ran`, the commands the user ran that Claude Code runs itself (/context,
+    handed back (`_note`): {kind: "report", name (what the subagent was started for, else ""), text} -- each with
+    `after`, how many of the turn's calls (as `calls` counts them) came before it; `ran`, the commands the user ran that Claude Code runs itself (/context,
     /mcp: not shown, but what was sent from the page is matched with them); `output`, what a command the user
     ran with ! printed, when it is one; what it was doing
     last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None; and its latest
@@ -1012,12 +1015,12 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
                     if made.get("later"):                    # its report handed back with a later call: where it started
                         spawned[made["id"]] = {"head": head, "given": False}
             elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
-                head["replies"].append({"kind": "text", "text": p["text"]})
+                head["replies"].append({"kind": "text", "text": p["text"], "_o": len(order)})
                 head["now"] = head["last"] = None
             elif p["kind"] == "thinking":                    # a run of thinking between two replies: one, its words gathered
                 said = head["replies"]
                 if not said or said[-1]["kind"] != "thinking":
-                    said.append({"kind": "thinking", "texts": []})
+                    said.append({"kind": "thinking", "texts": [], "_o": len(order)})
                 if p["text"].strip():
                     said[-1]["texts"].append(p["text"])
                     head["last"] = None                      # shown after the call: the call is no longer the last
@@ -1029,6 +1032,7 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
                         head["stopped"] = {"kind": "interrupted", "at": None, "text": None, "status": None, "reason": None}
                 elif n["kind"] == "report":
                     by = n.pop("from")
+                    n["_o"] = len(order)
                     n["name"] = agents.get(by, "")
                     start = spawned.get(by)
                     if start is None:
@@ -1037,7 +1041,7 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
                         start["given"] = True
                         start["head"]["replies"].append(n)
                 elif n["kind"] == "peer" and n["text"]:      # (codex's between its agents: by the sender's task name)
-                    head["replies"].append(dict(n, name=agents.get(n["name"], n["name"])))
+                    head["replies"].append(dict(n, name=agents.get(n["name"], n["name"]), _o=len(order)))
                 elif n["kind"] == "skill":                   # among the calls, not the conversation (skilled)
                     order.append((cur, n))
                     if ((head["last"] or {}).get("call") or {}).get("name") == "Skill":
@@ -1057,7 +1061,7 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
         command, workdir = _command(p)
         for tree in worktrees_added(command, _resolve(workdir, cwd) if workdir else cwd) if "worktree" in command else []:
             mine.update((tree, os.path.realpath(tree)))
-    for t, p in order:
+    for i, (t, p) in enumerate(order):
         if t is not None:
             t.at_call = p.get("_at")
         if p["kind"] == "loaded":
@@ -1067,6 +1071,14 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
         else:                                        # a codex script: the calls it makes
             for q, r in _opened(rules, p, results.get(p.get("id")) if p.get("id") else None):
                 apply(t, q, r)
+        if t is not None:
+            t.marks.append((i, t.head["calls"]))
+    for h in heads:                                  # each reply's place among its turn's calls: as many came before it
+        places = [m[0] for m in h.marks]
+        for r in h.head["replies"]:
+            o = r.pop("_o", None)
+            k = bisect.bisect_left(places, o) if o is not None else len(places)
+            r["after"] = h.marks[k - 1][1] if k else 0
     for s in stops:                                  # the record's, by when: in the turn it fell in, where the conversation doesn't say
         h = next((h for h in reversed(heads) if (h.head["at"] or 0) <= s["at"]), None)
         if h is not None and h.head["stopped"] is None and not (h.went_on and s["at"] < h.went_on):
