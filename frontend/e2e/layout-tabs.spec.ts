@@ -170,6 +170,26 @@ test("reloaded, the page shows the tab shown's actor again, whichever of its fir
   await expect(mark(page, CODEX)).toHaveText("2");
 });
 
+test("an app selected while the actor shown just before still loads its Chat stays selected once it has", async ({
+  page,
+}) => {
+  const made = await page.request.post("/api/apps/open", {
+    data: { app: "notepad", gatherer: GATHERER, folder: "/w/lone" },
+  });
+  expect(made.ok()).toBe(true);
+  await open(page);
+  await page.route("**/api/files?*", async (route) => {
+    await new Promise((r) => setTimeout(r, 2000)); // an actor's Chat slow to load (one at a time: Claude's after Codex's)
+    await route.continue();
+  });
+  await row(page, CLAUDE).click(); // its Chat loading...
+  await lone(page).click({ modifiers: [beside] }); // ...as the lone Notepad is opened beside it, selected
+  await expect(notes(page)).toHaveCount(1);
+  await expect(lone(page)).toHaveAttribute("aria-current", "true");
+  await page.waitForTimeout(5500); // Claude's Chat loaded meanwhile: the Notepad still the one selected
+  await expect(lone(page)).toHaveAttribute("aria-current", "true");
+});
+
 test('"+" opens a new tab, empty, the next task clicked shown in it; left empty, it goes', async ({ page }) => {
   await open(page);
   await row(page, CLAUDE).click();
@@ -202,6 +222,27 @@ test("a task's row open in a tab is not dropped onto the work area", async ({ pa
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(notes(page)).toHaveCount(0);
   await expect(mark(page, CLAUDE)).toHaveText("1");
+});
+
+test("a tab dragged onto the work area opens its tasks there, on the side it is let go, and goes from the bar", async ({
+  page,
+}) => {
+  await twoTabs(page); // Codex's tab shown; Claude's task (with its Notepad) in tab 1
+  const chip = await box(tabs(page).nth(0)),
+    area = await box(page.locator("#pane-here"));
+  await page.mouse.move(chip.x + chip.width / 2, chip.y + chip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(chip.x + chip.width / 2 + 10, chip.y + chip.height / 2 + 10, { steps: 3 });
+  await page.mouse.move(area.x + area.width * 0.1, area.y + area.height / 2, { steps: 8 }); // Codex's left side
+  await expect(page.locator(".lay-to")).toBeVisible();
+  await page.mouse.up();
+  await expect(tabs(page)).toHaveCount(1); // tab 1 gone: its task in this one
+  await expect(notes(page)).toHaveCount(1);
+  await expect(mark(page, CLAUDE)).toHaveClass(/here/);
+  await expect(mark(page, CODEX)).toHaveClass(/here/);
+  await expect
+    .poll(async () => (await box(frame(page))).x < (await box(page.locator("#pane-here"))).x) // Claude's, left of Codex's
+    .toBe(true);
 });
 
 test("a tab named by a double-click keeps its name; × closes a tab, its actors go on; kept after a reload", async ({

@@ -536,3 +536,21 @@ header .brand .list-btns { display: none; margin-left: -6px; }
   .monitor .m-body { overflow: visible; } }
 .servers { color: var(--ink-2); font-size: 12px; }
 main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relative; overflow: hidden; }
+/* THE LIST HIDDEN (06-list-modes.js's setListHidden), the list or the rail: its column none, the panes the page's whole
+   width, a thin edge at the page's left (.list-edge); the pointer on it (list-peek), the list slides out over the panes,
+   and back once the pointer has left it */
+:root.list-hidden:not(.list-full) .layout { grid-template-columns: 0 minmax(0, 1fr); }
+:root.list-hidden:not(.list-full) .work { grid-column: 2; grid-row: 1; }
+:root.list-hidden:not(.list-full) .side { position: fixed; top: 0; bottom: 0; left: 0; z-index: 40;
+  width: min(var(--side-w, 320px), calc(100vw - 60px)); transform: translateX(-100%); visibility: hidden;
+  transition: transform .16s ease, box-shadow .16s ease, visibility 0s linear .16s; }
+:root.list-hidden.list-folded .side { width: var(--rail-w, 76px); }
+:root.list-hidden.list-peek:not(.list-full) .side { transform: none; visibility: visible; box-shadow: 6px 0 28px rgba(0, 0, 0, .28);
+  transition: transform .16s ease, box-shadow .16s ease, visibility 0s; }
+:root.list-hidden :is(.side-grip, .rail-grip) { display: none; }
+.list-edge { display: none; }
+:root.list-hidden:not(.list-full) .list-edge { display: block; position: fixed; top: 0; bottom: 0; left: 0; width: 8px; z-index: 39; }
+:root.list-hidden:not(.list-full) .list-edge::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px;
+  background: var(--side-rule); transition: background .12s; }
+:root.list-hidden:not(.list-full) .list-edge:hover::after { background: var(--s1); }
+@media (prefers-reduced-motion: reduce) { :root.list-hidden .side { transition: none; } }

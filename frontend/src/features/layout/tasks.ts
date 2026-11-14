@@ -142,6 +142,8 @@ export interface StripHooks {
   rename: (tab: string, name: string) => void;
   /** Another tab of the task (its lead actor's chat in it); null: none to put in one (a task of apps alone). */
   add: (() => void) | null;
+  /** The task closed here (its × ): its panels out of the tab shown, its agents going on; none, no ×. */
+  closeTask?: (() => void) | null;
 }
 /** What a task's card's head says: its name, its actors' faces (and its apps' marks), what is in it in words. */
 export interface StripHead {
@@ -165,6 +167,7 @@ export function drawStrip(
     tabs && tabs.tabs.map((t) => [t.id, t.name]),
     tabs?.shown,
     !!hooks.add,
+    !!hooks.closeTask,
   ]);
   if (e.dataset.sig === sig || e.querySelector("input")) return;
   e.dataset.sig = sig;
@@ -201,6 +204,18 @@ export function drawStrip(
       hooks.add!();
     });
     right.append(add);
+  }
+  if (hooks.closeTask) {
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "lay-sclose";
+    x.textContent = "×";
+    x.title = x.ariaLabel = `Close ${head.name} here (its agents go on)`;
+    x.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      hooks.closeTask!();
+    });
+    right.append(x);
   }
   parts.push(right);
   e.replaceChildren(...parts);

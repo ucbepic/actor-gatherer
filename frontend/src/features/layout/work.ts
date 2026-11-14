@@ -59,6 +59,10 @@ export interface WorkHooks {
   clear?: () => Promise<void>;
   /** These tasks, shown, about to be left for another tab: each kept as it is now, to be opened so again. */
   remember?: (keys: string[]) => void;
+  /** A task of another tab, dropped with it on the work area: opened beside the tasks shown (where `put` says). */
+  openBeside?: (key: string) => Promise<void>;
+  /** A task closed by its card head's ×: its panels out of the tab shown (its agents go on). */
+  closeTask?: (key: string) => void;
   /** A block's faces (its task's actors', its apps' marks) and what is in it, in words: on its card's head, its tab. */
   faces?: (block: string) => HTMLElement[];
   about?: (block: string) => string;
@@ -84,7 +88,8 @@ const EMPTY = "\u0007empty"; // a tab showing nothing: its note, placed as a pan
 // a block dragged, by its strip or its row in the list; a task not shown, dropped from the list
 const BLOCK = "\u0004",
   NEW = "\u0005",
-  TAB = "\u0006"; // another tab of a panel's task, by its name in the task's strip: TAB block \u0001 tab
+  TAB = "\u0006", // another tab of a panel's task, by its name in the task's strip: TAB block \u0001 tab
+  TABS = "\u0008"; // a screen tab, by its name in the tabs' bar: its tasks dropped beside the ones shown
 
 export class Work {
   private readonly tasks = new Tasks(); // each task's arrangement, and its tabs
@@ -158,6 +163,10 @@ export class Work {
         this.place();
         this.hooks.listed?.();
       },
+      dragged: (id) => {
+        if (id && this.hooks.openBeside && this.tabs.held(id).length) this.mover.start(TABS + id);
+        else if (!id) this.mover.end();
+      },
     });
     this.placer = new Placer(work, {
       tree: (box) => this.tree(box),
@@ -170,8 +179,8 @@ export class Work {
     this.mover = new Mover(work, {
       rects: () => this.rects(),
       targets: (id) => this.targets(id),
-      // a task not shown: on a side of another, never in its place; a panel on another tab's name: into that tab
-      edge: (id, target) => (target.startsWith(TAB) ? 0 : id.startsWith(NEW) ? 0.5 : 0.25),
+      // a task not shown (or a tab's): on a side of another, never in its place; a panel on another tab's name: into it
+      edge: (id, target) => (target.startsWith(TAB) ? 0 : id.startsWith(NEW) || id.startsWith(TABS) ? 0.5 : 0.25),
       moved: (id, target, zone, copy) => this.moved(id, target, zone, copy),
     });
   }
@@ -357,6 +366,7 @@ export class Work {
         this.tasks.save();
         this.place();
       },
+      closeTask: this.hooks.closeTask && !b.startsWith("\u0002") ? () => this.hooks.closeTask!(b) : null,
       add: this.hooks.lead(b)
         ? () => {
             const lead = this.hooks.lead(b);
@@ -474,6 +484,7 @@ export class Work {
   // beside any
   private targets(id: string): string[] {
     const blocks = this.last?.blocks || [];
+    if (id.startsWith(TABS)) return blocks.length ? blocks.map((b) => BLOCK + b) : [EMPTY]; // (a tab empty: in it)
     if (id.startsWith(NEW)) return blocks.map((b) => BLOCK + b);
     if (id.startsWith(BLOCK)) return blocks.filter((b) => BLOCK + b !== id).map((b) => BLOCK + b);
     const of = this.last?.items.get(id);
@@ -488,7 +499,8 @@ export class Work {
     if (target.startsWith(TAB)) {
       const node = this.last?.nodes.get(id);
       if (node) this.toTab(node, target.split("\u0001")[1], copy);
-    } else if (id.startsWith(NEW)) {
+    } else if (id.startsWith(TABS)) void this.mergeTab(id.slice(1), target, zone);
+    else if (id.startsWith(NEW)) {
       if (zone === "center") return;
       this.put = { key: id.slice(1), target: target.slice(1), side: zone };
       this.hooks.open(id.slice(1));
@@ -496,6 +508,22 @@ export class Work {
     else {
       const t = this.last?.items.get(target);
       if (t) this.arrange(id, (tree, item) => move(tree, item, t.item, zone));
+    }
+  }
+  // A screen tab dropped on the work area: gone from the bar, its tasks opened here one by one -- the first on the side of
+  // the block it was dropped on, each next beside the one before it, on the same side's way (left or right: to its right;
+  // top or bottom: under it) -- a tab showing nothing, its tasks as that tab showed them
+  private async mergeTab(id: string, target: string, zone: Zone): Promise<void> {
+    const tasks = this.tabs.merge(id);
+    if (!tasks.length) return;
+    if (target === EMPTY) return this.hooks.enter(tasks, tasks[0]);
+    let at = target.slice(1),
+      side: Side = zone === "center" ? "right" : zone;
+    for (const k of tasks) {
+      this.put = { key: k, target: at, side };
+      await this.hooks.openBeside!(k);
+      at = k;
+      side = side === "left" || side === "right" ? "right" : "bottom";
     }
   }
   // a task's arrangement changed as `change` says, for the panel `id`: kept, and placed so

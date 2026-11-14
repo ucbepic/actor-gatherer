@@ -223,14 +223,18 @@ async function openTaskApps(g, c, to, only = null, beside = false) {
   if (opened) { saveAppPanes(); renderAgents(); }
 }
 // The actor in the pane in focus -- in `view`, if given; one open already, its pane focused instead. Of another task than
-// the one shown: the panels changed for it first (enterTask). `wait` false: done once it is in its pane, what it shows
-// (its Chat) loading still.
+// the one shown: the panels changed for it first (enterTask), and the rest of its task laid out beside it, its pane in
+// focus, as soon as it is in its pane -- not once what it shows (its Chat) has loaded: a click meanwhile (an app
+// selected, another pane) would lose its focus to it. `wait` false: done then, its Chat loading still.
 async function show(g, c, view = null, wait = true) {
   if (isAt(hereAway, g, c)) hereAway = null;         // asked for: in sight again (and in its task's tab shown)
   const entered = enterTask(g, c);
-  await showIn(g, c, view || (entered && entered.view) || null, wait);
+  const shown = await showIn(g, c, view || (entered && entered.view) || null, false);
   if (entered) entered.after();
+  if (wait && shown) await shown.loading;
 }
+// `c` shown in the pane in focus, or its own pane focused: what it shows (its Chat) loaded first -- `wait` false, not
+// waited on: then {loading}, the load under way, if one is
 async function showIn(g, c, view = null, wait = true) {
   const there = actorPanes().find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
   if (there) showActorsApp(g, c);                    // shown already: its app's panel, closed since, opened again
@@ -239,13 +243,16 @@ async function showIn(g, c, view = null, wait = true) {
     focusPane(p);
     if (!there) { Object.assign(p, { g, c, view: view || p.view }); savePanes(); connect(); renderAgents(); p.call("select", g, c, view); }
     else if (view) p.call("view", view);
-    return;
+    return null;
   }
   focusPane(panes.here);
-  const loaded = (work) => { if (wait) return work; work.catch(() => {}); return null; };   // waited on, or left to load
-  if (there) { if (view) await loaded(setChatView(view)); return; }
-  if (view) setViewHere(view);
-  await loaded(select(g, c));
+  let loading = null;
+  if (there) { if (view) loading = setChatView(view); }
+  else { if (view) setViewHere(view); loading = select(g, c); }
+  if (!loading) return null;
+  if (wait) { await loading; return null; }
+  loading.catch(() => {});
+  return { loading };
 }
 function setViewHere(id) {
   state.chatViewId = id;
@@ -396,7 +403,7 @@ function startPlacing() {
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
     focus: selectedTask, enter: enterTasks, status: tasksStatus, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
-    faces: blockFaces, about: blockAbout, listed: () => { if (state.home) renderAgents(); } });
+    faces: blockFaces, about: blockAbout, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); } });
   NARROW.addEventListener("change", placeWork);
   // a task's row dragged from the list over the work area (05-agent-list.js's listDrag): one open in no tab, opened beside
   // the tasks shown, on the side of the one it is dropped on
@@ -473,6 +480,38 @@ async function onlyTask(k) {
     else enterAppTask(g, k);
   }
   focusTask(k);
+  placeWork(); renderAgents();
+}
+// A task of a screen tab dragged into the tab shown (features/layout/work.ts's mergeTab): opened beside the tasks shown,
+// as ⌘+click opens one -- not routed, its tab gone from the bar
+async function openTaskHereBeside(k) {
+  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  if (!gg || id === undefined) return;
+  if (/^t\d+$/.test(id)) {
+    const t = Number(id.slice(1));
+    if (!taskById(g, t)) return;
+    if (!taskLead(gg, t)) return openTaskApps(g, null, k, (taskLayout(k) || {}).apps || null, true);   // apps alone
+    return openTask(g, t, null, { metaKey: true, inTabs: true });
+  }
+  if (isAppItem(id)) { if (appInfo(g, id.slice(APP_ITEM.length))) await openTaskApps(g, null, k, null, true); return; }
+  if (gg.agents.some((a) => a.channel === id)) await openTaskBeside(g, k, id);
+}
+// A task CLOSED HERE (its card head's ×): kept as it is now (rememberTask), its panes and panels closed -- its agents go on
+// -- this page's own pane given the next pane's actor if it showed one of k's, else out of sight (the tab showing nothing
+// else: its note says so)
+async function closeTaskHere(k) {
+  const mine = (g, c) => taskKey(g, c) === k;
+  if (tasksLaidOut.has(k)) rememberTask(k);
+  for (const p of [...panes.apps]) if (!p.held && appPaneTask(p) === k) closeAppPane(p);
+  for (const p of [...actorPanes()]) if (mine(p.g, p.c)) closePane(p);
+  if (appsOnly === k) {                              // apps alone: the actors' panes out of sight still
+    if (state.selected) hereAway = state.selected;
+    setAppsOnly(null);
+  } else if (state.selected && !isAway() && mine(...state.selected)) {
+    if (actorPanes().length) await closeHere();
+    else hereAway = state.selected;
+  }
+  if (taskNow === k) taskNow = null;
   placeWork(); renderAgents();
 }
 // A new tab, empty ("+" on the tabs' bar): the tasks shown kept as they are (the tab left keeps them: hooks.remember),
