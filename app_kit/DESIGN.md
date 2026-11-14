@@ -335,6 +335,11 @@ its instances (`host.instances()`), as Paper news fetches a day's arXiv listing 
   agent's terminal, which is opened if it isn't. A terminal that can't take a message now (a dialog open in it) is
   refused with 409, and the app tries again later. Paper news is the first: each day that comes in, its agent is
   sent the user's interests and the day's papers, and saves its picks with the app's tool.
+- **A message sent is not a message answered.** `send_agent` returning says it was typed in, not that a turn took it
+  up: typed as the computer went back to sleep, it can be lost (2026-11-13), and a turn can end before the agent
+  saves anything. An app that needs the answer looks for it on a schedule of its own and asks again: Paper news's
+  "picks" schedule, every 30 minutes, asks for a day's picks again while none came, telling the asks its agent took
+  up (it used one of the app's tools after them) from those it never saw, and stopping after a few of the first.
 
 ### 6. What moves out of the agent views
 

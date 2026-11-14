@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app_kit  # noqa: E402
 from ag_apps.paper_news import feed  # noqa: E402
-from ag_apps.paper_news.backend import ERROR_RETRY, WAIT_RETRY, PaperNewsApp  # noqa: E402
+from ag_apps.paper_news.backend import ASKS_MAX, ASKS_TAKEN, ERROR_RETRY, STALE, WAIT_RETRY, PaperNewsApp  # noqa: E402
 from app_kit import Caller, Instance  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -583,6 +583,93 @@ class AgentTest(AppBase):
         self.app._send_later()
         self.assertTrue(self.host.sent[-1][1].startswith("(Paper news · Tue, Nov 10: pick the papers"))
 
+    def asked_to_pick(self):
+        """The summary saved, so the agent asked to pick Tuesday: how many messages it was sent by then."""
+        self.set_up_interests()
+        self.agent_call("profile", **PROFILE)
+        self.assertTrue(self.host.sent[-1][1].startswith("(Paper news · Tue, Nov 10: pick the papers"))
+        return len(self.host.sent)
+
+    def picks_asked(self):
+        return [t for _, t in self.host.sent if t.startswith("(Paper news · Tue, Nov 10: pick the papers")]
+
+    def test_an_ask_to_pick_never_answered_is_asked_again(self):
+        self.asked_to_pick()
+        self.now += STALE - 60
+        self.assertIsNone(self.app.scheduled("picks", self.now))
+        self.assertEqual(len(self.picks_asked()), 1)               # not yet: it may still be at it
+        self.now += 60
+        self.app.scheduled("picks", self.now)
+        self.assertEqual(len(self.picks_asked()), 2)               # never answered: asked again
+        self.assertEqual(self.app.store.judged("2026-11-10")["asked_at"], self.now)
+        self.app.scheduled("picks", self.now + 60)
+        self.assertEqual(len(self.picks_asked()), 2)               # and given its time again
+        self.agent_call("relevant", day="2026-11-10", picks=[])
+        self.now += 2 * STALE
+        self.app.scheduled("picks", self.now)
+        self.assertEqual(len(self.picks_asked()), 2)               # answered: no more
+
+    def test_no_ask_again_while_its_agent_works_and_only_a_few_it_took_up(self):
+        self.asked_to_pick()
+        self.now += STALE - 300
+        self.agent_call("paper", id="2611.10001")                  # it took the ask up, and is at it
+        self.now += 600
+        self.app.scheduled("picks", self.now)
+        self.assertEqual(len(self.picks_asked()), 1)
+        self.now += STALE
+        self.app.scheduled("picks", self.now)                      # its turn ended with no picks: asked again
+        self.assertEqual(len(self.picks_asked()), 2)
+        self.now += 60
+        self.agent_call("list")                                    # took that one up too
+        for _ in range(4):
+            self.now += STALE
+            self.app.scheduled("picks", self.now)
+        self.assertEqual(len(self.picks_asked()), ASKS_TAKEN)      # then left to the user's "Ask it to pick"
+        self.assertEqual(self.request("POST", "judge", body={"day": "2026-11-10"})[0], 200)
+        self.assertEqual(len(self.picks_asked()), ASKS_TAKEN + 1)
+        self.now += STALE
+        self.app.scheduled("picks", self.now)                      # the user's ask: counted afresh
+        self.assertEqual(len(self.picks_asked()), ASKS_TAKEN + 2)
+
+    def test_asks_it_never_took_up_go_on_to_a_limit(self):
+        self.asked_to_pick()
+        for _ in range(ASKS_MAX + 5):
+            self.now += STALE
+            self.app.scheduled("picks", self.now)
+        self.assertEqual(len(self.picks_asked()), ASKS_MAX)
+
+    def test_an_ask_waiting_for_its_terminal_is_not_asked_again(self):
+        self.asked_to_pick()
+        self.host.busy = True
+        self.now += STALE
+        self.app.scheduled("picks", self.now)                      # asked again: kept, its terminal busy
+        self.now += STALE
+        self.app.scheduled("picks", self.now)                      # still kept: not one more
+        self.assertEqual([m[2] for m in self.app._outbox], ["judge:2026-11-10"])
+        self.app._outbox_timer.cancel()
+        self.host.busy = False
+        self.app._send_later()
+        self.assertEqual(len(self.picks_asked()), 2)
+
+    def test_only_the_newest_day_is_asked_again(self):
+        self.asked_to_pick()
+        wednesday = rss("Wed, 11 Nov 2026 00:00:00 -0500", item("2611.11001", "Wednesday Paper"))
+        self.arxiv.pages[RSS_URL] = wednesday
+        self.now = ny(2026, 11, 11, 0, 20)
+        self.app.scheduled("listing", self.now)
+        self.agent_call("relevant", day="2026-11-11", picks=[])
+        self.now += STALE
+        sent = len(self.host.sent)
+        self.app.scheduled("picks", self.now)
+        self.assertEqual(len(self.host.sent), sent)                # Tuesday never answered, but not the newest
+
+    def test_no_ask_again_before_the_agent_was_ever_asked(self):
+        self.set_up_interests()
+        self.now += STALE
+        sent = len(self.host.sent)
+        self.app.scheduled("picks", self.now)                      # no summary yet: nothing to pick by
+        self.assertEqual(len(self.host.sent), sent)
+
     def test_its_agent_is_found_on_the_window_it_works_with_now(self):
         self.set_up_interests()
         self.agent_call("profile", **PROFILE)
@@ -618,8 +705,9 @@ class ManifestTest(unittest.TestCase):
         import re
         got = re.match(m.asked.pattern, "(Paper news · Tue, Nov 10: pick the papers related to the user, of 3 new)\n\nThe")
         self.assertEqual(got.groups(), ("pick the papers related to the user, of 3 new", "Tue, Nov 10"))
-        self.assertEqual([(s.name, s.at, s.days, s.timezone) for s in m.schedules],
-                         [("listing", ("00:15",), (0, 1, 2, 3, 4), "America/New_York")])
+        self.assertEqual([(s.name, s.at, s.every, s.days, s.timezone) for s in m.schedules],
+                         [("listing", ("00:15",), 0, (0, 1, 2, 3, 4), "America/New_York"),
+                          ("picks", (), 1800, (), "")])
         self.assertTrue(m.capabilities.notify)
         self.assertTrue(os.path.isfile(os.path.join(FOLDER, m.mark)))
 
