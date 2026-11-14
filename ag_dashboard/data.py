@@ -319,6 +319,9 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
                           "last": max((a["last"] or 0 for a in agents), default=0) or None,
                           **({"alone": True} if name in lone else {})})
     _with_started(gatherers, started, now, named)
+    # an actor on its own with nothing to list: one started on its own, its record in, then forgotten before its first
+    # message (sessions.py's `discard`) -- its group of one stays named in the database, but holds no one
+    gatherers = [g for g in gatherers if not (g.get("alone") and not g["agents"])]
     wakes = {}                           # the actors whose status changes at a time of their own, with nothing written
     for g in gatherers:
         for a in g["agents"]:
@@ -350,6 +353,8 @@ def harness_info() -> Dict[str, dict]:
                     asked is answered in a message, not from the page
         reply_block a block its model writes in a reply that its terminal draws apart, as a card (`reply_block`)
         mcp         whether a run of it can be given an MCP server's tools (`mcp_args`): a DocWriter's, a Browser's
+        picks_id    whether it names its session itself, at its first call (`picks_session_id`: codex's thread):
+                    one can't be started on its own (groups.py's `start_alone`)
         memory_folder  where it keeps its memory of a directory, a pattern of the folder's path (`memory_folder`)
         saves       what History can save where it reads it, by kind (`saves`)
     Read once: what harness_kit says does not change while the dashboard runs."""
@@ -359,6 +364,7 @@ def harness_info() -> Dict[str, dict]:
                              "fullscreen": h.fullscreen, "stopped": dict(h.stopped_says), "ask_says": dict(h.ask_says),
                              "asks_shown_again": h.asks_shown_again,
                              "reply_block": h.reply_block, "mcp": h.mcp_args("x", "http://x") is not None,
+                             "picks_id": bool(h.picks_session_id),
                              "memory_folder": h.memory_folder, "saves": dict(h.saves)}
                          for n, h in harness_kit.HARNESSES.items()}
     return _HARNESS_INFO
@@ -558,8 +564,10 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
     by_name = {g["name"]: g for g in gatherers}
     for s in started:
         g = by_name.get(s["gatherer"])
-        if g is None:                    # a new gatherer: ag makes it on the session's first call
-            g = by_name[s["gatherer"]] = {"name": s["gatherer"], "policy": None, "agents": [], "last": None}
+        if g is None:                    # a new gatherer: ag makes it on the session's first call -- or an actor's
+            #                              group of one, started on its own before its record is in (groups.py's)
+            g = by_name[s["gatherer"]] = {"name": s["gatherer"], "policy": None, "agents": [], "last": None,
+                                          **({"alone": True} if str(s["gatherer"]).startswith(ALONE) else {})}
             gatherers.append(g)
         a = next((x for x in g["agents"] if x["channel"] == s["session_id"]), None)
         if a is None:

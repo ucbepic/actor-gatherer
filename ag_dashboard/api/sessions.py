@@ -5,7 +5,7 @@ import harness_kit
 from fastapi import APIRouter
 from starlette.responses import Response
 
-from .. import coordination, data, home, sessions
+from .. import coordination, data, groups, home, sessions
 from .common import Body, Errors, Parts, answer
 
 router = APIRouter(route_class=Errors)
@@ -25,12 +25,14 @@ def models(harness: str = "") -> Response:
 
 @router.post("/api/sessions")
 def start(srv: Parts, body: Body) -> Response:
-    """{gatherer, cwd?, permission_mode?, harness?, model?}: a new session (harness claude, the default, or codex) ->
-    the session."""
-    return answer(srv.sessions.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
-                                      str(body.get("permission_mode") or "auto"),
-                                      str(body.get("harness") or harness_kit.DEFAULT),
-                                      str(body.get("model") or "") or None))
+    """{gatherer, cwd?, permission_mode?, harness?, model?, alone?}: a new session (harness claude, the default, or
+    codex) -> the session. `alone`: an actor on its own from its start, run under `gatherer` (groups.py's
+    `start_alone`)."""
+    args = (str(body.get("gatherer") or ""), str(body.get("cwd") or ""), str(body.get("permission_mode") or "auto"),
+            str(body.get("harness") or harness_kit.DEFAULT), str(body.get("model") or "") or None)
+    if body.get("alone"):
+        return answer(groups.start_alone(srv.sessions, *args))
+    return answer(srv.sessions.create(*args))
 
 
 @router.post("/api/send")
