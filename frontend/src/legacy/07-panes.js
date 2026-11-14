@@ -376,13 +376,16 @@ let hereAway = null;
 // this page's own pane in sight again: its actor looked at now (04-seen.js), the list and the tabs' marks drawn so
 function backInSight() { hereAway = null; markSeen(); if (state.home) renderAgents(); }
 const isAway = () => !!hereAway && isAt(state.selected, hereAway[0], hereAway[1]);
+// No actor to show in it at all (none yet), the home come: out of sight too -- the tab, showing nothing, shows its
+// new-tab page (07-new-tab.js), not this pane's "No actors yet".
 function shownPanels() {
   const known = !!state.home, out = [], actor = (g, c, node) => out.push({ key: known ? taskKey(g, c) : null, item: c, node, app: false });
-  panes.here.node.classList.toggle("lay-away", isAway());
+  const none = known && !state.selected && !!workPlacer;
+  panes.here.node.classList.toggle("lay-away", isAway() || none);
   if (!appsOnly) {
     if (state.selected && isAway()) { /* out of sight */ }
     else if (state.selected) actor(state.selected[0], state.selected[1], panes.here.node);
-    else out.push({ key: null, item: "here", node: panes.here.node, app: false });
+    else if (!none) out.push({ key: null, item: "here", node: panes.here.node, app: false });
     for (const p of actorPanes()) actor(p.g, p.c, p.node);
   }
   for (const p of panes.apps) if (!p.held) out.push({ key: known ? appPaneTask(p) : null, item: appItem(p.instance.id), node: p.node, app: true });
