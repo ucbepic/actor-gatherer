@@ -92,12 +92,13 @@ document.addEventListener("keydown", (ev) => {
     || !document.getElementById("about").hidden || window.agNext.settings.fileOpen()) return;
   if (!PANE && panes.focus !== panes.here ? panes.focus.call("escape") : escapeShown()) ev.preventDefault();
 }, true);
-// An Esc from outside the message box, for the actor this pane shows: in Chat, its panel closed (the Esc closes that),
-// and not while the agent asks -- the question, there to answer in Chat, would be dismissed unseen.
+// An Esc from outside the message box, for the actor this pane shows: in Chat, its panel closed (the Esc closes that).
+// While the agent asks too, as from the box: the question dismissed, as an Esc on it in its terminal -- after a click on
+// one of the card's choices among them.
 function escapeShown() {
   const info = selectedInfo();
   return !!state.selected && !isShell(state.selected[1]) && !state.details && chatView().id === "files"
-    && !!info && info.status !== "asking" && interrupt(info);
+    && !!info && interrupt(info);
 }
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
