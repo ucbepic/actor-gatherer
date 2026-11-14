@@ -537,6 +537,27 @@ class GroupAppsTest(GroupsTest):
         self.assertEqual(sorted(i.id for i in self.host.instances_of("b")), sorted([news.id, page.id]))
         self.assertEqual(data.alone_names(), [])
 
+    def test_an_app_s_notifications_are_listed_in_the_group_it_moved_to(self):
+        """The home lists an instance's open notifications under the group the host lists it in (`app_notices`), not
+        the one it was opened in: moved on its own with its agent, then into another group, they go with it."""
+        news = self.host.open("news", "a", self.folder)
+        self.started("c1", "a", news)
+        self.host._record(news, "app_notified", app_kit.notices.made("Build finished"))
+
+        def listed(group):
+            self.host.flush()
+            conn = data._connect(group)
+            try:
+                return list(data.app_notices(conn, group))
+            finally:
+                conn.close()
+
+        self.assertEqual(listed("a"), [news.id])
+        groups.alone("a", "c1")
+        self.assertEqual((listed("a"), listed("self:c1")), ([], [news.id]))
+        groups.move("self:c1", "b", ["c1"])
+        self.assertEqual((listed("self:c1"), listed("b")), ([], [news.id]))
+
     def test_an_actor_on_its_own_is_not_one_with_an_actor_in_its_task_nor_a_window_it_can_t_take(self):
         board = self.host.open("board", "a", self.folder)
         tasks.add("a", "c1", ["app:" + board.id])

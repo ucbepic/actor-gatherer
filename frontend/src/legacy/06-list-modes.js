@@ -9,6 +9,7 @@ const LIST_ICONS = {
   full: "M9.75 2.25h4v4M13.75 2.25l-4.5 4.5M6.25 13.75h-4v-4M2.25 13.75l4.5-4.5",
   unfull: "M13.75 2.25l-4.5 4.5M9.25 3v3.75H13M2.25 13.75l4.5-4.5M6.75 13V9.25H3",
   fold: "M11 6l-2 2 2 2", unfold: "M9 6l2 2-2 2",
+  hide: "M2.75 2.75v10.5M11 5L8 8l3 3M8 8h5.25", keep: "M2.75 2.75v10.5M8.5 5l3 3-3 3M11.5 8H5.5",
 };
 function setListMode(mode, keep = true) {
   if (PANE || !["list", "folded", "full"].includes(mode)) mode = "list";
@@ -66,7 +67,62 @@ function listButtons() {
       strokeIcon(full ? LIST_ICONS.unfull : LIST_ICONS.full)),
     full ? null : el("button", { class: "list-btn lb-fold", type: "button", "aria-expanded": folded ? "false" : "true", title: fold,
       "aria-label": fold, onclick: () => setListMode(folded ? "list" : "folded") },
-      strokeIcon(ICONS.sidebar + (folded ? LIST_ICONS.unfold : LIST_ICONS.fold)))];
+      strokeIcon(ICONS.sidebar + (folded ? LIST_ICONS.unfold : LIST_ICONS.fold))),
+    full || PANE ? null : el("button", { class: "list-btn lb-hide", type: "button", "aria-pressed": listHidden ? "true" : "false",
+      title: listHidden ? "Keep the list open" : "Hide the list: it slides out when the pointer reaches the page's left edge",
+      "aria-label": listHidden ? "Keep the list open" : "Hide the list", onclick: () => setListHidden(!listHidden) },
+      strokeIcon(listHidden ? LIST_ICONS.keep : LIST_ICONS.hide))];
+}
+// THE LIST HIDDEN (its button; kept in this browser), whatever its shape (the list, the rail): out of the way at once,
+// the panes the page's whole width, a thin edge at the page's left. The pointer on that edge (or the keys in the list),
+// it slides out over the panes, and stays while the pointer is on it -- still or moving -- or on a menu or card of it,
+// a name is typed in it or a row dragged from it; it slides back a moment after the pointer has left. Where the pointer
+// is, is asked of the page at its last place (elementFromPoint): a list slid in under a still pointer is under it,
+// though the browser's own hover may not say so till it moves -- and a pointer over a pane's frame moves unseen.
+const HIDE_KEY = "ag-dashboard-list-hidden", UNPEEK_MS = 300;
+let listHidden = false, peekTimer = null;
+const pointerAt = { x: -1, y: -1 };
+function setListHidden(on, keep = true) {
+  listHidden = !!on && !PANE;
+  document.documentElement.classList.toggle("list-hidden", listHidden);
+  peekList(false);                                   // pressed to hide it: hidden now, out again at the edge
+  drawListButtons();
+  if (keep) { try { localStorage.setItem(HIDE_KEY, listHidden ? "1" : ""); } catch (e) { /* this page only */ } }
+}
+function peekList(on) {
+  clearTimeout(peekTimer);
+  const was = document.documentElement.classList.contains("list-peek");
+  document.documentElement.classList.toggle("list-peek", on && listHidden);
+  // out over the panes, it floats over them (features/apps/native.ts): a Browser's own page under it, in the ag app,
+  // pictured in its place from the first frame it is over any of it
+  document.querySelector(".side").classList.toggle("floats", on && listHidden);
+  if (on && listHidden && !was) unpeekSoon();        // (left again at once, never come onto it: back too)
+}
+// in use: the pointer on it (or a menu or card of it), a name typed in it, a row dragged from it
+function listInUse() {
+  if (listDrag || document.querySelector(".row-menu, .side :is(input, textarea, [contenteditable]):focus")) return true;
+  const at = pointerAt.x < 0 ? null : document.elementFromPoint(pointerAt.x, pointerAt.y);
+  return !!(at && at.closest(".side, .list-edge, .row-menu, #actor-card"));
+}
+function unpeekSoon() {
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => { if (listInUse()) unpeekSoon(); else peekList(false); }, UNPEEK_MS);
+}
+if (!PANE && !SNAPSHOT) {
+  const side = document.querySelector(".side"), edge = el("div", { class: "list-edge", "aria-hidden": "true" });
+  side.after(edge);
+  const at = (ev) => { pointerAt.x = ev.clientX; pointerAt.y = ev.clientY; };
+  document.addEventListener("pointermove", at, { capture: true, passive: true });
+  edge.addEventListener("pointerenter", (ev) => { at(ev); peekList(true); });
+  edge.addEventListener("pointermove", (ev) => { at(ev); if (!document.documentElement.classList.contains("list-peek")) peekList(true); });
+  side.addEventListener("pointerleave", (ev) => { at(ev); if (listHidden) unpeekSoon(); });   // (onto a frame: its last place)
+  side.addEventListener("focusin", () => peekList(true));
+  side.addEventListener("focusout", () => { if (listHidden) unpeekSoon(); });
+  try { listHidden = localStorage.getItem(HIDE_KEY) === "1"; } catch (e) { /* none kept */ }
+  const root = document.documentElement;
+  root.classList.add("list-still");                  // the page opened with it hidden: hidden, not sliding away
+  root.classList.toggle("list-hidden", listHidden);
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("list-still")));
 }
 function drawListButtons() { document.getElementById("list-btns").replaceChildren(...listButtons().filter(Boolean)); }
 const leaveFull = () => setListMode(listFrom === "full" ? "list" : listFrom);
@@ -635,9 +691,11 @@ function taskCard(g, t) {
         el("button", { class: "act take-out", type: "button", title: "Take it out of the task: an actor on its own again, detached from the task's apps",
           "aria-label": `Take ${actorTitle(a)} out of the task`, onclick: (ev) => { ev.stopPropagation(); takeOut(g.name, a.channel); } },
         strokeIcon(ICONS.takeOut, 13)));
-    }), ...apps.map((o) => el("div", { class: "c-task-row c-app-row" },
-      el("button", { class: "c-row", type: "button", title: `${o.app.label}: select it, its panel above the panes`,
-        onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); } },
+    }), ...apps.map((o) => el("div", { class: "c-task-row c-app-row", "data-instance": o.id },
+      el("button", { class: "c-row", type: "button", title: `${o.app.label}: select it, its panel above the panes · right-click: move or close its panel`,
+        onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); },
+        // its panel's menu opened: the card put away, as a click puts it away
+        oncontextmenu: (ev) => { appPanelMenu(g.name, o, ev); if (ev.defaultPrevented) cardHide(ev); } },
       appMarkOf(o), el("span", { class: "nm", text: o.name || o.app.label }), el("span", { class: "st", text: o.title || "" })),
       SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}: the app closed, and out of the task`, "aria-label": `Close ${o.app.label}` },
         () => closeApp(g.name, o), closeIcon()),

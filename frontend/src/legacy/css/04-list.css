@@ -354,3 +354,11 @@ body.drag-out .outside-drop { display: flex; }
 .mv-dialog .row { display: flex; justify-content: flex-end; gap: 8px; }
 .agent.drop-on, .rail .r-actor.drop-on { background: color-mix(in srgb, var(--s1) 14%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--s1) 55%, transparent); }
+/* where a row's task is open (05-agent-list.js's tabMark): its screen tab's number -- filled, the tab shown; ringed,
+   another */
+.agent .tab-no { flex: none; align-self: center; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 3px;
+  box-sizing: border-box; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1; color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 26%, transparent); font-variant-numeric: tabular-nums; }
+.agent .tab-no.here { color: var(--ink); background: color-mix(in srgb, var(--ink) 16%, transparent); box-shadow: none; }
+.agent .t-faces .tab-no { margin-right: 4px; }
+.agent:not(.task):has(.a-face > .tab-no) { grid-template-columns: 10px minmax(0, 1fr) auto; }   /* (the face still at its right) */

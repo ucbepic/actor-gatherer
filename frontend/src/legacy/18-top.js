@@ -1,50 +1,45 @@
 // ------------------------------------------------------------------ the top row, as the actors' panes see it
-// Above the panes, the apps' panels (07-panes.js's top row): whether it shows any (topShown), and the chat minimized
-// under the row. A pane's frame asks this page (window.agTop).
-const ED_HEIGHT_KEY = "ag-dashboard-editor-height";
+// Above the panes, the apps' panels (07-panes.js's top row): whether it shows any (topShown), and each pane's chat
+// minimized under what is above it. A pane's frame asks this page (window.agTop).
 const topShown = () => PANE ? !!(window.parent.agTop && window.parent.agTop.shown())
   : !!(panes.apps && panes.apps.some((p) => !p.held));
-// Drawn with the main view: the column's chat minimized, or not.
+// Drawn with the main view: the work area placed again if what it shows changed (another actor shown in this page's own
+// pane: 07-panes.js's placeIfShown).
 function topMount() {
   if (PANE || SNAPSHOT) return;
-  const work = document.querySelector(".work"), min = chatMin();
-  if (work.classList.contains("chat-min") === min) return;
-  work.classList.toggle("chat-min", min);
-  placeWork();                                       // the panes below as tall as their message boxes, or as before
+  placeIfShown();
 }
-// A panel opened or closed in the top row: the chat minimized under it shown again once the row is empty -- here and in
-// each pane's frame.
+// A panel opened or closed in the top row: each pane's frame told (its head put in its Chat bar, or not).
 let topWas = null;
 function topChanged() {
   if (PANE || SNAPSHOT) return;
   placeWork();
   markSeen();                                        // an app's panel shown: its notifications seen
   const now = topShown();
-  if (!now && state.chatMin) keepMin(false);
   for (const p of panes.others) p.call("toprow", now);
   if (now === topWas) { keepingPlace(renderMain); drawn.main = mainSignature(); return; }
   topWas = now;
   minRedraw();
 }
-if (!PANE && !SNAPSHOT) window.agTop = Object.freeze({ shown: () => topShown(), min: () => !!state.chatMin, setMin: setChatMin });
-// The chat minimized under the top row: each pane only its message box, the actor's status at its right -- its avatar,
-// moving while it works, done with a check, a mark while it waits on the reader or stopped on an error -- and under it the
-// latest turn's commands and the lines its changes added and removed; the top row the rest of the column. One choice for
-// every pane (they share the row under it), kept in this browser while the row shows a panel; closed, the chat comes back.
-const MIN_KEY = "ag-dashboard-chat-min";
-const MIN_TIP = "Minimize the chat: only its message box and the actor's status, under the panels above";
-state.chatMin = !PANE && !SNAPSHOT && (() => { try { return localStorage.getItem(MIN_KEY) === "1"; } catch (e) { return false; } })();
-const chatMin = () => !SNAPSHOT && topShown()
-  && (PANE ? !!(window.parent.agTop && window.parent.agTop.min()) : !!state.chatMin);
-function keepMin(on) {
-  state.chatMin = on;
-  try { localStorage.setItem(MIN_KEY, on ? "1" : ""); } catch (e) { /* this page only */ }
-}
+// A pane's frame asks: what is above, and its own chat minimized, or able to be
+const paneNode = (win) => { const p = paneOf(win); return p ? p.node : null; };
+if (!PANE && !SNAPSHOT) window.agTop = Object.freeze({ shown: () => topShown(),
+  min: (win) => !!workPlacer && !!paneNode(win) && workPlacer.isMin(paneNode(win)),
+  canMin: (win) => !!workPlacer && !!paneNode(win) && workPlacer.canMin(paneNode(win)),
+  setMin: (on, win) => { if (workPlacer && paneNode(win)) workPlacer.setMin(paneNode(win), on); } });
+// A PANE MINIMIZED, each on its own (features/layout/work.ts): only its message box, the actor's status at its right -- its
+// avatar, moving while it works, done with a check, a mark while it waits on the reader or stopped on an error -- and under
+// it the latest turn's commands and the lines its changes added and removed; what is above or below it the rest. Offered
+// where something of its task is above or below it; kept in its task's arrangement (the tab shown), so it is minimized
+// again there; moved where nothing is, shown whole.
+const MIN_TIP = "Minimize the chat: only its message box and the actor's status, under what is above it";
+const chatMin = () => !SNAPSHOT && (PANE ? !!(window.parent.agTop && window.parent.agTop.min(window))
+  : !!workPlacer && workPlacer.isMin(panes.here.node));
+const canMinimize = () => !SNAPSHOT && !chatMin() && (PANE ? !!(window.parent.agTop && window.parent.agTop.canMin(window))
+  : !!workPlacer && workPlacer.canMin(panes.here.node));
 function setChatMin(on) {
-  if (PANE) { if (window.parent.agTop) window.parent.agTop.setMin(on); return; }
-  keepMin(on);
-  for (const p of panes.others) p.call("minimized", on);
-  minRedraw();
+  if (PANE) { if (window.parent.agTop) window.parent.agTop.setMin(on, window); return; }
+  if (workPlacer) workPlacer.setMin(panes.here.node, on);   // drawn so as it is placed (minChanged, 07-panes.js)
 }
 // This page's pane minimized or shown again: its counts are the latest turn's, from the files' feed (chatFeed) -- then, shown
 // again, its view's own feed.
@@ -115,35 +110,4 @@ function fitMini() {
   const obs = new ResizeObserver(() => { f.style.height = `${Math.ceil(card.getBoundingClientRect().height)}px`; });
   obs.observe(card);
   miniFit = { card, obs };
-}
-// The top row's height, as dragged (null: never, half the column); set again (a task entered as it was left: 07-panes.js's
-// taskLooks; 0: as never dragged), no taller than the column leaves the panes below their room, and kept as dragged
-function topHeight() {
-  const h = topRowEl() ? parseFloat(topRowEl().style.getPropertyValue("--ed-h")) : NaN;
-  return h > 0 ? h : null;
-}
-function setTopHeight(h) {
-  const top = topRowEl();
-  if (!top || !(h >= 0) || (h || null) === topHeight()) return;
-  if (!h) {
-    top.style.removeProperty("--ed-h");
-    try { localStorage.removeItem(ED_HEIGHT_KEY); } catch (e) { /* this page only */ }
-    placeWork();
-    return;
-  }
-  const room = top.parentElement ? top.parentElement.getBoundingClientRect().height : 0;
-  const to = Math.round(room > 360 ? Math.max(140, Math.min(h, room - 220)) : h);
-  top.style.setProperty("--ed-h", `${to}px`);
-  try { localStorage.setItem(ED_HEIGHT_KEY, String(to)); } catch (e) { /* this page only */ }
-  placeWork();
-}
-// The top row's height as it was dragged, kept in this browser: set as the page opens
-function keepTopHeight(top) {
-  try { const h = Number(localStorage.getItem(ED_HEIGHT_KEY)); if (h > 0) top.style.setProperty("--ed-h", `${h}px`); } catch (e) { /* this page only */ }
-}
-// The band under the top row dragged (07-panes.js's workResized): the row as tall as it puts it, kept once let go
-function dragTopHeight(h, done) {
-  topRowEl().style.setProperty("--ed-h", `${h}px`);
-  if (done) try { localStorage.setItem(ED_HEIGHT_KEY, String(h)); } catch (e) { /* this page only */ }
-  placeWork();
 }

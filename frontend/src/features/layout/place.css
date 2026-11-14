@@ -5,6 +5,61 @@
 .work.placed {
   position: relative;
   display: block;
+  background: var(--side);
+}
+/* the WELL the tasks sit in, under the tabs' bar: darker than the bar and the panels, showing between the tasks' cards */
+.lay-well {
+  display: none;
+}
+.work.placed > .lay-well {
+  display: block;
+  position: absolute;
+  top: 40px;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  border-radius: 10px;
+  background: var(--well);
+  pointer-events: none;
+}
+/* each task's CARD (work.ts): a frame drawn over its panels -- rounded, its corners masked in the well's colour --
+   letting the pointer by */
+.lay-cards {
+  display: none;
+}
+.work.placed > .lay-cards {
+  display: contents;
+}
+.lay-card {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 0 0 4px var(--well);
+  pointer-events: none;
+}
+/* a tab showing nothing: a note in the well, where its tasks would be */
+.lay-empty {
+  display: none;
+}
+.work.placed > .lay-empty:not([hidden]) {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px dashed var(--axis);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.lay-empty > strong {
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 600;
 }
 .work.placed > :where(.top-row, .panes) {
   display: contents;
@@ -60,6 +115,23 @@
   z-index: 1;
   background: color-mix(in srgb, var(--s1) 35%, transparent);
 }
+/* the room between two tasks' cards: the well, a line in it only as it is pointed at or dragged */
+.lay-bar.gap::after,
+.lay-bar.gap.thick::after {
+  background: none;
+}
+.lay-bar.gap.thick:is(:hover, .on)::before {
+  display: none;
+}
+.lay-bar.gap:is(:hover, .on)::after,
+.lay-bar.gap.thick:is(:hover, .on)::after {
+  inset: 0 4px;
+  border-radius: 1px;
+  background: var(--axis);
+}
+.lay-bar.gap[data-dir="col"]:is(:hover, .on)::after {
+  inset: 4px 0;
+}
 /* a bar dragged: the frames let the pointer by, so it goes on over them */
 .work[data-resizing] {
   user-select: none;
@@ -72,4 +144,382 @@
 }
 .work[data-resizing] iframe {
   pointer-events: none;
+}
+/* a panel dragged by its head (move.ts): the work area covered, the panel dragged marked, and where it would go */
+.lay-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+}
+.lay-from {
+  position: absolute;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  outline: 1px dashed var(--muted);
+  outline-offset: -1px;
+}
+.lay-to {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid var(--s1);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--s1) 22%, transparent);
+  transition:
+    left 0.08s,
+    top 0.08s,
+    width 0.08s,
+    height 0.08s;
+}
+/* a task's strip (work.ts) -- the head of its card -- on its block of two panels or more while other tasks are shown, or
+   while it has tabs: a grip, its faces, its name and what is in it -- dragged, or right-clicked, to move the task --
+   then its tabs, as a switch, and a "+" for another */
+.lay-strips {
+  display: none;
+}
+.work.placed > .lay-strips {
+  display: contents;
+}
+.lay-strip {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 9px;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  border-bottom: 1px solid var(--ring);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+}
+.lay-grip {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: -2px;
+}
+.lay-sname {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.lay-sabout {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 12px;
+}
+.lay-sright {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* its tabs, a task having two or more: a switch, each its name and ×, the one shown raised */
+.lay-ttabs {
+  display: inline-flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--ink) 4%, var(--page));
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.lay-ttab {
+  min-width: 0;
+  max-width: 140px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 2px 0 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.lay-ttab > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lay-ttab:hover {
+  color: var(--ink);
+}
+.lay-ttab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--ink) 14%, var(--surface));
+  color: var(--ink);
+  font-weight: 500;
+}
+.lay-tclose,
+.lay-tadd {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.lay-tadd {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 16px;
+  border-radius: 6px;
+}
+.lay-tclose:hover,
+.lay-tadd:hover {
+  color: var(--ink);
+  background: var(--wash);
+}
+/* faces (a card's head, a tab): each a disc -- an app's mark, a rounded square -- over the next, ringed */
+.lay-faces {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+.lay-face {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 0 2px var(--face-ring, var(--surface));
+  background: var(--surface);
+}
+.lay-face.app {
+  border-radius: 5px;
+}
+.lay-face > :is(img, svg) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lay-faces > .lay-face + .lay-face {
+  margin-left: -5px;
+}
+.lay-strip .lay-faces {
+  --face-ring: color-mix(in srgb, var(--ink) 6%, var(--surface));
+}
+.lay-more {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+/* the TABS' BAR (tabs.ts), over the work area always: each tab its faces, name, dot and ×; then "+", a new tab */
+.lay-tabs {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 31; /* over a drag's cover (.lay-cover): a tab dragged onto another's name still goes beside it there */
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  background: var(--side);
+  overflow: hidden;
+}
+.work:not(.placed) > .lay-tabs {
+  display: none;
+}
+.lay-tab-list {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.lay-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 260px;
+  flex: 0 1 auto;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 4px 0 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+  border-radius: 8px;
+  --face-ring: var(--side);
+}
+.lay-tab:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+.lay-tab[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ink) 16%, transparent),
+    inset 0 -2px 0 var(--s1);
+  --face-ring: var(--surface);
+}
+.lay-tab:not([aria-selected="true"]) .lay-faces {
+  opacity: 0.85;
+}
+.lay-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* a state's mark (tabs.ts's MARKS), as the list marks it: on a task's face at its lower right, or after the tab's name */
+.lay-fmark {
+  position: relative;
+  flex: none;
+  display: grid;
+}
+.lay-faces > .lay-fmark + .lay-fmark {
+  margin-left: 3px;
+}
+.lay-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--face-ring, var(--side));
+}
+.lay-fmark > .lay-dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+}
+.lay-tab > .lay-dot {
+  box-shadow: none;
+}
+.lay-dot[data-status="asking"] {
+  background: var(--warning);
+}
+.lay-dot[data-status="error"] {
+  background: var(--critical);
+}
+.lay-dot[data-status="notified"] {
+  background: var(--notice);
+}
+.lay-dot[data-status="finished"] {
+  background: var(--s1);
+}
+.lay-dot[data-status="background"] {
+  background: var(--good);
+}
+.lay-dot[data-status="working"] {
+  width: 10px;
+  height: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--face-ring, var(--side));
+  color: var(--good);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+}
+.lay-dot[data-status="working"]::before {
+  content: "✻";
+  animation: term-spin 1.2s steps(1) infinite;
+  animation-delay: var(--spin-at, 0s);
+}
+.lay-fmark > .lay-dot[data-status="working"] {
+  right: -4px;
+  bottom: -4px;
+}
+.lay-close {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 2px 5px;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--muted);
+  border-radius: 5px;
+}
+.lay-close:hover {
+  color: var(--ink);
+  background: var(--wash);
+}
+.lay-tab-add {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+.lay-tab-add:hover {
+  color: var(--ink);
+  background: var(--wash);
+}
+/* a task dragged by its card head, the tab showing others too (work.ts's carry): "New tab" in the bar, where it goes let
+   go anywhere on the bar but on a tab's name -- marked while the pointer is over the bar there; another tab's name,
+   marked, takes it in */
+.lay-tab-ghost {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  border: 1px dashed var(--muted);
+  border-radius: 8px;
+  pointer-events: none;
+}
+.lay-tab-ghost[hidden] {
+  display: none;
+}
+.lay-tab-ghost.lay-into,
+.lay-tab.lay-into {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--s1) 22%, transparent);
+}
+.lay-tab-ghost.lay-into {
+  border: 2px solid var(--s1);
+}
+.lay-tab.lay-into {
+  box-shadow: inset 0 0 0 2px var(--s1);
+}
+.lay-naming {
+  min-width: 80px;
+  width: 140px;
+  font: inherit;
+  padding: 1px 4px;
+}
+/* a task's card head's ×: the task closed here (its agents go on) */
+.lay-sclose {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.lay-sclose:hover {
+  color: var(--ink);
+  background: var(--wash);
 }

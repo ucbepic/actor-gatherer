@@ -69,14 +69,17 @@ function streamTake(name, data, mine = () => true, sel = null) {
       if (name === "home") {
         takeHome(got);
         await loadedSoon(loadChat());                // a session's state: its messages may have moved on too
+        if (!panes.checked && !PANE) restorePanes(); // (come before refresh's answer: what the page kept, first)
         if (!state.selected && !PANE) {              // the first agent to appear: shown, and watched
           const first = got.gatherers.find((g) => g.agents.length);
           if (first) {
             state.selected = [first.name, firstAgent(first).channel];
+            autoShown = taskKey(...state.selected);   // shown by itself: the tab's as if empty (07-panes.js's viaTabs)
             showActorsApp(...state.selected);        // an app's actor: its panel above (19-app-actors.js)
             await loadAgent(); render(true); connect();
           }
         }
+        if (!PANE) startTabs();                      // the tab shown as it was left (07-panes.js)
       } else if (name === "chat") {                   // what Chat shows of the actor: drawn as it comes, nothing to load
         if (!sel || !isAt(state.selected, ...sel)) return;
         takeChatView(sel[0], sel[1], got);

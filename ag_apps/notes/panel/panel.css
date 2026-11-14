@@ -533,3 +533,8 @@ button.wk-text:hover { text-decoration: underline; }
   .page { padding-top: 18px; }
   .gut { display: none; }
 }
+
+/* the page's × over the panel's top right corner (app_kit/js/app.js's --ag-corner): the page's bar and the conversation's
+   head, whichever is at the right, keep it clear */
+.main > .bar { padding-right: max(10px, var(--ag-corner, 0px)); }
+.cv-head { padding-right: max(12px, var(--ag-corner, 0px)); }

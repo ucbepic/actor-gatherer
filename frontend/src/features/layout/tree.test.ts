@@ -53,9 +53,10 @@ describe("where each panel goes", () => {
     expect(band.lengths).toEqual([295, 500]);
   });
 
-  it("keeps a length of its own at its least, and no longer than the room", () => {
+  it("keeps a length of its own at its least, and no longer than leaves the others their least", () => {
     expect(lengths(work(40), 800, 1001)).toEqual([135, 660]);
-    expect(lengths(work(2000), 800, 1001)).toEqual([795, 0]);
+    expect(lengths(work(2000), 800, 1001)).toEqual([575, 220]);
+    expect(lengths(work(2000), 300, 1001)).toEqual([135, 160]); // too little room for both: its own least first
   });
 
   it("makes a kid sized `fit` as long as what it shows, its panels marked so", () => {

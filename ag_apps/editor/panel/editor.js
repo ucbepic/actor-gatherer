@@ -566,6 +566,7 @@ function edView(s) {
         A.EditorView.updateListener.of((u) => {
           if (u.docChanged && s.top) s.top = u.changes.mapPos(s.top);     // the line at the top, where edits moved it
           if (u.selectionSet) edPlaceMoved(s);
+          if (u.selectionSet || u.focusChanged || u.geometryChanged) edSendPlace();   // its Send to an actor (editor-send.js)
         }),
       ],
     }),
@@ -575,6 +576,7 @@ function edView(s) {
     const d = s.view.scrollDOM;
     if (d.clientHeight) s.top = s.view.lineBlockAtHeight(d.scrollTop).from;   // drawn only: going, its frame reads 0
     edPlaceMoved(s);
+    edSendPlace();
   }, { passive: true });
   edZone(s);
   edAgentMarks(s);
@@ -1264,6 +1266,8 @@ function edClose() {
   const s = ed.s;
   if (!s) return;
   ed.s = null;
+  edSendClose();                                     // its lines' Send to an actor, gone with it
+  edSendPlace();
   clearTimeout(s.autoT);
   edKeepPlace(s, edHadKeys(s));                      // where it was, for the next time this Editor's panel is drawn
   ed.keys = false;

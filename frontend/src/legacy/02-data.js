@@ -123,9 +123,13 @@ async function refresh(userAction = false) {
     if (!panes.checked) restorePanes();
     if (!state.selected) {
       const first = state.home.gatherers.find((g) => g.agents.length && !isHidden(g)) || state.home.gatherers.find((g) => g.agents.length);
-      if (first) state.selected = [first.name, firstAgent(first).channel];
+      if (first) {
+        state.selected = [first.name, firstAgent(first).channel];
+        if (!PANE) autoShown = taskKey(...state.selected);   // shown by itself: the tab's as if empty (07-panes.js's viaTabs)
+      }
     }
     if (state.selected && !PANE) showActorsApp(...state.selected);   // an app's actor (19-app-actors.js): its panel above
+    startTabs();                                     // the tab shown as it was left (07-panes.js)
     await loadAgent().catch(() => { state.agent = null; });   // a session started here may have no database yet
     await loadChat();
     render(userAction);
@@ -209,7 +213,7 @@ const mainSignature = () => {
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
-    state.details && state.detailsTab, topShown(), chatMin()]);
+    state.details && state.detailsTab, topShown(), chatMin(), canMinimize()]);
 };
 // The page's state, small under its name: its dot green while live, amber paused, red on an error.
 const setLive = (text) => {

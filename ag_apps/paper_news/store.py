@@ -177,10 +177,11 @@ class Store:
             return [dict(r) for r in self.db.execute("SELECT id, score, why FROM picks WHERE day = ? "
                                                      "ORDER BY score DESC, at", (day,))]
 
-    def asked(self, day: str) -> None:
+    def asked(self, day: str, at: Optional[float] = None) -> None:
+        """The agent asked to pick from `day`, at `at` (None: now)."""
         with self.lock, self.db:
             self.db.execute("INSERT INTO judged (day, asked_at) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET "
-                            "asked_at = excluded.asked_at", (day, time.time()))
+                            "asked_at = excluded.asked_at", (day, time.time() if at is None else at))
 
     def judged(self, day: str) -> Optional[dict]:
         """{asked_at, done_at, n} of a day: when the agent was last asked to pick from it, and last did (None: not)."""

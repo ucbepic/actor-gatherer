@@ -26,6 +26,12 @@ export interface PlaceHooks {
   node: (id: string) => HTMLElement | null;
   /** A split's sizes, its bar dragged (`done`: let go) or double-clicked: the page keeps them, and places again. */
   resized: (key: string, sizes: Size[], done: boolean) => void;
+  /** How far in from each side of the box the panels go (the tabs' bar over them, the well round them). */
+  inset?: () => { top: number; right: number; bottom: number; left: number };
+  /** A panel as tall as what it shows though its spot is not (a pane minimized beside one that is not). */
+  fitted?: (id: string) => boolean;
+  /** The panels placed (again): whatever is drawn round them follows. */
+  placed?: () => void;
 }
 
 const SPOT = ["left", "top", "width", "height", "bottom"] as const;
@@ -70,10 +76,20 @@ export class Placer {
       this.placed.clear();
       this.watch(new Set());
       this.drawBars();
+      this.hooks.placed?.();
       return;
     }
-    const laid = lay(tree, { x: 0, y: 0, ...box }, (kid, cross) => this.natural(kid, cross));
+    const pad = this.hooks.inset ? this.hooks.inset() : { top: 0, right: 0, bottom: 0, left: 0 };
+    const top = Math.min(box.h, pad.top),
+      area = {
+        x: pad.left,
+        y: top,
+        w: Math.max(0, box.w - pad.left - pad.right),
+        h: Math.max(0, box.h - top - pad.bottom),
+      };
+    const laid = lay(tree, area, (kid, cross) => this.natural(kid, cross));
     const now = new Map<string, HTMLElement>();
+    const fitted = new Set([...laid.rects.keys()].filter((id) => laid.fitted.has(id) || !!this.hooks.fitted?.(id)));
     for (const [id, r] of laid.rects) {
       const e = this.hooks.node(id);
       if (!e) continue;
@@ -81,16 +97,21 @@ export class Placer {
       // a panel as long as what it shows: as tall as it is, at the bottom of its spot
       spot(
         e,
-        laid.fitted.has(id)
-          ? { left: px(r.x), width: px(r.w), bottom: px(box.h - r.y - r.h), height: "auto" }
-          : this.at(r),
+        fitted.has(id) ? { left: px(r.x), width: px(r.w), bottom: px(box.h - r.y - r.h), height: "auto" } : this.at(r),
       );
     }
-    for (const [id, e] of this.placed) if (!now.has(id) || now.get(id) !== e) spot(e, {});
+    const placing = new Set(now.values()); // (a panel under another id now -- the page's own pane, another actor -- stays)
+    for (const e of this.placed.values()) if (!placing.has(e)) spot(e, {});
     this.placed = now;
     this.laid = laid;
-    this.watch(new Set([...laid.fitted].map((id) => now.get(id)).filter((e): e is HTMLElement => !!e)));
+    this.watch(new Set([...fitted].map((id) => now.get(id)).filter((e): e is HTMLElement => !!e)));
     this.drawBars();
+    this.hooks.placed?.();
+  }
+
+  /** Where each panel was placed last, by its id (the work area's own coordinates). */
+  rects(): Map<string, Rect> {
+    return this.laid ? this.laid.rects : new Map();
   }
 
   private at(r: Rect): Spot {
@@ -138,6 +159,7 @@ export class Placer {
           : `Drag to resize${evens(b.split) ? ` · double-click: all the same ${row ? "width" : "height"}` : ""}`,
       );
       e.classList.toggle("thick", !!b.split.thick);
+      e.classList.toggle("gap", !!b.split.gap);
       e.classList.toggle("still", still);
       const r = b.rect;
       spot(e, this.at(row ? { ...r, x: r.x - HIT, w: r.w + 2 * HIT } : { ...r, y: r.y - HIT, h: r.h + 2 * HIT }));

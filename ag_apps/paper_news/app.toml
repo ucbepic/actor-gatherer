@@ -44,6 +44,12 @@ at = "00:15"
 days = ["mon", "tue", "wed", "thu", "fri"]
 timezone = "America/New_York"
 
+# the newest day's ask to its agent to pick, never answered (the message lost, its turn ended before it saved them):
+# asked again, at most every 30 minutes, on any day (backend.py, `_ask_again`)
+[[schedules]]
+name = "picks"
+every = "30m"
+
 [[tools]]
 name = "list"
 description = "A day's arXiv listing in the user's categories, one line a paper (id, categories, title, authors): the latest day kept, or `day`; narrowed by `category`, `kind` and `query`."

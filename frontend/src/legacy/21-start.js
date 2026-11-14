@@ -11,7 +11,11 @@ document.getElementById("pause").addEventListener("click", async (ev) => {
 if (SNAPSHOT) document.getElementById("pause").style.display = "none";
 let resizeTimer = null;
 window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => document.getElementById("size-chart") && state.agent && state.agent.reads && drawCharts(), 150); });
-$("pane-close").addEventListener("click", () => PANE ? PANE.close(window) : closeHere());
+$("pane-close").addEventListener("click", () => {
+  if (PANE) return PANE.close(window);
+  if (actorPanes().length) workClosed(panes.here.node);   // (alone, it stays)
+  closeHere();
+});
 if (PANE) document.addEventListener("pointerdown", () => PANE.focus(window), true);
 else {
   $("pane-here").addEventListener("pointerdown", () => focusPane(panes.here), true);
@@ -20,8 +24,7 @@ else {
 }
 refresh(true).then(connect).then(() => { if (PANE) paneReady(); }).then(loadOwnViews);
 if (!PANE && !SNAPSHOT) {
-  keepTopHeight($("top-row"));                       // the row above the panes -- the apps' panels -- as tall as it was dragged
-  startPlacing();                                    // the work area placed from now on (07-panes.js's workTree)
+  startPlacing();                                    // the work area placed from now on (07-panes.js's placeWork)
   window.agNext.apps.load().then(() => restoreAppPanes()).then(() => {
     if (state.selected) showActorsApp(...state.selected);   // an app's actor selected before the apps were known
     if (state.home) renderAgents();

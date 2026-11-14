@@ -33,7 +33,7 @@ function chatCard(info) {
   const heading = [...(tools.length ? [el("div", { class: "chat-tools" }, ...tools)] : []),
     ...[viewSwitcher(view)].filter(Boolean),
     el("div", { class: "side-btns" },
-      SNAPSHOT || !topShown() ? null : el("button", { type: "button", class: "details-btn", "aria-label": "Minimize the chat", title: MIN_TIP,
+      !canMinimize() ? null : el("button", { type: "button", class: "details-btn", "aria-label": "Minimize the chat", title: MIN_TIP,
         onclick: () => setChatMin(true) }, strokeIcon(ICONS.minimize, 16)),
       el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
         title: "Details: what ag saw and did for this actor (its context, calls, history and builds), and the history's other views",

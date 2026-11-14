@@ -231,7 +231,8 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   channel; an agent's attachments are the latest one per instance. They replace the session's `role`. A stored role
   `{"browser": key}` is copied to an `app_attached` once, as the harness migration copied old tables.
 - **Who attaches:**
-  - the user, from a panel's agents menu, or by starting a new actor from a panel;
+  - the user, by putting an actor in the app's task (dropped on its row in the list, or its "+"), or by starting a new
+    actor from a panel;
   - the gatherer agent, with `ag actors new --app <name>` or `ag apps attach`. `--browser` and `--docwriter` stay as
     aliases.
   - an agent itself, by calling a tool that opens an instance.
@@ -335,6 +336,11 @@ its instances (`host.instances()`), as Paper news fetches a day's arXiv listing 
   agent's terminal, which is opened if it isn't. A terminal that can't take a message now (a dialog open in it) is
   refused with 409, and the app tries again later. Paper news is the first: each day that comes in, its agent is
   sent the user's interests and the day's papers, and saves its picks with the app's tool.
+- **A message sent is not a message answered.** `send_agent` returning says it was typed in, not that a turn took it
+  up: typed as the computer went back to sleep, it can be lost (2026-11-13), and a turn can end before the agent
+  saves anything. An app that needs the answer looks for it on a schedule of its own and asks again: Paper news's
+  "picks" schedule, every 30 minutes, asks for a day's picks again while none came, telling the asks its agent took
+  up (it used one of the app's tools after them) from those it never saw, and stopping after a few of the first.
 
 ### 6. What moves out of the agent views
 
@@ -451,9 +457,11 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - The SDK, `app_kit/js/app.js`, served on every app's origin at `/_ag/app.js`: events (read, subscribe, insert),
      tools (answer, call), agents, intents, the selection, the theme (its colours set on the panel's `:root`), the
      backend's messages, its own `/api/`; Esc and ⌘/Ctrl keys it leaves unhandled go on to the page.
-   - The page's side, `frontend/src/features/apps/host.ts`: an app's pane (its head: the app, its instance, the agents
-     attached -- a menu attaches and detaches them -- and ×) and the bridge to its frame, which checks every message's
-     source and origin. A panel has one stream for its backend's messages, a tool call among them, and one per
+   - The page's side, `frontend/src/features/apps/host.ts`: an app's pane -- its frame, with no head over it, and a
+     small × over its top right corner that closes the panel (the app left open); the panel keeps that corner clear,
+     its bars along the top padded at their right by `var(--ag-corner)`, which the SDK sets. Its row in the list (or in
+     its task's card) names it, closes it and puts agents in its task, and right-clicked, moves its panel or closes it
+     (07-panes.js's `appPanelMenu`) -- and the bridge to its frame, which checks every message's source and origin. A panel has one stream for its backend's messages, a tool call among them, and one per
      subscription; an intent for a panel not yet connected waits for it.
    - Apps are opened from a gatherer's "+ ⋯" menu, beside the pane in focus, the actor in focus attached. An app's
      pane is kept with the page's panes and opened again on a reload, if its instance is still open.
@@ -560,6 +568,18 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - Not done: telling the actor below the Editor which file is open and what is selected when the user messages it
      (decision 4); Codex and Antigravity can't be stopped from editing open files (no edit hook) -- their writes are
      merged or asked about as above.
+
+   **(c) Lines selected, sent to an actor: built** (2026-11-13). The user: "select a part of text and then after I
+   select it send to an actor ... as if I had manually switched to that actor and sent a message". Text selected in
+   the file open shows a button beside the selection's end ("Send to an actor"; not while the mouse is still
+   selecting); it opens a picker over the Editor: a box for what to do (it has the keys), then the actors of the
+   Editor's gatherer (not closed ones, but saved ones; the coordinator agent first, if there is one). The one picked
+   gets, as the user's own message (capability `message_actors`, `ag.actors.send`, as Chat sends): the user's words,
+   then "Lines 3-7 of /the/file's/path:" and the selected text in a fenced block (its extension as the language). Over
+   20,000 characters: only where the lines are. An auto-saved file is saved first, so what the actor reads there is
+   what was quoted; otherwise the message says the lines are not saved yet. No `[asked]` note, no report back, no
+   status: it is a message like any other, in its Chat. `panel/editor-send.js`; `e2e/editor.spec.ts`.
+   - Not done: a new actor started from the picker (as Notes offers); a key for it.
 8. **The Browser and DocWriter.** What they do for the user and the agent today is kept (2026-11-07): only where
    their panel sits and how they plug in change. DocWriter first, then the Browser, each its own PR.
    - Each becomes instances (the instance id is its key today, so its profile, logins and saved tabs stay where they

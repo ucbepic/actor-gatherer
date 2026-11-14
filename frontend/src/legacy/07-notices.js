@@ -73,7 +73,7 @@ function saidOf(w) {
 // opened: an actor shown, as a click on its row shows it; an app's panel, where the notification says
 function openWant(w) {
   if (w.n) return openNotice(w.g.name, w.id, w.n);
-  pick(w.g.name, w.a.channel);
+  pick(w.g.name, w.a.channel, {});                   // as a plain click: where its task is open (07-panes.js's viaTabs)
 }
 function popsBox() {
   let box = document.getElementById("pops");
@@ -121,7 +121,7 @@ async function openNotice(gname, id, n) {
   let o = appInfo(gname, id);
   if (!o) { await readApps(gname, true); o = appInfo(gname, id); }
   if (!o) return paneNote("That app is closed");
-  await selectApp(gname, o);
+  await selectApp(gname, o, {});
   const p = panes.apps.find((q) => q.instance.id === id);
   if (p) p.panel.intent("notice", { id: n.id, where: n.where === undefined ? null : n.where });
 }
