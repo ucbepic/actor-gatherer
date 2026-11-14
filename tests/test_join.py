@@ -392,6 +392,20 @@ class RegroupTest(JoinBase):
         self.assertEqual(len(back), 1)
         self.assertIn("the sessions of Editor", back[0])
 
+    def test_an_actor_started_on_its_own_joins_no_one_and_is_told_nothing(self):
+        """Its first record is the dashboard's, {group: self:<channel>, under}, in before its first call (groups.py's
+        `start_alone`): no `was`, as it left no group."""
+        self.put(PREAMBLE + conversation(12, prefix="c1 "))
+        self.built("c1")
+        self.moved("c2", "self:c2", under="w")
+        self.put(PREAMBLE + [user("new work", 100)], channel="c2")
+        texts = self.texts(self.read("c2"))
+        self.assertNotIn(JOINED, "\n".join(texts))
+        self.assertNotIn("c1 question", "\n".join(texts))
+        self.assertEqual([t for t in texts if "on your own" in t or "your group" in t.lower()
+                          and not t.startswith("About this context")], [])
+        self.assertEqual(self.jobs.started, [])
+
     def test_in_a_database_of_groups_the_guide_says_how_to_keep_to_one_s_own(self):
         import re
         import sqlite3

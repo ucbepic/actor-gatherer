@@ -250,6 +250,44 @@ function outsideDrop() {
   return n;
 }
 
+// ---- an actor on its own from its start (groups.py's `start_alone`): the list head's "+" beside "+ New group". Its box
+// (07-panes.js's railNewBox, `alone`) asks the directory it works in -- the latest active actor's to start with -- and the
+// harness: one that names its session only at its first call (codex's thread) is not offered, as its record could not be
+// in before that call. It runs under a group of the home's (ag runs every session in one): the shown actor's, else the
+// latest active -- and shares with no one. Only on the home's one database, as every group of one: none with a database
+// per gatherer, as no drop outside every group (outsideDrop).
+// its pop-up's key, and what `state.starting` names while it starts: no group's (a name holds no ":", a group of one's
+// ends in an id)
+const ALONE_NEW = "self:new";
+const aloneHarnesses = () => startable().filter((h) => !(harnessInfo(h) || {}).picks_id);
+const everyActor = () => ({ agents: state.home.gatherers.flatMap((g) => g.agents) });
+function aloneUnder() {
+  const real = state.home.gatherers.filter((g) => !g.alone);
+  const shown = state.selected && real.find((g) => g.name === state.selected[0]);
+  return shown || [...real].sort((x, y) => (y.last || 0) - (x.last || 0))[0] || null;
+}
+// why a harness that runs here is not in the box, if one is
+function aloneCant() {
+  const cant = startable().filter((h) => !aloneHarnesses().includes(h));
+  return cant.length ? el("div", { class: "note", text: `${cant.map(harnessName).join(" and ")} `
+    + (cant.length === 1 ? "names its session" : "name their sessions") + " only at the first call: start it in a group, then drag it out." }) : null;
+}
+function aloneNew() {
+  if (SNAPSHOT || PANE || !state.home.merged) return null;
+  const hs = aloneHarnesses(), g = aloneUnder();
+  const why = !g ? "Make a group first: an actor on its own runs under one"
+    : !hs.length ? (startable().length ? `${startable().map(harnessName).join(" and ")}: started in a group only` : noHarness()) : "";
+  const busy = state.starting && state.starting.gatherer === ALONE_NEW;
+  return el("button", { class: "alone-new" + (busy ? " busy" : ""), type: "button", "data-pop": ALONE_NEW,
+    ...(why || state.starting ? { disabled: "" } : {}), title: why || "New actor on its own: it shares context with no group",
+    "aria-label": "New actor on its own", "aria-haspopup": "dialog", "aria-expanded": String(rowPop.key === ALONE_NEW),
+    onclick: (ev) => {
+      if (rowPop.key === ALONE_NEW) return closePop();
+      openPop(ALONE_NEW, ev.currentTarget, railNewBox(g, hs, hs[0], startCwd(everyActor()), "", true));
+    } },
+    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.agent, 15));
+}
+
 // ---- an actor on its own: a group of one (groups.py's `alone`, `self:<channel>`), listed as its row alone (no head: its
 // title says what it is);
 // it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).

@@ -206,6 +206,13 @@ button:disabled { opacity: .5; cursor: default; }
 .aside-head .gf-new { display: inline-flex; align-items: center; padding: 4px 7px; margin-left: -4px; color: var(--ink-2); }
 .aside-head .gf-new:hover { color: var(--ink); }
 .aside-head .gf-new svg { display: block; }
+/* the head's "+" for an actor on its own (05-group-moves.js's aloneNew): "+" and an actor, as a group's "+ actor" */
+.aside-head .alone-new { display: inline-flex; align-items: center; gap: 1px; padding: 4px 6px; margin-left: -6px; color: var(--ink-2); }
+.aside-head .alone-new:hover:not(:disabled) { color: var(--ink); }
+.aside-head .alone-new:disabled { opacity: .45; cursor: default; }
+.aside-head .alone-new svg { display: block; }
+.aside-head .alone-new.busy svg { animation: term-blink 1s ease-in-out infinite; }
+.dw-menu.alone-box .note { color: var(--ink-2); font-size: 12px; }
 .aside-head.drop-on { background: color-mix(in srgb, var(--s1) 14%, var(--side));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--s1) 55%, transparent); }
 .gf-kids { margin-left: 17px; border-left: 1px solid var(--grid); }

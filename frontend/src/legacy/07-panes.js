@@ -1447,7 +1447,9 @@ async function railStart(g, harness, key = railKey(g)) {
 // The rail's box for a new actor: the directory it works in (the one tried, if starting there failed; else the dashboard's
 // own), the folders the gatherer's actors work in a click away, and a button for each harness: a click on one starts it
 // there, Enter the one tried (or the first). The box closes once it has started; why not, if it cannot, is said in it.
-function railNewBox(g, hs, harness = hs[0], cwd = "", error = "") {
+// `alone`: the list head's box for an actor on its own, run under `g` (05-group-moves.js's aloneNew) -- the folders any
+// actor works in a click away, and why a harness that runs here is not offered (`aloneHarnesses`).
+function railNewBox(g, hs, harness = hs[0], cwd = "", error = "", alone = false) {
   const dir = tildePath(cwd || state.home.cwd || "", state.home.home_dir);
   const err = el("div", { class: "err", role: "alert", text: error });
   const input = el("input", { type: "text", value: dir, spellcheck: "false", "aria-label": "Working directory", placeholder: "~/projects/my-project",
@@ -1459,18 +1461,21 @@ function railNewBox(g, hs, harness = hs[0], cwd = "", error = "") {
     const buttons = [...box.querySelectorAll("button.go")];
     for (const b of buttons) b.disabled = true;
     try {
-      await startSession(g.name, at, h);
+      await startSession(g.name, at, h, null, alone);
       if (rowPop.el === box) closePop();
     } catch (e) {
       if (box.isConnected) { err.textContent = e.message; placePop(); } else setLive(`Not started: ${e.message}`);
     } finally { for (const b of buttons) b.disabled = false; }
   };
-  const box = el("div", { class: "dw-menu", role: "dialog", "aria-label": `New actor in ${titleOf(g)}` },
-    el("div", { class: "head", text: `New actor in ${titleOf(g)}` }),
+  const title = alone ? "New actor on its own" : `New actor in ${titleOf(g)}`;
+  const box = el("div", { class: "dw-menu" + (alone ? " alone-box" : ""), role: "dialog", "aria-label": title },
+    el("div", { class: "head", text: title }),
+    alone ? el("div", { class: "note", text: "It shares context with no group, and no group with it." }) : null,
     el("label", {}, "Working directory", input),
-    folderPicks(g, dir, input, err),
+    alone ? folderPicks(everyActor(), dir, input, err, "Where actors work") : folderPicks(g, dir, input, err),
     el("div", { text: "Run it on" }),
     el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", class: "go", onclick: () => go(h) }, harnessBadge(h), harnessName(h)))),
+    alone ? aloneCant() : null,
     err);
   return box;
 }
@@ -1564,14 +1569,14 @@ function openPop(key, button, box) {
 }
 // The folders a gatherer's actors work in, newest first, under a box's folder `input` (its `dir` to start with): another
 // a click away. null: none other than `dir`.
-function folderPicks(g, dir, input, err) {
+function folderPicks(g, dir, input, err, label = "Where its actors work") {
   const seen = new Set(), folders = [];
   for (const a of [...g.agents].sort((x, y) => (y.last || 0) - (x.last || 0))) {
     const d = cwdOf(a);
     if (d && !seen.has(d)) { seen.add(d); folders.push(tildePath(d, state.home.home_dir)); }
   }
   return folders.length > 1 || (folders.length === 1 && folders[0] !== dir) ? el("div", { class: "folders" },
-    el("div", { class: "lbl", text: "Where its actors work" }),
+    el("div", { class: "lbl", text: label }),
     ...folders.slice(0, 5).map((d) => el("button", { type: "button", title: d,
       onclick: () => { input.value = d; err.textContent = ""; input.focus(); input.setSelectionRange(d.length, d.length); } },
       el("span", { class: "nm", text: d.replace(/\/+$/, "").split("/").pop() || d }), el("span", { class: "at", text: d })))) : null;
@@ -1624,13 +1629,14 @@ async function addSession(g, harness) {
 // The new session shown in Chat, its message box ready: its agent starts with its first message. Listed before it is
 // shown: drawn at once, the box there to take the focus.
 // `join`, for one added to a task (05-agent-list.js's addToTask): what puts it there, once started -- where it is filed --
-// and it shown beside the actor it was added to, the rest as any other's.
-async function startSession(gatherer, cwd, harness, join = null) {
-  state.starting = { gatherer, harness };
+// and it shown beside the actor it was added to, the rest as any other's. `alone`: an actor on its own from its start,
+// run under `gatherer` (05-group-moves.js's aloneNew): filed in no folder, listed as its group of one.
+async function startSession(gatherer, cwd, harness, join = null, alone = false) {
+  state.starting = { gatherer: alone ? ALONE_NEW : gatherer, harness };
   renderAgents();
   try {
-    const s = await post("/api/sessions", { gatherer, cwd, harness });
-    if (join) await join(s); else await fileStarted(gatherer, s.session_id);
+    const s = await post("/api/sessions", { gatherer, cwd, harness, ...(alone ? { alone: true } : {}) });
+    if (join) await join(s); else if (!alone) await fileStarted(gatherer, s.session_id);
     state.adding = null;
     collapsed.delete(s.gatherer);
     await loadHome();
