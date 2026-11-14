@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
-import { expect, streamsAsRequests, test } from "./test";
+import { closePanel, expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, NOW, openActor } from "./home";
 import { editorPane, editorPanel, openFile, project, raise } from "./editor-home";
 
@@ -47,7 +47,7 @@ async function startEditor(page: Page, repo: string) {
 
 /** The home as it was, for the tests after: the Editor closed, its actor (never started) forgotten. */
 async function endEditor(page: Page, request: APIRequestContext, sid: string, src: URL) {
-  await editorPane(page).locator(".app-close").click();
+  await closePanel(page, editorPane(page));
   await expect(editorPane(page)).toHaveCount(0);
   const closed = await request.post("/api/apps/close", {
     data: { gatherer: src.searchParams.get("gatherer"), instance: src.searchParams.get("instance") },
@@ -64,8 +64,7 @@ test("an Editor started from the menu: its panel above on the folder, its actor 
   const { repo } = project();
   const { sid, src } = await startEditor(page, repo);
   await expect(page.locator("#controls button[aria-label=Editor]")).toHaveCount(0); // no button of its own on an actor
-  await expect(editorPane(page).locator(".app-head")).toContainText(path.basename(repo));
-  await expect(editorPane(page).locator(".app-agents")).toHaveText("1 agent");
+  await expect(editorPane(page)).toHaveAttribute("aria-label", new RegExp(` · ${path.basename(repo)}$`));
   await expect(editorPanel(page).locator(".ed-folder .nm")).toHaveText(path.basename(repo)); // the folder it was started on
   await endEditor(page, request, sid, src);
 });
@@ -270,7 +269,7 @@ test("a file asked for opens in an Editor's panel, and what is typed is saved", 
   await expect.poll(() => fs.readFileSync(plot, "utf8").split("\n")[0]).toBe("print('drawing')  # typed");
   await raise(page, "open-file", { path: path.join(path.dirname(plot), "out.svg") }); // the Editor open takes it
   await expect(editorPane(page)).toHaveCount(1);
-  await editorPane(page).locator(".app-close").click();
+  await closePanel(page, editorPane(page));
   await expect(editorPane(page)).toHaveCount(0);
 });
 
@@ -327,7 +326,7 @@ test("the tree shows a closed actor that changed a file only while a change of i
   await expect(avatars.locator(":scope > img, :scope > .ed-noav")).toHaveCount(2);
   await expect(avatars).toHaveClass(/many/);
   await expect(avatars).toHaveAttribute("title", /\(closed: its change waits for you\)/);
-  await editorPane(page).locator(".app-close").click();
+  await closePanel(page, editorPane(page));
   await expect(editorPane(page)).toHaveCount(0);
 });
 

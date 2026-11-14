@@ -403,3 +403,8 @@ button.react:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--r
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* the page's × over the panel's top right corner (app_kit/js/app.js's --ag-corner): the conversation's head and the
+   thread's, whichever is at the right, keep it clear */
+.conv-head { padding-right: max(18px, var(--ag-corner, 0px)); }
+.thread-h { padding-right: max(8px, var(--ag-corner, 0px)); }

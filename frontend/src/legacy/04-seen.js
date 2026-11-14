@@ -97,13 +97,16 @@ function takeHome(home) {
   appsAtWork();                                      // apps' panels told their agents' states; held while they work
   heedHome();                                        // what came to want the reader since: popped up (07-notices.js)
 }
-// An app is looked at as an actor is: its panel shown (not held out of sight) -- while the page is in FRONT of the reader,
-// not only visible, as what it notified them of is said on the computer until then (07-notices.js) -- its newest
-// notification then seen (05-agent-list.js's appStatusOf), kept as the item "app:<its id>"; the list drawn again for it.
+// An actor is looked at while it is open in a pane -- not this page's own, out of sight while a screen tab without it
+// shows (07-panes.js's isAway). An app is looked at as an actor is: its panel shown (not held out of sight) -- while
+// the page is in FRONT of the reader, not only visible, as what it notified them of is said on the computer until then
+// (07-notices.js) -- its newest notification then seen (05-agent-list.js's appStatusOf), kept as the item
+// "app:<its id>"; the list drawn again for it.
 function markSeen() {
   if (SNAPSHOT || PANE || !state.home || document.visibilityState !== "visible") return;
-  const looked = [];
+  const looked = [], away = isAway();               // this page's own actor, out of sight while a tab without it shows
   for (const [gname, c] of openActors()) {
+    if (away && isAt(state.selected, gname, c)) continue;
     const g = state.home.gatherers.find((x) => x.name === gname);
     const a = g && g.agents.find((x) => x.channel === c);
     if (!a || !a.last || (seen.at[a.key] || 0) >= a.last) continue;

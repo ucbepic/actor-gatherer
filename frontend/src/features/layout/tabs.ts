@@ -6,10 +6,11 @@
 // tab shown, or another, brought forward -- and a task open nowhere in a tab of its own, new (the tab shown, if it
 // shows nothing). ⌥+click makes the tab shown the task's alone (take: out of any other tab; the page closes the rest).
 // The tabs' bar, over the work area always: each tab its tasks' faces, its name (its tasks', or one given it by a
-// double-click), a dot for what its actors do (asking, failed, working), its × (none, the only one); pressed, shown;
-// dragged, put elsewhere; and a "+" for a new tab, empty. A task of the tab shown, the tab showing others too, moved to
-// another tab (put): dragged by its card head onto another tab's name, into that tab -- anywhere else on the bar ("New tab"
-// shown there meanwhile), into a new tab -- or from its menu; the tab shown stays shown.
+// double-click), each task's state marked on its face (MARKS: waiting on the reader, failed, an app's notification,
+// done since they looked, at work, in the background -- idle, none), its × (none, the only one); pressed, shown; dragged,
+// put elsewhere; and a "+" for a new tab, empty. A task of the tab shown, the tab showing others too, moved to another
+// tab (put): dragged by its card head onto another tab's name, into that tab -- anywhere else on the bar ("New tab" shown
+// there meanwhile), into a new tab -- or from its menu; the tab shown stays shown.
 import type { Node } from "./tree";
 
 export interface Tab {
@@ -38,8 +39,9 @@ export interface TabsHooks {
   name: (task: string) => string;
   /** A task's faces: its lead's (or its app's mark). */
   faces?: (task: string) => HTMLElement[];
-  /** What a tab's actors do, all told: "asking", "error", "working", or "". */
-  status: (tasks: string[]) => string;
+  /** The states of a task's items (its actors', its apps'), its lead's first: each its mark (MARKS', or "": idle,
+   * closed) and its word (as the list says it). */
+  status?: (task: string) => State[];
   /** The tasks' arrangement in the work area (work.ts's): read, set, and held as it is while a tab is being shown. */
   screen: () => Node | null;
   setScreen: (screen: Node | null) => void;
@@ -54,6 +56,26 @@ export interface TabsHooks {
   /** That task let go on the bar: on another tab's name (`to`, its id), into that tab; anywhere else on it (null), into a
    * new tab at its end. */
   carry?: (task: string, to: string | null) => void;
+}
+
+/** An item's state, as a tab marks it: `mark` one of MARKS (or "", none), `said` its word ("Waiting for you"). */
+export interface State {
+  mark: string;
+  said: string;
+}
+/** The marks, the most pressing first: what waits on the reader (a question, an error, an app's notification, a turn
+ * done since they looked) before what is at work (a turn, in the background). A task's mark, its items' most pressing. */
+export const MARKS = ["asking", "error", "notified", "finished", "working", "background"];
+const rank = (m: string): number => (MARKS.includes(m) ? MARKS.indexOf(m) : MARKS.length);
+/** The most pressing of these states (none marked: the first, its word only). */
+export function pressing(states: State[]): State {
+  const best = states.reduce<State | null>((b, s) => (!b || rank(s.mark) < rank(b.mark) ? s : b), null);
+  return best || { mark: "", said: "" };
+}
+interface Face {
+  html: string;
+  mark: string;
+  title: string;
 }
 
 const TABS_KEY = "ag-dashboard-screen-tabs";
@@ -347,19 +369,43 @@ export class Tabs {
     const now = t.tasks.map((k) => this.hooks.canon!(k)).filter((k): k is string => !!k);
     return now.filter((k, i) => now.indexOf(k) === i);
   }
-  private look(t: Tab): { id: string; name: string; given: boolean; status: string; on: boolean; faces: string[] } {
+  private look(t: Tab): {
+    id: string;
+    name: string;
+    given: boolean;
+    on: boolean;
+    faces: Face[];
+    rest: string;
+    says: string[];
+  } {
     const tasks = this.tasksOf(t),
       names = tasks.map((k) => this.hooks.name(k)).filter(Boolean);
     const said = names.length
       ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2}` : "")
       : "New tab";
+    // each task: its face (its lead's), its state marked on it; the tasks past FACES, or with no face, marked as one
+    const faces: Face[] = [],
+      rest: State[] = [],
+      says: string[] = [];
+    for (const k of tasks) {
+      const st = pressing(this.hooks.status?.(k) || []),
+        name = this.hooks.name(k),
+        title = st.said ? `${name} · ${st.said}` : name;
+      if (st.said) says.push(title);
+      const face = this.hooks.faces?.(k)[0];
+      if (face && faces.length < FACES) faces.push({ html: face.outerHTML, mark: st.mark, title });
+      else if (face) faces.push({ html: "", mark: st.mark, title });
+      else rest.push(st);
+    }
+    for (const f of faces.slice(FACES)) rest.push({ mark: f.mark, said: "" });
     return {
       id: t.id,
       name: t.name || said,
       given: !!t.name,
-      status: this.hooks.status(tasks),
       on: t.id === this.current,
-      faces: tasks.flatMap((k) => (this.hooks.faces ? this.hooks.faces(k).map((e) => e.outerHTML) : [])),
+      faces,
+      rest: pressing(rest).mark,
+      says,
     };
   }
 
@@ -394,24 +440,29 @@ export class Tabs {
     e.setAttribute("aria-selected", String(look.on));
     e.draggable = true;
     e.dataset.id = t.id;
-    e.title = `${look.name}${look.given ? "" : " · double-click to name it"}`;
+    e.title = [`${look.name}${look.given ? "" : " · double-click to name it"}`, ...look.says].join("\n");
     const faces = document.createElement("span");
     faces.className = "lay-faces";
     faces.setAttribute("aria-hidden", "true");
-    faces.innerHTML = look.faces.slice(0, FACES).join("");
+    for (const f of look.faces.slice(0, FACES)) {
+      const one = document.createElement("span");
+      one.className = "lay-fmark";
+      one.title = f.title;
+      one.innerHTML = f.html;
+      if (f.mark) one.append(mark(f.mark));
+      faces.append(one);
+    }
     if (look.faces.length > FACES) {
       const more = document.createElement("span");
       more.className = "lay-more";
       more.textContent = `+${look.faces.length - FACES}`;
       faces.append(more);
     }
-    const dot = document.createElement("i");
-    dot.className = "lay-dot";
-    dot.dataset.status = look.status;
     const name = document.createElement("span");
     name.className = "lay-name";
     name.textContent = look.name;
-    e.append(...(look.faces.length ? [faces] : []), name, dot);
+    // the tasks past its faces' (or with none), marked as one, after its name
+    e.append(...(look.faces.length ? [faces] : []), name, ...(look.rest ? [mark(look.rest)] : []));
     if (this.tabs.length > 1) {
       const close = document.createElement("button");
       close.type = "button";
@@ -481,4 +532,14 @@ export class Tabs {
     input.focus();
     input.select();
   }
+}
+
+// a state's mark: a dot in its colour -- at work, the list's turning star, in step with the list's (one clock for all)
+function mark(m: string): HTMLElement {
+  const i = document.createElement("i");
+  i.className = "lay-dot";
+  i.dataset.status = m;
+  i.setAttribute("aria-hidden", "true");
+  if (m === "working") i.style.setProperty("--spin-at", `-${Date.now() % 1200}ms`);
+  return i;
 }

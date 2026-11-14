@@ -1,6 +1,7 @@
 // The page's side of an app's panel (app_kit/DESIGN.md, "Panels"; app_kit/js/app.js is the panel's side): an app's
-// pane -- its head (the app, its instance, the agents attached, ×) and its iframe on the app's own origin -- and the
-// bridge between them. Everything the panel asks goes through here, by postMessage, and on to the dashboard's routes
+// pane -- its iframe on the app's own origin, with no head over it, and a small × over its top right corner that closes
+// the panel (the list's row closes the app, attaches agents by its task, names it and moves it) -- and the bridge
+// between them. Everything the panel asks goes through here, by postMessage, and on to the dashboard's routes
 // (/api/apps/...), which check it against the app's manifest; what the panel is told (events, its backend's messages,
 // the theme, the agent in focus, an intent) comes back the same way. The old page (src/legacy/07-panes.js) keeps the
 // pane among its others, as it keeps an actor's.
@@ -11,7 +12,6 @@ import { desktop, nativePanes, nativeSoon, type NativePlace } from "./native";
 import { ACTOR_OPS, toActors } from "./actors";
 import { NOTICE_OPS, toNotices } from "./notices";
 import { SPELLING_OPS, spellingOn, toSpelling } from "./spelling";
-import { drawWho, nameable } from "./naming";
 
 type Capability =
   "message_agents" | "transcript" | "edit_guard" | "native_view" | "docs" | "actors" | "notify" | "message_actors";
@@ -50,7 +50,6 @@ interface Listed {
 /** What the page around a pane gives it. */
 export interface PaneHooks {
   close: () => void;
-  focus: () => void;
   intent: (kind: string, data: Record<string, unknown>, from: AppPane) => Promise<void>;
   selection: () => Selection | null;
   /** The gatherer's actors, to attach: each one's channel and the name the list shows it by. */
@@ -72,8 +71,6 @@ export interface PaneHooks {
   sendActor?: (gatherer: string, channel: string, text: string) => Promise<{ channel: string }>;
   startActor?: (gatherer: string, harness: string, folder: string, text: string) => Promise<{ channel: string }>;
   showActor?: (gatherer: string, channel: string) => Promise<unknown> | void;
-  /** It named by the user in its head (naming.ts): the list told. */
-  named?: (instance: Instance) => void;
 }
 /** What a panel asking `actors` is told of them (the SDK's ag.actors). */
 export interface Actors {
@@ -203,14 +200,19 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
   return n;
 }
 
-/** One app's pane: its head, its frame, and the bridge to the panel in it. */
+/** What a pane is called (its label, as a head named it before panes had none): the app, then the user's name for it,
+ * else its own title (not the app's name again), else its folder's name -- as the list names it (05-agent-list.js's
+ * appShown). */
+export function paneName(app: AppInfo, i: Instance): string {
+  const title = i.title !== app.label ? i.title : "";
+  const n = i.name || title || (i.folder || "").split("/").filter(Boolean).pop() || "";
+  return n ? `${app.label} · ${n}` : app.label;
+}
+
+/** One app's pane: its frame, and the bridge to the panel in it. */
 export class AppPane {
   readonly node: HTMLElement;
   readonly frame: HTMLIFrameElement;
-  private readonly head: HTMLElement;
-  private readonly who: HTMLElement;
-  private readonly agentsBtn: HTMLButtonElement;
-  private menu: HTMLElement | null = null;
   private base: Stream | null = null;
   private subs = new Map<number, { stream: Stream; last: number }>();
   private attached: string[] = [];
@@ -227,26 +229,7 @@ export class AppPane {
   ) {
     this.node = el("section", "app-pane");
     this.node.dataset.app = app.name;
-    this.head = el("div", "app-head");
-    this.who = el("span", "app-who");
-    this.agentsBtn = el("button", "app-agents");
-    this.agentsBtn.type = "button";
-    this.agentsBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      this.toggleMenu();
-    });
-    const close = el("button", "app-close", "×");
-    close.type = "button";
-    close.title = `Close ${app.label}`;
-    close.setAttribute("aria-label", `Close ${app.label}`);
-    close.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      hooks.close();
-    });
-    // its name double-clicked: named by the user (naming.ts)
-    nameable(this.who, this);
-    this.head.append(this.who, this.agentsBtn, close);
-    this.head.addEventListener("pointerdown", () => hooks.focus());
+    this.node.setAttribute("aria-label", paneName(app, instance));
     const q = new URLSearchParams({ gatherer: instance.gatherer, instance: instance.id, host: location.origin });
     this.frame = el("iframe", "app-frame");
     this.frame.src = `${app.origin}/?${q}`;
@@ -255,13 +238,17 @@ export class AppPane {
       "sandbox",
       "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals",
     );
-    // the head inside a top as tall as the page's top row (--top-h): the page measures the head, never the top, which
-    // that height is given to -- measured, the top would make itself a pixel taller every frame (07-panes.js's topRow)
-    const top = el("div", "app-top");
-    top.append(this.head);
-    this.node.append(top, this.frame);
+    // its panel closed (the app left open): a small × over its frame's top right corner, which the panel keeps clear
+    // (app_kit/js/app.js's --ag-corner)
+    const x = el("button", "app-x", "×");
+    x.type = "button";
+    x.title = x.ariaLabel = `Close this ${app.label} panel (the app stays open)`;
+    x.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      hooks.close();
+    });
+    this.node.append(this.frame, x);
     window.addEventListener("message", this.onMessage);
-    this.drawHead();
   }
 
   /** What the old page asks of a pane (07-panes.js's `call`): the theme, which it tells every pane of. */
@@ -295,62 +282,6 @@ export class AppPane {
     this.base?.close();
     for (const s of this.subs.values()) s.stream.close();
     this.subs.clear();
-    this.menu?.remove();
-  }
-
-  /** Named by the user (naming.ts): drawn so, and the list told. */
-  renamed(got: Instance): void {
-    this.instance = got;
-    this.hooks.named?.(got);
-    this.drawHead();
-  }
-
-  private drawHead(): void {
-    drawWho(this.who, this.app, this.instance);
-    const n = this.attached.length;
-    this.agentsBtn.textContent = n ? `${n} agent${n > 1 ? "s" : ""}` : "No agent";
-    this.agentsBtn.title = "The agents working with it: attach or detach";
-  }
-
-  private toggleMenu(): void {
-    if (this.menu) {
-      this.menu.remove();
-      this.menu = null;
-      return;
-    }
-    const menu = el("div", "app-menu");
-    menu.setAttribute("role", "menu");
-    const actors = this.hooks.agents(this.instance.gatherer);
-    if (!actors.length) menu.append(el("div", "app-menu-none", "No actor in this gatherer yet"));
-    for (const a of actors) {
-      const on = this.attached.includes(a.channel);
-      const item = el("button", "app-menu-item" + (on ? " on" : ""), (on ? "✓ " : "") + a.name);
-      item.type = "button";
-      item.setAttribute("role", "menuitemcheckbox");
-      item.setAttribute("aria-checked", String(on));
-      item.addEventListener("click", async (ev) => {
-        ev.stopPropagation();
-        // closed at once, not when the answer comes: by then the button may have opened the menu again
-        menu.remove();
-        if (this.menu === menu) this.menu = null;
-        await post(`/api/apps/${on ? "detach" : "attach"}`, {
-          gatherer: this.instance.gatherer,
-          instance: this.instance.id,
-          channel: a.channel,
-        }).catch(() => undefined);
-      });
-      menu.append(item);
-    }
-    this.head.append(menu);
-    this.menu = menu;
-    const away = (ev: Event) => {
-      if (!menu.contains(ev.target as Node)) {
-        menu.remove();
-        if (this.menu === menu) this.menu = null;
-        document.removeEventListener("pointerdown", away, true);
-      }
-    };
-    document.addEventListener("pointerdown", away, true);
   }
 
   private push(kind: string, body: Record<string, unknown>): void {
@@ -498,11 +429,13 @@ export class AppPane {
     s.addEventListener("message", (ev) => {
       const value = JSON.parse((ev as MessageEvent).data);
       if (value && value.ag === "instance") {
-        if (typeof value.name === "string") this.instance = { ...this.instance, name: value.name };
+        if (typeof value.name === "string") {
+          this.instance = { ...this.instance, name: value.name };
+          this.node.setAttribute("aria-label", paneName(this.app, this.instance));
+        }
         this.attached = value.attached || [];
         this.lastStates = "";
         this.agentsChanged();
-        this.drawHead();
       }
       this.push("message", { value });
     });
@@ -563,14 +496,13 @@ export class AppPane {
     this.push("states", { value: now });
   }
 
-  /** Its agents, as the host has them now: read again, drawn, and given (the page opens the first below it). */
+  /** Its agents, as the host has them now: read again and given (the page opens the first below it). */
   async refresh(): Promise<string[]> {
     const got = await get<Listed>(`/api/apps?gatherer=${encodeURIComponent(this.instance.gatherer)}`).catch(() => null);
     if (got) {
       this.attached = got.attached[this.instance.id] || [];
       this.lastStates = "";
       this.agentsChanged();
-      this.drawHead();
     }
     return [...this.attached];
   }

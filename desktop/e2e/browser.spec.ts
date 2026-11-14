@@ -106,9 +106,16 @@ const browserAsk = (what: string, body: unknown = {}) => ask(`/api/w/g/${key}/${
 const panel = (page: Page): FrameLocator => page.frameLocator("#top-row .app-pane[data-app=browser] iframe");
 /** The panel's frame itself, to run a script in. */
 const panelFrame = (page: Page) => page.frames().find((f) => f.url().startsWith(`http://browser.localhost:${port}/`))!;
-/** The Browser's panel closed (its × in the top row: the Browser stays open), and opened again: its actor shown, and --
- * a panel closed in a task staying closed (frontend's 07-panes.js, TASKS) -- the Browser selected from its task's card. */
-const closePanel = (page: Page) => page.locator("#top-row .app-pane[data-app=browser] .app-close").click();
+/** The Browser's panel closed (the Browser stays open) -- a panel has no head: its row in its task's card right-clicked,
+ * "Close its panel" (frontend's 07-panes.js, appPanelMenu) -- and opened again: its actor shown, and -- a panel closed in a
+ * task staying closed (07-panes.js, TASKS) -- the Browser selected from its task's card. */
+const closePanel = async (page: Page) => {
+  await page.mouse.move(0, 0);
+  await page.locator(".agent:not(.coordinator)").first().hover();
+  await page.locator("#actor-card.live .c-app-row .c-row").first().click({ button: "right" });
+  await page.locator(".row-menu[role=menu] [role=menuitem]", { hasText: "Close its panel" }).click();
+  await page.mouse.move(0, 0);
+};
 const openPanel = async (page: Page) => {
   const row = page.locator(".agent:not(.coordinator)").first();
   await row.click();

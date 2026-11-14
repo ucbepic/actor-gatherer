@@ -4,7 +4,7 @@
 // made of the two, for a lone one), an item dragged onto another's row put in its task, and an app in no task a row of
 // its own.
 import type { Page } from "@playwright/test";
-import { expect, test } from "./test";
+import { closePanel, expect, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, open } from "./home";
 import { newFolder, noFolders, treeOf } from "./folder-tree";
 import { type Agent, addNotepad, cardOf, taskHome, taskRow } from "./task-home";
@@ -76,7 +76,7 @@ test("a task's + adds an app to it: in it, opened above its actors, every one of
   await menu.locator("[role=menuitem] .nm", { hasText: /^Notepad$/ }).click();
   const pane = page.locator("#top-row > .app-pane[data-app=notepad]");
   await expect(pane).toHaveCount(1);
-  await expect(pane.locator(".app-agents")).toHaveText(/2 agents/);
+  await expect(pane.frameLocator("iframe").locator("#agents")).toHaveText(/^[^,]+, [^,]+$/); // both its actors attached
   await expect(row.locator(".t-faces .t-app")).toHaveCount(1); // in it: its mark among the task's faces
   await expect(page.locator("#agents button.agent.app-row")).toHaveCount(0); // not a row of its own
   await expect(row).toHaveAttribute("aria-current", "true"); // the task's: the app, selected
@@ -133,7 +133,7 @@ test("an app's panel closed in a task stays closed when the task is opened again
   await expect(notes).toHaveCount(0);
   await claude.click(); // back: as it was left, Notepad with it
   await expect(notes).toHaveCount(1);
-  await notes.locator(".app-close").click(); // closed in it
+  await closePanel(page, notes); // closed in it
   await page.locator("#agents button.agent", { hasText: CODEX }).click();
   await claude.click(); // back again: as it was left, Notepad closed
   await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CLAUDE })).toHaveCount(1);
@@ -181,7 +181,7 @@ test("an app added to an actor on its own makes a task of the two: its card list
   await expect(card.locator(".c-task-row:not(.c-app-row)", { hasText: CLAUDE })).toHaveCount(1);
   await expect(card.locator(".c-app-row", { hasText: "Notepad" })).toHaveCount(1);
   await page.mouse.move(0, 0);
-  await notes.locator(".app-close").click(); // its panel closed: the app still in it
+  await closePanel(page, notes); // its panel closed: the app still in it
   await expect(notes).toHaveCount(0);
   await expect(row.locator(".t-faces .t-app")).toHaveCount(1);
   await (await cardOf(page, row)).locator(".c-app-row .c-row").click(); // selected from its card: its panel back
@@ -209,7 +209,7 @@ test("a task's card lists its apps: one selected by a click, taken out by its ×
   await addNotepad(page, row);
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
   await expect(notes).toHaveCount(1);
-  await notes.locator(".app-close").click();
+  await closePanel(page, notes);
   await expect(notes).toHaveCount(0);
   await page.mouse.move(0, 0);
   await row.hover();

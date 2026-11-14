@@ -3,11 +3,12 @@
 // dismissed from its card, cleared by the app; and an actor that comes to wait for the reader, or stops on an error,
 // popped up the same way, unless it is in front of them or they turned actors' pop-ups off. The app is Notepad
 // (tests/apps/notepad/, `notify`), sent its notifications through the route its panel's SDK calls.
-import type { Locator, Page, WebSocketRoute } from "@playwright/test";
-import { expect, test } from "./test";
+import type { Locator, Page } from "@playwright/test";
+import { attachTo, closePanel, expect, homeAs, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, openActor } from "./home";
 
 const CODEX_CHANNEL = "019a1f2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b";
+const CLAUDE_CHANNEL = "5f0c2a2e-8d1b-4c7e-9a3f-1b2c3d4e5f60";
 
 async function openNotepad(page: Page): Promise<{ pane: Locator; instance: string }> {
   const row = page.locator("#agents .gatherer-row").first();
@@ -37,34 +38,12 @@ async function openOnServer(page: Page, instance: string): Promise<string[]> {
   return ((g && g.apps && g.apps[instance]) || { notices: [] }).notices.map((n) => n.title);
 }
 
-/** The page's homes as the server sends them, each passed through `change`; `again()` sends the latest again, changed
- * as `change` changes it now. */
-async function homeAs(page: Page, change: (home: Record<string, unknown>) => Record<string, unknown>) {
-  const last = new Map<string, Record<string, unknown>>();
-  let socket: WebSocketRoute | null = null;
-  await page.routeWebSocket(/\/api\/ws$/, (ws) => {
-    socket = ws;
-    const server = ws.connectToServer();
-    server.onMessage((m) => {
-      const [id, name, ...data] = typeof m === "string" ? m.split("\n") : [];
-      if (name !== "home") return ws.send(m);
-      last.set(id, JSON.parse(data.join("\n")));
-      ws.send(`${id}\nhome\n${JSON.stringify(change(structuredClone(last.get(id)!)))}`);
-    });
-  });
-  return {
-    again: () => {
-      for (const [id, h] of last) socket?.send(`${id}\nhome\n${JSON.stringify(change(structuredClone(h)))}`);
-    },
-  };
-}
-
 test("an app's notification: its row's status, counted, popped up, in its card; its panel shown, seen", async ({
   page,
 }) => {
   await openActor(page, CLAUDE);
   const { pane, instance } = await openNotepad(page);
-  await pane.locator(".app-close").click(); // its panel closed: the app still open, a row of its own
+  await closePanel(page, pane); // its panel closed: the app still open, a row of its own
   const row = page.locator(`#agents button.agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
   await expect(row.locator(":scope > .dot-none")).toHaveCount(1);
   await notify(page, instance, { title: "Build failed", text: "3 tests failed", where: { run: 7 } });
@@ -97,7 +76,7 @@ test("an app's notification: its row's status, counted, popped up, in its card; 
 test("an app's quiet notification (show []): listed, counted and in its card, never popped up", async ({ page }) => {
   await openActor(page, CLAUDE);
   const { pane, instance } = await openNotepad(page);
-  await pane.locator(".app-close").click();
+  await closePanel(page, pane);
   const row = page.locator(`#agents button.agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
   await notify(page, instance, { title: "3 new messages in #design", text: "Leo: done", show: [] });
   await expect(row.locator(":scope > .dot.notified")).toHaveCount(1);
@@ -122,7 +101,7 @@ test("an app's backend notifies, its panel closed meanwhile; clicked on, the pan
     const ag = (window as unknown as { notes: { api: (p: string, i: RequestInit) => Promise<Response> } }).notes;
     return ag.api("remind?after=0.5&text=water%20the%20plants", { method: "POST" }).then((r) => r.status);
   });
-  await pane.locator(".app-close").click();
+  await closePanel(page, pane);
   const row = page.locator(`#agents button.agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
   await expect(row.locator(":scope > .dot.notified")).toHaveCount(1);
   const pop = page.locator("#pops .pop.notified");
@@ -136,7 +115,7 @@ test("an app's backend notifies, its panel closed meanwhile; clicked on, the pan
 test("in the folded rail: its tile's corner, the rail's totals", async ({ page }) => {
   await openActor(page, CLAUDE);
   const { pane, instance } = await openNotepad(page);
-  await pane.locator(".app-close").click();
+  await closePanel(page, pane);
   await notify(page, instance, { title: "Seen in the rail" });
   await expect(page.locator("#agents .gatherer-row .count.notified")).toHaveText("1");
   await page.locator("#agents .lb-fold").click();
@@ -150,7 +129,7 @@ test("in the folded rail: its tile's corner, the rail's totals", async ({ page }
 test("dismissed from its card, cleared by its app, its key's newer one in its place", async ({ page }) => {
   await openActor(page, CLAUDE);
   const { pane, instance } = await openNotepad(page);
-  await pane.locator(".app-close").click();
+  await closePanel(page, pane);
   const row = page.locator(`#agents button.agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
   await notify(page, instance, { title: "Old build", key: "build" });
   await notify(page, instance, { title: "New build", key: "build" }); // the same key: in the first one's place
@@ -175,9 +154,8 @@ test("dismissed from its card, cleared by its app, its key's newer one in its pl
 
 test("a task shows its app's notification as its state, where it ranks first", async ({ page }) => {
   await openActor(page, CLAUDE);
-  const { pane, instance } = await openNotepad(page);
-  await pane.locator(".app-agents").click(); // the actor attached: the two one task
-  await pane.locator(".app-menu-item", { hasText: CLAUDE }).click();
+  const { instance } = await openNotepad(page);
+  await attachTo(page, GATHERER, instance, CLAUDE_CHANNEL); // the actor attached: the two one task
   const task = page.locator("#agents button.agent.task");
   await expect(task).toHaveCount(1);
   await page.locator("#agents button.agent", { hasText: CODEX }).click(); // another task shown: its panel put away

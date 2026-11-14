@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, streamsAsRequests, test } from "./test";
+import { closePanel, expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, openActor } from "./home";
 
 test("a DocWriter started from the menu: its page above, its actor below, one task", async ({ page, request }) => {
@@ -33,8 +33,7 @@ test("a DocWriter started from the menu: its page above, its actor below, one ta
 
   const panel = page.locator("#top-row > .app-pane[data-app=docwriter]");
   await expect(panel).toHaveCount(1);
-  await expect(panel.locator(".app-head")).toContainText(path.basename(folder));
-  await expect(panel.locator(".app-agents")).toHaveText("1 agent");
+  await expect(panel).toHaveAttribute("aria-label", new RegExp(` · ${path.basename(folder)}$`)); // named by its folder
   expect(await panel.locator("iframe").getAttribute("src")).toMatch(/^http:\/\/docwriter\.localhost:\d+\/\?/);
   // DocWriter's own page, up: its settings read from its backend, through the path its instance names
   const frame = () => page.frames().find((f) => /^http:\/\/docwriter\.localhost:\d+\//.test(f.url()));
@@ -58,7 +57,7 @@ test("a DocWriter started from the menu: its page above, its actor below, one ta
 
   // the home as it was, for the tests after: its DocWriter closed, its actor (never started) forgotten
   const src = new URL((await panel.locator("iframe").getAttribute("src")) || "");
-  await panel.locator(".app-close").click();
+  await closePanel(page, panel);
   expect(
     (
       await request.post("/api/apps/close", {

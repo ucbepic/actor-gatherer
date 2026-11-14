@@ -3,13 +3,17 @@
 // another tab, that tab brought forward; open nowhere, a tab of its own (the tab shown, if it shows nothing -- or only the
 // actor the page opened on by itself). ⌥+click: the tab shown made the task's alone. ⌘+click: a task of another tab, that
 // tab brought forward; else beside. The tabs' bar, over the work area always: each tab shown by a press, named by a
-// double-click, closed by its × (its actors go on); "+", a new tab, empty. The list numbers each row open by its tab.
+// double-click, closed by its × (its actors go on); "+", a new tab, empty; each task's state marked on its face. The
+// list numbers each row open by its tab.
 // Kept in this browser.
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "./test";
-import { CLAUDE, CODEX, GATHERER, open } from "./home";
+import { expect, homeAs, test } from "./test";
+import { CLAUDE, CODEX, GATHERER, open, settledBox } from "./home";
 import { addNotepad } from "./task-home";
 
+const CLAUDE_CHANNEL = "5f0c2a2e-8d1b-4c7e-9a3f-1b2c3d4e5f60";
+// an actor's latest activity after any the server has kept as looked at (by an earlier test, or try, of this run)
+const later = () => Date.now() / 1000;
 const beside = process.platform === "darwin" ? "Meta" : "Control";
 const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
 const mark = (page: Page, text: string) => row(page, text).locator(".tab-no");
@@ -212,7 +216,7 @@ test('"+" opens a new tab, empty, the next task clicked shown in it; left empty,
 test("a task's row open in a tab is not dropped onto the work area", async ({ page }) => {
   await twoTabs(page); // Claude's task in tab 1, Codex in tab 2 (shown)
   const area = await box(page.locator("#pane-here"));
-  const r = await box(row(page, CLAUDE));
+  const r = await settledBox(row(page, CLAUDE)); // (the list drawn again as the tabs settle)
   await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
   await page.mouse.down();
   await page.mouse.move(r.x + r.width / 2 + 10, r.y + r.height / 2 + 10, { steps: 3 });
@@ -332,4 +336,59 @@ test("a tab named by a double-click keeps its name; × closes a tab, its actors 
   await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
   await expect(row(page, CLAUDE)).toHaveCount(1); // still in the list, as it was
   await expect(mark(page, CLAUDE)).toHaveCount(0);
+});
+
+test("each task's state marked on its face in its tab: waiting, failed, done since looked, at work; idle, none", async ({
+  page,
+}) => {
+  let claude: Record<string, unknown> = {};
+  const homes = await homeAs(page, (home) => {
+    for (const g of home.gatherers as { agents: { channel: string }[] }[])
+      for (const a of g.agents) if (a.channel === CLAUDE_CHANNEL) Object.assign(a, claude);
+    return home;
+  });
+  await twoTabs(page); // Claude's task in tab 1, Codex shown in tab 2
+  await expect.poll(homes.sent).toBe(true);
+  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true"); // Claude out of sight: not looked at
+  const face = tabs(page).nth(0).locator(".lay-fmark");
+  await expect(face).toHaveCount(1); // one face for its task
+  await expect(face.locator(".lay-dot")).toHaveCount(0); // idle: no mark
+  for (const [change, mark, said] of [
+    [{ status: "asking" }, "asking", "Waiting for you"],
+    [{ status: "error" }, "error", "Error"],
+    [{ status: "running" }, "working", "Running"],
+    [{ status: "idle", last: later() }, "finished", "Finished"], // done since the reader looked
+  ] as const) {
+    claude = change;
+    homes.again();
+    await expect(face.locator(".lay-dot")).toHaveAttribute("data-status", mark);
+    await expect(face).toHaveAttribute("title", `${CLAUDE} · ${said}`);
+  }
+  await expect(tabs(page).nth(0)).toHaveAttribute("title", new RegExp(`\\n${CLAUDE} · Finished$`));
+  await tabs(page).nth(0).click(); // shown: looked at, so no longer marked
+  await expect(face.locator(".lay-dot")).toHaveCount(0);
+});
+
+test("an actor left in another tab is not looked at there: done since, its face is marked finished", async ({
+  page,
+}) => {
+  let claude: Record<string, unknown> = {};
+  const homes = await homeAs(page, (home) => {
+    for (const g of home.gatherers as { agents: { channel: string }[] }[])
+      for (const a of g.agents) if (a.channel === CLAUDE_CHANNEL) Object.assign(a, claude);
+    return home;
+  });
+  await open(page);
+  await row(page, CLAUDE).click(); // this page's own pane
+  await addNotepad(page, row(page, CLAUDE)); // (the home changed: the stream sends it)
+  await expect.poll(homes.sent).toBe(true);
+  await page.locator(".lay-tab-add").click(); // a new tab, empty: Claude out of sight, still selected
+  await expect(tabs(page)).toHaveCount(2);
+  await expect(page.locator("#pane-here")).toHaveClass(/lay-away/); // out of sight: not looked at from now on
+  claude = { status: "idle", last: later() };
+  homes.again();
+  await expect(tabs(page).nth(0).locator(".lay-fmark .lay-dot")).toHaveAttribute("data-status", "finished");
+  await expect(row(page, CLAUDE).locator(".dot")).toHaveClass(/finished/);
+  await tabs(page).nth(0).click(); // shown again: looked at
+  await expect(tabs(page).nth(0).locator(".lay-fmark .lay-dot")).toHaveCount(0);
 });

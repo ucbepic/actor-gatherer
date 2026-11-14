@@ -543,7 +543,8 @@ class DocWriters:
         out = {"key": key, "root": r["root"], "gatherer": r["gatherer"], "channel": r["channel"], "harness": "",
                "name": "DocWriter", "wake": wake()}
         if not r["channel"]:
-            out["error"] = "No actor works with this DocWriter: attach one (its head's agents), or start a new DocWriter."
+            out["error"] = ("No actor works with this DocWriter: put one in its task (drop it on the DocWriter's row in "
+                            "the list), or start a new DocWriter.")
         return out
 
     def record(self, key: str, kind: str, payload) -> None:
