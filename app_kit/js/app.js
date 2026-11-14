@@ -62,11 +62,16 @@ Everything goes through the page around it, by postMessage, which checks it agai
     ag.api(path, init?)                                  its backend's own routes, on its own origin (no bridge)
     ag.close()                                           its pane closed
 
-Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as they would outside the frame. */
+Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as they would outside the frame.
+
+The page draws a × over the panel's top right corner (its panel closed, the app left open): a bar along the panel's top
+keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
 (function () {
   "use strict";
   const params = new URLSearchParams(location.search);
   const HOST = params.get("host") || "";                  // the dashboard's origin: the only one listened to
+  // what the page's × covers at the panel's top right (frontend/src/features/apps/apps.css's .app-x: 22px, 6px in)
+  document.documentElement.style.setProperty("--ag-corner", "34px");
   let seq = 0;
   const waiting = new Map();
   const listeners = { event: new Map(), message: [], attached: [], selection: [], theme: [], intent: new Map(),

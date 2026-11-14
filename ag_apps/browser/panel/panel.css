@@ -280,3 +280,6 @@ body { background: var(--surface); color: var(--ink); font: 13px/1.4 system-ui, 
   background: var(--page); color: var(--ink); cursor: pointer; }
 .bw button.primary, .bw-sheet button.primary { background: #2563EB; border-color: #2563EB; color: #fff; }
 .bw-sheet button[disabled] { opacity: .5; cursor: default; }
+
+/* the page's × over the panel's top right corner (app_kit/js/app.js's --ag-corner): the tab strip keeps it clear */
+.bw-tabs { padding-right: max(6px, var(--ag-corner, 0px)); }

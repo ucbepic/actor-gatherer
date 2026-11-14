@@ -137,6 +137,28 @@ test("the panel follows the actor in focus, and the agents attached to it", asyn
   await expect(panel.locator("#agents")).not.toContainText(CODEX_CHANNEL);
 });
 
+test("an app's panel closed by the × over its top right corner: the app left open, its row in the list", async ({
+  page,
+}) => {
+  await openActor(page, CLAUDE);
+  const { pane, panel, instance } = await openNotepad(page);
+  const x = pane.locator(".app-x");
+  await expect(x).toBeVisible(); // always shown, over its frame's corner
+  const [p, b] = [(await pane.boundingBox())!, (await x.boundingBox())!];
+  expect(p.x + p.width - (b.x + b.width)).toBeLessThan(10);
+  expect(b.y - p.y).toBeLessThan(10);
+  // the panel told to keep that corner clear (app_kit/js/app.js)
+  await expect
+    .poll(() =>
+      notepadFrame(page).evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--ag-corner")),
+    )
+    .toBe("34px");
+  await expect(panel.locator("body[data-ready='1']")).toHaveCount(1);
+  await x.click();
+  await expect(page.locator("#top-row > .app-pane")).toHaveCount(0);
+  await expect(page.locator(`#agents .app-row[data-instance="${instance}"]`)).toHaveCount(1); // the app still open
+});
+
 test("an app's panel is kept in this browser", async ({ page }) => {
   await openActor(page, CLAUDE);
   await openNotepad(page);
