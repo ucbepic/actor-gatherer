@@ -35,6 +35,7 @@
     "16-files-view.js",
     "17-history.js",
     "18-top.js",
+    "18-mini-history.js",
     "19-app-actors.js",
     "20-own-views.js",
     "21-start.js"

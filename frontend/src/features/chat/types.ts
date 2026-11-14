@@ -14,6 +14,9 @@ export interface Reply {
   texts?: string[];
   /** a report's task, or the session a message came from */
   name?: string | null;
+  /** how many of the turn's calls came before it: where it goes among the commands (a minimized pane's card,
+   * src/legacy/18-mini-history.js) */
+  after?: number;
 }
 
 /** A call (files.py's command): its line, the call as its harness's view reads it, and how it went. */

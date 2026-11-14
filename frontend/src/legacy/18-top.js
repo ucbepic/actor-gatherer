@@ -51,12 +51,13 @@ async function minRedraw() {
   drawn.main = mainSignature();
   if (!chatMin()) chatToEnd();
 }
-// The view a minimized pane draws in place of its own (chatCard): no history, the message box, and miniFoot.
+// The view a minimized pane draws in place of its own (chatCard): no conversation, the message box, and miniFoot.
 const MINI_VIEW = { id: "mini", name: "Chat", feed: "files", mini: true, background: false, queued: false, greets: true,
   render: () => [], footer: (ctx) => miniFoot(ctx) };
 const miniBack = () => el("button", { type: "button", class: "mini-back", title: "Show the chat again", "aria-label": "Show the chat again",
   onclick: () => setChatMin(false) }, strokeIcon(ICONS.restore, 14));
-const miniFoot = (ctx) => [miniBack(), actorStatus(ctx, () => setChatMin(false))];
+// right of the box, the conversation's last two lines (18-mini-history.js), hovered: the whole of it
+const miniFoot = (ctx) => [miniBack(), miniHistory(ctx), actorStatus(ctx, () => setChatMin(false))];
 // The actor's status, small, at the right of a message box with no conversation over it -- a minimized pane's (miniFoot), a
 // Browser's: its avatar moving while it works, or while a message sent from here waits to open its turn, ✓ when the turn is
 // done, ?/! when it asks or failed; under it the latest turn's commands and lines changed (from the files' feed). Pressed:
