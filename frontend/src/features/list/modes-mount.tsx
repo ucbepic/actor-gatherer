@@ -3,6 +3,7 @@
 // place measured, its cards watched) finds it drawn.
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
+import { Card, type CardHost, type CardModel } from "./Card";
 import type { Totals } from "./groups";
 import type { MonitorModel } from "./monitor-model";
 import { Monitor, type MonitorHost } from "./Monitor";
@@ -43,6 +44,11 @@ export function drawMonitor(box: HTMLElement, m: MonitorModel, host: MonitorHost
 let railDraws = 0;
 export function drawRail(box: HTMLElement, m: RailModel, host: RailHost): void {
   flushSync(() => rootOf(box).render(<Rail m={m} host={host} draw={++railDraws} />));
+}
+
+/** The hover card's contents drawn into `box` (#actor-card), by now: the page places it next, by its size. */
+export function drawCard(box: HTMLElement, m: CardModel, host: CardHost): void {
+  flushSync(() => rootOf(box).render(<Card m={m} host={host} />));
 }
 
 /** What is drawn in `box` gone: left, nothing of it kept but what the page read. */

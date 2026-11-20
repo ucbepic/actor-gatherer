@@ -13,7 +13,7 @@ import {
   placeGroup, placeOf, showOutside,
 } from "./group-moves.js";
 import {
-  HOVERS, cardDraw, cardHide, cardLive, cardMoving, drawTotals, hover, listButtons, listPlaces, railDragged,
+  HOVERS, cardDraw, cardHide, drawTotals, hover, listButtons, listPlaces, railDragged,
   renderFolded, slideList,
 } from "./modes.js";
 import {
@@ -1150,36 +1150,13 @@ function pressClose(g, f, from) {
   if (from === "card") cardDraw(); else renderAgents();
   askRefocus(true);
 }
-// what the question says: what closing it does, and where it goes ({said, where}) -- the list's own question is drawn
-// by features/list/Boxes.tsx's CloseAsk, a card's here (closeAsk)
+// what the question says: what closing it does, and where it goes ({said, where}) -- drawn by features/list/Parts.tsx's
+// AskClose, under the folder's line or in its card
 function closeAskSays(g, f) {
   const w = closeWhat(g, f), up = parentOf(g.name, f), where = up === null ? titleOf(g) : folderById(g.name, up).name;
   const parts = [w.open ? `closes ${plural(w.open, "actor")}${w.busy ? ` (stopping ${w.busy} mid-turn)` : ""}` : null,
     w.shells ? `ends ${plural(w.shells, "terminal")}` : null, w.marks ? `removes ${plural(w.marks, "bookmark")}` : null].filter(Boolean);
   return { where, said: parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "closes it" };
-}
-function closeAsk(g, f) {
-  const { said, where } = closeAskSays(g, f);
-  const from = folderClosing.from;
-  const cancel = () => { folderClosing = null; if (from === "card") cardDraw(); else renderAgents(); };
-  const btn = (which, cls, text, fn) => el("button", { type: "button", class: `pb ${cls}`, "data-ask": which, onclick: (ev) => { ev.stopPropagation(); fn(); },
-    onfocus: () => { if (folderClosing) folderClosing.focus = which; } }, text);
-  return el("div", { class: "f-ask", role: "alertdialog", "aria-label": `Close ${f.name}?`, "data-key": `${g.name}/folder:${f.id}/ask`,
-    onclick: (ev) => ev.stopPropagation(),
-    onkeydown: (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); cancel(); } },
-    // in a card, the focus gone from it (a click elsewhere): taken back, the card let go of once the pointer is off it
-    onfocusout: (ev) => {
-      if (from !== "card" || cardMoving || (ev.relatedTarget && hover.node && hover.node.contains(ev.relatedTarget))) return;
-      setTimeout(() => {
-        if (!folderClosing || folderClosing.from !== "card" || (hover.node && hover.node.contains(document.activeElement))) return;
-        folderClosing = null;
-        if (cardLive() && !hover.node.matches(":hover")) cardHide(); else cardDraw();
-      }, 0);
-    } },
-    el("p", {}, el("b", { text: `Close ${f.name}?` }), ` This ${said}. The folder moves to ${where}'s closed line.`),
-    el("div", { class: "f-ask-btns" },
-      btn("go", "go", "Close folder", () => { folderClosing = null; if (from === "card") cardHide(); closeFolder(g, f); }),
-      btn("cancel", "", "Cancel", cancel)));
 }
 // the question's button that had the focus, given it again once drawn anew (`now`: the question just asked -- Cancel)
 function askRefocus(now = false) {
@@ -1466,15 +1443,16 @@ export {
   APP_ITEM, COLLAPSED_KEY, CTX, FOLDER_CHARS, GROUPS, LEAD_RANK, MANAGER, OPEN, SHELLS, TASK_ITEM, actorOf, actorTitle,
   actorsWithin, addButton, aimStart, appFace, appFolder, appInfo, appItem, appKey, appMarkOf, appNotices,
   appShown, appStatusOf, appTaskOf, appTitle, appsFollowHome, appsKnown, appsNotified, askRefocus, boxGroups, boxKey,
-  LIST_HOST, byName, closeApp, closeAsk, closeButton, closeShell, closedKids, closedSays, collapsed, crewAt, crewFace, crewHidden,
+  LIST_HOST, addInfo, byName, closeApp, closeButton, closeShell, closedKids, closedSays, collapsed, crewAt, crewFace, crewHidden,
   crewHideKey, crewLine, crewPlace, deleteFolder, dragFolder, dragItems, dragRow, dropFolderClosing, dropOn,
   dropOnItem, endDrag, endRename, envelope, fileStarted, firstAgent, foldOpen, folderAct, folderById,
   folderClosing, folderKey, folderMark, folderOf, folderPath, folderPost, folderSays, folderTally, gathererApps,
   gathererCounts, groupCrew, groupMark, groupOf, inPane, isAppItem, isCoordinator, isCrewHome, isHidden,
   isOpenFolder, itemNamed, keepTitle, kidFolders, listDrag, listModel, listView, markDragged, moveHidingToServer, nameFolder, nameItem,
-  nameNote, openIn, openTask, openUp, parentOf, pickMark, picked, plainFace, pressClose, readApps, renderAgents,
+  nameNote, openAdd, openIn, openTask, openUp, parentOf, pickMark, picked, plainFace, pressClose, readApps, renderAgents,
   reopenFolder, retask, rowButton, saveButton, savedAs, selectApp, setCrewHidden, setHidden, shellFolder,
-  shellLogo, showFolder, showItemsTask, shownClosed, staleNames, startDrag, startFolderEdit, startIn, tabLine, takeOut, tallyChips,
+  shellLogo, showFolder, showItemsTask, shownClosed, staleNames, startDrag, startFolderEdit, startIn, tabAt, tabLine, takeOut,
+  tallyChips,
   taskActors, taskApps, taskById, taskCloseButton, taskFaces, taskItems, taskLead, taskMembers, taskName, taskOf,
   taskSaveButton, taskStatus, titleOf, toggleFold, toggleFolder, toggleGatherer, togglePick, treeOf, withTasks, within,
 };

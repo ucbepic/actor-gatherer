@@ -7,7 +7,7 @@ import type { ListHost, PageParts } from "./host";
 import type { Counts } from "./groups";
 import type { TabAt } from "./rows";
 import type { Tally } from "./tree";
-import type { Actor, Gatherer } from "./types";
+import type { Actor, Folder, Gatherer } from "./types";
 
 /** An element of the list's whose contents the page builds (`make`, afresh at each draw -- or, `deps` given, only when
  * they change), as it built them: put in it whole, in place of what was. */
@@ -207,6 +207,9 @@ export function RowButton({
   title?: string;
   "aria-label"?: string;
   "aria-pressed"?: "true" | "false";
+  "data-pop"?: string;
+  "aria-haspopup"?: "menu";
+  "aria-expanded"?: "true" | "false";
 }) {
   return (
     <span
@@ -260,5 +263,68 @@ export function Face({
       <img src={src} alt="" draggable="false" />
       {check}
     </span>
+  );
+}
+
+/** A folder's × asking first, under its line or in its card: what closing it would close, end, take off -- "Close
+ * folder", or Cancel (Esc). `focus`: its button now in focus; `out`, the focus gone from it. */
+export function AskClose({
+  g,
+  f,
+  said,
+  where,
+  go,
+  cancel,
+  focus,
+  out,
+}: {
+  g: Gatherer;
+  f: Folder;
+  said: string;
+  where: string;
+  go: () => void;
+  cancel: () => void;
+  focus: (which: string) => void;
+  out?: (ev: FocusEvent) => void;
+}) {
+  const button = (which: string, cls: string, text: string, run: () => void) => (
+    <button
+      type="button"
+      className={`pb ${cls}`}
+      data-ask={which}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        run();
+      }}
+      onFocus={() => focus(which)}
+    >
+      {text}
+    </button>
+  );
+  return (
+    <div
+      className="f-ask"
+      role="alertdialog"
+      aria-label={`Close ${f.name}?`}
+      data-key={`${g.name}/folder:${f.id}/ask`}
+      onClick={(ev) => ev.stopPropagation()}
+      onKeyDown={(ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cancel();
+        }
+      }}
+      onBlur={out ? (ev) => out(ev.nativeEvent) : undefined}
+    >
+      <p>
+        <b>{`Close ${f.name}?`}</b>
+        {` This ${said}. The folder moves to ${where}'s closed line.`}
+      </p>
+      <div className="f-ask-btns">
+        {button("go", "go", "Close folder", go)}
+        {button("cancel", "", "Cancel", cancel)}
+      </div>
+    </div>
   );
 }

@@ -1739,44 +1739,40 @@ function openActorMenu(g, hs, button, key = `actor:${g.name}`, start = (h) => ad
   openPop(key, button, popMenu(`New actor in ${place || titleOf(g)}`,
     hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => start(h) })), where, where));
 }
-// The "+ actor" of a gatherer's or a folder's card in the rail (gathererCard, folderCard; `f` null: the gatherer's top): a
-// new actor there, as the list's "+ actor" starts one -- on the one harness at once, or on the one picked from a drop-down
-// -- in the directory of its gatherer's most recently active actor. With none (or starting there failed), a box under it
-// asks for the directory first (railNewBox): the list's form, under its gatherer's row, is out of sight with the list
-// folded. Pressed again, what it opened closes. `cls`: its classes.
+// The "+ actor" and "+ ⋯" of a gatherer's or a folder's card in the rail (features/list/CardFolder.tsx's StartAct; `f`
+// null: the gatherer's top): what each says (cardStart), and what a press does (cardStartPress). "+ actor": a new actor
+// there, as the list's "+ actor" starts one -- on the one harness at once, or on the one picked from a drop-down -- in
+// the directory of its gatherer's most recently active actor. With none (or starting there failed), a box under it asks
+// for the directory first (railNewBox): the list's form, under its gatherer's row, is out of sight with the list
+// folded. Pressed again, what it opened closes. "+ ⋯": the list's "+ more" drop-down, under it.
 const railKey = (g, f = null) => `rail:${g.name}${f ? `:${f.id}` : ""}`;
-function railNew(g, f = null, cls = "r-new") {
-  const hs = startable(), key = railKey(g, f), plus = el("span", { class: "plus", "aria-hidden": "true", text: "+" });
-  const fid = f ? f.id : null, place = f ? f.name : titleOf(g);
-  if (!hs.length) return el("button", { class: cls, type: "button", disabled: "", title: noHarness(), "aria-label": noHarness() },
-    plus, strokeIcon(ICONS.agent, 14));
-  const cwd = startCwd(g), where = cwd ? tildePath(cwd, state.home.home_dir) : null;
-  const busy = state.starting && state.starting.gatherer === g.name && startIn.folder === fid && hs.includes(String(state.starting.harness));
+const railMoreKey = (g, f = null) => `railmore:${g.name}${f ? `:${f.id}` : ""}`;
+function cardStart(which, g, f = null) {
+  const hs = startable(), place = f ? f.name : titleOf(g), off = !!state.starting;
+  if (which === "more") {
+    const key = railMoreKey(g, f), others = moreStarts(g, hs, null, key);
+    if (!others.length) return null;
+    return { key, disabled: off, busy: false, label: `More to start in ${place}`, haspopup: "menu", expanded: rowPop.key === key,
+      title: `More to start in ${place}: ${others.map((o) => o.text.replace("…", "").toLowerCase()).join(", ")}` };
+  }
+  if (!hs.length) return { key: null, disabled: true, busy: false, title: noHarness(), label: noHarness(), haspopup: null, expanded: null };
+  const key = railKey(g, f), cwd = startCwd(g), where = cwd ? tildePath(cwd, state.home.home_dir) : null;
+  const busy = !!state.starting && state.starting.gatherer === g.name && startIn.folder === (f ? f.id : null)
+    && hs.includes(String(state.starting.harness));
   const pops = hs.length > 1 || !cwd;
-  return el("button", { class: cls + (busy ? " busy" : ""), type: "button", "data-pop": key, ...(state.starting ? { disabled: "" } : {}),
+  return { key, disabled: off, busy, label: `New actor in ${place}`,
     title: `New actor in ${place}${where ? ` · ${where}` : ""} · ${hs.map(harnessName).join(" or ")}`,
-    "aria-label": `New actor in ${place}`,
-    ...(pops ? { "aria-haspopup": cwd ? "menu" : "dialog", "aria-expanded": String(rowPop.key === key) } : {}),
-    onclick: (ev) => {
-      const button = ev.currentTarget;
-      if (rowPop.key === key) return closePop();
-      aimStart(g.name, fid);
-      if (!cwd) openPop(key, button, railNewBox(g, hs));
-      else if (hs.length > 1) openActorMenu(g, hs, button, key, (h) => railStart(g, h, key), f ? place : null);
-      else railStart(g, hs[0], key);
-    } },
-    plus, strokeIcon(ICONS.agent, 14));
+    haspopup: pops ? (cwd ? "menu" : "dialog") : null, expanded: pops ? rowPop.key === key : null };
 }
-// A card's "+ ⋯" in the rail: the list's "+ more" drop-down, under it
-function railMore(g, f = null, cls = "r-new r-more") {
-  const hs = startable(), key = `railmore:${g.name}${f ? `:${f.id}` : ""}`, place = f ? f.name : titleOf(g);
-  const others = moreStarts(g, hs, null, key);
-  if (!others.length) return null;
-  return el("button", { class: cls, type: "button", "data-pop": key, ...(state.starting ? { disabled: "" } : {}),
-    title: `More to start in ${place}: ${others.map((o) => o.text.replace("…", "").toLowerCase()).join(", ")}`,
-    "aria-label": `More to start in ${place}`, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === key),
-    onclick: (ev) => { aimStart(g.name, f ? f.id : null); openMoreMenu(g, hs, ev.currentTarget, key, place); } },
-    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.more, 14));
+function cardStartPress(which, g, f, button) {
+  const hs = startable(), place = f ? f.name : titleOf(g);
+  if (which === "more") { aimStart(g.name, f ? f.id : null); openMoreMenu(g, hs, button, railMoreKey(g, f), place); return; }
+  const key = railKey(g, f), cwd = startCwd(g);
+  if (rowPop.key === key) return closePop();
+  aimStart(g.name, f ? f.id : null);
+  if (!cwd) openPop(key, button, railNewBox(g, hs));
+  else if (hs.length > 1) openActorMenu(g, hs, button, key, (h) => railStart(g, h, key), f ? place : null);
+  else railStart(g, hs[0], key);
 }
 async function railStart(g, harness, key = railKey(g)) {
   const cwd = startCwd(g);
@@ -2352,7 +2348,7 @@ export {
   closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, focusedPane, folderPicks, holdAppPane, isAt,
   isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, opensWithAgent, paneNote,
   paneOf, paneReady, paneSig, paneUrl, panesTake, pick, pickBeside, placeIfShown, placeWork, popButton, popMenu,
-  railMore, railNew, railNewBox, rekeyTask, retarget, rememberTask, restoreAppPanes, restorePanes, rowMore, rowPop, saveAppPanes,
+  cardStart, cardStartPress, railNewBox, rekeyTask, retarget, rememberTask, restoreAppPanes, restorePanes, rowMore, rowPop, saveAppPanes,
   savePanes, selectAppPane, selectedTask, setAutoShown, show, showActorsApp, shownPanels, startButtons, startCwd,
   startPlacing, startSession, startShell, startTabs, startWithApp, startable, swapAppPane, taskAppsOpening, taskKey,
   taskLayout, tasksLaidOut, topLayout, unselectApp, viaTabs, watchTop, workPlacer,

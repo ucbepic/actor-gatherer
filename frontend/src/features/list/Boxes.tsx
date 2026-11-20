@@ -4,7 +4,7 @@
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { plural } from "../../core/format";
 import type { ListHost } from "./host";
-import { CountChips, CrewButton, FoldMark, FolderBox, NameBox, TallyChips, useFilled } from "./Parts";
+import { AskClose, CountChips, CrewButton, FoldMark, FolderBox, NameBox, TallyChips, useFilled } from "./Parts";
 import type { FoldNode, FolderNode, GathererNode, GfFolderNode, Node } from "./rows";
 import { ActorRowView, AppRowView, ShellRowView, TaskRowView } from "./RowViews";
 import { GF } from "./tree";
@@ -234,48 +234,19 @@ function FolderLine({ host, n }: { host: ListHost; n: FolderNode }) {
   );
 }
 
-/** A folder's × asking first, under its line: what closing it would close, end, take off -- "Close folder", or Cancel
- * (Esc). */
+/** A folder's × asking first, under its line (Parts.tsx's AskClose). */
 function CloseAsk({ host, g, f }: { host: ListHost; g: Gatherer; f: Folder }) {
   const { said, where } = host.closeAsk(g, f);
-  const button = (which: string, cls: string, text: string, run: () => void) => (
-    <button
-      type="button"
-      className={`pb ${cls}`}
-      data-ask={which}
-      onClick={(ev) => {
-        ev.stopPropagation();
-        run();
-      }}
-      onFocus={() => host.askFocus(which)}
-    >
-      {text}
-    </button>
-  );
   return (
-    <div
-      className="f-ask"
-      role="alertdialog"
-      aria-label={`Close ${f.name}?`}
-      data-key={`${g.name}/folder:${f.id}/ask`}
-      onClick={stop}
-      onKeyDown={(ev) => {
-        if (ev.key === "Escape") {
-          ev.preventDefault();
-          ev.stopPropagation();
-          host.closeAskCancel();
-        }
-      }}
-    >
-      <p>
-        <b>{`Close ${f.name}?`}</b>
-        {` This ${said}. The folder moves to ${where}'s closed line.`}
-      </p>
-      <div className="f-ask-btns">
-        {button("go", "go", "Close folder", () => host.closeFolderGo(g, f))}
-        {button("cancel", "", "Cancel", () => host.closeAskCancel())}
-      </div>
-    </div>
+    <AskClose
+      g={g}
+      f={f}
+      said={said}
+      where={where}
+      go={() => host.closeFolderGo(g, f)}
+      cancel={() => host.closeAskCancel()}
+      focus={(which) => host.askFocus(which)}
+    />
   );
 }
 

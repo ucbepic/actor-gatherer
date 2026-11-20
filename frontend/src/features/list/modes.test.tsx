@@ -5,7 +5,8 @@ import { fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildMonitor } from "./monitor-model";
 import type { MonitorHost } from "./Monitor";
-import { drawMonitor, drawRail, drawTotals, forget } from "./modes-mount";
+import type { CardHost } from "./Card";
+import { drawCard, drawMonitor, drawRail, drawTotals, forget } from "./modes-mount";
 import { buildRail } from "./rail-model";
 import type { RailHost } from "./Rail";
 import { actor, ctxOf, gatherer, viewOf } from "./testing";
@@ -127,5 +128,52 @@ describe("the top bar's counts", () => {
     expect(box.title).toBe("1 waiting for you · 2 running · 3 idle");
     drawTotals(box, { ...t, asking: 0, running: 0 });
     expect([...box.querySelectorAll(".count")].map((c) => c.className)).toEqual(["count idle"]);
+  });
+});
+
+describe("the hover card", () => {
+  const a1 = actor("g", "a1", { name: { text: "Parser" }, last_user_message: "fix the CSV" });
+  const g = gatherer("g", [a1]);
+  const home = { gatherers: [g], folders: { g: { folders: [{ id: 1, parent: null, name: "F" }], filed: { a1: 1 } } } };
+  const f = home.folders.g.folders[0];
+  const parts = {
+    nameNote: () => "",
+    branch: () => null,
+    tabAt: () => null,
+    cwdOf: () => "",
+    tilde: (p: string) => p,
+    actorLogo: () => span("logo"),
+    adds: () => null,
+    startInfo: () => null,
+    closeAsk: () => ({ said: "closes 1 actor", where: "g" }),
+  };
+
+  it("says who an actor is: its name, its group and harness, what it was asked", () => {
+    drawCard(
+      boxOf(),
+      { what: { kind: "actor", g, a: a1, shown: false }, edit: null },
+      hostOf<CardHost>({ ctx: ctxOf(home), ...parts }),
+    );
+    expect(box.querySelector(".c-nm")?.textContent).toBe("Parser");
+    expect(box.querySelector(".c-sub")?.textContent).toBe("g · Harness");
+    expect(box.querySelector(".c-asked")?.textContent).toBe("Askedfix the CSV");
+  });
+
+  it("a folder's, live: its buttons and tree; its name box and its question stay the same elements, drawn again", () => {
+    const host = hostOf<CardHost>({ ctx: ctxOf(home), ...parts });
+    const w = { kind: "folder" as const, g, f, live: true, opened: new Set<number>(), asking: false, here: false };
+    const edit = { n: 1, g: "g", id: 1, parent: null, value: "F" };
+    drawCard(boxOf(), { what: w, edit }, host);
+    const input = box.querySelector<HTMLInputElement>("input.c-box")!;
+    expect(input).toBe(document.activeElement); // focused as it opens
+    expect(box.querySelector(".c-edit")?.textContent).toBe("The folder's name");
+    expect(box.querySelector(".c-tree .c-row .nm")?.textContent).toBe("Parser");
+    drawCard(box, { what: { ...w, asking: true }, edit }, host);
+    expect(box.querySelector("input.c-box")).toBe(input);
+    expect(box.querySelector(".f-ask")?.textContent).toContain("This closes 1 actor.");
+    fireEvent.click(box.querySelector('[data-ask="cancel"]')!);
+    expect(calls(host).closeCancel).toHaveBeenCalled();
+    fireEvent.click(box.querySelector(".c-acts .act.new")!);
+    expect(calls(host).editIn).toHaveBeenCalledWith({ g: "g", id: null, parent: 1 });
   });
 });
