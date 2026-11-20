@@ -58,10 +58,9 @@ export function testHost(): TestHost {
     beside: "⌘",
     foldSide: said("foldSide"),
     barActs: () => null,
-    patch: (parent, kids) => {
-      if (kids.length !== parent.childNodes.length || kids.some((k, i) => parent.childNodes[i] !== k))
-        parent.replaceChildren(...kids);
-    },
+    permissionVerb: (ask) => `use ${ask.tool}`,
+    permissionView: (ask) => span("perm", null, String(ask.tool)),
+    refresh: said("refresh", Promise.resolve()) as ChatHost["refresh"],
     setFilesTurn: said("setFilesTurn", Promise.resolve()) as ChatHost["setFilesTurn"],
     setChatView: said("setChatView"),
     interruptOver: said("interruptOver"),
@@ -162,7 +161,6 @@ export function testPage(turns: Turn[], over: Partial<ChatFeed> = {}) {
     running: false,
     details: false,
     cwd: "",
-    asking: null,
     ...over,
   };
   return { page, host, main };

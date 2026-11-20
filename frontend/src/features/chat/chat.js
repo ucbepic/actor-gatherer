@@ -1,7 +1,7 @@
 import { GROUP_ORDER, NOT_COUNTED, PREAMBLE, SNAPSHOT, label, state, uncounted } from "../../core/page/state.js";
 import {
   GATHERER, HISTORY, ICONS, INLINE, OTHER_TYPE, PREAMBLE_TYPE, TYPES, ago, clock, color, compact, el, full,
-  harnessInfo, harnessName, hasChat, itemType, key, post, runnableNames, shownTypes, signature, span, statusEl,
+  harnessName, hasChat, itemType, key, post, runnableNames, shownTypes, signature, span, statusEl,
   strokeIcon, usd,
 } from "../../core/page/helpers.js";
 import {
@@ -13,14 +13,15 @@ import { legend, lineChart } from "../details/charts.js";
 import { DETAILS_TIP, dashboardCommand, renderMain, setDetails, toggleType } from "../page/main-view.js";
 import { shellSpan } from "../../core/page/code.js";
 import { SHAPES, blockCache, str, summary } from "../transcript/transcript.js";
-import { markdown } from "../../core/ui/md";
 import { plural } from "../../core/format";
 import { CHAT_VIEWS, chatFeed, chatView, offeredViews, setChatView } from "./views.js";
 import { fullscreenFor, term } from "../terminal/terminal.js";
-import { chatSends, refill, sendFailed, talkToEnd } from "./files-view.js";
+import { CHAT_HOST, chatSends, refill, sendFailed, talkToEnd } from "./files-view.js";
 import { MINI_VIEW, MIN_TIP, canMinimize, chatMin, setChatMin } from "../layout/top.js";
 import { agDashboard } from "./own-views.js";
 import { TASK_KINDS } from "./side/marks";
+import { askKey, askWhere as askWhereOf } from "./asking/ask";
+import { drawCards } from "./asking/mount";
 
 // ------------------------------------------------------------------ the chat
 // The actor's history, as the chosen chat view draws it (chat views, below), in a frame that follows
@@ -104,7 +105,7 @@ function chatCard(info) {
     return built();
   }
   if (view.feed !== "none" && view.asking !== false) {          // the terminal shows it itself
-    const note = errorNote(info) || askingNote(info, !view.readOnly) || answeredNote(info); if (note) put(note); }
+    const note = cardNode(info, !view.readOnly); if (note) put(note); }
   if (view.background) { const note = backgroundNote(info); if (note) put(note); }
   if (!writable) {
     // one line, even in a narrow pane: the whole reason in its tooltip (and on the Terminal's cover, which has room)
@@ -234,160 +235,17 @@ function backgroundNote(info, term = false) {
         t.event ? `last event ${ago(t.event_at)}: ${t.event}` : t.active && t.active - t.started > 2 ? `active ${ago(t.active)}` : null]
         .filter(Boolean).join(" · ") }))));
 }
-// What the agent waits on the user for (data.py's `asking`): the questions it asked, each with its options,
-// or the plan it asks them to approve. Where the dashboard runs the session's terminal, answered here: what is
-// picked is typed into the terminal's dialog (POST /api/answer, sessions.py's `answer`), and the terminal shows
-// it answered as if it had been picked there; elsewhere it is answered in the terminal that runs the session.
-// `answerable` false (a view to read by): shown, and answered in Chat or the terminal. Null while it waits on nothing.
-// Codex's questions asked as it goes on working (`async`) show while it runs; its plan, once its turn proposed one
-// and its terminal (the dashboard's) asks whether to implement it. A permission it asks before a tool runs (`kind`
-// "permission", as its hook reported it): the call as its harness shows it, allowed or denied ({allow, text}). A dialog
-// only its terminal's screen shows (`kind` "dialog": a menu its harness shows as it starts -- an update, a folder to
-// trust -- or a permission no hook reported): an option picked ({pick}), as if picked there (sessions.py's `_pick`).
-function askingNote(info, answerable = true) {
-  const ask = info && (info.status === "asking" || (info.status === "running" && info.asking && info.asking.async)) ? info.asking : null;
-  if (!ask) return null;
-  // how its harness has a reader answer it (harness_kit's `ask_says`): its words, and the ways to take a plan
-  const says = { plan_verb: "approve", plan_choices: [], plan_change: { label: "Or say what to change" }, own_answer: "Or type your own answer",
-    ...((harnessInfo(ask.harness || (state.home || {}).harness_default) || {}).ask_says || {}) };
-  const qs = ask.questions || [];
-  const s = info.session || {};
-  const { touched, reopened, here: answersHere } = askWhere(info, ask);
-  const here = answerable && answersHere;
-  const key = askKey(ask), perm = ask.kind === "permission", dialog = ask.kind === "dialog";
-  const sent = info.answer && info.answer.call === key ? info.answer : null;
-  const who = info.harness ? harnessName(info.harness) : "The agent";
-  const what = dialog && ask.menu ? `${who} asks something before it starts` : dialog ? `${who} is asking you in its terminal`
-    : perm ? `${who} asks to ${permissionVerb(ask)}${ask.agent ? " (from a subagent)" : ""}`
-    : ask.kind === "plan" ? `${who} has a plan for you to ${says.plan_verb}`
-    : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}${ask.async ? " as it works" : ""}`;
-  const d = draftOf(ask);
-  const late = sent && Date.now() / 1000 - sent.at > ANSWER_LATE;
-  if (sent && !late && !lateTimers.has(sent.call)) {   // drawn again once it would count as lost
-    lateTimers.add(sent.call);
-    setTimeout(() => keepingPlace(renderMain), Math.max(0, (sent.at + ANSWER_LATE) * 1000 - Date.now()) + 200);
-  }
-  const redraw = () => keepingPlace(renderMain);
-  const send = async (choice) => {
-    d.sending = true; d.error = ""; redraw();
-    try { await post("/api/answer", { session_id: s.session_id, id: key, call: ask.call, choice }); await refresh(); }
-    catch (err) { d.error = `Not answered: ${err.message}`; }
-    finally { d.sending = false; redraw(); }
-  };
-  const busy = d.sending || !!sent;
-  const own = (i, placeholder, onEnter) => el("input", { class: "own", type: "text", placeholder, "data-sig": `${key}:${i}:${d.cleared[i] || 0}`,
-    value: i === "plan" ? d.change : d.answers[i].text, disabled: busy ? "" : null, "aria-label": placeholder,
-    oninput: (ev) => { if (i === "plan") d.change = ev.target.value;
-      else { d.answers[i].text = ev.target.value; if (ev.target.value) d.answers[i].options = []; } redraw(); },
-    onkeydown: (ev) => { if (ev.key === "Enter" && !ev.isComposing && onEnter) { ev.preventDefault(); onEnter(); } } });
-  const done = (i) => !!(d.answers[i].options.length || d.answers[i].text.trim());
-  const ready = qs.length && qs.every((q, i) => done(i));
-  const choice = () => ({ answers: d.answers.map((a) => a.text.trim() ? { text: a.text.trim() } : { options: a.options }) });
-  const tab = Math.min(d.tab, Math.max(0, qs.length - 1));
-  const go = (i) => { d.tab = i; redraw(); };
-  // the next question not answered yet, after the one shown (then from the first): -1 if every one is
-  const nextOpen = () => [...qs.keys()].map((k) => (tab + 1 + k) % qs.length).find((k) => !done(k)) ?? -1;
-  const pick = (i, j, multi) => {
-    const a = d.answers[i];
-    a.options = multi ? (a.options.includes(j) ? a.options.filter((x) => x !== j) : [...a.options, j]) : [j];
-    if (a.text) { a.text = ""; d.cleared[i] = (d.cleared[i] || 0) + 1; }
-    if (!multi && qs.length > 1) { const n = nextOpen(); if (n >= 0) d.tab = n; }   // as the terminal's dialog does
-    redraw();
-  };
-  const option = (q, i) => (o, j) => {
-    const body = [el("span", { class: "lbl", text: o.label || "" }),
-      o.description && o.description !== o.label ? el("span", { class: "odesc", text: o.description }) : null];
-    if (!here) return el("li", { class: "opt ro" }, el("span", { class: "box", "aria-hidden": "true", text: String(j + 1) }), ...body);
-    const on = d.answers[i].options.includes(j);
-    return el("button", { type: "button", class: "opt", role: q.multiSelect ? "checkbox" : "radio", "aria-checked": on ? "true" : "false",
-      disabled: busy ? "" : null, onclick: () => pick(i, j, q.multiSelect) }, el("span", { class: "box", "aria-hidden": "true" }), ...body);
-  };
-  const question = (q, i) => el("div", { class: "q", "data-morph": "", "data-q": String(i) },
-    q.header && (!here || qs.length < 2) ? el("div", { class: "eyebrow", text: q.header }) : null,
-    el("div", { class: "qline" }, el("span", { class: "text", text: q.question || "" }),
-      q.multiSelect ? el("span", { class: "hint", text: "Pick any" }) : null),
-    el(here ? "div" : "ol", { class: "opts" + (q.multiSelect ? " multi" : ""), role: here ? (q.multiSelect ? "group" : "radiogroup") : null,
-      "aria-label": q.question || null }, ...(q.options || []).map(option(q, i))),
-    here && !q.multiSelect ? own(i, ask.async ? "Or type your own answer" : says.own_answer, () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
-  // answered here, several questions: one at a time, as the terminal asks them, a tab each
-  const tabs = here && qs.length > 1 ? el("div", { class: "qtabs", role: "tablist", "aria-label": "Questions" }, ...qs.map((q, i) =>
-    el("button", { type: "button", class: "qtab", role: "tab", "aria-selected": i === tab ? "true" : "false", onclick: () => go(i) },
-      el("span", { class: "n" + (done(i) ? " done" : "") }, done(i) ? strokeIcon(CHECK, 11) : String(i + 1)),
-      el("span", { text: q.header || `Question ${i + 1}` })))) : null;
-  const plan = ask.kind === "plan" && ask.plan ? el("details", { id: "asking-plan", class: "plan", open: "" },
-    el("summary", { text: "The plan" }), markdown(ask.plan)) : null;
-  // the foot's line: how the answer sent goes, or why it is not answered here
-  const said = (full) => {
-    const [cls, text] = dialog && !here ? ["", touched ? "Something was typed in the terminal since this appeared. Answer it there."
-        : "Answer it in the terminal."]
-      : sent ? [late ? "err" : "sent", late ? `Your answer (${sent.summary}) hasn't reached ${who}. Answer it in the terminal.`
-        : `Typing your answer into the terminal: ${sent.summary}`]
-      : d.error ? ["err", d.error]
-      : !here ? ["", touched ? "Something was typed in the terminal since the question appeared. Answer it there."
-        : reopened ? "The terminal was reopened and no longer shows this question. Answer in a message."
-        : SNAPSHOT ? "Answered in the terminal that runs the session."
-        : !answerable && s.terminal ? "Answer it in Chat or in the terminal." : "Answer it in the terminal that runs the session."]
-      : [null, null];
-    return text ? el("span", { class: ["say", cls, full ? "full" : ""].filter(Boolean).join(" "), role: cls === "err" ? "alert" : "status", text }) : null;
-  };
-  let foot = null;
-  if (here && perm) {                                  // allowed, denied, or denied with what to do instead
-    const deny = (text) => send({ allow: false, text: text || null });
-    const instead = () => d.change.trim() && deny(d.change.trim());
-    foot = el("div", { class: "foot", "data-morph": "" },
-      said(true),
-      el("div", { class: "change", "data-morph": "" }, own("plan", "Or say what to do instead", instead),
-        el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: instead,
-          title: "Deny and send this to the agent" }, "Deny with this")),
-      el("div", { class: "acts" },
-        el("button", { type: "button", disabled: busy ? "" : null, onclick: () => deny(null), title: "Deny it" }, "Deny"),
-        el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ allow: true }),
-          title: "Allow once" }, d.sending ? "Answering…" : "Allow")));
-  } else if (here && ask.kind === "plan") {
-    const change = () => d.change.trim() && send({ plan: "change", text: d.change.trim() });
-    foot = el("div", { class: "foot", "data-morph": "" },
-      said(true),
-      el("div", { class: "change", "data-morph": "" }, own("plan", says.plan_change.label, change),
-        el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: change,
-          title: says.plan_change.title || null }, "Ask for changes")),
-      el("div", { class: "acts" }, ...says.plan_choices.map((c) => el("button", { type: "button", class: c.primary ? "primary" : "",
-        disabled: busy ? "" : null, onclick: () => send({ plan: c.id }), title: c.title || null }, c.label))));
-  } else if (here && qs.length) {
-    const n = nextOpen();
-    foot = el("div", { class: "foot", "data-morph": "" },
-      said(),
-      el("div", { class: "acts" },
-        qs.length > 1 ? el("span", { class: "count", text: `${qs.filter((q, i) => done(i)).length} of ${qs.length} answered` }) : null,
-        qs.length > 1 && done(tab) && n >= 0 ? el("button", { type: "button", disabled: busy ? "" : null, onclick: () => go(n) }, "Next") : null,
-        el("button", { type: "button", class: "primary", disabled: !ready || busy ? "" : null,
-          onclick: () => send(choice()) }, d.sending ? "Answering…" : "Answer")));
-  } else if (said()) foot = el("div", { class: "foot" }, said());
-  return el("div", { class: "asking-note", role: "group", "aria-label": `Waiting for you: ${what}`, "data-morph": "" },
-    el("div", { class: "head" }, el("span", { class: "pill" }, el("i", { "aria-hidden": "true" }), "Waiting for you"),
-      el("span", { class: "what", text: what }), el("span", { class: "ago", text: ago(ask.at) }),
-      s.terminal && CHAT_VIEWS.has("terminal") ? el("span", { class: "end" }, el("button", { type: "button", class: "to-term",
-        title: "Open the terminal", onclick: () => setChatView("terminal") }, strokeIcon(ICONS.terminal, 14), el("span", { class: "lbl", text: "Open the terminal" }))) : null),
-    tabs,
-    el("div", { class: "body", "data-keep": "asking-note", "data-morph": "" },
-      ...(dialog ? [dialogView(ask, here ? (j) => send({ pick: j }) : null, busy)] : perm ? [permissionView(ask, `perm-${key}`)] : here && qs.length > 1 ? [question(qs[tab], tab)] : qs.map(question)), plan),
-    foot);
-}
-const CHECK = "M3.5 8.5l3 3 6-7";
-// The reader's answers as they make them, by the call they answer: kept across the page's redraws.
-const answerDrafts = new Map(), lateTimers = new Set(), answersSeen = new Set();
-const ANSWER_LATE = 12;                              // seconds after an answer is sent before it counts as lost
-// What an answer names an ask by (data.py's `id`): a question's or a plan's call, a permission's own key.
-const askKey = (ask) => ask.id || ask.call;
-// Where what an actor asks is answered: the dashboard's terminal, and nothing typed into it since it asked -- answered
-// from the page (`here`) -- not where its terminal was opened again since and its harness does not ask again
-// (`asks_shown_again`): no dialog there to type into. A dialog no hook reported: in its terminal only.
-function askWhere(info, ask) {
-  const s = info.session || {};
-  const touched = !!(s.terminal && s.typed && s.typed >= ask.at);
-  const reopened = !!(s.terminal && s.since && ask.at && s.since > ask.at
-    && (harnessInfo(ask.harness || info.harness) || {}).asks_shown_again === false);
-  return { touched, reopened, here: !SNAPSHOT && !!s.terminal && !touched && !reopened };
-}
+// The cards under an actor's history: the model call its turn stopped on, or keeps failing on; what the agent waits on
+// the user for (answered here where the dashboard runs its terminal, unless `answerable` is false: a view to read by); an
+// answer recorded otherwise than picked. React's (features/chat/asking/), each a node of its own kept from draw to draw;
+// null while there is none. `only`: that card alone (the reader's own views ask for each: agDashboard).
+const cardNode = (info, answerable = true, only) => !info ? null : drawCards(`${info.channel}\u0000${only || ""}\u0000${answerable}`,
+  { info, home: state.home, answerable, snapshot: !!SNAPSHOT, terminalView: CHAT_VIEWS.has("terminal"), host: CHAT_HOST }, only);
+const askingNote = (info, answerable = true) => cardNode(info, answerable, "asking");
+const errorNote = (info) => cardNode(info, true, "error");
+const answeredNote = (info) => cardNode(info, true, "answered");
+// Where what an actor asks is answered (features/chat/asking/ask.ts): from the page, or in its terminal only.
+const askWhere = (info, ask) => askWhereOf(info, ask, state.home, !!SNAPSHOT);
 // What a permission is for, after "asks to": by the call's shape, as its harness reads it (data.py's `view`).
 const PERMISSION_VERBS = { shell: "run a command", edit: "edit a file", write: "write a file", patch: "change files",
   read: "read a file", search: "search files", web: "use the web", agent: "start an agent", skill: "use a skill" };
@@ -409,82 +267,6 @@ function permissionView(ask, id) {
   else if (s.body) out.push(s.body(id));
   else if (!SHAPES[v.shape] && Object.keys(call.input).length) out.push(el("pre", { class: "perm-input", text: JSON.stringify(call.input, null, 2) }));
   return el("div", { class: "perm" }, ...out);
-}
-// A dialog the actor's terminal shows that no hook reported (data.py's `shown_ask`), as its screen has it: its head,
-// what it shows (a menu's, as paragraphs; a permission's, as its terminal lays it out), its question and its options.
-// Where it is answered here (`pick`): each option a button that picks it in the terminal, the one its cursor is on
-// said so, one its harness ends after to update itself said so too; else its options as it lists them.
-function dialogView(ask, pick = null, busy = false) {
-  const opts = ask.options || [], restarts = ask.restarts || [];
-  const who = ask.harness ? harnessName(ask.harness) : "It";
-  const option = (o, j) => el("button", { type: "button", class: "opt pick", disabled: busy ? "" : null, onclick: () => pick(j),
-    title: `Pick “${o}” in its terminal` },
-    el("span", { class: "box", "aria-hidden": "true", text: String(j + 1) }), el("span", { class: "lbl", text: o }),
-    restarts.includes(j) ? el("span", { class: "odesc", text: `${who} closes to update, then starts again with your message` })
-      : j === ask.cursor ? el("span", { class: "odesc", text: "Selected in its terminal" }) : null);
-  return el("div", { class: "perm" + (ask.menu ? " menu" : "") },
-    ask.title && ask.title !== ask.said ? el("div", { class: "perm-call" }, el("b", { text: ask.title })) : null,
-    ...((ask.lines || []).length ? ask.menu ? ask.lines.map((x) => el("p", { class: "menu-line", text: x }))
-      : [el("pre", { class: "perm-input", text: ask.lines.join("\n") })] : []),
-    ask.said ? el("div", { class: "qline" }, el("span", { class: "text", text: ask.said })) : null,
-    pick ? el("div", { class: "opts", role: "group", "aria-label": ask.said || ask.title || "Options" }, ...opts.map(option))
-      : el("ol", { class: "shown-opts" }, ...opts.map((o) => el("li", { text: o }))));
-}
-function draftOf(ask) {
-  let d = answerDrafts.get(askKey(ask));
-  if (!d) answerDrafts.set(askKey(ask), d = { answers: (ask.questions || []).map(() => ({ options: [], text: "" })), change: "",
-    cleared: {}, sending: false, error: "", tab: 0 });
-  return d;
-}
-// Once a question answered here has its answer recorded: what the harness recorded, when it is not what was
-// picked (the dialog was not as it first showed, or the harness takes its keys otherwise). Null otherwise.
-function answeredNote(info) {
-  const a = info && info.answer;
-  if (!a || a.recorded !== false || info.status === "asking" || answersSeen.has(a.call)) return null;
-  return el("div", { class: "asking-note answered", role: "alert" },
-    el("div", { class: "head" }, el("span", { class: "pill" }, el("i", { "aria-hidden": "true" }), "Check the answer"),
-      el("span", { class: "what", text: "What was recorded is not what you picked" }),
-      el("span", { class: "end" }, el("button", { type: "button", onclick: () => { answersSeen.add(a.call); keepingPlace(renderMain); } }, "Dismiss"))),
-    el("div", { class: "body" }, el("div", { class: "pair" },
-      el("span", { class: "k", text: "You picked" }), el("span", { class: "v", text: a.summary }),
-      el("span", { class: "k", text: `${info.harness ? harnessName(info.harness) : "The agent"} recorded` }),
-      el("span", { class: "v", text: a.result || "nothing" }))));
-}
-// The model call the agent's turn stopped on, or keeps failing on (data.py's `failing`, `stopped`): why, as ag's hook
-// server saw it and as the harness put it, and how many tries failed. While the harness tries again, that it does;
-// once it gave up, that a message tries again. Null while no call fails.
-function errorNote(info) {
-  const over = !!info && info.status === "error";
-  const f = info && (over || info.status === "running") ? info.failing : null;
-  const st = over ? info.stopped : null;
-  if (!f && !st) return null;
-  const who = info.harness ? harnessName(info.harness) : "The agent";
-  const why = f ? (f.status ? `The model's endpoint returned ${f.status}: ${f.error}` : `No answer from the model's endpoint: ${f.error}`)
-    : st.text || "The model call failed.";
-  const hint = errorHint(f, st);
-  const tries = f ? `${f.attempts > 1 ? `${f.attempts} tries` : "1 try"} failed, the first ${ago(f.first)}` : null;
-  return el("div", { class: "asking-note error-note" + (over ? "" : " retrying"), role: over ? "alert" : "status" },
-    el("div", { class: "head" }, el("span", { class: "pill" }, el("i", { "aria-hidden": "true" }), over ? "Error" : "Retrying"),
-      el("span", { class: "what", text: over ? `${who} stopped after a failed model call` : `${who}'s model call failed` }),
-      el("span", { class: "ago", text: ago((f && f.at) || st.at) })),
-    el("div", { class: "body" }, el("div", { class: "why", text: why }), hint ? el("div", { class: "hint", text: hint }) : null,
-      st && st.text && f && !st.text.includes(f.error) ? el("div", { class: "pair", style: "margin-top: 8px" },   // only what it adds
-        el("span", { class: "k", text: `${who} said` }), el("span", { class: "v", text: st.text })) : null),
-    el("div", { class: "foot" }, el("span", { class: "say", text: [tries, over ? `${who} stopped trying. Send a message to try again.`
-      : f.retrying ? "Trying again now." : `${who} will try again.`].filter(Boolean).join(" · ") })));
-}
-// What an error likely means, where its words say: a lookup or a connection that failed, a limit, an overload.
-function errorHint(f, st) {
-  const text = `${(f && f.error) || ""} ${(st && st.text) || ""}`;
-  const status = (f && f.status) || (st && st.status);
-  if (/nodename nor servname|Name or service not known|Temporary failure in name resolution|getaddrinfo/i.test(text))
-    return "Couldn't resolve the endpoint's address (DNS). Check the network connection.";
-  if (/Connection refused|Connect call failed|ECONNREFUSED|Cannot connect to host 127\.0\.0\.1/i.test(text))
-    return "Nothing is listening at the endpoint's address.";
-  if (status === 429 || /rate.?limit/i.test(text)) return "Rate limited. The harness will retry.";
-  if (status === 529 || /overloaded/i.test(text)) return "The model's service is overloaded.";
-  if (status === 401 || status === 403) return "Not authorized. The harness may need to log in again.";
-  return null;
 }
 // The message box a view gets unless it brings its own: a text box, Enter sending it.
 function defaultComposer(ctx) {
@@ -833,6 +615,6 @@ function llmCard(a) {
 
 export {
   TASK_KINDS, answeredNote, askKey, askWhere, askingNote, backgroundNote, buildsCard, chatAtEnd, chatCard, chatToEnd,
-  columns, contextCard, contextItem, drawCharts, errorNote, llmCard, moreViews, permissionVerb, readOnlyWhy, sizeCard,
+  columns, contextCard, contextItem, drawCharts, errorNote, llmCard, moreViews, permissionVerb, permissionView, readOnlyWhy, sizeCard,
   tally, tile, typeChips, usageCard, wordless,
 };

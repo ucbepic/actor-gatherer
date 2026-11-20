@@ -27,6 +27,15 @@ export interface HarnessInfo {
   reply_block?: { open: string; close: string; title: string } | null;
   /** How its terminal says a turn stopped short (harness_kit's `stopped_says`): features/chat's stopped line. */
   stopped?: StoppedSays;
+  /** How a reader answers what it asks (harness_kit's `ask_says`): its words, the ways to take a plan. */
+  ask_says?: Partial<{
+    plan_verb: string;
+    plan_choices: { id: string; label: string; title?: string | null; primary?: boolean }[];
+    plan_change: { label: string; title?: string | null };
+    own_answer: string;
+  }>;
+  /** Whether its terminal, opened again, asks again what it asked before. */
+  asks_shown_again?: boolean;
 }
 
 /** A harness's words for a turn stopped short: the mark before them, an interruption, an error (with its HTTP status,

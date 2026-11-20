@@ -1,13 +1,14 @@
 // The Chat view's frame, for the actor given (its key, the feed's): the conversation at the right, each turn's files and
 // commands at the left (side/), the file picked between them; before the first turn is stored, the actor waving hello;
 // before the files and the stream's view of the conversation have come, "Loading…". What the agent waits on the user
-// for (the page's cards, still its own DOM) under the conversation. It draws again by itself when what it shows
+// for, or the call it stopped on, under the conversation (asking/). It draws again by itself when what it shows
 // changes -- the stream's view of the conversation (data.ts), the turn's files (files.ts), a fold, the panel -- and as
 // the page draws, with what the page hands it (its feed). A frame kept drawn while another actor's is on the page stays
 // as it was: the turn list's state (store.ts) is that one's now.
 import { useQuery } from "@tanstack/react-query";
-import { memo, useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { queryClient } from "../../core/api/query";
+import { Cards } from "./asking/Cards";
 import { ChatContext, useChat, type Chat } from "./context";
 import { useChatData } from "./data";
 import { filesKey, type FilesOf } from "./files";
@@ -98,59 +99,56 @@ interface FrameProps {
 /** The frame's content, drawn from what ChatMain read -- not again while another actor's frame is on the page. */
 const Frame = memo(FrameView, (_was, now) => !now.onPage);
 
-function FrameView({ frame, chat, side, d, interrupting }: FrameProps) {
+function FrameView({ chat, side, d, interrupting }: FrameProps) {
   const { feed, host } = chat;
-  const talk = useRef<HTMLDivElement>(null),
-    right = useRef<HTMLDivElement>(null),
-    own = useRef<HTMLDivElement>(null);
+  const talk = useRef<HTMLDivElement>(null);
   const turns = turnsOf({ ...feed, data: d ?? feed.data });
   // drawn once both the files and -- the page's stream live -- its view have come: not the turns first and what they
   // are at a moment later (the actor done under the latest popping in, the conversation moved under the reader)
   const waits = !d || (!feed.view && feed.streaming);
   const hello = !waits && !turns.length && !feed.view?.opening && !feed.mine.length;
-  // what the agent waits on the user for (the page's cards, as its draw made them): after the conversation, at the
-  // right of the grid, else in the frame -- patched in place by the page's patch(), a node the same as its new one kept,
-  // with its focus and what is typed in it
-  useLayoutEffect(() => {
-    const asking = feed.asking ? [feed.asking] : [];
-    const mine = hello ? talk.current : own.current;
-    if (mine) host.patch(frame, [mine, ...(waits || hello ? asking : [])]);
-    if (!waits && !hello && right.current && talk.current) host.patch(right.current, [talk.current, ...asking]);
-  });
+  // what the agent waits on the user for, or the call it stopped on: after the conversation, at the right of the grid,
+  // else in the frame
+  const cards = (
+    <Cards
+      info={feed.info}
+      home={feed.home}
+      answerable
+      snapshot={feed.snapshot}
+      terminalView={feed.terminalView}
+      host={host}
+    />
+  );
   if (waits)
     return (
-      <div ref={own} className="desc" style={{ padding: "10px 16px" }}>
-        {feed.snapshot ? "A snapshot has no files. Run `ag dashboard` live to see them." : "Loading…"}
-      </div>
+      <>
+        <div className="desc" style={{ padding: "10px 16px" }}>
+          {feed.snapshot ? "A snapshot has no files. Run `ag dashboard` live to see them." : "Loading…"}
+        </div>
+        {cards}
+      </>
     );
   const conversation = (
     <ChatContext value={chat}>
       <Talk ref={talk} interrupting={interrupting} />
     </ChatContext>
   );
-  if (hello) return conversation;
+  if (hello)
+    return (
+      <>
+        {conversation}
+        {cards}
+      </>
+    );
   return (
-    <Grid chat={chat} side={side} d={d!} grid={own} right={right}>
+    <Grid chat={chat} side={side} d={d!}>
       {conversation}
+      {cards}
     </Grid>
   );
 }
 
-function Grid({
-  chat,
-  side,
-  d,
-  grid,
-  right,
-  children,
-}: {
-  chat: Chat;
-  side: SideState;
-  d: FilesData;
-  grid: RefObject<HTMLDivElement | null>;
-  right: RefObject<HTMLDivElement | null>;
-  children: ReactNode;
-}) {
+function Grid({ chat, side, d, children }: { chat: Chat; side: SideState; d: FilesData; children: ReactNode }) {
   const { feed, host, folds } = chat;
   const { hiddenKinds, showTmp, showGit } = side;
   const cwd = (feed.info.cwd || "").replace(/\/$/, ""),
@@ -196,7 +194,6 @@ function Grid({
   return (
     <Paths value={{ cwd: feed.info.cwd || "", home: d.home || "" }}>
       <div
-        ref={grid}
         className={
           "fl-grid" + (sel ? " open" : "") + (chat.sideFolded ? " folded" : "") + (side.narrow ? " narrow" : "")
         }
@@ -216,9 +213,7 @@ function Grid({
             />
           </div>
         ) : null}
-        <div className="fl-right" ref={right}>
-          {children}
-        </div>
+        <div className="fl-right">{children}</div>
       </div>
     </Paths>
   );

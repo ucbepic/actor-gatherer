@@ -2,11 +2,11 @@ import { SNAPSHOT, state } from "../../core/page/state.js";
 import {
   BESIDE_KEY, ICONS, atRest, atWork, bareAvatar, el, greeting, hueInk, key, post, selectedInfo, strokeIcon,
 } from "../../core/page/helpers.js";
-import { drafts, earlierTurns, fitBox, keepDraft, render, setLive } from "../page/data.js";
+import { drafts, earlierTurns, fitBox, keepDraft, refresh, render, setLive } from "../page/data.js";
 import { $, keepingPlace } from "../settings/panel.js";
 import { MANAGER, crewFace, envelope } from "../list/list.js";
-import { DETAILS_TIP, patch, renderMain, setDetails } from "../page/main-view.js";
-import { answeredNote, askingNote, errorNote } from "./chat.js";
+import { DETAILS_TIP, renderMain, setDetails } from "../page/main-view.js";
+import { permissionVerb, permissionView } from "./chat.js";
 import { CHAT_FEEDS, CHAT_VIEWS, addChatView, chatView, offeredViews, setChatView } from "./views.js";
 import { MIN_TIP, canMinimize, setChatMin, topShown } from "../layout/top.js";
 import { appWordsOf } from "../apps/app-actors.js";
@@ -105,8 +105,7 @@ function filesMount({ info, session, running, writable, held }) {
   // the view opened afresh (from another view, or the page's first draw): the conversation and the commands start
   // where they would for a new turn -- the commands at their end, the conversation at its end or at the turn picked
   const afresh = !document.querySelector("#main .files .fl-grid");
-  const asking = errorNote(info) || askingNote(info) || answeredNote(info);
-  return drawChat(talkFeed(info, session, running, writable, held, asking, afresh), CHAT_HOST);
+  return drawChat(talkFeed(info, session, running, writable, held, afresh), CHAT_HOST);
 }
 const chatSends = [];                                 // {key, cid, text, at (the page's ms), ran}
 // What Chat shows of an actor, as the stream sends it (the server's view, data.ts): kept by the actor; the messages sent
@@ -196,22 +195,23 @@ function opened(a) {
 const talkToEnd = () => { const n = document.querySelector("#main .fl-talk"); if (n) n.scrollTop = n.scrollHeight; };
 // What the conversation is drawn from (src/features/chat/types.ts's ChatFeed): the server's view of it, the messages sent
 // from here it does not have yet, and how this page shows it now.
-function talkFeed(info, session, running, writable, held, asking, afresh) {
+function talkFeed(info, session, running, writable, held, afresh) {
   const k = key(...state.selected), f = state.files && state.files.key === k ? state.files : null;
   return { key: k, gatherer: state.selected[0], files: f || {}, data: f && f.data, picked: f ? f.turn : null, home: state.home,
     info, session, view: chatViewOf(info), writable, held, canInterrupt: canInterrupt(info), interrupting: isInterrupting(),
     mine: mySends().map(({ cid, text, at }) => ({ cid, text, at })), earlierTurns, terminalView: CHAT_VIEWS.has("terminal"),
     afresh, snapshot: !!SNAPSHOT, streaming: !!state.stream && !state.paused && !SNAPSHOT, running, details: !!state.details,
-    cwd: (info.cwd || (info.session && info.session.cwd)) || "", asking };
+    cwd: (info.cwd || (info.session && info.session.cwd)) || "" };
 }
 // What the conversation calls of this page (src/features/chat/types.ts's ChatHost), until those parts move too: the actor's
 // stage, a call as the commands show it, an actor's face, a Browser's message, a message's words as matched, the icons;
-// and this page's redraw, its files and commands, its views, its Esc.
+// a permission's call as the cards show it (asking/Cards.tsx); and this page's data loaded again, its files and commands,
+// its views, its Esc.
 const CHAT_HOST = Object.freeze({
   atWork, atRest, greeting, bareAvatar, hueInk, envelope, typedAs, sameWords, icons: ICONS, beside: BESIDE_KEY,
   crewFace: (a, coordinator) => crewFace(a, coordinator ? MANAGER : null),
   appWords: (text) => appWordsOf(text),
-  foldSide, setFilesTurn, setChatView, barActs, patch,
+  foldSide, setFilesTurn, setChatView, barActs, permissionVerb, permissionView, refresh: () => refresh(),
   interruptOver: () => { state.interrupting = null; },
 });
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
@@ -252,6 +252,6 @@ export function start() {
 }
 
 export {
-  FILE_KINDS, callLabel, callView, chatSends, chatViewOf, foldSide, interrupt, mySends, opened, refill, sendFailed,
+  CHAT_HOST, FILE_KINDS, callLabel, callView, chatSends, chatViewOf, foldSide, interrupt, mySends, opened, refill, sendFailed,
   setFilesTurn, showKept, takeChatView, talkToEnd, viewAtWork,
 };
