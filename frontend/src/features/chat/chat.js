@@ -84,25 +84,32 @@ function chatCard(info) {
       blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation. Run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
-  // a frame of the view's own (the Chat view's) held apart from the card being built, in its place (`kids`): building
-  // the card does not take it from the page -- patch() finds it where it is, and leaves it there
-  const holder = frame === (mounted && mounted[0]) ? el("i") : null;
+  // a node of the view's own that is on the page now (the Chat view's frame and message box: React's) held apart from
+  // the card being built, a stand-in in its place (`kids`): building the card does not take it from the page --
+  // patch() finds it where it is, and leaves it there, its focus, caret and scroll with it
+  const away = new Map();
+  const put = (...ns) => card.append(...ns.filter((n) => n !== null && n !== undefined).map((n) => {
+    if (n.nodeType !== 1 || !n.isConnected) return n;
+    const stand = el("i");
+    away.set(stand, n);
+    return stand;
+  }));
   const built = () => {
-    if (holder) { card.kids = [...card.childNodes].map((n) => n === holder ? frame : n); card.replaceChildren(); }
+    if (away.size) { card.kids = [...card.childNodes].map((n) => away.get(n) || n); card.replaceChildren(); }
     return card;
   };
-  if (!view.mini) card.append(holder || frame);
+  if (!view.mini) put(frame);
   if (view.chat === false) {                         // not the conversation: no message box, and no word that there is none
-    card.append(...safely(() => view.footer && view.footer(ctx)));
+    put(...safely(() => view.footer && view.footer(ctx)));
     return built();
   }
   if (view.feed !== "none" && view.asking !== false) {          // the terminal shows it itself
-    const note = errorNote(info) || askingNote(info, !view.readOnly) || answeredNote(info); if (note) card.append(note); }
-  if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
+    const note = errorNote(info) || askingNote(info, !view.readOnly) || answeredNote(info); if (note) put(note); }
+  if (view.background) { const note = backgroundNote(info); if (note) put(note); }
   if (!writable) {
     // one line, even in a narrow pane: the whole reason in its tooltip (and on the Terminal's cover, which has room)
-    if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", title: readOnlyWhy(), text: "Read only. Can't be messaged from here." }));
-    card.append(...safely(() => view.footer && view.footer(ctx)));
+    if (!SNAPSHOT && !view.readOnly) put(el("div", { class: "readonly", title: readOnlyWhy(), text: "Read only. Can't be messaged from here." }));
+    put(...safely(() => view.footer && view.footer(ctx)));
     return built();
   }
   // Sending, for every view's message box: the box is the view's (`composer`), what it sends and the
@@ -207,7 +214,7 @@ function chatCard(info) {
     if (box) box.dataset.sig = signature([draft, !!held]);
     if (box && box !== n) n.dataset.morph = ""; else if (!box) n.dataset.sig = sig;
   }
-  card.append(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
+  put(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return built();
 }

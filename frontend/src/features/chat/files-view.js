@@ -11,6 +11,7 @@ import { CHAT_FEEDS, CHAT_VIEWS, addChatView, chatView, offeredViews, setChatVie
 import { MIN_TIP, canMinimize, setChatMin, topShown } from "../layout/top.js";
 import { appWordsOf } from "../apps/app-actors.js";
 import { drawChat } from "./mount";
+import { drawComposer } from "./Composer";
 import { callLabelNode, callViewNode } from "./side/nodes";
 import { FILE_KINDS } from "./side/marks";
 import { useSide } from "./side/store";
@@ -245,6 +246,8 @@ export function start() {
     tools: filesTools,
     render: () => [],
     mount: filesMount,                                 // its frame its own (chatCard): React's
+    // its message box React's too (features/chat/Composer.tsx): what is typed the actor's draft, kept as it is typed
+    composer: (ctx) => [drawComposer({ actor: key(...state.selected), held: !!ctx.held, send: ctx.send, fit: fitBox, say: setLive })],
   });
 }
 

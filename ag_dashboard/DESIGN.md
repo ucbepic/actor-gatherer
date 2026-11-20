@@ -361,6 +361,12 @@ over, and its frame drawn by the old page around the turn list:
   boundary (`Boundary.tsx`): one that throws says so in its place. What the agent asks (the question, plan and error
   cards) is still the page's DOM, put after the conversation by the page's `patch()`; a call opened is React's, drawn
   once as a node for a minimized pane's history (`side/nodes.tsx`).
+- **Its message box:** the Chat view's (`Composer.tsx`, through the view's `composer`) is React's too, each actor's a
+  node of its own: a controlled box showing the actor's draft from a store (`drafts.ts`, kept in the tab's
+  sessionStorage as before), so a send emptying it, a failed one putting it back, an Esc's take-back put in it show at
+  once. chatCard holds every node of a view's own that is on the page apart from the card it builds, so the box keeps its
+  focus and caret through the page's draws -- which no longer wait while it is typed in (data.js's TYPING_MS holds them
+  only for the other views' boxes). Sending, Esc and the error line under the box are still chat.js's.
 - **Left as it was:** react-virtuoso for the turn list. The specs, the CSS and the page read the turns, the actor's line
   and its stage as the conversation box's own children (`.fl-talk > .fl-turn`, `> .fl-done`, `> .fl-status`), and every
   turn from the first drawn in the page (the pulls, a turn's id brought into view, the browser's find); a virtualized list
