@@ -69,9 +69,9 @@ export function Turn({ t, place }: { t: TurnData; place: TurnPlace }) {
   // its files and commands at the left (the turn picked; folded away when they already show)
   const side = () =>
     keepTurn(t.n, () => {
-      if (showing) return host.foldSide(true);
-      if (folded) host.foldSide(false);
-      if (!on) return host.setFilesTurn(t.n);
+      if (showing) return host.foldSide(feed.key, true);
+      if (folded) host.foldSide(feed.key, false);
+      if (!on) return host.setFilesTurn(feed.key, t.n);
     });
   const sideTip = showing ? "Fold this turn's files and commands" : "Show this turn's files and commands";
   const foldTip = whole ? "Fold this turn to your message" : "Show this turn's replies";

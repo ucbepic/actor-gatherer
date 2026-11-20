@@ -1,16 +1,21 @@
 // The Chat view's frame, for the actor given (its key, the feed's): the conversation at the right, each turn's files and
 // commands at the left (side/), the file picked between them; before the first turn is stored, the actor waving hello;
 // before the files and the stream's view of the conversation have come, "Loading…". What the agent waits on the user
-// for (the page's cards, still its own DOM) under the conversation. It draws again by itself when what it shows
+// for, or the call it stopped on, under the conversation (asking/). It draws again by itself when what it shows
 // changes -- the stream's view of the conversation (data.ts), the turn's files (files.ts), a fold, the panel -- and as
 // the page draws, with what the page hands it (its feed). A frame kept drawn while another actor's is on the page stays
 // as it was: the turn list's state (store.ts) is that one's now.
 import { useQuery } from "@tanstack/react-query";
-import { memo, useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { queryClient } from "../../core/api/query";
+import { Cards } from "./asking/Cards";
 import { ChatContext, useChat, type Chat } from "./context";
+import { useActorChat } from "./actors";
 import { useChatData } from "./data";
+import { INTERRUPTING_MS, interruptOver, isInterrupting } from "./esc";
+import { feedOf } from "./feed";
 import { filesKey, type FilesOf } from "./files";
+import { drawn as pulled } from "./pull";
 import { Paths } from "./side/CallView";
 import { FileView } from "./side/FileView";
 import { cmdCounts, gitOnly, shownFiles, Side, SideBar, type Task } from "./side/Side";
@@ -58,22 +63,41 @@ function useFiles(feed: ChatFeed): FilesData | null {
   return kept ?? feed.data;
 }
 
+/** Whether an Esc sent at `at` is still taken to be stopping the actor: drawn again once it no longer is. */
+function useInterrupting(actor: string, at: number | null): boolean {
+  const [, tick] = useState(0);
+  const on = isInterrupting(actor, at);
+  useEffect(() => {
+    if (!on || at === null) return;
+    const t = setTimeout(() => tick((n) => n + 1), Math.max(0, at + INTERRUPTING_MS - Date.now()) + 50);
+    return () => clearTimeout(t);
+  }, [on, at]);
+  return on;
+}
+
 export function ChatMain({ frame }: { frame: HTMLElement }) {
   const { feed: drawn, host } = useChat();
   const onPage = useOnPage((s) => s.key === drawn.key);
-  // the stream's view as it comes, not only as the page last drew it
+  // the stream's view as it comes, and what Chat keeps of the actor (what was sent from here, the turn picked, the Esc
+  // sent), as they change -- not only as the page last drew them
   const taken = useChatData((s) => s.views.get(drawn.key));
-  const feed: ChatFeed = taken && taken.view !== drawn.view ? { ...drawn, view: taken.view } : drawn;
+  const own = useActorChat(drawn.key);
+  const view = taken && taken.view !== drawn.view ? taken.view : drawn.view;
+  const feed = feedOf({ ...drawn, view }, own, useInterrupting(drawn.key, own.interrupting));
   const folds = useTurns();
   const side = useSide();
   const d = useFiles(feed);
   useNarrow(frame, feed.details, onPage);
+  // what the page shows now, for the pulls and the turn kept in place as it is picked (pull.ts)
+  useLayoutEffect(() => {
+    if (onPage) pulled.feed = { ...feed, data: d ?? feed.data };
+  });
   // the Esc sent is over once the turn it was sent for is (opening, at work or asking: an Esc stops it)
   const cur = currentOf(feed);
   const interrupting = feed.interrupting && !(cur && !AT_WORK.has(cur.state));
   useEffect(() => {
-    if (onPage && feed.interrupting && !interrupting) host.interruptOver();
-  }, [onPage, feed.interrupting, interrupting, host]);
+    if (onPage && feed.interrupting && !interrupting) interruptOver(feed.key);
+  }, [onPage, feed.interrupting, interrupting, feed.key]);
   return (
     <Frame
       onPage={onPage}
@@ -98,59 +122,56 @@ interface FrameProps {
 /** The frame's content, drawn from what ChatMain read -- not again while another actor's frame is on the page. */
 const Frame = memo(FrameView, (_was, now) => !now.onPage);
 
-function FrameView({ frame, chat, side, d, interrupting }: FrameProps) {
+function FrameView({ chat, side, d, interrupting }: FrameProps) {
   const { feed, host } = chat;
-  const talk = useRef<HTMLDivElement>(null),
-    right = useRef<HTMLDivElement>(null),
-    own = useRef<HTMLDivElement>(null);
+  const talk = useRef<HTMLDivElement>(null);
   const turns = turnsOf({ ...feed, data: d ?? feed.data });
   // drawn once both the files and -- the page's stream live -- its view have come: not the turns first and what they
   // are at a moment later (the actor done under the latest popping in, the conversation moved under the reader)
   const waits = !d || (!feed.view && feed.streaming);
   const hello = !waits && !turns.length && !feed.view?.opening && !feed.mine.length;
-  // what the agent waits on the user for (the page's cards, as its draw made them): after the conversation, at the
-  // right of the grid, else in the frame -- patched in place by the page's patch(), a node the same as its new one kept,
-  // with its focus and what is typed in it
-  useLayoutEffect(() => {
-    const asking = feed.asking ? [feed.asking] : [];
-    const mine = hello ? talk.current : own.current;
-    if (mine) host.patch(frame, [mine, ...(waits || hello ? asking : [])]);
-    if (!waits && !hello && right.current && talk.current) host.patch(right.current, [talk.current, ...asking]);
-  });
+  // what the agent waits on the user for, or the call it stopped on: after the conversation, at the right of the grid,
+  // else in the frame
+  const cards = (
+    <Cards
+      info={feed.info}
+      home={feed.home}
+      answerable
+      snapshot={feed.snapshot}
+      terminalView={feed.terminalView}
+      host={host}
+    />
+  );
   if (waits)
     return (
-      <div ref={own} className="desc" style={{ padding: "10px 16px" }}>
-        {feed.snapshot ? "A snapshot has no files. Run `ag dashboard` live to see them." : "Loading…"}
-      </div>
+      <>
+        <div className="desc" style={{ padding: "10px 16px" }}>
+          {feed.snapshot ? "A snapshot has no files. Run `ag dashboard` live to see them." : "Loading…"}
+        </div>
+        {cards}
+      </>
     );
   const conversation = (
     <ChatContext value={chat}>
       <Talk ref={talk} interrupting={interrupting} />
     </ChatContext>
   );
-  if (hello) return conversation;
+  if (hello)
+    return (
+      <>
+        {conversation}
+        {cards}
+      </>
+    );
   return (
-    <Grid chat={chat} side={side} d={d!} grid={own} right={right}>
+    <Grid chat={chat} side={side} d={d!}>
       {conversation}
+      {cards}
     </Grid>
   );
 }
 
-function Grid({
-  chat,
-  side,
-  d,
-  grid,
-  right,
-  children,
-}: {
-  chat: Chat;
-  side: SideState;
-  d: FilesData;
-  grid: RefObject<HTMLDivElement | null>;
-  right: RefObject<HTMLDivElement | null>;
-  children: ReactNode;
-}) {
+function Grid({ chat, side, d, children }: { chat: Chat; side: SideState; d: FilesData; children: ReactNode }) {
   const { feed, host, folds } = chat;
   const { hiddenKinds, showTmp, showGit } = side;
   const cwd = (feed.info.cwd || "").replace(/\/$/, ""),
@@ -171,7 +192,7 @@ function Grid({
       background={background.length}
       hiddenKinds={hiddenKinds}
       icons={host.icons}
-      foldSide={(f) => host.foldSide(f)}
+      foldSide={(f) => host.foldSide(feed.key, f)}
       acts={host.barActs()}
     />
   ) : (
@@ -190,13 +211,12 @@ function Grid({
       icons={host.icons}
       pick={pick}
       fold={(p) => useTurns.getState().foldDir(p)}
-      foldSide={(f) => host.foldSide(f)}
+      foldSide={(f) => host.foldSide(feed.key, f)}
     />
   );
   return (
     <Paths value={{ cwd: feed.info.cwd || "", home: d.home || "" }}>
       <div
-        ref={grid}
         className={
           "fl-grid" + (sel ? " open" : "") + (chat.sideFolded ? " folded" : "") + (side.narrow ? " narrow" : "")
         }
@@ -216,9 +236,7 @@ function Grid({
             />
           </div>
         ) : null}
-        <div className="fl-right" ref={right}>
-          {children}
-        </div>
+        <div className="fl-right">{children}</div>
       </div>
     </Paths>
   );

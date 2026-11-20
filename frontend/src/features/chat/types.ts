@@ -4,6 +4,8 @@
 // the turns, the latest's state, what waits, made from one read -- and the page's own sends the view does not have yet;
 // the actor is the home's (data.py's), as far as the turn list reads it.
 import type { Home } from "../../core/api/types";
+import type { Answer, Ask, Failing, StoppedCall } from "./asking/ask";
+import type { CardsHost } from "./asking/Cards";
 
 /** A message of the agent's in a turn (files.py's `replies`): what it said, a run of its thinking, or a note of its
  * harness's (a subagent's report handed back, another session's message). */
@@ -128,18 +130,31 @@ export interface Actor {
   over?: string | null;
   /** its last activity */
   last?: number | null;
-  /** its calls failing, retried: since when */
-  failing?: { at: number } | null;
+  /** its calls failing, retried: since when, how often, why */
+  failing?: Failing | null;
+  /** the model call its turn stopped on */
+  stopped?: StoppedCall | null;
+  /** what it waits on the user for; the answer sent from here */
+  asking?: Ask | null;
+  answer?: Answer | null;
   avatar?: string | null;
   avatar_hue?: string | null;
   /** what it says before its first message */
   avatar_hello?: string | null;
+  /** the message its harness took back on an Esc (data.py's `taken_back`) */
+  taken_back?: ChatView["taken_back"];
   name?: { text?: string | null } | null;
   session?: {
+    session_id?: string;
     status?: string;
     terminal?: unknown;
     started_as?: string | null;
     queued?: string[];
+    /** when a key was last typed into its terminal (the dashboard's), and since when that terminal runs */
+    typed?: number | null;
+    since?: number | null;
+    /** when the key that stopped its turn was typed into its terminal */
+    stopped_at?: number | null;
   } | null;
 }
 
@@ -193,7 +208,9 @@ export interface MySend {
   at: number;
 }
 
-/** What the old page hands the turn list at each draw (features/chat/files-view.js's talkFeed). */
+/** What the turn list draws from: what the page hands it at each draw for the actor given (`PageFeed`:
+ * features/chat/files-view.js's talkFeed), with what Chat keeps of the actor itself (actors.ts: what was sent from here,
+ * the turn picked, the Esc sent), as ChatMain.tsx reads it. */
 export interface ChatFeed {
   /** the actor's key (its gatherer and channel) and its gatherer */
   key: string;
@@ -225,8 +242,6 @@ export interface ChatFeed {
   details: boolean;
   /** the actor's directory, its files' paths read from there */
   cwd: string;
-  /** what the agent waits on the user for, or the call it stopped on: the page's card, as its draw made it */
-  asking: Node | null;
   /** the setting "Chat's earlier turns": messages only, or whole */
   earlierTurns: string;
   /** a Terminal view to send the reader to */
@@ -235,8 +250,11 @@ export interface ChatFeed {
   afresh: boolean;
 }
 
-/** What the turn list calls of the old page, until those parts move too. */
-export interface ChatHost {
+/** What the page hands Chat for an actor at each draw: all it draws from but what Chat keeps of the actor itself. */
+export type PageFeed = Omit<ChatFeed, "mine" | "picked" | "interrupting" | "canInterrupt">;
+
+/** What the turn list calls of the old page, until those parts move too; and the cards under it (asking/Cards.tsx). */
+export interface ChatHost extends CardsHost {
   /** the actor's stage (core/page/helpers.js): at work, done, waving hello */
   atWork(info: Actor, t: { work?: unknown }): Node;
   atRest(info: Actor, turn: number | null | undefined): Node;
@@ -254,21 +272,14 @@ export interface ChatHost {
   /** a message's words as matched with one stored, and whether two say the same */
   typedAs(text: string): string;
   sameWords(a: string, b: string): boolean;
-  /** the page's icons: SVG paths in a 16x16 box */
-  icons: Record<string, string>;
   /** the key that opens beside: ⌘ or Ctrl */
   beside: string;
   /** the files and commands folded to their bar, or shown (folded: the latest turn's, which the bar counts) */
-  foldSide(fold: boolean): unknown;
+  foldSide(actor: string, fold: boolean): unknown;
   /** the pane's head, put in the files' folded bar with a panel open above the panes; null: none */
   barActs(): Node | null;
-  /** `kids` put in `parent`, each node already there that is the same as its new one kept (the page's patch()) */
-  patch(parent: Element, kids: Node[]): void;
   /** a turn's files and commands shown: null, the latest's */
-  setFilesTurn(n: number | null): Promise<unknown>;
-  setChatView(id: string): unknown;
-  /** the Esc sent is over: its turn is */
-  interruptOver(): void;
+  setFilesTurn(actor: string, n: number | null): Promise<unknown>;
 }
 
 /** A message between actors, or a watch's news (coordination.py's `envelope`, `update`). */

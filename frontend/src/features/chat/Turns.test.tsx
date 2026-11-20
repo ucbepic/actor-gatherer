@@ -4,6 +4,7 @@
 import { act, fireEvent } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadVendored } from "../../core/ui/testing";
+import { chatOf } from "./actors";
 import { useSide } from "./side/store";
 import { useTurns } from "./store";
 import { ACTOR, AT, chatView, now, testPage, turn, withTurns } from "./testing";
@@ -225,20 +226,20 @@ describe("Turns", () => {
 
   it("ends the Esc sent once the view has the latest turn no longer at work", () => {
     const ts = turns(2);
-    const { page, host } = testPage(ts, { view: chatView(ts, { current: now(ts, "working") }), interrupting: true });
+    const { page } = testPage(ts, { view: chatView(ts, { current: now(ts, "working") }), interrupting: true });
     page.draw();
-    expect(host.calls).not.toContainEqual(["interruptOver"]);
+    expect(chatOf(page.feed.key).interrupting).not.toBeNull();
     page.draw({ view: chatView(ts, { current: now(ts, "stopped") }) });
-    expect(host.calls).toContainEqual(["interruptOver"]);
+    expect(chatOf(page.feed.key).interrupting).toBeNull();
   });
 
   it("keeps an Esc sent while a message sent from here opens the turn", () => {
     const mine = [{ cid: "p1", text: "And now?", at: NOW * 1000 }];
-    const { page, host } = testPage(turns(2), { interrupting: true, mine });
+    const { page } = testPage(turns(2), { interrupting: true, mine });
     page.draw();
-    expect(host.calls).not.toContainEqual(["interruptOver"]);
+    expect(chatOf(page.feed.key).interrupting).not.toBeNull();
     page.draw({ mine: [] }); // taken back: the view has the turn before done
-    expect(host.calls).toContainEqual(["interruptOver"]);
+    expect(chatOf(page.feed.key).interrupting).toBeNull();
   });
 
   it("draws a turn sent and not stored yet, at work; the turn stored in its place counts from when it was sent", () => {
@@ -288,7 +289,7 @@ describe("Turns", () => {
   it("says a turn sent and stopped before the harness recorded it is interrupted, not at work", () => {
     const ts = turns(1);
     const opening = { text: "Hello", cid: "p1", began: NOW - 2, seen: false, stopped: { kind: "interrupted" } };
-    const { page, host } = testPage(ts, {
+    const { page } = testPage(ts, {
       view: chatView(ts, { opening, current: { state: "stopped", turn: "opening", stopped: opening.stopped } }),
       interrupting: true,
     });
@@ -296,7 +297,7 @@ describe("Turns", () => {
     const opened = node.querySelector(":scope > .fl-turn.opened")!;
     expect(opened.querySelector(".fl-stopped")!.textContent).toBe("⎿Interrupted");
     expect(node.querySelector(".fl-working, .fl-status")).toBeNull();
-    expect(host.calls).toContainEqual(["interruptOver"]);
+    expect(chatOf(page.feed.key).interrupting).toBeNull(); // the Esc sent is over
   });
 
   it("draws what waits for the agent's next step at the latest turn's end", () => {
@@ -353,8 +354,8 @@ describe("Turns", () => {
     const { page, host } = testPage(turns(3));
     const node = page.draw();
     await act(async () => node.querySelector<HTMLElement>("#fl-turn-0 .fl-side-btn")!.click());
-    expect(host.calls).toContainEqual(["foldSide", false]);
-    expect(host.calls).toContainEqual(["setFilesTurn", 0]);
+    expect(host.calls).toContainEqual(["foldSide", page.feed.key, false]);
+    expect(host.calls).toContainEqual(["setFilesTurn", page.feed.key, 0]);
     // the latest, its files shown: folded again
     act(() => useSide.setState({ folded: false, narrow: false }));
     page.draw();
@@ -362,7 +363,7 @@ describe("Turns", () => {
     expect(btn.getAttribute("aria-pressed")).toBe("true");
     expect(btn.getAttribute("title")).toBe("Fold this turn's files and commands");
     await act(async () => btn.click());
-    expect(host.calls).toContainEqual(["foldSide", true]);
+    expect(host.calls).toContainEqual(["foldSide", page.feed.key, true]);
   });
 
   it("says how a turn stopped short, unless the actor's error note says it", () => {
