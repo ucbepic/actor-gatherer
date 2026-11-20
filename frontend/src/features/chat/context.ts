@@ -1,5 +1,5 @@
 // What every part of the turn list draws from: the feed of this draw and the old page's host (types.ts), and the folds
-// (store.ts) as they were when the draw began.
+// (store.ts) and the side panel's state as the frame read them (ChatMain.tsx).
 import { createContext, useContext } from "react";
 import type { Folds } from "./store";
 import type { ChatFeed, ChatHost } from "./types";
@@ -8,6 +8,8 @@ export interface Chat {
   feed: ChatFeed;
   host: ChatHost;
   folds: Folds;
+  /** the files and commands folded to their bar (side/store.ts) */
+  sideFolded: boolean;
 }
 
 export const ChatContext = createContext<Chat | null>(null);

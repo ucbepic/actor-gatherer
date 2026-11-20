@@ -1,0 +1,80 @@
+// How the files and commands at the left of the Chat view are shown: the reader's choices, kept in this browser -- the
+// panel folded to its bar, the kinds of file switched off in its legend, the files in temporary folders and those only
+// git changed shown, the background's section opened -- and, a pane too narrow for the panel beside the conversation,
+// whether it is opened over it (this page's alone). A change draws the panel again; nothing else of the page.
+import { create } from "zustand";
+import * as prefs from "../../../core/prefs";
+
+const KINDS_KEY = "ag-dashboard-files-hidden-kinds",
+  TMP_KEY = "ag-dashboard-files-tmp",
+  GIT_KEY = "ag-dashboard-files-git",
+  SIDE_KEY = "ag-dashboard-files-side-folded-2", // -2: folded by default
+  BG_KEY = "ag-dashboard-files-bg-open";
+
+/** A pane under this many pixels (two side by side, a small window) has no room for the panel beside the conversation:
+ * there it starts folded, whatever the choice kept, and opens over the conversation (files-view.css), not beside it --
+ * open until folded again or the pane widens; the choice kept is the wide pane's. */
+export const NARROW_SIDE = 760;
+
+export interface SideState {
+  /** the kinds of file left out of the tree, its legend's switches: search hits, until switched on */
+  hiddenKinds: ReadonlySet<string>;
+  showTmp: boolean;
+  showGit: boolean;
+  /** the panel folded to its bar, in a wide pane */
+  folded: boolean;
+  /** the background's section opened */
+  bgOpen: boolean;
+  /** the pane too narrow for the panel beside the conversation; and, there, the panel opened over it */
+  narrow: boolean;
+  narrowOpen: boolean;
+  switchKind: (kind: string) => void;
+  setTmp: (on: boolean) => void;
+  setGit: (on: boolean) => void;
+  /** folded to its bar, or opened: in a narrow pane, over the conversation, for now */
+  fold: (fold: boolean) => void;
+  openBackground: (open: boolean) => void;
+  /** the pane's width now: crossing NARROW_SIDE, the narrow opening forgotten */
+  setNarrow: (narrow: boolean) => void;
+}
+
+export const useSide = create<SideState>()((set, get) => ({
+  hiddenKinds: new Set((prefs.list(KINDS_KEY) as string[] | null) || ["hit"]),
+  showTmp: prefs.flag(TMP_KEY),
+  showGit: prefs.flag(GIT_KEY),
+  folded: prefs.flag(SIDE_KEY, true),
+  bgOpen: prefs.flag(BG_KEY),
+  narrow: false,
+  narrowOpen: false,
+  switchKind: (kind) => {
+    const hiddenKinds = new Set(get().hiddenKinds);
+    if (hiddenKinds.has(kind)) hiddenKinds.delete(kind);
+    else hiddenKinds.add(kind);
+    prefs.keep(KINDS_KEY, [...hiddenKinds]);
+    set({ hiddenKinds });
+  },
+  setTmp: (showTmp) => {
+    prefs.setFlag(TMP_KEY, showTmp);
+    set({ showTmp });
+  },
+  setGit: (showGit) => {
+    prefs.setFlag(GIT_KEY, showGit);
+    set({ showGit });
+  },
+  fold: (fold) => {
+    if (get().narrow) return set({ narrowOpen: !fold });
+    prefs.setFlag(SIDE_KEY, fold);
+    set({ folded: fold });
+  },
+  openBackground: (bgOpen) => {
+    prefs.setFlag(BG_KEY, bgOpen);
+    set({ bgOpen });
+  },
+  setNarrow: (narrow) => {
+    if (narrow !== get().narrow) set({ narrow, narrowOpen: false });
+  },
+}));
+
+/** Whether the panel shows folded to its bar now. */
+export const sideFolded = (s: Pick<SideState, "narrow" | "narrowOpen" | "folded"> = useSide.getState()): boolean =>
+  s.narrow ? !s.narrowOpen : s.folded;

@@ -5,7 +5,7 @@ import { firstLine } from "../../core/format";
 import { Markdown } from "../../core/ui/Markdown";
 import { unplanned } from "../../core/ui/md";
 import { useChat } from "./context";
-import { Html } from "./Hosted";
+import { CallLabel, CallView } from "./side/CallView";
 import { useTurns } from "./store";
 import type { Reply as ReplyData, Turn } from "./types";
 import { currentOf } from "./view";
@@ -65,10 +65,10 @@ function Noted({ r, id }: { r: ReplyData; id: string }) {
 }
 
 /** The turn's latest call, under its messages, above the line saying it works: running, or how it went, and what it
- * was; opened, its call and its output (the commands' own drawing, the host's). A call with no result once the actor no
+ * was; opened, its call and its output, as the commands at the left show it. A call with no result once the actor no
  * longer runs: waiting on the user (a question, a plan), or stopped -- interrupted, its process gone -- not run. */
 export function LastCall({ t, live }: { t: Turn; live: boolean }) {
-  const { feed, host } = useChat();
+  const { feed } = useChat();
   const c = t.last!;
   const [cls, word] = c.error
     ? ["err", "Failed:"]
@@ -85,10 +85,10 @@ export function LastCall({ t, live }: { t: Turn; live: boolean }) {
         <span className={"dot " + cls}>●</span>
         <span className={"lbl " + cls}>{word}</span>
         <span className="first">
-          <Html node={host.callLabel(c, 200)} />
+          <CallLabel c={c} n={200} />
         </span>
       </summary>
-      <Html node={host.callView(c.call, c)} />
+      <CallView call={c.call} ran={c} />
     </details>
   );
 }

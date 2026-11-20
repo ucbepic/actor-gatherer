@@ -12,6 +12,8 @@ import { chatFeed, chatView } from "../chat/views.js";
 import { opened } from "../chat/files-view.js";
 import { canMinimize, chatMin, topShown } from "../layout/top.js";
 import { useTurns } from "../chat/store";
+import { drafts, keepDraft } from "../chat/drafts";
+import { ownBox } from "../chat/Composer";
 import { useSettings } from "../settings/store";
 import * as prefs from "../../core/prefs";
 
@@ -207,17 +209,6 @@ function fitBox(box) {
 // What was typed in an actor's message box and not sent, by actor (key()), kept in this browser tab: its box, drawn
 // again once the reader comes back from another actor or view, or reloads, starts with it (ctx.input). Read and
 // written whole each time, as the panes' frames share it.
-const DRAFTS_KEY = "ag-dashboard-drafts", draftsHere = {};
-function drafts() {
-  try { const v = JSON.parse(sessionStorage.getItem(DRAFTS_KEY)); return v && typeof v === "object" ? v : {}; }
-  catch (e) { return draftsHere; }
-}
-function keepDraft(k, text) {
-  if (!k) return;
-  const d = drafts();
-  if (text) d[k] = text; else delete d[k];
-  try { sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(d)); } catch (e) { /* this page only: draftsHere */ }
-}
 const TYPING_MS = 300;                               // an update that comes while the reader types waits this long after a key
 function render(userAction = false) {
   if (!state.home) return;
@@ -303,7 +294,9 @@ function setEarlierTurns(pick, keep, draw = true) {
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   document.addEventListener("input", (ev) => {
-    if (ev.target && ev.target.id === "composer-text") { lastKey = performance.now(); fitBox(ev.target); keepDraft(ev.target.dataset.draft, ev.target.value); }
+    // a box of the old page's: kept and fitted here, and the page's draws held while it is typed in (render); the Chat
+    // view's own (features/chat/Composer.tsx) keeps its draft itself, and nothing waits for it
+    if (ev.target && ev.target.id === "composer-text" && !ownBox(ev.target)) { lastKey = performance.now(); fitBox(ev.target); keepDraft(ev.target.dataset.draft, ev.target.value); }
   }, true);
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if (themePick === "system") setTheme("system", false); else window.dispatchEvent(new Event("ag-theme"));
