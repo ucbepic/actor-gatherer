@@ -2347,7 +2347,7 @@ export function start() {
 }
 
 export {
-  renderApps, appClosed, showAppPanel, CREW_GROUP, actorPanes, addAppPane, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsAtWork, appsOnlyKey,
+  renderApps, appClosed, showAppPanel, CREW_GROUP, actorPanes, openCoordinator, addAppPane, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsAtWork, appsOnlyKey,
   appsOnlyLeft, appsSelected, branchChip, byLabel, closeAppPane, closeHere, closeHerePane, closePane, closePop,
   closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, focusedPane, folderPicks, holdAppPane, isAt,
   isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, opensWithAgent, paneNote,

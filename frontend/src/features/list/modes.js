@@ -8,7 +8,7 @@ import { connect } from "../settings/panel.js";
 import { markSeen, seen, statusOf } from "./seen.js";
 import {
   APP_ITEM, FOLDER_CHARS, GROUPS, LEAD_RANK, OPEN, SHELLS, TASK_ITEM, actorTitle, addButton, appFace, appFolder,
-  appInfo, appItem, appKey, appMarkOf, appNotices, appShown, appStatusOf, appTaskOf, appTitle, appsNotified,
+  appInfo, appItem, appKey, appMarkOf, appNotices, appShown, appStatusOf, appTaskOf, appTitle,
   askRefocus, boxGroups, boxKey, byName, closeApp, closeAsk, closeButton, closedKids, closedSays, collapsed, crewAt,
   crewHidden, crewHideKey, crewLine, deleteFolder, dragItems, dragRow, dropFolderClosing, dropOn, dropOnItem, envelope,
   foldOpen, folderById, folderClosing, folderKey, folderMark, folderOf, folderPath, folderSays, folderTally,
@@ -253,15 +253,9 @@ function railBoxOr(g, id, view) {
 // count; shown only when nothing else is (the bar keeps something to point at, which slides a hidden list out). A
 // coordinator agent counted too, but not idle: every group has one, at rest most of the time. The whole home's, wherever
 // the list or the rail is, so what needs the reader elsewhere still shows.
-function drawTotals(shown) {
-  const t = { asking: 0, error: 0, running: 0, background: 0, finished: 0, idle: 0 };
-  for (const g of shown) for (const a of g.agents) {
-    const group = groupOf(g, a);
-    if (group === "Idle" && isCoordinator(a)) continue;
-    if (group === "Waiting for you") t.asking++; else if (group === "Error") t.error++; else if (group === "Running") t.running++;
-    else if (group === "Background") t.background++; else if (group === "Finished") t.finished++; else if (group === "Idle") t.idle++;
-  }
-  const told = shown.reduce((n, g) => n + appsNotified(g), 0);
+// `t`: the counts (features/list/groups.ts's totals, the list's view-model's).
+function drawTotals(t) {
+  const told = t.notified;
   const counts = [[t.asking, "asking", "waiting for you"], [t.error, "error", "stopped on an error"],
     [told, "notified", told === 1 ? "app with a notification you haven't seen" : "apps with a notification you haven't seen"],
     [t.running, "running", "running"], [t.background, "background", "running in the background"],
@@ -1149,11 +1143,12 @@ async function monLoad() {
   if (stale.length > batch.length) monFetch(0);
 }
 // Where each gatherer's actors were put when the list was last drawn: channel -> place, top first.
-// The list is drawn whole each time; so that an actor changing status does not jump to its new place, each
-// row, group heading and gatherer is keyed (data-key), its place and status taken before the list is drawn
-// again (listPlaces), and after it (slideList) set back where it was and moved to where it is now. An actor
-// whose status changed, and so its group, slides over the others; one new to the list fades in; its status dot
-// grows into its new state. None of it for a reader who asks for less motion.
+// So that a row moved by a change (an actor closed into its fold, a folder opened above it) does not jump to its new
+// place, each row, group heading and gatherer is keyed (data-key) -- React keeps it the same element from one draw to
+// the next (features/list/AgentList.tsx) -- its place and status taken before the list is drawn again (listPlaces), and
+// after it (slideList) set back where it was and moved to where it is now. An actor whose status changed, and so its
+// group, slides over the others; one new to the list fades in; its status dot grows into its new state. None of it
+// for a reader who asks for less motion.
 function listPlaces(root) {
   const places = new Map();
   for (const n of root.querySelectorAll("[data-key]")) {
