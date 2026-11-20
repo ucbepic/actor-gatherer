@@ -1,9 +1,9 @@
 # Checks every pull request: the Python suite (tests/), and the dashboard's front end (frontend/: types, lint,
 # formatting, unit tests, and the browser tests on a home of recorded sessions, tests/web_home.py).
 #
-# The browser tests' screenshots are kept per platform (frontend/e2e/*-snapshots/*-<platform>.png). Until Linux ones
-# are kept, CI checks everything but the screenshots (--ignore-snapshots); a run of the "update screenshots" input
-# writes them and keeps them as the run's artifact, to look over and commit.
+# The browser tests' screenshots are kept per platform (frontend/e2e/*-snapshots/*-<platform>.png), and CI checks the
+# Linux ones. A change that changes how the page looks writes them anew with a run of this workflow on its branch with
+# the "update screenshots" input: they are the run's artifact, to look over and commit.
 
 name: Tests
 

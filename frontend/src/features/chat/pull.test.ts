@@ -3,9 +3,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { drawn, listenForPulls, PULL_PX, PULL_WAIT_MS, pullEarlier } from "./pull";
 import { useTurns } from "./store";
-import type { ChatHost } from "./types";
 
-let talk: HTMLElement, redraws: number;
+let talk: HTMLElement, redraws: number, unsubscribe: () => void;
 
 beforeAll(() => listenForPulls());
 beforeEach(() => {
@@ -15,13 +14,18 @@ beforeEach(() => {
   talk = document.querySelector(".fl-talk")!;
   useTurns.getState().forFiles({});
   useTurns.getState().setFirst(10);
-  redraws = 0;
-  drawn.host = { redraw: () => redraws++ } as unknown as ChatHost;
+  redraws = 0; // the turns drawn again: the first one drawn changed
+  unsubscribe = useTurns.subscribe((st, was) => {
+    if (st.first !== was.first) redraws++;
+  });
   pullEarlier(talk, 0); // at the top only now
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  unsubscribe();
+  vi.useRealTimers();
+});
 afterAll(() => {
-  drawn.host = null;
+  drawn.feed = null;
 });
 
 const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
@@ -51,6 +55,7 @@ describe("pullEarlier", () => {
     pullEarlier(talk, 500); // at the top again only now
     expect(useTurns.getState().first).toBe(10);
     useTurns.getState().setFirst(0);
+    redraws = 0; // every turn drawn: no pull draws more
     later(PULL_WAIT_MS);
     pullEarlier(talk, 500);
     expect(redraws).toBe(0);

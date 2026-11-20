@@ -188,4 +188,4 @@ export function start() {
   });
 }
 
-export { DETAILS_TIP, dashboardCommand, escapeShown, renderMain, setDetails, toggleType };
+export { DETAILS_TIP, dashboardCommand, escapeShown, patch, renderMain, setDetails, toggleType };

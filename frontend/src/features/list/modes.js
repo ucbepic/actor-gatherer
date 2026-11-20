@@ -1192,7 +1192,8 @@ async function select(g, c) {
   connect();
   const main = document.getElementById("main");
   main.classList.add("stale");
-  if (kept) { render(true); chatToEnd(); }
+  render(true);                                      // else drawn loading: not the actor shown before, as if this one
+  if (kept) chatToEnd();
   try { await loadChat(); } finally { main.classList.remove("stale"); }
   if (state.selected[0] === g && state.selected[1] === c) {
     const end = !kept || chatAtEnd();                // drawn already: the reader's place kept, should they have moved it

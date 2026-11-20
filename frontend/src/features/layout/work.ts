@@ -11,7 +11,7 @@ import { addItem, keepSizes, leaves, move, remove, swap, toSide, type Side, type
 import { type Put } from "./blocks";
 import { APP, build, FOLD_UNDER, TOP_BAND, type Built, type Old, type Shown } from "./build";
 import { Cards, withBlocks } from "./cards";
-import { canMin, foldable, idOf, marked, Mins, together } from "./mins";
+import { foldable, idOf, marked, markingOf, Mins, together } from "./mins";
 import { Mover } from "./move";
 import { Placer } from "./place";
 import * as M from "./model";
@@ -184,7 +184,7 @@ export class Work {
       node: (id) => this.last?.nodes.get(id) ?? null,
       resized: (key, sizes, done) => this.resized(key, sizes, done),
       inset: () => ({ top: (this.tabs.height() || WELL) + PAD, right: IN, bottom: IN, left: IN }),
-      folds: (key, kid) => (foldable(this.last, key, kid).length ? FOLD_UNDER : null),
+      folds: (key, kid) => (this.mins.folds(key, kid) ? FOLD_UNDER : null),
       fold: (key, kid, on) => this.fold(key, kid, on),
       placed: () => {
         const rects = this.last ? this.rects() : new Map<string, Rect>();
@@ -299,17 +299,22 @@ export class Work {
       this.last = null;
       return null;
     }
-    const built = build(this.hooks.shown(), this.tasks.trees(), this.hooks.old, {
-      top: lastTop(),
-      h: box.h,
-      screen: this.screen,
-      put: this.put,
-      strip: (b) => this.strip(b),
-      tabbed: (b) => !!this.tasks.tabs(b),
-      gap: GAP,
-    });
+    const shown = this.hooks.shown(),
+      opts = {
+        top: lastTop(),
+        h: box.h,
+        screen: this.screen,
+        put: this.put,
+        strip: (b: string) => this.strip(b),
+        tabbed: (b: string) => !!this.tasks.tabs(b),
+        gap: GAP,
+      };
+    const built = build(shown, this.tasks.trees(), this.hooks.old, opts);
     for (const [k, t] of Object.entries(built.added)) this.tasks.set(k, t);
     if (Object.keys(built.added).length) this.tasks.save();
+    const marking = markingOf(built, this.tasks.trees(), (trees) =>
+      build(shown, trees, this.hooks.old, { ...opts, strip: (b) => this.strips.get(b) ?? this.empty }),
+    );
     if (this.put && leaves(built.screen).includes(this.put.key)) this.put = null; // put where it was dropped
     if (!this.hooks.known() || this.holding) {
       // (no task known yet, each panel a block of its own -- or a tab being shown, its tasks coming one by one: the
@@ -331,11 +336,11 @@ export class Work {
       this.listedFor = listed;
       queueMicrotask(() => this.hooks.listed?.());
     }
-    this.mins.placed(built); // (the panes minimized now, or no longer: each told)
+    this.mins.placed(built, marking); // (the panes minimized now, or no longer: each told)
     this.empty.hidden = !!built.tree;
-    const shown = built.tree ? null : this.tabs.shownTab(),
-      blank = shown ? `${shown.id} ${shown.page}` : ""; // (drawn again as its page changes: the Apps page opened in it)
-    if (shown && blank !== this.blankFor) queueMicrotask(() => this.hooks.blank?.(this.empty, shown.id));
+    const tab = built.tree ? null : this.tabs.shownTab(),
+      blank = tab ? `${tab.id} ${tab.page}` : ""; // (drawn again as its page changes: the Apps page opened in it)
+    if (tab && blank !== this.blankFor) queueMicrotask(() => this.hooks.blank?.(this.empty, tab.id));
     this.blankFor = blank;
     if (built.tree) return built.tree;
     built.nodes.set(EMPTY, this.empty); // nothing open: the note, in the whole well
@@ -348,9 +353,10 @@ export class Work {
   isMin(node: HTMLElement): boolean {
     return this.mins.has(node);
   }
-  /** Whether a pane can be minimized: something of its task, or another task, above or below it (no app beside it). */
+  /** Whether a pane can be minimized: something of its task, or another task, above or below it and still whole once it
+   * is (no app beside it). */
   canMin(node: HTMLElement): boolean {
-    return canMin(this.last, node);
+    return this.mins.can(node);
   }
   /** A pane minimized, or shown whole again, with the panes beside it: kept in their tasks' arrangements (the tabs
    * shown). */

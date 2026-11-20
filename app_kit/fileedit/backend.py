@@ -18,9 +18,10 @@ with a status, refused):
 
 Each instance is on a folder (its own), started with an actor of its own, as the Browser and DocWriter are.
 
-An app may edit its files PLAIN instead (its panel's `ed.plain`: the Files app): a file read, edited in the page alone,
-and saved whole -- no live document, no mode, no conflict zone; a save over a file changed on disk since it was read is
-refused, for the reader to reload it or keep theirs (`edit/put`, `force`). Its agents then have only <app>_open.
+An app may edit its files PLAIN instead (its panel's `plain` part, panel/plain.js's: the Files app): a file read, edited
+in the page alone, and saved whole -- no live document, no mode, no conflict zone; a save over a file changed on disk
+since it was read is refused, for the reader to reload it or keep theirs (`edit/put`, `force`). Its agents then have
+only <app>_open.
 
 Its agents change files with its tools, not their own -- Claude Code's Edit and Write on a file open in one are
 refused (`guard`, the host's edit_guard), pointing at <app>_edit. A file no such app has open is read and written on

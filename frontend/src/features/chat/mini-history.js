@@ -1,6 +1,6 @@
 import { PANE, SNAPSHOT, state } from "../../core/page/state.js";
 import {
-  HUE_INK, ICONS, ago, bareAvatar, buddy, doneCheck, el, full, get, harnessName, key, lasting, restDelay, selectedInfo,
+  HUE_INK, ICONS, ago, bareAvatar, buddy, doneCheck, el, full, harnessName, key, lasting, restDelay, selectedInfo,
   strokeIcon,
 } from "../../core/page/helpers.js";
 import { keepingPlace } from "../settings/panel.js";
@@ -12,6 +12,7 @@ import { callLabel, callView, chatViewOf, foldSide, mySends, setFilesTurn, viewA
 import { ME_MARKS, chatMin, meMark, setChatMin } from "../layout/top.js";
 import { markdown, unplanned } from "../../core/ui/md";
 import { cidsOf } from "./view";
+import { loadFiles } from "./files";
 
 // ------------------------------------------------------------------ a minimized pane's history
 // A pane minimized (features/layout/top.js's MINI_VIEW) shows, right of its message box, two lines of its conversation: the user's
@@ -261,7 +262,7 @@ const miniCard = (() => {
     const k = `${key(...state.selected)} ${t.n}`, reply = lastSaid(t);
     const finalAt = live ? -1 : (t.replies || []).map((r, j) => [r, j]).filter(([r]) => r.kind === "text" && str(r.text).trim()).map(([, j]) => j).pop() ?? -1;
     if (!latest && !opened.has(`t${t.n}`)) {
-      if (t.calls) out.push(el("button", { type: "button", class: "mh-sum", "data-turn": t.n, onclick: () => { opened.add(`t${t.n}`); fetchTurn(a, t.n, k); fill(true); } },
+      if (t.calls) out.push(el("button", { type: "button", class: "mh-sum", "data-turn": t.n, onclick: () => { opened.add(`t${t.n}`); fetchTurn(a, t, k); fill(true); } },
         el("span", { class: "car", text: "▸" }), plural(t.calls, "command")));
     } else {
       const cmds = latest ? latestCommands(miniTurns(a).length, t) : fetched.get(k);
@@ -290,11 +291,12 @@ const miniCard = (() => {
     const d = miniData();
     return d && d.turns.length === n && d.turn === n - 1 ? d.commands : t.calls ? null : [];
   }
-  function fetchTurn(a, n, k) {
+  // an earlier turn's commands, as Chat's files and commands have them (files.ts: fetched once, kept by the turn)
+  function fetchTurn(a, t, k) {
     if (fetched.has(k)) return;
-    const [g, c] = state.selected, cwd = (a && (a.cwd || (a.session && a.session.cwd))) || "";
-    fetched.set(k, get(`/api/files?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}&turn=${n}&cwd=${encodeURIComponent(cwd)}`)
-      .then((got) => { fetched.set(k, got && !got.error ? got.commands || [] : []); if (isOpen()) fill(true); },
+    const [gatherer, channel] = state.selected, cwd = (a && (a.cwd || (a.session && a.session.cwd))) || "";
+    fetched.set(k, loadFiles({ gatherer, channel, turn: t.n, row: t.row_id ?? null, cwd })
+      .then((got) => { fetched.set(k, got.commands || []); if (isOpen()) fill(true); },
         () => { fetched.delete(k); }));
   }
   // a turn's steps in order: its messages among its commands, each message after as many commands as its `after` says;

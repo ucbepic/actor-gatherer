@@ -2,12 +2,16 @@
 // shown that have it, best first. And the system's own Open dialog (Finder's on macOS), which the dashboard opens on its
 // own machine (the app's chooser.py), as a page's own file picker never says where a file is on disk: its name (`ed.choose`,
 // "Finder"...) comes with each listing, null when there is none, or the page is on another machine.
+import { el, MAC, PANE, post, SNAPSHOT, state, strokeIcon } from "./page.js";
+import { ed, edBase, edDir, edGo, edJoin, edOpen, edTilde, edUnder } from "./editor.js";
+import { ED_DIR_GLYPH, edFileIcon, edMenuClose, edPickClose } from "./editor-tree.js";
+
 const ED_RECENT_FILES_KEY = "ag-editor-recent-files", ED_RECENT_FILES_N = 40;
 const ED_GO_SHOWN = 60;                  // the most files Go to file lists
 const edGoCache = new Map();             // folder -> its files, as last listed: shown at once, listed again behind
 
 // A short note at the Editor's foot, gone after a moment: a path copied, a dialog that did not open.
-function edNote(text, bad = false) {
+export function edNote(text, bad = false) {
   const top = document.getElementById("ed-top");
   if (!top) return;
   let n = top.querySelector(":scope > .ed-toast");
@@ -23,7 +27,7 @@ function edNote(text, bad = false) {
 
 // A file (what "file") opened from it, or a folder ("folder") shown: it opens at the folder of the file open, or the one
 // shown, and the dashboard answers once it is answered. Its buttons pulse while it waits.
-async function edNative(what) {
+export async function edNative(what) {
   if (!ed.choose || ed.choosing) return;
   ed.choosing = what;
   edChoosing(true);
@@ -43,13 +47,13 @@ function edChoosing(on) {
   }
   if (on) edNote(`Waiting for ${ed.choose}…`);
 }
-const edNativeName = (what) => what === "folder" ? `Choose a folder in ${ed.choose}…` : `Open a file from ${ed.choose}…`;
+export const edNativeName = (what) => what === "folder" ? `Choose a folder in ${ed.choose}…` : `Open a file from ${ed.choose}…`;
 
 // ---- recent files ------------------------------------------------------------------------------------------------
 
 // The files opened in the Editor, the latest first (kept in this browser): Go to file's list before anything is typed,
 // and a little ahead of the others once it is.
-function edRememberFile(path) {
+export function edRememberFile(path) {
   const now = [path, ...edRecentFiles().filter((p) => p !== path)].slice(0, ED_RECENT_FILES_N);
   try { localStorage.setItem(ED_RECENT_FILES_KEY, JSON.stringify(now)); } catch (e) { /* this page only */ }
 }
@@ -91,7 +95,7 @@ function edSubseq(q, p, from) {
 }
 // The box, over the top of the Editor: the name typed, the files that have it (↑ ↓ to pick, Enter to open), and last,
 // the system's dialog. Esc, a press outside it, or the window resized put it away.
-function edGoto() {
+export function edGoto() {
   if (PANE || SNAPSHOT || !state.editor || !ed.root) return;
   if (ed.go) { ed.go.input.focus(); ed.go.input.select(); return; }
   edPickClose(); edMenuClose();
@@ -136,7 +140,7 @@ function edGoPlace() {
   go.box.style.top = `${Math.round(Math.max(8, r.top + 8))}px`;
   go.box.style.maxHeight = `${Math.round(Math.max(200, Math.min(480, window.innerHeight - r.top - 24)))}px`;
 }
-function edGoClose(back = false) {
+export function edGoClose(back = false) {
   const go = ed.go;
   if (!go) return;
   ed.go = null;

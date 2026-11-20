@@ -342,6 +342,36 @@ old page's "Files view") is React now; what is around it is still the old page's
   `stoppedLine`, on the words in `core/ui/harness-info.json`, which that test now checks are harness_kit's),
   `core/format.test.ts`.
 
+**A5, third part: Chat's data, and its frame in React (`features/chat/`).** Chat's data was fetched and compared over and
+over, and its frame drawn by the old page around the turn list:
+- **Its data:** the stream's view of each actor's conversation (`chat`, a pane's `actor`) goes into a store, by actor
+  (`data.ts`, kept for the twelve actors shown last): the one source of the turns, the files' turns only before a view
+  came (the page paused). A turn's files and commands are fetched through TanStack Query (`core/api/query.ts`,
+  `files.ts`), cached by actor, directory and turn (an earlier turn by its row too): the latest turn's fetched again only
+  once a view's turns have moved on from those they were fetched with (`stampOf`), not at every `home` and `agent` of the
+  stream as before; an earlier turn's once. The page's change check compares which view was taken and which files object
+  is kept, not their JSON. The old cache of actors shown lately (`chatKept`) went: the query cache and the store keep them.
+- **Its frame:** the Chat view's frame (`#chat-list`) is React's, each actor's a node of its own kept from draw to draw
+  (`mount.tsx`, through the view's `mount`, which chat.js's chatCard holds apart from the card it builds so it is never
+  taken from the page): "Loading…", the actor's hello, or the grid -- the files and commands at the left (`side/`:
+  `Side.tsx`, `Tree.tsx`, `FileView.tsx`, `CallView.tsx`, their state in `side/store.ts`), the file picked, the
+  conversation (`ChatMain.tsx`, `Talk.tsx`). It draws again by itself when its store, its query or a fold changes -- a
+  click no longer redraws the page (`keepingPlace(renderMain)`) -- and as the page draws, with the page's feed. Only the
+  frame on the page does (`useOnPage`): one kept off the page stays as it was. Each turn is drawn inside an error
+  boundary (`Boundary.tsx`): one that throws says so in its place. What the agent asks (the question, plan and error
+  cards) is still the page's DOM, put after the conversation by the page's `patch()`; a call opened is React's, drawn
+  once as a node for a minimized pane's history (`side/nodes.tsx`).
+- **Its message box:** the Chat view's (`Composer.tsx`, through the view's `composer`) is React's too, each actor's a
+  node of its own: a controlled box showing the actor's draft from a store (`drafts.ts`, kept in the tab's
+  sessionStorage as before), so a send emptying it, a failed one putting it back, an Esc's take-back put in it show at
+  once. chatCard holds every node of a view's own that is on the page apart from the card it builds, so the box keeps its
+  focus and caret through the page's draws -- which no longer wait while it is typed in (data.js's TYPING_MS holds them
+  only for the other views' boxes). Sending, Esc and the error line under the box are still chat.js's.
+- **Left as it was:** react-virtuoso for the turn list. The specs, the CSS and the page read the turns, the actor's line
+  and its stage as the conversation box's own children (`.fl-talk > .fl-turn`, `> .fl-done`, `> .fl-status`), and every
+  turn from the first drawn in the page (the pulls, a turn's id brought into view, the browser's find); a virtualized list
+  draws only the turns in sight, each in an item box of its own inside a list of its own. `pull.ts` and `follow.ts` stay.
+
 **A5, the Apps page in React (`features/apps/catalog/`), and Radix with it.** The Apps page (Nov 17) had been built by
 hand again, with its own `el()`, menu and modal; it was the smallest view standing alone, so it came first, to set the
 pattern the list and Chat follow:
