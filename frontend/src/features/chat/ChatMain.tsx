@@ -192,7 +192,7 @@ function Grid({ chat, side, d, children }: { chat: Chat; side: SideState; d: Fil
       background={background.length}
       hiddenKinds={hiddenKinds}
       icons={host.icons}
-      foldSide={(f) => host.foldSide(f)}
+      foldSide={(f) => host.foldSide(feed.key, f)}
       acts={host.barActs()}
     />
   ) : (
@@ -211,7 +211,7 @@ function Grid({ chat, side, d, children }: { chat: Chat; side: SideState; d: Fil
       icons={host.icons}
       pick={pick}
       fold={(p) => useTurns.getState().foldDir(p)}
-      foldSide={(f) => host.foldSide(f)}
+      foldSide={(f) => host.foldSide(feed.key, f)}
     />
   );
   return (

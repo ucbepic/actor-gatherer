@@ -2,11 +2,12 @@ import { SNAPSHOT, state } from "../../core/page/state.js";
 import {
   BESIDE_KEY, ICONS, atRest, atWork, bareAvatar, el, greeting, hueInk, key, selectedInfo, strokeIcon,
 } from "../../core/page/helpers.js";
-import { earlierTurns, fitBox, refresh, render, setLive } from "../page/data.js";
+import { earlierTurns, fitBox, loadChat, refresh, render, setLive } from "../page/data.js";
 import { $ } from "../settings/panel.js";
 import { MANAGER, crewFace, envelope } from "../list/list.js";
-import { DETAILS_TIP, setDetails } from "../page/main-view.js";
-import { permissionVerb, permissionView } from "./chat.js";
+import { DETAILS_TIP, dashboardCommand, setDetails } from "../page/main-view.js";
+import { chatToEnd, permissionVerb, permissionView } from "./chat.js";
+import { fullscreenFor, term } from "../terminal/terminal.js";
 import { CHAT_FEEDS, CHAT_VIEWS, addChatView, chatView, offeredViews, setChatView } from "./views.js";
 import { MIN_TIP, canMinimize, chatMin, setChatMin, topShown } from "../layout/top.js";
 import { appWordsOf } from "../apps/app-actors.js";
@@ -121,7 +122,7 @@ function takeChatView(g, c, got) {
 }
 // the view of an actor -- the selected one's; null before it has come
 const chatViewOf = (a) => !!a && !!state.selected && state.selected[1] === a.channel ? viewOf(chatActor()) : null;
-// what was sent from here to the actor shown, and its view not have yet (actors.ts)
+// what was sent from here to the actor shown that its view does not have yet (actors.ts)
 const mySends = () => { const k = chatActor(); return k ? chatOf(k).sends : []; };
 // A message as the user typed it, to match what was sent with what is stored (the server gives the user's words as
 // typed: harness_kit's): "!echo hi" the same as "! echo hi".
@@ -143,6 +144,19 @@ const boxedFor = (actor) => (text) => {
   for (const box of document.querySelectorAll("#composer-text"))
     if (box.dataset.draft === actor && !ownBox(box)) { box.value = text; fitBox(box); }
 };
+// What a send from this page needs of it (features/chat/send.ts): the actor and its session as now, the dashboard's own
+// commands, the size of a terminal the message opens, the page's data loaded again once sent, the Terminal view, the
+// page's own message boxes, and the controls of a view's own that send (data-send), off while a message is on its way.
+const sendFrom = (actor, info, held) => ({
+  info, held: !!held,
+  command: (t) => dashboardCommand(t),
+  // a terminal the message opens (sessions.py's `send`): the Terminal view's screen, at its size if it was drawn
+  opens: () => ({ fullscreen: fullscreenFor(info), ...(term.sid === info.channel && term.opened ? { cols: term.xterm.cols, rows: term.xterm.rows } : {}) }),
+  sent: async () => { if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); } chatToEnd(); },
+  toTerminal: CHAT_VIEWS.has("terminal") ? () => setChatView("terminal") : null,
+  boxed: boxedFor(actor),
+  sending: (on) => { for (const n of document.querySelectorAll("[data-send]")) n.disabled = on || !!held; },
+});
 // What the conversation is drawn from for `actor` (src/features/chat/types.ts's PageFeed): the server's view of it, its
 // turn's files, and how this page shows it now. What Chat keeps of the actor itself -- what was sent from here, the turn
 // picked, the Esc sent -- it reads itself (actors.ts).
@@ -161,7 +175,10 @@ const CHAT_HOST = Object.freeze({
   atWork, atRest, greeting, bareAvatar, hueInk, envelope, typedAs, sameWords, icons: ICONS, beside: BESIDE_KEY,
   crewFace: (a, coordinator) => crewFace(a, coordinator ? MANAGER : null),
   appWords: (text) => appWordsOf(text),
-  foldSide, setFilesTurn, setChatView, barActs, permissionVerb, permissionView, refresh: () => refresh(),
+  // a turn picked, the files and commands folded or shown: this page's actor's (its files feed's)
+  foldSide: (actor, fold) => (actor === chatActor() ? foldSide(fold) : undefined),
+  setFilesTurn: (actor, n) => (actor === chatActor() ? setFilesTurn(n) : Promise.resolve()),
+  setChatView, barActs, permissionVerb, permissionView, refresh: () => refresh(),
 });
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
@@ -201,5 +218,5 @@ export function start() {
 
 export {
   CHAT_HOST, FILE_KINDS, boxedFor, callLabel, callView, chatActor, chatViewOf, foldSide, interrupt, mySends, opened,
-  setFilesTurn, showKept, takeChatView, viewAtWork,
+  sendFrom, setFilesTurn, showKept, takeChatView, viewAtWork,
 };

@@ -5,18 +5,17 @@ import {
   strokeIcon, usd,
 } from "../../core/page/helpers.js";
 import {
-  drafts, drawn, fitBox, keepDraft, loadChat, loadContext, mainSignature, refresh, render, setLive,
+  drafts, drawn, fitBox, keepDraft, loadContext, mainSignature, setLive,
 } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
 import { turnStatus } from "../list/seen.js";
 import { legend, lineChart } from "../details/charts.js";
-import { DETAILS_TIP, dashboardCommand, renderMain, setDetails, toggleType } from "../page/main-view.js";
+import { DETAILS_TIP, renderMain, setDetails, toggleType } from "../page/main-view.js";
 import { shellSpan } from "../../core/page/code.js";
 import { SHAPES, blockCache, str, summary } from "../transcript/transcript.js";
 import { plural } from "../../core/format";
 import { CHAT_VIEWS, chatFeed, chatView, offeredViews, setChatView } from "./views.js";
-import { fullscreenFor, term } from "../terminal/terminal.js";
-import { CHAT_HOST, boxedFor, chatActor, setFilesTurn } from "./files-view.js";
+import { CHAT_HOST, boxedFor, chatActor, sendFrom, setFilesTurn } from "./files-view.js";
 import { MINI_VIEW, MIN_TIP, canMinimize, chatMin, setChatMin } from "../layout/top.js";
 import { agDashboard } from "./own-views.js";
 import { TASK_KINDS } from "./side/marks";
@@ -172,19 +171,6 @@ function chatCard(info) {
   if (held || chatOf(actor).sending) for (const n of card.querySelectorAll("[data-send], #composer-text")) if (held || n.matches("[data-send]")) n.disabled = true;   // whatever the view drew
   return built();
 }
-// What a send from this page needs of it (features/chat/send.ts): the actor and its session as now, the dashboard's own
-// commands, the size of a terminal the message opens, the page's data loaded again once sent, the Terminal view, the
-// page's own message boxes, and the controls of a view's own that send (data-send), off while a message is on its way.
-const sendFrom = (actor, info, held) => ({
-  info, held: !!held,
-  command: (t) => dashboardCommand(t),
-  // a terminal the message opens (sessions.py's `send`): the Terminal view's screen, at its size if it was drawn
-  opens: () => ({ fullscreen: fullscreenFor(info), ...(term.sid === info.channel && term.opened ? { cols: term.xterm.cols, rows: term.xterm.rows } : {}) }),
-  sent: async () => { if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); } chatToEnd(); },
-  toTerminal: CHAT_VIEWS.has("terminal") ? () => setChatView("terminal") : null,
-  boxed: boxedFor(actor),
-  sending: (on) => { for (const n of document.querySelectorAll("[data-send]")) n.disabled = on || !!held; },
-});
 // What the harness still runs in the background for the actor (data.py's `background`): the commands,
 // agents, monitors and workflows it started and has not been told have ended, each with what it is for and its
 // last sign of life. Null when none runs. `term`: drawn as a terminal's status line.

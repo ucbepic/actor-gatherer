@@ -354,8 +354,8 @@ describe("Turns", () => {
     const { page, host } = testPage(turns(3));
     const node = page.draw();
     await act(async () => node.querySelector<HTMLElement>("#fl-turn-0 .fl-side-btn")!.click());
-    expect(host.calls).toContainEqual(["foldSide", false]);
-    expect(host.calls).toContainEqual(["setFilesTurn", 0]);
+    expect(host.calls).toContainEqual(["foldSide", page.feed.key, false]);
+    expect(host.calls).toContainEqual(["setFilesTurn", page.feed.key, 0]);
     // the latest, its files shown: folded again
     act(() => useSide.setState({ folded: false, narrow: false }));
     page.draw();
@@ -363,7 +363,7 @@ describe("Turns", () => {
     expect(btn.getAttribute("aria-pressed")).toBe("true");
     expect(btn.getAttribute("title")).toBe("Fold this turn's files and commands");
     await act(async () => btn.click());
-    expect(host.calls).toContainEqual(["foldSide", true]);
+    expect(host.calls).toContainEqual(["foldSide", page.feed.key, true]);
   });
 
   it("says how a turn stopped short, unless the actor's error note says it", () => {

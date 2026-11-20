@@ -275,11 +275,11 @@ export interface ChatHost extends CardsHost {
   /** the key that opens beside: ⌘ or Ctrl */
   beside: string;
   /** the files and commands folded to their bar, or shown (folded: the latest turn's, which the bar counts) */
-  foldSide(fold: boolean): unknown;
+  foldSide(actor: string, fold: boolean): unknown;
   /** the pane's head, put in the files' folded bar with a panel open above the panes; null: none */
   barActs(): Node | null;
   /** a turn's files and commands shown: null, the latest's */
-  setFilesTurn(n: number | null): Promise<unknown>;
+  setFilesTurn(actor: string, n: number | null): Promise<unknown>;
 }
 
 /** A message between actors, or a watch's news (coordination.py's `envelope`, `update`). */

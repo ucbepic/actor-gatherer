@@ -372,6 +372,37 @@ over, and its frame drawn by the old page around the turn list:
   turn from the first drawn in the page (the pulls, a turn's id brought into view, the browser's find); a virtualized list
   draws only the turns in sight, each in an item box of its own inside a list of its own. `pull.ts` and `follow.ts` stay.
 
+**A5, fourth part: Chat scoped to the actor it is given (`features/chat/`).** What was left of Chat on the old page --
+the cards, sending, Esc, the line under the box, the header -- each read the page's one actor (`state.selected`) and
+drew by redrawing the whole main view (`keepingPlace(renderMain)`). So that a later step can show several actors' Chats
+as components of one page:
+- **The cards** (`asking/`): what the agent waits on the user for (a question, a plan, a permission, a dialog its
+  terminal shows), the model call its turn stopped on, an answer recorded otherwise than picked. `ask.ts` reads the
+  actor (which card, where an ask is answered, its harness's words), `answers.ts` is the answers as they are made (a
+  store by what they answer: picks, words typed, the question shown, the answer on its way or why it was not taken, the
+  cards dismissed), and `Cards.tsx`, `Asking.tsx`, `Options.tsx` draw them in the old markup. A single choice's options
+  are Radix's RadioGroup (the arrow keys move between them; a click, not the arrow keys, moves on to the next question,
+  as before). Chat draws them in its frame; the other views and the reader's own (`agDashboard.askingNote`,
+  `.errorNote`) get a node per actor kept from draw to draw (`asking/mount.tsx`), the card's box itself. The call a
+  permission is for is still the old page's node (the host's `permissionView`).
+- **Chat's own state of each actor** (`actors.ts`, a store by the actor's key): the messages sent from here the
+  server's view does not have yet, a send on its way, why the last one failed, the Esc sent, the turn picked. Its
+  actions: `send.ts` (from any view's box; what it needs of the page handed to it, `SendFrom`), `esc.ts` (Esc, and the
+  message the harness took back put in the box -- `test_dashboard_esc.py`'s cases are `esc.test.ts` now), `showTurn` (a
+  turn picked once its files have come). The frame reads it itself (`feed.ts`'s `feedOf`), so a send, a failure, an Esc,
+  an answer or a pick draws only Chat, at once -- not the page. `SendError.tsx` (the line under the box) and
+  `Controls.tsx` (the header: the view's tools and Chat's "Latest", the view switch, Minimize, Details, in a
+  `display: contents` box of their own in `#controls`) are React's.
+- **The boundary:** the page hands Chat a feed for the actor key it is given (`talkFeed(actor, ...)`, a `PageFeed`:
+  what only the page knows -- the actor as the home has it, its turn's files, the page's flags); `state.selected`
+  becomes that key in one place (`files-view.js`'s `chatActor`). The host's calls name the actor (`setFilesTurn`,
+  `foldSide`). A minimized pane's lines (`mini-history.js`, still the old page's) are drawn again when the store
+  changes. `chat.js` (the chat card and Details' cards) is off the long files' list.
+- **Left:** the turn list's own state is one actor's at a time (`store.ts`'s folds, `useOnPage`), and its pulls and the
+  turn brought into view find the conversation on the page (`pull.ts`, `Turns.tsx`); switching views is the page's draw
+  (its other views are its DOM); the message box of the other views (`ctx.input`) and a minimized pane are the old
+  page's.
+
 **A5, the Apps page in React (`features/apps/catalog/`), and Radix with it.** The Apps page (Nov 17) had been built by
 hand again, with its own `el()`, menu and modal; it was the smallest view standing alone, so it came first, to set the
 pattern the list and Chat follow:
