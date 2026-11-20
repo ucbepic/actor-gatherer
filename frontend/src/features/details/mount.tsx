@@ -6,10 +6,12 @@
 // reader's own views (agDashboard), the old page's views -- its parts, each a node of its own (core/ui/node.tsx).
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
+import { viewFrame } from "../../core/ui/frame";
 import { nodeOf } from "../../core/ui/node";
 import { usePicked } from "./store";
 import { ColumnsBody, ContextCardBody, FILTERS, ItemBody, SizeCardBody, TypeChipsBody, type CallsOf } from "./Context";
 import { DetailsPanel } from "./Details";
+import { Messages, type MsgFrame } from "./Messages";
 import type { DetailsFeed, DetailsHost, Item, Read } from "./types";
 
 let panel: { node: HTMLElement; root: Root } | null = null;
@@ -27,6 +29,10 @@ export function drawDetails(feed: DetailsFeed, host: DetailsHost): HTMLElement {
   flushSync(() => root.render(<DetailsPanel key={feed.key} feed={feed} host={host} />));
   return node;
 }
+
+/** The Messages view's frame for `f.key` (core/ui/frame.tsx), drawn now: its node, for the page to put where it goes. */
+export const drawMessages = (f: MsgFrame, name: string): HTMLDivElement =>
+  viewFrame("messages", "ctx", name, <Messages key={f.key} f={f} />);
 
 /** The actor shown now (the page's): the read picked on its size chart kept, another actor's let go of. */
 export const detailsShown = (key: string): void => usePicked.getState().shown(key);

@@ -6,7 +6,7 @@ import {
 import { keepingPlace } from "../settings/panel.js";
 import { statusOf } from "../list/seen.js";
 import { renderMain } from "../page/main-view.js";
-import { str } from "../transcript/transcript.js";
+import { str } from "../../core/model/items";
 import { firstLine, plural } from "../../core/format";
 import { callLabel, callView, chatViewOf, foldSide, mySends, setFilesTurn, viewAtWork } from "./files-view.js";
 import { ME_MARKS, chatMin, meMark, setChatMin } from "../layout/top.js";

@@ -6,8 +6,7 @@ import {
 import { drawn, mainSignature } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
 import { renderMain } from "../page/main-view.js";
-import { wordless } from "../../core/model/items";
-import { blockCache, str } from "../transcript/transcript.js";
+import { str, wordless } from "../../core/model/items";
 import { markdown } from "../../core/ui/md";
 import { plural } from "../../core/format";
 import { CHAT_FEEDS, addChatView, chatView } from "../chat/views.js";
@@ -357,6 +356,21 @@ function histMeta(n, hits) {
   const bits = [hits.length && n.kind !== "message" ? `${full(hits.length)} match${hits.length === 1 ? "" : "es"}` : null,
     n.kind === "task" ? plural(n.children.length, "turn") : null, `${compact(n.tokens)} tok`, n.first ? ago(n.first) : null];
   return bits.filter(Boolean).join(" · ");
+}
+// Rows already drawn, by their key, with what they were drawn from (`sig`): handed back as the same nodes while that is
+// unchanged, so a redraw builds only what is new and patch() keeps the rest in place. Emptied when `begin` is given
+// another owner; a row not asked for in a draw is forgotten.
+function blockCache() {
+  let owner = null, now = new Map(), before = new Map();
+  return {
+    begin(key) { if (key !== owner) { owner = key; before = new Map(); } else before = now; now = new Map(); },
+    get(k, sig, make) {
+      const had = before.get(k);
+      const v = had && had.sig === sig ? had.v : make();
+      now.set(k, { sig, v });
+      return v;
+    },
+  };
 }
 const histRows = blockCache(), histRecs = blockCache();
 function histRow(n, depth, header) {

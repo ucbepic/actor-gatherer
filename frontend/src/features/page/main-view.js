@@ -11,6 +11,7 @@ import { focusedPane } from "../layout/panes.js";
 import { useSettings } from "../settings/store";
 import { useShown } from "../../core/model/items";
 import { drawDetails } from "../details/mount";
+import { useNotes } from "../transcript/TranscriptView";
 
 // ------------------------------------------------------------------ the selected agent
 // The main view is the actor's conversation (chatCard): all of it, with the message box under it where
@@ -116,6 +117,7 @@ export function start() {
   // the types the lists show, picked (features/details/'s chips): this page's own views of them, and the reader's, drawn
   // again -- React's draw themselves
   useShown.subscribe((now, was) => { if (now.types !== was.types) keepingPlace(renderMain); });
+  useNotes.subscribe((now, was) => { if (now.on !== was.on) keepingPlace(renderMain); });   // the Transcript's notes shown
   // Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn (interrupt), as in its
   // terminal (and dismisses what the agent asks, as there). So does it from anywhere else on the page that nothing else
   // takes it (escapeShown), for the actor of the pane in focus (another pane's: its agPane.escape) -- else an Esc after a

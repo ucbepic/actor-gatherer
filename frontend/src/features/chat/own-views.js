@@ -1,12 +1,12 @@
 import { SNAPSHOT } from "../../core/page/state.js";
 import {
-  ago, clock, compact, el, full, get, harnessBadge, harnessLogo, harnessName, itemType, svgEl,
+  ago, clock, compact, el, full, get, harnessBadge, harnessLogo, harnessName, itemType, selectedInfo, svgEl,
 } from "../../core/page/helpers.js";
 import { statusOf } from "../list/seen.js";
 import { askingNote, backgroundNote, errorNote } from "./chat.js";
 import { callsNow } from "../page/main-view.js";
 import { columnsNode, contextCardNode, contextItemNode, sizeCardNode, typeChipsNode } from "../details/mount";
-import { foldedOutput, notesSwitch, transcriptBlocks } from "../transcript/transcript.js";
+import { foldedOutputNode, notesSwitchNode, transcriptBlockNodes } from "../transcript/mount";
 import { markdown } from "../../core/ui/md";
 import { firstLine, plural } from "../../core/format";
 import { addChatView } from "./views.js";
@@ -37,8 +37,9 @@ export function start() {
   agDashboard = window.agDashboard = Object.freeze({
     chatView: addChatView,
     el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
-    contextItem: contextItemNode, columns: columnsNode, typeChips: typeChipsNode, itemType, transcriptBlocks, foldedOutput,
-    notesSwitch, sizeCard: (reads, hasReal) => sizeCardNode(callsNow(), reads, hasReal), contextCard: () => contextCardNode(callsNow()),
+    contextItem: contextItemNode, columns: columnsNode, typeChips: typeChipsNode, itemType,
+    transcriptBlocks: (items, running) => transcriptBlockNodes(items, running, (selectedInfo() || {}).cwd || ""),
+    foldedOutput: foldedOutputNode, notesSwitch: notesSwitchNode, sizeCard: (reads, hasReal) => sizeCardNode(callsNow(), reads, hasReal), contextCard: () => contextCardNode(callsNow()),
     statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote, askingNote, errorNote,
   });
 }

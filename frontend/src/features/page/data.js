@@ -19,6 +19,8 @@ import * as prefs from "../../core/prefs";
 import { counted } from "../details/model";
 import { loadContext, pickedFor, shownRead, usePicked } from "../details/store";
 import { detailsShown } from "../details/mount";
+import { useEvents } from "../details/events";
+import { txSignature, useTxFeed } from "../transcript/data";
 
 // ------------------------------------------------------------------ data
 let hidingMoved = false;
@@ -61,75 +63,13 @@ async function takeAgent(agent) {
   detailsShown(actor);
   if (reads.length) await loadContext(parseKey(actor).group, shownRead(agent, pickedFor(usePicked.getState(), actor)));
 }
-// The transcript feed's events: the newest TRANSCRIPT_ITEMS at first, then each time only those
-// after the last one kept, so an event is never listed twice; the pending ones replaced each time.
-// One load at a time: a stream message and the reader's own action can ask at once.
-let txLoading = Promise.resolve();
-function loadTranscript(earlier = false) {
-  txLoading = txLoading.then(() => loadTranscriptNow(earlier), () => loadTranscriptNow(earlier));
-  return txLoading;
-}
-async function loadTranscriptNow(earlier) {
-  if (!state.selected || SNAPSHOT) return;
-  const [g, c] = state.selected, k = key(g, c);
-  const url = (q) => `/api/transcript?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}${q}`;
-  const take = (got) => {
-    const stored = got.items.filter((i) => i.row_id !== null);
-    if (got.newest) state.tx.pending = got.items.filter((i) => i.row_id === null);
-    return stored;
-  };
-  if (!state.tx || state.tx.key !== k) {
-    const got = await get(url(""));
-    if (got.error) { state.tx = null; return; }
-    state.tx = { key: k, items: [], pending: [], first_row: null, last_row: 0, earlier: got.earlier };
-    state.tx.items = take(got);
-  } else if (earlier) {
-    if (!state.tx.first_row) return;
-    const got = await get(url(`&before=${state.tx.first_row}`));
-    if (got.error || state.tx.key !== k) return;
-    state.tx.items = [...got.items.filter((i) => i.row_id !== null && i.row_id < state.tx.first_row), ...state.tx.items];
-    state.tx.earlier = got.earlier;
-  } else {
-    for (;;) {                                       // all that came since, a page at a time
-      const got = await get(url(`&after=${state.tx.last_row}`));
-      if (got.error || state.tx.key !== k) return;
-      const stored = take(got).filter((i) => i.row_id > state.tx.last_row);
-      state.tx.items.push(...stored);
-      if (stored.length) state.tx.last_row = stored[stored.length - 1].row_id;
-      if (got.newest || !stored.length) break;
-    }
-  }
-  const items = state.tx.items;
-  if (items.length) { state.tx.first_row = items[0].row_id; state.tx.last_row = Math.max(state.tx.last_row, items[items.length - 1].row_id); }
-}
-const txSignature = () => chatView().feed === "transcript" && state.tx
-  ? [state.tx.key, state.tx.items.length, state.tx.last_row, state.tx.first_row, signature(state.tx.pending)] : null;
-// The history feed's messages, append-only: the stored ones since the last loaded, then what is pending.
-// One load at a time (a stream message and the reader's own action can ask at once), and only rows
-// past the last one kept are added: a message is never listed twice.
-let chatLoading = Promise.resolve();
-function loadChatHistory() {
-  chatLoading = chatLoading.then(loadChatHistoryNow, loadChatHistoryNow);
-  return chatLoading;
-}
+// What the main view draws from, of the transcript's feed (features/transcript/data.ts): while the view shown draws it.
+const txSignatureNow = () => chatView().feed === "transcript" ? txSignature(useTxFeed.getState().feed) : null;
 // What the chat shows, loaded: the feed its view draws from (chat views, below), for the selected actor --
 // any actor: one that cannot be messaged here is shown all the same, without the message box.
 async function loadChat() {
   if (!state.selected || SNAPSHOT || isShell(state.selected[1])) return;
   try { await chatFeed().load(); } catch (err) { /* no database yet: the gatherer is made on the first call */ }
-}
-async function loadChatHistoryNow() {
-  if (!state.selected) return;
-  const [g, c] = state.selected, k = key(g, c);
-  if (!state.chat || state.chat.key !== k) state.chat = { key: k, items: [], pending: [], last_row: 0 };
-  let got;
-  try { got = await get(`/api/history?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}&from=${state.chat.last_row + 1}`); }
-  catch (err) { return; }                           // no database yet: the gatherer is made on the first call
-  if (!got || got.error || state.chat.key !== k) return;
-  const stored = got.items.filter((i) => i.row_id !== undefined && i.row_id !== null && i.row_id > state.chat.last_row);
-  state.chat.items.push(...stored);
-  if (stored.length) state.chat.last_row = stored[stored.length - 1].row_id;
-  state.chat.pending = got.items.filter((i) => i.row_id === undefined || i.row_id === null);
 }
 // What was last drawn, so an update that brings nothing new draws nothing: no flash, and an open
 // table, a scrolled list or a tooltip stays as it is.
@@ -221,13 +161,13 @@ function render(userAction = false) {
 // it waits on, why it stopped, what runs in the background (which, not how lately): a turn's end may change only that (its
 // answer's end comes after its last words, which the actor's data already had), and its "Working…" would stay.
 const mainSignature = () => {
-  const info = selectedInfo();
+  const info = selectedInfo(), events = useEvents.getState().feed;
   return signature([state.selected, state.agentVersion, info && info.session,
     info && [info.chattable, info.holder],
     info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id),
       info.taken_back],
     info && info.avatar_hello,
-    state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
+    events && [events.key, events.last_row, events.pending], txSignatureNow(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
     state.details, topShown(), chatMin(), canMinimize()]);
 };
@@ -323,7 +263,7 @@ export function start() {
 }
 
 export {
-  drafts, drawn, earlierTurns, fitBox, keepDraft, listSignature, loadAgent, loadChat, loadChatHistory,
-  loadHome, loadTranscript, mainSignature, redrawList, refresh, render, setAbout, setAvatarMode, setEarlierTurns,
+  drafts, drawn, earlierTurns, fitBox, keepDraft, listSignature, loadAgent, loadChat,
+  loadHome, mainSignature, redrawList, refresh, render, setAbout, setAvatarMode, setEarlierTurns,
   setLive, setTheme, takeAgent,
 };

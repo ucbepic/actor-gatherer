@@ -1,17 +1,18 @@
 import { PANE, PANE_URL, state } from "../../core/page/state.js";
-import { ICONS, agoEl, el, itemType, key, selectedInfo, signature } from "../../core/page/helpers.js";
-import { drawn, loadChat, loadChatHistory, loadTranscript, render } from "../page/data.js";
+import { ICONS, selectedInfo } from "../../core/page/helpers.js";
+import { drawn, loadChat, render } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
 import { paneUrl } from "../layout/panes.js";
 import { renderMain } from "../page/main-view.js";
 import { backgroundNote, chatToEnd } from "./chat.js";
-import { blockCache, notesSwitch, showNotes, transcriptBlocks } from "../transcript/transcript.js";
+import { chatActor } from "./files-view.js";
 import { hist } from "../history/history.js";
 import { chatMin } from "../layout/top.js";
 import * as prefs from "../../core/prefs";
-import { useShown } from "../../core/model/items";
-import { tally } from "../details/model";
-import { columnsNode, contextItemNode, typeChipsNode } from "../details/mount";
+import { drawMessages, typeChipsNode } from "../details/mount";
+import { eventsOf, loadEvents } from "../details/events";
+import { drawTranscript, notesSwitchNode } from "../transcript/mount";
+import { loadTranscript, txFeedOf } from "../transcript/data";
 
 // ------------------------------------------------------------------ chat views
 // How the chat shows an actor's history: one VIEW of several, the reader's choice (kept in this
@@ -98,21 +99,20 @@ function addChatView(view) {
 }
 // What a view can draw from: each loads its data for the selected session, and says what it has.
 const CHAT_FEEDS = {
+  // the actor's events, a row each (features/details/events.ts)
   history: {
-    load: loadChatHistory,
-    data: () => state.chat && state.selected && state.chat.key === key(...state.selected)
-      ? { items: state.chat.items, pending: state.chat.pending, earlier: false } : null,
+    load: () => loadEvents(chatActor()),
+    data: () => { const f = eventsOf(chatActor()); return f ? { items: f.items, pending: f.pending, earlier: false } : null; },
   },
+  // each event's parts, as the Transcript draws them (features/transcript/data.ts)
   transcript: {
-    load: () => loadTranscript(),
-    loadEarlier: () => loadTranscript(true),
-    data: () => state.tx && state.selected && state.tx.key === key(...state.selected)
-      ? { items: state.tx.items, pending: state.tx.pending, earlier: state.tx.earlier } : null,
+    load: () => loadTranscript(chatActor()),
+    loadEarlier: () => loadTranscript(chatActor(), true),
+    data: () => { const f = txFeedOf(chatActor()); return f ? { items: f.items, pending: f.pending, earlier: f.earlier } : null; },
   },
   none: { load: async () => {}, data: () => ({ items: [], pending: [], earlier: false }) },
 };
 const chatFeed = (view = chatView()) => (chatMin() ? CHAT_FEEDS.files : CHAT_FEEDS[view.feed]) || CHAT_FEEDS.history;
-const txBlocks = blockCache(), msgRows = blockCache();
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   state.chatViewId = (PANE && PANE_URL.get("view")) || prefs.text(CHAT_VIEW_KEY) || "files";
@@ -122,35 +122,24 @@ export function start() {
     data: () => state.agent && state.agent.reads ? { items: state.agent.reads, pending: [], earlier: false } : null,
   };
 
-  // The views that come with the page.
+  // The views that come with the page: each draws its frame itself, React's (`mount`), with what waits for the turn to
+  // end and that there is nothing yet in it.
   addChatView({
     id: "messages", name: "Messages", feed: "history", frame: "ctx", icon: ICONS.list, more: true, readOnly: true,
-    description: "The session's events, one row each, filtered by type.",
+    description: "The session's events, one row each, filtered by type.", queued: false, greets: true,
     tools: () => typeChipsNode(null),
-    render: ({ data }) => {
-      const items = [...data.items, ...data.pending].map((i) => ({ ...i, group: "Recent history" }));
-      const shown = useShown.getState().types, listed = items.filter((it) => shown.has(itemType(it)[0]));
-      return [columnsNode(), el("div", { class: "run" }, el("strong", { text: "Messages" }),
-        el("span", { text: tally(items.length, listed.length, items.reduce((n, i) => n + i.tokens, 0), listed.reduce((n, i) => n + i.tokens, 0), "message") })),
-        ...(msgRows.begin(signature(state.selected)), listed.map((it) => it.row_id === null || it.row_id === undefined ? contextItemNode(it)
-          : msgRows.get(it.row_id, `${it.tokens}:${it.clipped}:${it.text.length}`, () => contextItemNode(it))))];
-    },
+    render: () => [],
+    mount: ({ actor, data, queued, noneYet }) => drawMessages({ key: actor, items: data.items, pending: data.pending,
+      queued, noneYet }, "Messages"),
   });
   addChatView({
     id: "transcript", name: "Transcript", feed: "transcript", frame: "term", icon: ICONS.page, more: true, readOnly: true,
-    description: "The conversation as its harness's terminal shows it.",
-    tools: () => notesSwitch(),
-    render: ({ info, data, running, loadEarlier }) => {
-      state.txCwd = info.cwd || "";
-      txBlocks.begin(signature([state.selected, showNotes, state.txCwd]));
-      return [
-        data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
-        ...transcriptBlocks([...data.items, ...data.pending], running, txBlocks),
-        running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }),
-          ...(info.failing ? ["Retrying…", agoEl("last try", info.failing.at)] : ["Working…", agoEl("last activity", info.last)])) : null,
-        backgroundNote(info, true),
-      ].filter(Boolean);
-    },
+    description: "The conversation as its harness's terminal shows it.", queued: false, greets: true,
+    tools: () => notesSwitchNode(),
+    render: () => [],
+    mount: ({ actor, info, data, running, queued, noneYet, loadEarlier }) => drawTranscript({ key: actor, items: data.items,
+      pending: data.pending, earlier: !!data.earlier, running, failing: info.failing || null, last: info.last ?? null,
+      cwd: info.cwd || "", background: backgroundNote(info, true), queued, noneYet, loadEarlier }, "Transcript"),
   });
 }
 

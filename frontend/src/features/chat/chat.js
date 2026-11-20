@@ -6,8 +6,7 @@ import { drafts, fitBox, keepDraft, setLive } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
 import { turnStatus } from "../list/seen.js";
 import { DETAILS_TIP, renderMain, setDetails } from "../page/main-view.js";
-import { shellSpan } from "../../core/page/code.js";
-import { SHAPES, str, summary } from "../transcript/transcript.js";
+import { permissionNode, summary } from "../transcript/calls";
 import { plural } from "../../core/format";
 import { CHAT_VIEWS, chatFeed, chatView, offeredViews, setChatView } from "./views.js";
 import { CHAT_HOST, boxedFor, chatActor, sendFrom, setFilesTurn } from "./files-view.js";
@@ -43,7 +42,10 @@ function chatCard(info) {
   const writable = hasChat(info) && !SNAPSHOT && !view.readOnly;
   const held = heldWhy(info);
   const data = feed.data() || { items: [], pending: [], earlier: false };
-  const ctx = { actor, info, session: s, data, running: ["running", "building"].includes(turnStatus(info)[0]), queued: s.queued || [], held, writable,
+  // that there is no conversation yet: said under a view's blocks, or by a view that draws its frame itself (`mount`)
+  const noneYet = SNAPSHOT ? "A snapshot has no conversation. Run `ag dashboard` live to see it."
+    : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet.";
+  const ctx = { actor, info, session: s, data, noneYet, running: ["running", "building"].includes(turnStatus(info)[0]), queued: s.queued || [], held, writable,
     loadEarlier: async () => {                         // the view's "earlier" control: kept where the reader was
       if (!feed.loadEarlier) return;
       const n = document.getElementById("chat-list"), from = n ? n.scrollHeight - n.scrollTop : 0;
@@ -77,8 +79,7 @@ function chatCard(info) {
   if (view.feed !== "none" && view.chat !== false) {  // a view that draws the history: what waits, or that there is none yet
     if (view.queued !== false) for (const q of ctx.queued) blocks.push(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
     if (!data.items.length && !data.pending.length && !ctx.queued.length && !view.greets)
-      blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation. Run `ag dashboard` live to see it."
-        : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
+      blocks.push(el("div", { class: "desc", text: noneYet }));
   }
   // a node of the view's own that is on the page now (the Chat view's frame and message box: React's) held apart from
   // the card being built, a stand-in in its place (`kids`): building the card does not take it from the page --
@@ -200,21 +201,9 @@ function permissionVerb(ask) {
   const v = ask.view || {};
   return PERMISSION_VERBS[v.shape] || `use ${summary({ name: ask.tool, input: ask.input, view: v }).title}`;
 }
-// The call a permission is asked for, as Chat shows a call (summary's shapes): what it is for, then its command in
-// full, or the change it would make, or (a shape not known) its input.
-function permissionView(ask, id) {
-  const v = ask.view || {}, call = { name: ask.tool, input: ask.input || {}, view: v };
-  const s = summary(call);
-  const shown = [v.command, v.path, v.url, v.query, v.pattern].map((x) => x == null ? "" : str(x));
-  const out = [];
-  if (ask.said && !shown.includes(ask.said)) out.push(el("div", { class: "qline" }, el("span", { class: "text", text: ask.said })));
-  out.push(el("div", { class: "perm-call" }, el("b", { text: s.title }),
-    s.arg && v.shape !== "shell" ? el("span", { class: "arg", text: s.arg }) : null));
-  if (v.shape === "shell" && v.command) out.push(el("pre", { class: "perm-cmd" }, shellSpan(str(v.command))));
-  else if (s.body) out.push(s.body(id));
-  else if (!SHAPES[v.shape] && Object.keys(call.input).length) out.push(el("pre", { class: "perm-input", text: JSON.stringify(call.input, null, 2) }));
-  return el("div", { class: "perm" }, ...out);
-}
+// The call a permission is asked for, as a call is shown (features/transcript/calls.tsx): what it is for, then its
+// command in full, or the change it would make, or (a shape not known) its input.
+const permissionView = (ask, id) => permissionNode(ask, id);
 // The message box a view gets unless it brings its own: a text box, Enter sending it.
 function defaultComposer(ctx) {
   const text = ctx.input();

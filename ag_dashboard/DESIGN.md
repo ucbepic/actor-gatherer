@@ -463,6 +463,19 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
   `agDashboard.contextItem`, `.columns`, `.typeChips`, `.contextCard` and `.sizeCard`: the same components, each drawn in a
   node of its own (`core/ui/node.tsx`'s `nodeOf`, its root, so its clicks reach React). Vitest: `model.test.ts`,
   `Details.test.tsx`.
+- **Messages and Transcript** draw their frames themselves (a view's `mount`, as Chat's): `core/ui/frame.tsx`'s
+  `viewFrame`, one `#chat-list` node per view, its React root, drawn at once as the page draws, so its `keepingPlace()`
+  keeps the frame's scroll and follows its end as before; each lists what waits for the turn to end and says there is
+  nothing yet itself (chatCard hands it `noneYet`). Messages (`details/Messages.tsx`) lists the context card's rows; the
+  Transcript (`features/transcript/`) is its blocks worked out apart (`blocks.ts`: the stretches of calls, "+N more",
+  thinking, notes) and drawn by key (`TranscriptView.tsx`), a call by its shape (`calls.tsx`: `summary`, the folded
+  output, a change's lines -- and the permission card's call, `permissionNode`, which chat.js's permissionView now is,
+  its paths no longer shown from whichever actor's directory the Transcript last drew). Their feeds are stores by actor,
+  their loaders moved from data.js: `details/events.ts` (`/api/history`, the feed the reader's own views draw from by
+  default) and `transcript/data.ts` (`/api/transcript`, a page at a time); the page still draws them at each change of
+  the feed (mainSignature). The notes switch is a store (`useNotes`), as the type chips are. Gone: transcript.js,
+  `state.chat`, `state.tx`, `state.txCwd`. The reader's own views keep `agDashboard.transcriptBlocks`, `.foldedOutput`
+  and `.notesSwitch`, as nodes. Vitest: `transcript.test.tsx`, `details/messages.test.tsx`.
 
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
