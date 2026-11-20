@@ -1,11 +1,9 @@
 import { state } from "../../core/page/state.js";
-import { el, post } from "../../core/page/helpers.js";
+import { post } from "../../core/page/helpers.js";
 import { loadHome, setLive } from "../page/data.js";
 import {
-  CTX, FOLDER_CHARS, folderPost, isOpenFolder, kidFolders, renderAgents, showFolder, titleOf, toggleFolder,
-} from "./list.js";
+  CTX, FOLDER_CHARS, folderPost, renderAgents, showFolder, titleOf, } from "./list.js";
 import * as LG from "./groups";
-import { cardHide } from "./modes.js";
 import * as prefs from "../../core/prefs";
 
 // FOLDERS OF GATHERERS (gatherer_folders.py, `home.gatherer_folders`: {folders: [{id, parent, name}], filed: {gatherer:
@@ -87,25 +85,6 @@ async function makeGroup(text, parent) {
     renderAgents();
   }
 }
-// A level of the rail (`id` null: its top), as the list's (gfLevel): each folder its name in a bracket, as a gatherer's
-// folders are -- a button folding or opening it, as in the list (no card, no drilling in, nothing dropped on it) -- and,
-// open, what is in it under it; folded, nothing. Then its gatherers, each `draw(g)`.
-function railGfLevel(shown, id, draw) {
-  const out = [];
-  for (const f of kidFolders(GF, id)) {
-    const open = isOpenFolder(GF, f.id);
-    const name = el("button", { class: open ? "r-fhead" : "r-fname", type: "button", "aria-expanded": open ? "true" : "false",
-      title: `${f.name}: a folder of groups · click to ${open ? "fold" : "open"}`, onclick: () => { cardHide(); toggleFolder(GF, f.id); } },
-      el("span", { class: "tx" }, el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "nm", text: f.name })));
-    if (open) {
-      const kids = railGfLevel(shown, f.id, draw);
-      out.push(el("div", { class: "r-fopen r-gf", role: "group", "aria-label": f.name }, name,
-        el("div", { class: "r-kids" }, ...(kids.length ? kids : [el("div", { class: "r-none", text: "Empty" })]))));
-    } else out.push(el("div", { class: "r-ffold r-gf" }, name));
-  }
-  for (const g of shown) if (gfOf(g.name) === id) out.push(draw(g));
-  return out;
-}
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   document.addEventListener("keydown", (ev) => {
@@ -114,5 +93,5 @@ export function start() {
   });
 }
 export {
-  GF, GFS, GF_NEW, fileGatherers, gPicks, gfFolded, gfMakingNow, gfOf, gfShow, nameGroup, pickGatherer, railGfLevel,
+  GF, GFS, GF_NEW, fileGatherers, gPicks, gfFolded, gfMakingNow, gfOf, gfShow, nameGroup, pickGatherer,
 };

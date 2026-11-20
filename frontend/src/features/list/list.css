@@ -365,6 +365,11 @@ body.drag-out .outside-drop { display: flex; }
 /* MANAGE GROUPS (features/list/group-moves.js): the list head's button, and its dialog -- each group, its folders and actors set in
    by depth, each with its switch of two at the right */
 dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 760px); }
+/* it and the question a move asks first are Radix's dialogs (features/list/ManageGroups.tsx): over the whole page as a
+   modal <dialog> is, centred on their backdrop */
+.mg-dim { position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.35); }
+.mg-dim > dialog.br-dialog { position: relative; inset: auto; margin: 0; overflow: auto; max-width: calc(100% - 6px - 2em); }
 .mg-form { display: flex; flex-direction: column; gap: 10px; max-height: calc(min(78vh, 760px) - 32px); }
 .mg-say { margin: 0; font-size: var(--fs-ui); color: var(--muted); line-height: 1.45; }
 /* one column as wide as the panel, not as its longest name: a long name ends in "…", its switch in view at the right */

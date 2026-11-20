@@ -246,7 +246,7 @@ test("a rail bookmark under a resting pointer stays shown, every frame, while th
   // its bookmark's opacity each frame for a while, the home sent again twice meanwhile
   const frames = page.evaluate(
     (card) =>
-      new Promise<{ opacities: string[]; redrawn: boolean }>((done) => {
+      new Promise<{ opacities: string[]; replaced: boolean }>((done) => {
         const mark = () =>
           [...document.querySelectorAll<HTMLElement>("#rail .r-actor")]
             .find((t) => t.dataset.card === card)!
@@ -254,13 +254,13 @@ test("a rail bookmark under a resting pointer stays shown, every frame, while th
         const first = mark(),
           opacities: string[] = [],
           t0 = performance.now();
-        let redrawn = false;
+        let replaced = false;
         const tick = () => {
           const b = mark();
-          redrawn ||= b !== first;
+          replaced ||= b !== first;
           opacities.push(getComputedStyle(b).opacity);
           if (performance.now() - t0 < 900) requestAnimationFrame(tick);
-          else done({ opacities, redrawn });
+          else done({ opacities, replaced });
         };
         requestAnimationFrame(tick);
       }),
@@ -273,9 +273,9 @@ test("a rail bookmark under a resting pointer stays shown, every frame, while th
     again.gatherers[0].agents[0].last = (again.gatherers[0].agents[0].last || 0) + k;
     seen.ws!.send(`${id}\nhome\n${JSON.stringify(again)}`);
   }
-  const { opacities, redrawn } = await frames;
-  expect(redrawn).toBe(true); // the rail was drawn anew under the pointer...
-  expect(opacities.filter((o) => o !== "1")).toEqual([]); // ...and its bookmark never faded out
+  const { opacities, replaced } = await frames;
+  expect(replaced).toBe(false); // the rail drawn again keeps the bookmark under the pointer, so none fades in...
+  expect(opacities.filter((o) => o !== "1")).toEqual([]); // ...and it never faded out
 });
 
 test("shows every actor over the whole page", async ({ page }) => {
