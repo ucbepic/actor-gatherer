@@ -9,13 +9,23 @@
 // marked -- a bar in the actor's hue, its avatar after the first line, who and when on hover. A change made by a shell
 // command has no recorded lines (only its avatar on the file); lines changed again since are not found; deleted lines
 // show only in the Changes list. An avatar pressed, anywhere, opens its actor (edShowActor) as its row in the list does.
+import { agApp, ago, changedCount, el, fileBlock, firstLine, get, kindMark, langOfPath, state } from "./page.js";
+import { ed, edAvatar, edDir, edEntry, edHead, edKey, edList, edRel, edSelectText, edTilde,
+  edWhoColor, edWriterName, edWriters } from "./editor.js";
+import { edTree } from "./editor-tree.js";
+import { edNote } from "./editor-open.js";
+
 const ED_WINDOWS = [[600, "10 min"], [1800, "30 min"], [3600, "1 hour"], [14400, "4 hours"]];   // (said "the last …")
 const ED_WINDOW_KEY = "ag-editor-window", ED_WINDOW_DEFAULT = 1800;
 const edWindowKey = () => `${ED_WINDOW_KEY}:${(agApp && agApp.instance) || ""}`;
-ed.window = ED_WINDOW_DEFAULT;
-ed.recent = null;                                  // {path, sig, items: [{w, x}], err, loading}: the file open's
-const edWindowSaid = () => (ED_WINDOWS.find((x) => x[0] === ed.window) || [0, `${Math.round(ed.window / 60)} min`])[1];
-function edWindowLoad() {
+// Its state, as the panel starts (start.js's edStart): the window, until the one picked is read (edWindowLoad, as the
+// panel is drawn), and the file open's changes, none yet.
+export function edRecentStart() {
+  ed.window = ED_WINDOW_DEFAULT;
+  ed.recent = null;                                // {path, sig, items: [{w, x}], err, loading}: the file open's
+}
+export const edWindowSaid = () => (ED_WINDOWS.find((x) => x[0] === ed.window) || [0, `${Math.round(ed.window / 60)} min`])[1];
+export function edWindowLoad() {
   let got = NaN;
   try { got = Number(localStorage.getItem(edWindowKey())); } catch (e) { /* this page only */ }
   ed.window = ED_WINDOWS.some((x) => x[0] === got) ? got : ED_WINDOW_DEFAULT;
@@ -28,22 +38,22 @@ function edWindowSet(secs) {
   Promise.all([...dirs].map((d) => edList(d, false))).then(() => { edTree(); edHead(); edRecentFetch(true); });
 }
 // The picker, over the tree: "Changes: last 30 min ▾".
-function edWindowPick() {
+export function edWindowPick() {
   const sel = el("select", { "aria-label": "Show actors' changes from the last", onchange: (ev) => edWindowSet(Number(ev.target.value)) },
     ...ED_WINDOWS.map(([v, said]) => el("option", { value: String(v), selected: v === ed.window ? "" : null, text: `last ${said}` })));
   return el("label", { class: "ed-window", title: "Which actors' changes the tree, the file and its header show" },
     el("span", { class: "lbl", text: "Changes:" }), sel);
 }
-const edSince = () => Math.floor(Date.now() / 1000 - ed.window);
+export const edSince = () => Math.floor(Date.now() / 1000 - ed.window);
 
 // An actor (a writer's), opened as its row in the dashboard's list opens it: in its tab. One of another group: said.
-function edShowActor(w) {
+export function edShowActor(w) {
   if (!agApp || !w) return;
   if (w.gatherer !== agApp.gatherer) { edNote(`${edWriterName(w)} is in the group ${w.gatherer}`); return; }
   Promise.resolve(agApp.actors.show(w.channel)).catch((e) => edNote(`Couldn't open it: ${e.message}`, true));
 }
 // An avatar that opens its actor: in the tree, the header, the file's lines, the Changes list.
-function edAvatarButton(w, cls = "ed-av") {
+export function edAvatarButton(w, cls = "ed-av") {
   return el("button", { type: "button", class: cls, "aria-label": `Open ${edWriterName(w)}`,
     title: `${edWriterName(w)}${w.closed ? " (closed)" : ""}, ${ago(w.at)} · click to open it`,
     onmousedown: (ev) => ev.stopPropagation(),
@@ -52,7 +62,7 @@ function edAvatarButton(w, cls = "ed-av") {
 
 // The changes of the file open, in the window: fetched again when its writers change (each tick, edTick), the window
 // does, or `force` (the file read again from disk, the Changes list opened).
-async function edRecentFetch(force = false) {
+export async function edRecentFetch(force = false) {
   const s = ed.s, path = ed.file;
   if (!s || !path || s.path !== path) { if (ed.recent) { ed.recent = null; edDrawChanges(); } return; }
   const since = edSince();
@@ -78,7 +88,7 @@ async function edRecentFetch(force = false) {
 // The text a change left in the file: a diff's new lines, a Write's whole text (its lines as recorded).
 const edChangeText = (b) => b.t === "diff" ? (b.new || []).join("\n") : b.t === "write" ? (b.lines || []).join("\n") : "";
 // The lines of the file each change is found on now, marked: the latest change's actor on a line it shares with another.
-function edRecentMarks(s) {
+export function edRecentMarks(s) {
   const v = s.view;
   if (!v || !s.recent) return;
   const r = ed.recent && ed.recent.path === s.path ? ed.recent : null;
@@ -124,13 +134,13 @@ function edRecentAvatar(A) {
 // first -- each as the Chat view shows a file's change (fileBlock), with its actor's avatar (pressed: opened) and what it
 // was asked; one whose new lines are in the file now has "Show", which selects them there. Opened by the header's
 // Changes, closed by it again, the list's ×, or another file opened.
-function edChanges() {
+export function edChanges() {
   if (ed.changes) return edChangesClose();
   ed.changes = { path: ed.file };
   edDrawChanges(); edHead(); edRecentFetch(true);
 }
 function edChangesClose() { ed.changes = null; edDrawChanges(); edHead(); }
-function edDrawChanges() {
+export function edDrawChanges() {
   const side = ed.side, c = ed.changes;
   if (!side) return;
   if (!c || c.path !== ed.file) {
@@ -171,7 +181,7 @@ function edChangeView(x, doc, w) {
 // A box over the tree: the harness to start (each this dashboard can start here), and what to do -- for a file, its
 // path put in first, for the reader to keep or change. ↵ starts it in the folder (the file's), with what they wrote as
 // its first message (ag.actors.start, capability message_actors), and opens it.
-function edStartOpen(path, dir, x, y) {
+export function edStartOpen(path, dir, x, y) {
   edStartClose();
   const harnesses = (state.home && state.home.harnesses) || [];
   if (!agApp || !harnesses.length) { edNote("No harness can start an actor here.", true); return; }

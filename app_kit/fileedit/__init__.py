@@ -8,8 +8,10 @@ app's code (DESIGN.md, "Panels"), so it is here, apart from both:
                   their own edit tools
     chooser.py    the system's Open dialog and file manager, on the host's machine
     panel/        the panel's code, which an app's panel loads from the host (/_ag/lib/fileedit/..., the dashboard's
-                  libs.py): page.js, editor*.js, start.js, editor.css, panel.css, and vendor/editor.js (CodeMirror and
-                  Yjs, built by assets/src/editor). An app adds its own parts with edAdd (editor.js)
+                  libs.py): page.js, editor*.js, recent.js, plain.js, start.js -- ES modules, which the app's own
+                  module (its panel's entry) imports -- editor.css, panel.css, and vendor/editor.js (CodeMirror and
+                  Yjs, built by assets/src/editor). The app's module gives its own parts to edAdd (editor.js), then
+                  starts the panel (start.js's edStart)
 """
 
 from .backend import MODES, FileEdit  # noqa: F401 - the package's API

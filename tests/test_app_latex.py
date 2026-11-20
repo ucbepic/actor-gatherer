@@ -587,13 +587,23 @@ class ServedTest(ServedBase):
         self.assertEqual(self.at_app(f"/api/preview/files/{'0' * 16}/out.svg?{q}")[0], 404)
 
     def test_its_panel_its_page_s_helpers_and_the_editor_bundle(self):
+        def kind(headers):
+            return next(v for k, v in headers.items() if k.lower() == "content-type").split(";")[0]
         status, _, raw = self.at_app("/")
         self.assertEqual(status, 200)
-        for script in (b"/_ag/lib/fileedit/page.js", b"/_ag/lib/fileedit/editor.js", b"latex.js", b"preview.js",
-                       b"/_ag/lib/fileedit/start.js", b"/_ag/app.js"):
+        for script in (b'src="/_ag/app.js"', b'<script type="module" src="latex.js">'):   # its module, after the SDK
             self.assertIn(script, raw)
+        status, headers, raw = self.at_app("/latex.js")                  # which imports its own and app_kit.fileedit's
+        self.assertEqual(status, 200)
+        self.assertIn(kind(headers), ("text/javascript", "application/javascript"))   # a module: run only if JavaScript
+        for module in (b'"./preview.js"', b'"/_ag/lib/fileedit/editor.js"', b'"/_ag/lib/fileedit/start.js"'):
+            self.assertIn(module, raw)
+        self.assertEqual(self.at_app("/preview.js")[0], 200)
         for lib in ("page.js", "editor.js", "start.js", "editor.css"):  # app_kit.fileedit's, served on its origin
-            self.assertEqual(self.at_app(f"/_ag/lib/fileedit/{lib}")[0], 200)
+            status, headers, _ = self.at_app(f"/_ag/lib/fileedit/{lib}")
+            self.assertEqual(status, 200)
+            if lib.endswith(".js"):
+                self.assertEqual(kind(headers), "text/javascript")
         status, _, raw = self.at_app("/_ag/lib/fileedit/vendor/editor.js")
         self.assertEqual(status, 200)
         self.assertIn(b"agEditor", raw)

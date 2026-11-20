@@ -7,7 +7,14 @@
 // at again with its folder's listing (edTick): changed on disk -- an actor drawing a figure again, a PDF built again --
 // it is shown again where the reader was (a sound or a video once it is not playing: until then the header offers it),
 // credited to the actor whose recorded change is nearest, as an edited file's change is.
-const ED_VIEW_SAID = { image: "image", pdf: "PDF", audio: "sound", video: "video", text: "text", file: "file" };
+import { ago, el, full, ICONS, plural, post, strokeIcon } from "./page.js";
+import { ed, edAdded, edAddedHead, edByChip, edCredit, edDir, edEntry, edHead, edHeadPut, edOpen,
+  edPdfOpen, edPdfTheme, edPdfViewer, edRel, edWhoColor, edWriterName, edWriters } from "./editor.js";
+import { edFileIcon } from "./editor-tree.js";
+import { edNote } from "./editor-open.js";
+import { edDrawChanges } from "./recent.js";
+
+export const ED_VIEW_SAID = { image: "image", pdf: "PDF", audio: "sound", video: "video", text: "text", file: "file" };
 const edRaw = (path, v = null, download = false) => {
   const q = new URLSearchParams({ root: "/" });
   if (v !== null) q.set("v", String(v));
@@ -28,7 +35,7 @@ function edWhat(info) {
   if (info.kind === "pdf") return "PDF";
   return x ? `${x} ${said}` : said[0].toUpperCase() + said.slice(1);
 }
-async function edAbout(path) {
+export async function edAbout(path) {
   const r = await fetch(`/api/edit/about?${new URLSearchParams({ path, root: "/" })}`, { cache: "no-store" });
   const got = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(got.error || `Couldn't open the file (${r.status})`);
@@ -36,7 +43,7 @@ async function edAbout(path) {
 }
 
 // The file shown, in place of the editor (ed.body): `info` its about.
-function edShow(path, info) {
+export function edShow(path, info) {
   const v = ed.v = { path, info, at: info.mtime, size: info.size, changed: null, gone: false, stale: false, dims: null,
     full: false, pdf: null, media: null, img: null };
   ed.body.replaceChildren(edViewBody(v));
@@ -103,7 +110,7 @@ function edRevealBtn(v, big = false) {
 
 // Its header: where it is, what it is (its size, an image's pixels, a sound's length), who changed it lately, when it last
 // changed on disk, and Edit (an SVG's text), Download, Show in Finder, Execute, ×.
-function edViewHead(v) {
+export function edViewHead(v) {
   const { info } = v;
   const writers = edWriters(edEntry(v.path));
   if (ed.changes && ed.changes.path !== ed.file) edDrawChanges();          // another file's actor's changes: closed
@@ -130,7 +137,7 @@ function edViewHead(v) {
     ...edAddedHead(v)].filter(Boolean));
 }
 // Its listing looked at again (edTick): changed on disk, shown again -- deleted, said.
-async function edViewCheck(v) {
+export async function edViewCheck(v) {
   if (ed.v !== v) return;
   const got = ed.lists.get(edDir(v.path));
   if (!got || got.error) return;
@@ -177,7 +184,7 @@ function edViewAgain(v, now = false) {
   v.stale = false;
   edHead();
 }
-function edViewClose() {
+export function edViewClose() {
   const v = ed.v;
   if (!v) return;
   ed.v = null;
