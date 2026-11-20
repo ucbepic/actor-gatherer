@@ -60,7 +60,7 @@ import { loadTranscript, txFeedOf } from "../transcript/data";
 //
 // `ctx`: {actor (its key), info (the actor), session (its row: status, cwd, ...), data: {items, pending (what the model
 // answered that no call has stored yet: row_id null), earlier (older items not loaded)}, running,
-// queued, held (why the session cannot be messaged here -- another process has it open -- or ""), writable
+// queued, noneYet (what a view says while there is nothing yet), held (why the session cannot be messaged here -- another process has it open -- or ""), writable
 // (whether it can be messaged from here at all),
 // loadEarlier(), rerender(), api (agDashboard: el, markdown, the page's other helpers)}, and for
 // a composer: input(attrs), the text box to build it around (Enter sends, Shift+Enter a new line, what
