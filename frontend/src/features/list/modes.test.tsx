@@ -97,7 +97,7 @@ describe("the rail", () => {
     dragging: null,
   };
 
-  it("draws a gatherer's name over its tiles, the same tiles from one draw to the next, their corners made anew", () => {
+  it("draws a gatherer's name over its tiles, the same tiles and corners from one draw to the next", () => {
     const host = hostOf<RailHost>({ ctx: ctxOf(home) });
     drawRail(boxOf(), buildRail(ctxOf(home), viewOf(), rv), host);
     expect(box.querySelector(".r-gname .nm")?.textContent).toBe("g");
@@ -107,7 +107,7 @@ describe("the rail", () => {
     drawRail(box, buildRail(ctxOf(home), viewOf({ focused: ["g", "a1"] }), rv), host);
     expect(box.querySelector(".r-actor")).toBe(tiles[0]);
     expect(tiles[0].getAttribute("aria-current")).toBe("true");
-    expect(tiles[0].querySelector(".save-btn")).not.toBe(bookmark);
+    expect(tiles[0].querySelector(".save-btn")).toBe(bookmark);
     fireEvent.click(tiles[1], { shiftKey: true });
     expect(calls(host).togglePick).toHaveBeenCalledWith(home.gatherers[0], a2);
     fireEvent.click(box.querySelector(".r-gname")!);

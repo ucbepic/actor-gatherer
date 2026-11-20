@@ -226,7 +226,8 @@ button.agent-group:hover { color: var(--ink-2); }
 .rail .r-actor:is([aria-current="true"], [data-open="true"]) :is(.save-btn, .close-btn) { background: var(--side); }
 .rail .r-actor:is([aria-current="true"], [data-open="true"]):hover :is(.save-btn, .close-btn):not(:hover, :focus-visible) {
   background: linear-gradient(var(--wash), var(--wash)) var(--side); }
-.rail .r-actor:is(:hover, :focus-within, [aria-current="true"]) :is(.save-btn, .close-btn) { opacity: 1; }
+/* keyboard focus, not a press: a bookmark or × pressed keeps its focus, which would hold them shown once the pointer left */
+.rail .r-actor:is(:hover, :focus-visible, :has(:focus-visible), [aria-current="true"]) :is(.save-btn, .close-btn) { opacity: 1; }
 @media (hover: none) { .rail .r-actor .save-btn.on { opacity: 1; } }
 @media (hover: none) { .rail .r-actor:not([aria-current="true"]) .close-btn, .rail .r-actor:not([aria-current="true"]) .save-btn:not(.on) { opacity: 0; } }
 .rail .r-actor .save-btn.on { color: var(--s1); }

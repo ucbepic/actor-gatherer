@@ -2,7 +2,7 @@
 // under it, its bookmark and × over its corners while hovered -- a task's (its lead's face, how many it holds, its apps'
 // mark) and an app's in no task. Pressed: shown (Shift+click selects an actor with others); dragged: put in a folder, or
 // (a task's, an app's) another item dropped on it put in its task.
-import { createContext, Fragment, useContext, type MouseEvent, type ReactNode } from "react";
+import type { MouseEvent } from "react";
 import { Html } from "../../core/ui/PageNode";
 import { titleOf } from "./groups";
 import { Face, useSpin } from "./Parts";
@@ -11,14 +11,6 @@ import type { RailHost } from "./Rail";
 import { actorSave, closeButton, drags, joins, PickCheck, saveButton } from "./RowViews";
 import { appTitle } from "./tasks";
 import type { AppItem } from "./types";
-
-/** How many times the rail has been drawn: a tile's bookmark and × are made anew at each draw, as the whole rail was
- * before it was React's -- so a press on one keeps no focus that would hold them shown, and a draw under a resting
- * pointer gives the pointer a new one (the tile itself stays: hovered, in focus from the keys, dragged). */
-export const RailDraw = createContext(0);
-function Corners({ children }: { children: ReactNode }) {
-  return <Fragment key={useContext(RailDraw)}>{children}</Fragment>;
-}
 
 export function ActorTile({ n, host }: { n: RActor; host: RailHost }) {
   const { g, a, name: nm } = n,
@@ -65,10 +57,8 @@ export function ActorTile({ n, host }: { n: RActor; host: RailHost }) {
         {nm.text}
       </span>
       {/* the list's bookmark and ×, in the corners over its avatar: shown while hovered, in focus or the one shown */}
-      <Corners>
-        {actorSave(host, g, a, n.saved)}
-        {close || null}
-      </Corners>
+      {actorSave(host, g, a, n.saved)}
+      {close || null}
     </button>
   );
 }
@@ -118,22 +108,20 @@ export function TaskTile({ n, host }: { n: RTask; host: RailHost }) {
       <span className="r-name" aria-hidden="true">
         {n.name}
       </span>
-      <Corners>
-        {n.members > 0
-          ? saveButton(
-              host,
-              n.saved,
-              ["", "Save the task for later"],
-              ["Unsave the task", "Save the task for later"],
-              () => host.saveTask(g.name, t.id, !n.saved),
-            )
-          : null}
-        {!host.snapshot && n.closable
-          ? closeButton(host, "Close the task · it reopens as it was", "Close the task", () =>
-              host.closeTask(g.name, t.id),
-            )
-          : null}
-      </Corners>
+      {n.members > 0
+        ? saveButton(
+            host,
+            n.saved,
+            ["", "Save the task for later"],
+            ["Unsave the task", "Save the task for later"],
+            () => host.saveTask(g.name, t.id, !n.saved),
+          )
+        : null}
+      {!host.snapshot && n.closable
+        ? closeButton(host, "Close the task · it reopens as it was", "Close the task", () =>
+            host.closeTask(g.name, t.id),
+          )
+        : null}
     </button>
   );
 }
@@ -165,11 +153,9 @@ export function AppTile({ n, host }: { n: RApp; host: RailHost }) {
       <span className="r-name" aria-hidden="true">
         {o.title || o.app.label}
       </span>
-      <Corners>
-        {host.snapshot
-          ? null
-          : closeButton(host, `Close ${o.app.label}`, `Close ${o.app.label}`, () => host.closeApp(g.name, o))}
-      </Corners>
+      {host.snapshot
+        ? null
+        : closeButton(host, `Close ${o.app.label}`, `Close ${o.app.label}`, () => host.closeApp(g.name, o))}
     </button>
   );
 }

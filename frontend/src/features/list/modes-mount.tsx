@@ -54,9 +54,8 @@ export function drawMonitor(box: HTMLElement, m: MonitorModel, host: MonitorHost
 }
 
 /** The rail drawn into `box`, by now. */
-let railDraws = 0;
 export function drawRail(box: HTMLElement, m: RailModel, host: RailHost): void {
-  draw(() => rootOf(box).render(<Rail m={m} host={host} draw={++railDraws} />));
+  draw(() => rootOf(box).render(<Rail m={m} host={host} />));
 }
 
 /** The hover card's contents drawn into `box` (#actor-card), by now: the page places it next, by its size. */

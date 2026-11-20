@@ -455,8 +455,8 @@ pattern the list and Chat follow:
   `DRAG_LOST_MS` -- the row dragged now says its dragend itself, by a listener of its own), the card kept off a
   resting pointer (`hover.still`), the card's name box carried through them (`cardMoving`) and Manage groups' (`manage.
   drawing`); a box a draw itself takes away is not the reader leaving it (`drawingNow`). A rail tile's bookmark and ×
-  are made anew at each draw, as the whole rail was: a press on one keeps no focus that would hold them shown (and the
-  rail's spec of a draw under a resting pointer sees a new one). A gatherer's and a folder's "+" and "⋯" are Radix's
+  are kept from draw to draw like the tile, so none fades in under a resting pointer; they show on hover or keyboard
+  focus (`:focus-visible`), not on any focus, so one pressed doesn't stay shown once the pointer leaves. A gatherer's and a folder's "+" and "⋯" are Radix's
   DropdownMenu (`Menus.tsx`; the page says what each holds: `startMenu`, `gathererMore`, `folderMore`), closed by a
   press the page never hears as the page's own drop-downs are (`pressedAway`'s `PRESSED_AWAY`); an item that opens a box
   or the branch picker opens it from the same button, the menu closed (its second step, `openPop` by the button's

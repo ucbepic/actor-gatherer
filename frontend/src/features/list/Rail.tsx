@@ -11,7 +11,7 @@ import { drops } from "./Boxes";
 import type { ListHost, PageParts } from "./host";
 import { CountChips, FoldMark, TallyChips } from "./Parts";
 import type { RailAt, RailModel, RAlone, RCounts, RFold, RFolder, RGatherer, RGf, RHere, RNode } from "./rail-model";
-import { ActorTile, AppTile, RailDraw, TaskTile } from "./RailTiles";
+import { ActorTile, AppTile, TaskTile } from "./RailTiles";
 import { GF, type Tally } from "./tree";
 import type { Folder, ListCtx } from "./types";
 
@@ -60,14 +60,14 @@ export interface RailHost
   setRailShow(what: "folders" | "saved" | "closed", on: boolean): void;
 }
 
-export function Rail({ m, host, draw }: { m: RailModel; host: RailHost; draw: number }) {
+export function Rail({ m, host }: { m: RailModel; host: RailHost }) {
   return (
-    <RailDraw value={draw}>
+    <>
       <div className="r-actors">
         <Nodes nodes={m.nodes} host={host} />
       </div>
       {m.foot ? <Foot show={m.show} host={host} /> : null}
-    </RailDraw>
+    </>
   );
 }
 
