@@ -13,7 +13,6 @@ import tseslint from "typescript-eslint";
 // feature's own code, as its view is rewritten (A5, A6). Files of it over max-lines, until then: this list only shrinks.
 const PAGE_LONG = [
   "src/features/chat/chat.js",
-  "src/features/chat/files-view.js",
   "src/features/history/history.js",
   "src/features/layout/panes.js",
   "src/features/list/group-moves.js",

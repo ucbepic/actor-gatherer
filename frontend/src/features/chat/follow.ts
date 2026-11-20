@@ -31,6 +31,13 @@ function resized(seen: ResizeObserverEntry[]) {
   }
 }
 
+/** `node` at its end again, if it was there when last scrolled or placed: what it holds has grown since. */
+export function keepEnd(node: HTMLElement): void {
+  if (!node.clientHeight || !ends.get(node)) return;
+  node.scrollTop = node.scrollHeight;
+  ends.set(node, true);
+}
+
 /** `node` kept at its end when it changes size, if it was there: once for each node, as it is made. */
 export function followEnd(node: HTMLElement): void {
   if (typeof ResizeObserver === "undefined") return; // (jsdom, as Bubble.tsx's)

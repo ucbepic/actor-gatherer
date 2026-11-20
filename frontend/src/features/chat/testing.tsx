@@ -1,8 +1,8 @@
 // For the turn list's tests (Vitest, in jsdom): a page around it -- the old page's host, standing in for its stage and
 // its commands' drawing and recording what the turn list calls of it -- and the turn list drawn as the page draws it
-// (mount.tsx's drawTurns), into #main.
+// (mount.tsx's drawChat), into #main.
 import { act } from "@testing-library/react";
-import { drawTurns } from "./mount";
+import { drawChat } from "./mount";
 import type { Actor, ChatFeed, ChatHost, ChatView, Current, Envelope, Turn } from "./types";
 
 /** When the turns of the tests were stored, in seconds. */
@@ -24,7 +24,7 @@ export interface TestHost extends ChatHost {
 }
 
 /** The old page's host, standing in: its stage a span telling what it shows (data-sig), its other drawing plain. */
-export function testHost(page: { redraw: () => void }): TestHost {
+export function testHost(): TestHost {
   const calls: unknown[][] = [];
   const said =
     (name: string, out?: unknown) =>
@@ -42,13 +42,6 @@ export function testHost(page: { redraw: () => void }): TestHost {
     atWork: (info, t) => span("stage-box", JSON.stringify(["work", info.avatar, t.work ?? null])),
     atRest: (info, turn) => span("done", JSON.stringify(["rest", info.avatar, turn])),
     greeting: (info) => (info.avatar ? span("stage-box", JSON.stringify(["hello", info.avatar])) : null),
-    callView: (_call, ran) => {
-      const n = document.createElement("div");
-      n.className = "cv" + (ran.error ? " err" : "");
-      n.innerHTML = `<pre class="out">${ran.output ?? ""}</pre>`;
-      return n;
-    },
-    callLabel: (c) => c.text,
     crewFace: (a, coordinator) => {
       const n = document.createElement("img");
       n.className = "crew-face";
@@ -63,11 +56,12 @@ export function testHost(page: { redraw: () => void }): TestHost {
     sameWords: (a, b) => typedAs(a).slice(0, 200) === typedAs(b).slice(0, 200),
     icons: { chevron: "M6 4l4 4-4 4", sidebar: "M2 3h12v10H2z" },
     beside: "⌘",
-    redraw: () => {
-      calls.push(["redraw"]);
-      page.redraw();
-    },
     foldSide: said("foldSide"),
+    barActs: () => null,
+    patch: (parent, kids) => {
+      if (kids.length !== parent.childNodes.length || kids.some((k, i) => parent.childNodes[i] !== k))
+        parent.replaceChildren(...kids);
+    },
     setFilesTurn: said("setFilesTurn", Promise.resolve()) as ChatHost["setFilesTurn"],
     setChatView: said("setChatView"),
     interruptOver: said("interruptOver"),
@@ -131,19 +125,19 @@ export function testPage(turns: Turn[], over: Partial<ChatFeed> = {}) {
     document.body.appendChild(Object.assign(document.createElement("div"), { id: "main" }));
   const page = {
     feed: null as unknown as ChatFeed,
-    node: null as HTMLElement | null,
-    redraw: () => page.draw(),
-    /** the page drawn again: `over` changed in its feed */
+    /** the actor's frame, as the page puts it in #main */
+    frame: null as HTMLElement | null,
+    /** the page drawn again: `over` changed in its feed; its conversation's box */
     draw: (more: Partial<ChatFeed> = {}) => {
       page.feed = { ...page.feed, ...more };
       act(() => {
-        page.node = drawTurns(page.feed, host);
+        page.frame = drawChat(page.feed, host);
       });
-      if (page.node!.parentElement !== main) main.replaceChildren(page.node!);
-      return page.node!;
+      if (page.frame!.parentElement !== main) main.replaceChildren(page.frame!);
+      return page.frame!.querySelector<HTMLElement>(".fl-talk")!;
     },
   };
-  const host = testHost(page);
+  const host = testHost();
   const info = over.info ?? ACTOR;
   page.feed = {
     key: `g\u0000c${++actors}`,
@@ -160,10 +154,15 @@ export function testPage(turns: Turn[], over: Partial<ChatFeed> = {}) {
     mine: [],
     interrupting: false,
     canInterrupt: false,
-    sideFolded: true,
     earlierTurns: "messages",
     terminalView: true,
     afresh: false,
+    snapshot: false,
+    streaming: false,
+    running: false,
+    details: false,
+    cwd: "",
+    asking: null,
     ...over,
   };
   return { page, host, main };

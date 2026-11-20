@@ -4,6 +4,7 @@
 import { act, fireEvent } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadVendored } from "../../core/ui/testing";
+import { useSide } from "./side/store";
 import { useTurns } from "./store";
 import { ACTOR, AT, chatView, now, testPage, turn, withTurns } from "./testing";
 
@@ -79,11 +80,10 @@ describe("Turns", () => {
   });
 
   it("shows an earlier turn's replies on a click on its message, kept as turns come; the setting picked again starts over", () => {
-    const { page, host } = testPage(turns(5));
+    const { page } = testPage(turns(5));
     const node = page.draw();
     const message = () => node.querySelector<HTMLElement>("#fl-turn-1 .fl-head > .fl-user")!;
     act(() => message().click());
-    expect(host.calls).toContainEqual(["redraw"]);
     expect(node.querySelector("#fl-turn-1")!.className).toBe("fl-turn shown");
     expect(message().getAttribute("aria-expanded")).toBe("true");
     expect(node.querySelector("#fl-m-1-0")).not.toBeNull();
@@ -142,7 +142,14 @@ describe("Turns", () => {
         { kind: "report", text: "It's 42.", name: "counter" },
         { kind: "peer", text: "Hello from there\nmore", name: "Bob" },
       ],
-      last: { id: "c1", text: "ls -la", running: false, error: true, output: "denied" },
+      last: {
+        id: "c1",
+        text: "ls -la",
+        call: { input: { command: "ls -la" }, view: { shape: "shell", command: "ls -la" } },
+        running: false,
+        error: true,
+        output: "denied",
+      },
     });
     const { page } = testPage([t]);
     const node = page.draw();
@@ -346,10 +353,11 @@ describe("Turns", () => {
     const { page, host } = testPage(turns(3));
     const node = page.draw();
     await act(async () => node.querySelector<HTMLElement>("#fl-turn-0 .fl-side-btn")!.click());
-    expect(host.calls).toContainEqual(["foldSide", false, false]);
+    expect(host.calls).toContainEqual(["foldSide", false]);
     expect(host.calls).toContainEqual(["setFilesTurn", 0]);
     // the latest, its files shown: folded again
-    page.draw({ sideFolded: false });
+    act(() => useSide.setState({ folded: false, narrow: false }));
+    page.draw();
     const btn = node.querySelector<HTMLElement>("#fl-turn-2 .fl-side-btn")!;
     expect(btn.getAttribute("aria-pressed")).toBe("true");
     expect(btn.getAttribute("title")).toBe("Fold this turn's files and commands");
@@ -421,5 +429,23 @@ describe("before the first turn", () => {
     const node = page.draw();
     expect(node.querySelector(":scope > .fl-turn > .fl-pending .tx")!.textContent).toBe("in its queue");
     expect(node.querySelector(".fl-hello")!.children.length).toBe(1); // the actor, no line
+  });
+});
+
+describe("a turn that fails to draw", () => {
+  it("says so in its place, the other turns drawn; and is drawn once its turn changes", () => {
+    const said = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bad = turn(1, { more: 5 as unknown as [] }); // not a list: its messages written meanwhile cannot be drawn
+    const { page } = testPage([turn(0), bad, turn(2)], { earlierTurns: "whole" });
+    const node = page.draw();
+    expect(node.querySelector("#fl-turn-1 > .warn")!.textContent).toMatch(/^This turn could not be drawn: /);
+    expect(node.querySelector("#fl-turn-0 .fl-user .tx")!.textContent).toBe("Ask 0");
+    expect(node.querySelector("#fl-turn-2 .fl-user .tx")!.textContent).toBe("Ask 2");
+    expect(said).toHaveBeenCalled();
+    const fixed = [turn(0), turn(1), turn(2)];
+    page.draw(withTurns(fixed));
+    expect(node.querySelector("#fl-turn-1 > .warn")).toBeNull();
+    expect(node.querySelector("#fl-turn-1 .fl-user .tx")!.textContent).toBe("Ask 1");
+    said.mockRestore();
   });
 });

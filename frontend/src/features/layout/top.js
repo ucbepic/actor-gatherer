@@ -9,6 +9,7 @@ import { paneOf, placeIfShown, placeWork, workPlacer } from "./panes.js";
 import { renderMain } from "../page/main-view.js";
 import { chatToEnd } from "../chat/chat.js";
 import { miniCard, miniHistory, miniRest } from "../chat/mini-history.js";
+import { useTurns } from "../chat/store";
 import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ the top row, as the actors' panes see it
@@ -52,7 +53,7 @@ function setChatMin(on) {
 // This page's pane minimized or shown again: its counts are the latest turn's, from the files' feed (chatFeed) -- then, shown
 // again, its view's own feed.
 async function minRedraw() {
-  if (chatMin() && state.files && state.files.turn !== null) { state.files.turn = null; state.files.sel = null; }
+  if (chatMin() && state.files && state.files.turn !== null) { state.files.turn = null; useTurns.getState().pick(null); }
   topMount();
   await loadChat();
   keepingPlace(renderMain);

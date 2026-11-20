@@ -117,6 +117,10 @@ export interface FilesData {
 /** An actor, as the home has it (data.py), as far as the turn list reads it. */
 export interface Actor {
   channel: string;
+  /** its directory, as its calls named it */
+  cwd?: string | null;
+  /** what its harness runs in the background (data.py's `background`) */
+  background?: unknown[];
   harness?: string | null;
   status?: string;
   role?: string;
@@ -212,8 +216,17 @@ export interface ChatFeed {
   interrupting: boolean;
   /** Esc would interrupt it */
   canInterrupt: boolean;
-  /** the files and commands folded to their bar */
-  sideFolded: boolean;
+  /** the page is a snapshot (no files); the page streams (Chat waits for the stream's view) */
+  snapshot: boolean;
+  streaming: boolean;
+  /** the actor runs, as the list has it (its commands under way drawn running) */
+  running: boolean;
+  /** the Details panel open beside the conversation: the files' panel has less room */
+  details: boolean;
+  /** the actor's directory, its files' paths read from there */
+  cwd: string;
+  /** what the agent waits on the user for, or the call it stopped on: the page's card, as its draw made it */
+  asking: Node | null;
   /** the setting "Chat's earlier turns": messages only, or whole */
   earlierTurns: string;
   /** a Terminal view to send the reader to */
@@ -228,9 +241,6 @@ export interface ChatHost {
   atWork(info: Actor, t: { work?: unknown }): Node;
   atRest(info: Actor, turn: number | null | undefined): Node;
   greeting(info: Actor): Node | null;
-  /** a call as the commands at the left show it (features/chat/files-view.js): opened, and its line */
-  callView(call: unknown, ran: CallRun): Node;
-  callLabel(c: CallRun, n: number): Node | string;
   /** an actor's face, small (features/list/list.js's crewFace); the gatherer agent's picture for one with none */
   crewFace(a: Actor | null, coordinator: boolean): Node;
   /** a message an app wrote with its own block (a Browser's), as the app draws it; null for any other */
@@ -248,10 +258,12 @@ export interface ChatHost {
   icons: Record<string, string>;
   /** the key that opens beside: ⌘ or Ctrl */
   beside: string;
-  /** the page drawn again where the reader left it (keepingPlace(renderMain)): the turn list with it */
-  redraw(): void;
-  /** the files and commands folded to their bar, or shown (and drawn, unless `draw` is false) */
-  foldSide(fold: boolean, draw?: boolean): unknown;
+  /** the files and commands folded to their bar, or shown (folded: the latest turn's, which the bar counts) */
+  foldSide(fold: boolean): unknown;
+  /** the pane's head, put in the files' folded bar with a panel open above the panes; null: none */
+  barActs(): Node | null;
+  /** `kids` put in `parent`, each node already there that is the same as its new one kept (the page's patch()) */
+  patch(parent: Element, kids: Node[]): void;
   /** a turn's files and commands shown: null, the latest's */
   setFilesTurn(n: number | null): Promise<unknown>;
   setChatView(id: string): unknown;

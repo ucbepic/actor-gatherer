@@ -20,6 +20,7 @@ import { fullscreenFor, term } from "../terminal/terminal.js";
 import { chatSends, refill, sendFailed, talkToEnd } from "./files-view.js";
 import { MINI_VIEW, MIN_TIP, canMinimize, chatMin, setChatMin } from "../layout/top.js";
 import { agDashboard } from "./own-views.js";
+import { TASK_KINDS } from "./side/marks";
 
 // ------------------------------------------------------------------ the chat
 // The actor's history, as the chosen chat view draws it (chat views, below), in a frame that follows
@@ -70,20 +71,30 @@ function chatCard(info) {
   // draw: what they do may be the draw's.
   const same = !tools.length && heading.length === controls.children.length && heading.every((n, i) => n.isEqualNode(controls.children[i]));
   if (!same && !view.mini) controls.replaceChildren(...heading);   // minimized: the head hidden, kept as it was
-  const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1", "data-morph": "",
-    role: "log", "aria-label": `Chat history, ${view.name}` });
+  // a view that draws its frame itself (the Chat view: React's, features/chat/mount.tsx), the same node from draw to draw
+  const mounted = view.mount ? safely(() => view.mount(ctx), true) : null;
+  const frame = mounted && mounted[0] && mounted[0].id === "chat-list" ? mounted[0]
+    : el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1", "data-morph": "",
+      role: "log", "aria-label": `Chat history, ${view.name}` });
   // its blocks, put in by patch(): a block kept from the last draw is still on the page, and is left there
-  const blocks = frame.kids = safely(() => view.render(ctx), true);
+  const blocks = frame === (mounted && mounted[0]) ? [] : frame.kids = mounted || safely(() => view.render(ctx), true);
   if (view.feed !== "none" && view.chat !== false) {  // a view that draws the history: what waits, or that there is none yet
     if (view.queued !== false) for (const q of ctx.queued) blocks.push(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
     if (!data.items.length && !data.pending.length && !ctx.queued.length && !view.greets)
       blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation. Run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
-  if (!view.mini) card.append(frame);
+  // a frame of the view's own (the Chat view's) held apart from the card being built, in its place (`kids`): building
+  // the card does not take it from the page -- patch() finds it where it is, and leaves it there
+  const holder = frame === (mounted && mounted[0]) ? el("i") : null;
+  const built = () => {
+    if (holder) { card.kids = [...card.childNodes].map((n) => n === holder ? frame : n); card.replaceChildren(); }
+    return card;
+  };
+  if (!view.mini) card.append(holder || frame);
   if (view.chat === false) {                         // not the conversation: no message box, and no word that there is none
     card.append(...safely(() => view.footer && view.footer(ctx)));
-    return card;
+    return built();
   }
   if (view.feed !== "none" && view.asking !== false) {          // the terminal shows it itself
     const note = errorNote(info) || askingNote(info, !view.readOnly) || answeredNote(info); if (note) card.append(note); }
@@ -92,7 +103,7 @@ function chatCard(info) {
     // one line, even in a narrow pane: the whole reason in its tooltip (and on the Terminal's cover, which has room)
     if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", title: readOnlyWhy(), text: "Read only. Can't be messaged from here." }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
-    return card;
+    return built();
   }
   // Sending, for every view's message box: the box is the view's (`composer`), what it sends and the
   // error it gets are the tab's.
@@ -198,12 +209,11 @@ function chatCard(info) {
   }
   card.append(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
-  return card;
+  return built();
 }
 // What the harness still runs in the background for the actor (data.py's `background`): the commands,
 // agents, monitors and workflows it started and has not been told have ended, each with what it is for and its
 // last sign of life. Null when none runs. `term`: drawn as a terminal's status line.
-const TASK_KINDS = { command: "Command", agent: "Agent", monitor: "Monitor", workflow: "Workflow" };
 function backgroundNote(info, term = false) {
   const tasks = (info && info.background) || [];
   if (!tasks.length) return null;

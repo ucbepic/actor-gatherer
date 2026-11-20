@@ -1,26 +1,31 @@
 // Moving about the conversation as the reader does: a turn's replies or its files shown or folded from its message,
 // that message kept where it was on the screen; and the earlier turns pulled in as the reader scrolls up past the top,
 // what they look at kept in place.
+import { flushSync } from "react-dom";
 import { placed } from "./follow";
 import { TURNS_MORE, useTurns } from "./store";
-import type { ChatFeed, ChatHost } from "./types";
+import type { ChatFeed } from "./types";
 
-/** The feed and host of the turn list's last draw (mount.tsx): what the page shows now. */
-export const drawn: { feed: ChatFeed | null; host: ChatHost | null } = { feed: null, host: null };
+/** The feed of the turn list's last draw by the page (mount.tsx): what the page shows now. */
+export const drawn: { feed: ChatFeed | null } = { feed: null };
 
 const talkNow = () => document.querySelector<HTMLElement>("#main .fl-talk");
 
 /**
- * A turn's files and commands, or its replies, shown or folded from its message (`change`, which draws the page again):
- * that message kept where it was on the screen -- not the turn picked brought into view, as a new pick is (Turns's
- * effect, by the store's `shown`).
+ * A turn's files and commands, or its replies, shown or folded from its message (`change`: drawn at once, or -- a turn's
+ * files loaded first -- once the page draws them): that message kept where it was on the screen -- not the turn picked
+ * brought into view, as a new pick is (Turns's effect, by the store's `shown`).
  */
 export async function keepTurn(n: number, change: () => unknown): Promise<void> {
   const top = (x: Element) => x.getBoundingClientRect().top,
     talk = talkNow();
   const turn = document.getElementById(`fl-turn-${n}`),
     y = talk && turn ? top(turn) - top(talk) : null;
-  await change();
+  let changed: unknown;
+  flushSync(() => {
+    changed = change();
+  });
+  await changed;
   const feed = drawn.feed;
   if (feed) useTurns.getState().setShown(`${feed.key}:${feed.data.turn}`);
   const now = talkNow(),
@@ -29,13 +34,11 @@ export async function keepTurn(n: number, change: () => unknown): Promise<void> 
   if (now) placed(now); // not at its end, if it is no longer: the message stays where it is as the box changes size
 }
 
-/** More of the conversation above where the reader is (`change`, then the page drawn again), what they look at kept in
- * place. */
+/** More of the conversation above where the reader is (`change`, drawn at once), what they look at kept in place. */
 function showMore(change: () => void) {
   const n = talkNow(),
     below = n ? n.scrollHeight - n.scrollTop : 0;
-  change();
-  drawn.host?.redraw();
+  flushSync(change);
   const again = talkNow();
   if (n && again) again.scrollTop = again.scrollHeight - below;
 }
