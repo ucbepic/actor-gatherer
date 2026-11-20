@@ -19,6 +19,10 @@ export interface Home {
 
 /** A harness, as the dashboard reads it (harness_kit's fields). */
 export interface HarnessInfo {
+  /** Its name, as the page says it. */
+  label?: string;
+  /** Where it keeps its memory of a directory (a pattern its folders end with): the files' tree marks it. */
+  memory_folder?: string;
   /** A block its model writes in a reply that its terminal draws apart (codex's proposed plan): core/ui/md.ts. */
   reply_block?: { open: string; close: string; title: string } | null;
   /** How its terminal says a turn stopped short (harness_kit's `stopped_says`): features/chat's stopped line. */

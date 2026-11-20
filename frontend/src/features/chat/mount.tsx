@@ -1,79 +1,68 @@
-// The Chat view's turn list (ag_dashboard/DESIGN.md, A5), drawn where the old page's Chat view puts it (features/chat/files-view.js's
-// filesRender, which hands it its feed and host at each draw): into a node of each actor's own, .fl-talk, the same from
-// draw to draw -- the page's patch() finds it where it is and leaves it there (its data-sig: the actor's) -- so its React
-// root stays and React changes in place only what changed, the actor's stage among it keeping its animations running.
-// Drawn when the page draws, and at once (flushSync): the page's keepingPlace() keeps the conversation's scroll, and its
-// end followed, around the draw as it did; and its end kept as its box changes size (follow.ts).
+// The Chat view (ag_dashboard/DESIGN.md, A5), drawn where the old page's chat card puts its frame (features/chat/chat.js's
+// chatCard, through the view's `mount`): each actor's frame a node of its own, #chat-list, the same from draw to draw --
+// the page's patch() finds it where it is and leaves it there (its data-sig) -- so its React root stays and React
+// changes in place only what changed, the actor's stage among it keeping its animations running. Drawn as the page
+// draws, at once (flushSync): the page's keepingPlace() keeps its places around the draw, and follows its ends. Between
+// the page's draws, it draws itself as what it shows changes (ChatMain.tsx).
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
+import { ChatMain } from "./ChatMain";
 import { ChatContext } from "./context";
-import { followEnd, unfollow } from "./follow";
-import { FirstTurns } from "./Hello";
 import { drawn, listenForPulls } from "./pull";
-import { TURNS_SHOWN, useTurns } from "./store";
-import { Turns } from "./Turns";
+import { commandsAfresh } from "./side/Side";
+import { sideFolded } from "./side/store";
+import { TURNS_SHOWN, useOnPage, useTurns } from "./store";
 import type { ChatFeed, ChatHost } from "./types";
-import { AT_WORK, currentOf, openingOf, pickedOf, turnsOf } from "./view";
+import { pickedOf, turnsOf } from "./view";
 
-/** The conversations kept drawn, each in its root, so one shown again is as it was at once (its stage's animations
- * running): those of the actors shown lately, as many as the Chat view keeps the data of (files-view.js's KEPT_ACTORS),
- * the one shown last last. An older one, not on the page, is unmounted: each holds the feed it was last drawn from. */
+/** The frames kept drawn, each in its root, so one shown again is as it was at once (its stage's animations running):
+ * those of the actors shown lately, as many as Chat keeps the data of (data.ts's KEPT_ACTORS), the one shown last
+ * last. An older one, not on the page, is unmounted: each holds the feed it was last drawn from. */
 export const KEPT_TALKS = 12;
-const talks = new Map<string, { node: HTMLDivElement; root: Root }>();
+const frames = new Map<string, { node: HTMLDivElement; root: Root }>();
 
-/** How many conversations are kept drawn (for tests). */
-export const talksKept = (): number => talks.size;
+/** How many frames are kept drawn (for tests). */
+export const talksKept = (): number => frames.size;
 
-/** The actor's conversation drawn from `feed`: its node, for the page to put where it goes. */
-export function drawTurns(feed: ChatFeed, host: ChatHost): HTMLDivElement {
+/** The actor's frame, as the chat card has it (chat.js's frame, the Chat view's: `name` its name), drawn from `feed`:
+ * its node, for the page to put where it goes. */
+export function drawChat(feed: ChatFeed, host: ChatHost, name = "Chat"): HTMLDivElement {
   listenForPulls();
-  let talk = talks.get(feed.key);
-  if (talk) talks.delete(feed.key);
+  let frame = frames.get(feed.key);
+  if (frame) frames.delete(feed.key);
   else {
     const node = document.createElement("div");
-    talk = { node, root: createRoot(node) };
-    followEnd(node);
+    frame = { node, root: createRoot(node) };
   }
-  talks.set(feed.key, talk);
-  for (const [k, t] of talks) {
-    if (talks.size <= KEPT_TALKS) break;
-    if (k === feed.key || t.node.isConnected) continue;
-    t.root.unmount();
-    unfollow(t.node);
-    talks.delete(k);
+  frames.set(feed.key, frame);
+  for (const [k, f] of frames) {
+    if (frames.size <= KEPT_TALKS) break;
+    if (k === feed.key || f.node.isConnected) continue;
+    f.root.unmount();
+    frames.delete(k);
   }
+  useOnPage.setState({ key: feed.key });
   useTurns.getState().forFiles(feed.files);
-  const turns = turnsOf(feed),
-    opening = openingOf(feed),
-    cur = currentOf(feed);
-  // the latest turn no longer at work, as the view has it (opening, at work or asking: an Esc sent stops it): the Esc
-  // sent for it is over too
-  let interrupting = feed.interrupting;
-  if (interrupting && cur && !AT_WORK.has(cur.state)) {
-    host.interruptOver();
-    interrupting = false;
-  }
+  const turns = turnsOf(feed);
+  if (feed.afresh) commandsAfresh(); // its view opened again: each turn's commands at their end again as it shows
   if (turns.length) {
-    if (feed.afresh) useTurns.getState().setShown(null); // its view opened again: the turn shown brought into view again
+    if (feed.afresh) useTurns.getState().setShown(null); // and the turn shown brought into view again
     // the first turn drawn: the latest few, at first; then where the reader pulled it to, or the turn they picked. Kept
     // as the conversation grows: a new turn is drawn at the end, none taken from the top.
     const first = useTurns.getState().first ?? turns.length - TURNS_SHOWN;
     useTurns.getState().setFirst(Math.max(0, Math.min(pickedOf(feed, turns) ?? 0, first)));
   }
-  const node = talk.node;
-  // its box as the old page's: the turns', kept where the reader left it and following its end; or, before them, the
-  // turns the session opened, or the actor's hello
-  node.className = turns.length || opening ? "fl-talk" : "fl-talk hi";
-  if (turns.length) Object.assign(node.dataset, { keep: "files-talk", follow: "1" });
-  else for (const k of ["keep", "follow"]) delete node.dataset[k];
-  node.dataset.sig = encodeURIComponent(feed.key);
+  const node = frame.node;
+  Object.assign(node, { className: "chat-frame files", id: "chat-list" });
+  Object.assign(node.dataset, { keep: "chat-list", follow: "1", sig: encodeURIComponent(feed.key) });
+  node.setAttribute("role", "log");
+  node.setAttribute("aria-label", `Chat history, ${name}`);
   drawn.feed = feed;
-  drawn.host = host;
-  const chat = { feed, host, folds: useTurns.getState() };
+  const chat = { feed, host, folds: useTurns.getState(), sideFolded: sideFolded() };
   flushSync(() =>
-    talk.root.render(
+    frame.root.render(
       <ChatContext value={chat}>
-        {turns.length ? <Turns interrupting={interrupting} /> : <FirstTurns interrupting={interrupting} />}
+        <ChatMain frame={node} />
       </ChatContext>,
     ),
   );

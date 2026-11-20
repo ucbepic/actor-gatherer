@@ -6,7 +6,8 @@ import { testPage, turn } from "./testing";
 describe("conversations kept drawn", () => {
   it("keeps the latest few, letting go of older ones off the page", () => {
     const first = testPage([turn(0)]).page;
-    const node = first.draw();
+    first.draw();
+    const node = first.frame!;
     expect(node.textContent).not.toBe("");
     for (let i = 0; i < KEPT_TALKS + 3; i++) testPage([turn(0)]).page.draw(); // each another actor, shown in its place
     expect(talksKept()).toBe(KEPT_TALKS);
@@ -16,7 +17,8 @@ describe("conversations kept drawn", () => {
 
   it("keeps the one on the page however many come after", () => {
     const shown = testPage([turn(0)]);
-    const node = shown.page.draw();
+    shown.page.draw();
+    const node = shown.page.frame!;
     const aside = document.body.appendChild(document.createElement("div"));
     aside.append(node); // still on the page, moved out of #main
     for (let i = 0; i < KEPT_TALKS + 2; i++) testPage([turn(0)]).page.draw();

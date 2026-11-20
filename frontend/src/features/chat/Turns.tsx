@@ -7,11 +7,12 @@
 // its state -- at work, done, stopped -- is the server's view's (view.ts), one moment's for all of them.
 import { useLayoutEffect } from "react";
 import { plural } from "../../core/format";
+import { TurnBoundary } from "./Boundary";
 import { useChat } from "./context";
 import { placed } from "./follow";
 import { OpenedTurn } from "./Pending";
 import { drawn } from "./pull";
-import { useTurns } from "./store";
+import { TURNS_SHOWN, useOnPage, useTurns } from "./store";
 import { Turn, type TurnPlace } from "./Turn";
 import type { Turn as TurnData } from "./types";
 import { currentOf, nowWords, openingOf, pickedOf, turnsOf } from "./view";
@@ -22,7 +23,8 @@ export function Turns({ interrupting }: { interrupting: boolean }) {
     last = turns.length - 1,
     cur = currentOf(feed),
     opening = openingOf(feed);
-  const first = folds.first ?? 0;
+  // the first turn drawn (the mount's, as the page drew it; the latest few until it has)
+  const first = folds.first ?? Math.max(0, turns.length - TURNS_SHOWN);
   const answered = turns.filter((t) => (t.replies || []).length || t.calls).map((t) => t.n);
   const foldsAt = answered.length < 2 ? 0 : answered[answered.length - 2]; // the turns before this one fold
   const placeOf = (t: TurnData): TurnPlace => {
@@ -44,9 +46,10 @@ export function Turns({ interrupting }: { interrupting: boolean }) {
   // the turn shown brought into view, once each time one is shown: the latest at its end, one picked at its top
   useLayoutEffect(() => {
     const at = `${feed.key}:${picked}`;
-    if (useTurns.getState().shown === at) return;
+    const mine = () => useOnPage.getState().key === feed.key; // its frame the one on the page
+    if (useTurns.getState().shown === at || !mine()) return;
     requestAnimationFrame(() => {
-      if (useTurns.getState().shown === at) return; // already (keepTurn: kept where the reader had it)
+      if (useTurns.getState().shown === at || !mine()) return; // already (keepTurn: kept where the reader had it)
       const cur = document.querySelector<HTMLElement>(".fl-talk .fl-turn.on");
       if (!cur || !cur.parentElement) return;
       useTurns.getState().setShown(at);
@@ -59,7 +62,9 @@ export function Turns({ interrupting }: { interrupting: boolean }) {
     <>
       {first ? <div className="fl-earlier">{`${plural(first, "earlier turn")} · scroll up for more`}</div> : null}
       {turns.slice(first).map((t) => (
-        <Turn key={t.n} t={t} place={placeOf(t)} />
+        <TurnBoundary key={t.n} n={t.n} of={t}>
+          <Turn t={t} place={placeOf(t)} />
+        </TurnBoundary>
       ))}
       {opening ? <OpenedTurn o={opening} interrupting={interrupting} /> : null}
     </>

@@ -63,17 +63,14 @@ export function Turn({ t, place }: { t: TurnData; place: TurnPlace }) {
   const earlier = !latest,
     atFirst = !earlier || t.n >= place.folds || feed.earlierTurns === "whole";
   const whole = folds.flips.has(t.n) ? folds.flips.get(t.n)! : atFirst;
-  const showing = on && !feed.sideFolded;
-  const flip = () =>
-    keepTurn(t.n, () => {
-      useTurns.getState().flip(t.n, whole, atFirst);
-      host.redraw();
-    });
+  const folded = useChat().sideFolded;
+  const showing = on && !folded;
+  const flip = () => keepTurn(t.n, () => useTurns.getState().flip(t.n, whole, atFirst));
   // its files and commands at the left (the turn picked; folded away when they already show)
   const side = () =>
     keepTurn(t.n, () => {
       if (showing) return host.foldSide(true);
-      if (feed.sideFolded) host.foldSide(false, on);
+      if (folded) host.foldSide(false);
       if (!on) return host.setFilesTurn(t.n);
     });
   const sideTip = showing ? "Fold this turn's files and commands" : "Show this turn's files and commands";
@@ -166,10 +163,7 @@ export function Turn({ t, place }: { t: TurnData; place: TurnPlace }) {
                     className="fl-more"
                     aria-expanded={hidden ? "false" : "true"}
                     title={hidden ? "Show all earlier messages" : "Fold earlier messages"}
-                    onClick={() => {
-                      useTurns.getState().toggleOpened(t.n);
-                      host.redraw();
-                    }}
+                    onClick={() => useTurns.getState().toggleOpened(t.n)}
                   >
                     <span className="sg" aria-hidden="true">
                       {hidden ? "+" : "−"}

@@ -1,9 +1,9 @@
-// The turn list's own state, kept across the page's draws and across views: which latest replies a click folded, which
+// The Chat view's own state, kept across the page's draws and across views: which latest replies a click folded, which
 // turns show all their earlier messages, the turns before the latest a click showed or folded against the setting, the
-// first turn drawn, and the turn last brought into view. The folds are one actor's at a time: they start over when the
-// page's files feed does (`files`, the old page's state.files, made anew for each actor picked), as they did when they
-// were kept in it. Read by the mount at each draw and handed down (mount.tsx): the turn list renders when the page
-// draws, not on its own, so a change here is followed by the page's redraw (the host's), as a click on it was.
+// first turn drawn, and the turn last brought into view; the file picked in the turn's files, and the folders folded in
+// their tree. One actor's at a time: they start over when the page's files feed does (`files`, the old page's
+// state.files, made anew for each actor picked), as they did when they were kept in it. A change here draws the view
+// again (Chat.tsx reads it), nothing else of the page.
 import { create } from "zustand";
 
 /** The latest turns drawn at first; and how many more each pull up past the top draws. */
@@ -19,6 +19,9 @@ export interface Folds {
   flips: ReadonlyMap<number, boolean>;
   /** the first turn drawn: the latest few at first; then where the reader pulled it to, or the turn they picked */
   first: number | null;
+  /** the file picked in the turn's files, shown beside the conversation; the folders folded in their tree */
+  sel: string | null;
+  dirs: ReadonlySet<string>;
 }
 
 interface TurnsState extends Folds {
@@ -38,9 +41,20 @@ interface TurnsState extends Folds {
   clearFlips: () => void;
   setFirst: (first: number) => void;
   setShown: (at: string | null) => void;
+  /** a file picked, or none */
+  pick: (path: string | null) => void;
+  /** a folder of the tree folded, or opened again */
+  foldDir: (path: string) => void;
 }
 
-const fresh = (): Folds => ({ closed: new Set(), opened: new Set(), flips: new Map(), first: null });
+const fresh = (): Folds => ({
+  closed: new Set(),
+  opened: new Set(),
+  flips: new Map(),
+  first: null,
+  sel: null,
+  dirs: new Set(),
+});
 
 export const useTurns = create<TurnsState>()((set, get) => ({
   ...fresh(),
@@ -73,7 +87,19 @@ export const useTurns = create<TurnsState>()((set, get) => ({
   clearFlips: () => set({ flips: new Map() }),
   setFirst: (first) => set({ first }),
   setShown: (shown) => set({ shown }),
+  pick: (sel) => set({ sel }),
+  foldDir: (path) =>
+    set((st) => {
+      const dirs = new Set(st.dirs);
+      if (dirs.has(path)) dirs.delete(path);
+      else dirs.add(path);
+      return { dirs };
+    }),
 }));
+
+/** The actor whose frame the page draws now (mount.tsx): the others kept drawn stay as they were until shown again --
+ * the turn list's state here is one actor's at a time. */
+export const useOnPage = create<{ key: string | null }>()(() => ({ key: null }));
 
 /** When this page first drew each turn opening (Pending.tsx's `seeing`), by the actor and its send: it grows in from then,
  * and the turn stored in its place goes on growing from there. */
