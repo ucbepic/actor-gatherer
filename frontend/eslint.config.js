@@ -37,11 +37,6 @@ export default tseslint.config(
   },
   { files: PAGE_LONG, rules: { "max-lines": "off" } },
   {
-    // xterm.js and its addons: vendored scripts the page loads before its own (index.html's <!--VENDOR-->)
-    files: ["src/features/terminal/terminal.js"],
-    languageOptions: { globals: { Terminal: "readonly", FitAddon: "readonly", WebglAddon: "readonly" } },
-  },
-  {
     files: ["src/**/*.{ts,tsx}", "src/core/**/*.js", "src/*.js"],
     plugins: { boundaries },
     settings: {

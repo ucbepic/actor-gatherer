@@ -1,7 +1,7 @@
 # The dashboard on a standard stack: plan
 
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
-the views share, in `core/ui/`; Chat's turn list, in `features/chat/`). A1's build step, the server serving it and `publish.yml` building it come with A3, the
+the views share, in `core/ui/`; Chat; the list; Details, Transcript, Messages, History and Terminal's frame). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
 
@@ -488,6 +488,12 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
   summary and box were. history.js only registers the view (and keeps `enc`, which the list's modes.js imports); it is
   off the long files' list. Not virtualized: the list keeps its rows' `content-visibility`, and the browser's find and
   the specs read every row. Vitest: `history.test.tsx`.
+- **Terminal**: xterm.js as it was, wrapped -- the terminal's session (`terminal/term.ts`: one xterm at a time, its node
+  kept across draws, its stream, what is typed sent in order; TypeScript now, what it asks of the page handed to it,
+  `setTermHost`) and the view's frame React's (`mount.tsx`'s `drawTerminal`: xterm's node first in it, never React's,
+  the cover after it, `TerminalView.tsx`). terminal.js registers the view and hands on `term`, `termFor`, `termListen`,
+  `termWebgl` and `fullscreenFor` to the old modules that use them (the shell's pane, the list, the panes, sending).
+  Vitest: `terminal.test.tsx`.
 
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
