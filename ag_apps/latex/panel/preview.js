@@ -6,6 +6,10 @@
 // edShowFile). Hidden until it is first run, or opened by its button; its × hides it again. A LaTeX build's errors,
 // warnings and bad boxes (its log's, read by the backend: runs.problems) are listed under Problems, each opening its
 // file at its line, and marked on those lines in the LaTeX editor (edProblems).
+import { agApp, el } from "/_ag/lib/fileedit/page.js";
+import { ed, edShowFile } from "/_ag/lib/fileedit/editor.js";
+import { edExecute, edProblems, pvPath } from "./latex.js";
+
 let pvApi = null;
 // What this LaTeX editor's preview showed, kept in this browser (as its file is: edKeepFile), so that, its panel drawn again
 // (its task left and come back to, the page reloaded), it opens as it was left: shown or not; for the run it showed,
@@ -40,9 +44,9 @@ function pvShow(on) {
   pvKeep({ shown: !!on }); pvFlush();
   if (on && pvApi) pvApi.shown();                    // what it is, for the file open (or the folder shown), once
 }
-async function pvRun(d) { pvShow(true); if (pvApi) await pvApi.run(d); }
-async function pvLocate(d) { pvShow(true); if (pvApi) await pvApi.locate(d); }
-function pvMount(box) {
+export async function pvRun(d) { pvShow(true); if (pvApi) await pvApi.run(d); }
+export async function pvLocate(d) { pvShow(true); if (pvApi) await pvApi.locate(d); }
+export function pvMount(box) {
   box.replaceChildren(el("div", { id: "pv", class: "pv" },
     el("div", { class: "pv-edge", "aria-hidden": "true" }),
     el("div", { class: "pv-top" }, el("div", { class: "pv-h" }), el("div", { class: "pv-cmd", hidden: "" })),
@@ -386,7 +390,7 @@ function pvMake(ag, root) {
     const was = pv.probs;
     pv.probs = p || null;
     if (!was || !p || was.at !== p.at) { pv.probsOpen.clear(); pv.probsSig = ""; }
-    if (typeof edProblems === "function") edProblems(p ? p.list : [], p ? p.at : 0);
+    edProblems(p ? p.list : [], p ? p.at : 0);
   }
   const count = (level) => pv.probs ? pv.probs.list.filter((p) => p.level === level).length : 0;
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;

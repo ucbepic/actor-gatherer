@@ -1,19 +1,24 @@
 // ------------------------------------------------------------------ a text file edited plain
-// For an app that edits its files plain (`ed.plain`: the Files app's, set by its own script): a text file read whole
-// (edit/text: its text and version), edited in this page alone, and saved whole (edit/put) -- by Save, ⌘S, or Auto-save
-// a moment after the last edit. No live document, no mode, no conflict zone, no actors' branches. Its version is looked
-// at on each tick (edTick): changed on disk with nothing unsaved here, the file is read again, the cursor and the view
-// kept where they were; with something unsaved here, the reader chooses -- Reload (theirs dropped) or Keep mine (saved
-// over the change) -- and no save goes over the change until they do.
+// For an app that edits its files plain (the Files app, which gives edPlain to edAdd as its `plain` part): a text
+// file read whole (edit/text: its text and version), edited in this page alone, and saved whole (edit/put) -- by Save,
+// ⌘S, or Auto-save a moment after the last edit. No live document, no mode, no conflict zone, no actors' branches. Its
+// version is looked at on each tick (edTick): changed on disk with nothing unsaved here, the file is read again, the
+// cursor and the view kept where they were; with something unsaved here, the reader chooses -- Reload (theirs dropped)
+// or Keep mine (saved over the change) -- and no save goes over the change until they do.
+import { el, get, ICONS, MAC, post, strokeIcon } from "./page.js";
+import { ed, edAddedHead, edAutoLater, edBase, edByChip, edChangedChip, edEntry, edHead, edOpen,
+  edRel, edSave, edSetAuto, edSetWrap, edView, edWriters } from "./editor.js";
+import { edRecentFetch } from "./recent.js";
 
-// The session (ed.s) of a file opened plain, its view made -- edOpen's, in place of a live document.
+// The session (ed.s) of a file opened plain, its view made -- edOpen's, in place of a live document; its `plain`, this
+// part (edPlain).
 async function edPlainOpen(path, how, kept, info, A, turn) {
   let got;
   try { got = await get(`/api/edit/text?${new URLSearchParams({ path, root: "/" })}`); }
   catch (e) { if (ed.turn === turn) { ed.err = e.message; edHead(); } return; }
   if (ed.turn !== turn || ed.s) return;
   if (got.missing) { ed.err = "No such file."; edHead(); return; }
-  const s = ed.s = { A, plain: true, path, root: "/", view: null, info, how, at: kept ? kept.at : null, text: got.text,
+  const s = ed.s = { A, plain: edPlain, path, root: "/", view: null, info, how, at: kept ? kept.at : null, text: got.text,
     version: got.version, saved: got.text, err: "", note: "", out: [], sending: false, boxes: new Map(), stale: false,
     loading: false, saving: null, checking: false, epoch: "plain",
     state: { dirty: false, missing: false, conflicts: [], zone: [], marks: [], changed: 0 } };
@@ -127,3 +132,29 @@ function edPlainStatus(s) {
   if (s.saving) return [["", "Saving…"], null];
   return [st.dirty ? (ed.auto ? ["", "Saving…"] : ["warn", "Unsaved"]) : ["ok", "Saved"], null];
 }
+// The header of a file open plain (edHead's): its path, its status (and the reader's choice, changed on disk under their
+// unsaved edits), the actors that changed it lately, wrap, Auto-save, the app's own, Save.
+function edPlainHead(s) {
+  const st = s.state, [[cls, said], choice] = edPlainStatus(s), writers = edWriters(edEntry(ed.file));
+  return [
+    el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
+    el("span", { class: `ed-status ${cls}`, role: "status", text: said }), choice,
+    edByChip(writers), s.stale ? null : edChangedChip(s, writers),
+    s.note ? el("span", { class: "ed-status bad", text: s.note }) : null,
+    el("span", { class: "grow", style: "flex: 1" }),
+    el("button", { type: "button", class: "ed-wrap" + (ed.wrap ? " on" : ""), "aria-pressed": ed.wrap ? "true" : "false",
+      title: ed.wrap ? "Wrapping long lines · click to turn off" : "Wrap long lines",
+      "aria-label": "Wrap long lines", onclick: () => edSetWrap(!ed.wrap) }, strokeIcon(ICONS.wrap, 15)),
+    el("label", { class: "ed-auto", title: "Save a moment after each edit. Paused while the file has changed on disk under your edits." },
+      el("input", { type: "checkbox", checked: ed.auto ? "" : null, onchange: (ev) => edSetAuto(ev.target.checked) }), "Auto-save"),
+    s.info && s.info.kind !== "text" ? el("button", { type: "button", class: "ed-mode", title: `Show ${edBase(s.path)} as it is`,
+      onclick: () => edOpen(s.path, "view") }, strokeIcon(ICONS.page, 13), "View") : null,
+    ...edAddedHead(s),
+    el("button", { type: "button", class: "primary", title: `Save (${MAC ? "⌘S" : "Ctrl+S"})`,
+      disabled: st.dirty || st.missing ? null : "", onclick: () => edSave(s) }, "Save"),
+  ].filter(Boolean);
+}
+// The part, as edAdd takes it (editor.js): edOpen opens a text file with it, and the editor asks it, of a file it opened,
+// for each edit, each tick, a save, Auto-save, the file closed, and the header.
+export const edPlain = { open: edPlainOpen, edited: edPlainEdited, check: edPlainCheck, save: edPlainSave, due: edPlainDue,
+  gone: edPlainGone, head: edPlainHead };

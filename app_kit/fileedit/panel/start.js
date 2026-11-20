@@ -1,10 +1,19 @@
-// The panel, started (the last of its scripts: an app's own parts given to edAdd before it): connected to the dashboard
-// around it (app_kit's SDK), told the actors as its list has them (ag.actors, kept in `state.home`), the theme (each
-// change also an "ag-theme" event, as the dashboard's page sent one), and what the page asks of it -- open-file (a file
-// shown, at a line), a link to a file clicked: edShowFile, the one way a file is opened from outside -- then drawn
-// (edMount) on its folder.
-(async () => {
-  const ag = agApp = await AgApp.connect();
+// The panel, started -- by the app's own module, the panel's entry, once it has given its parts to edAdd: connected to
+// the dashboard around it (app_kit's SDK), told the actors as its list has them (ag.actors, kept in `state.home`), the
+// theme (each change also an "ag-theme" event, as the dashboard's page sent one), and what the page asks of it --
+// open-file (a file shown, at a line), a link to a file clicked: edShowFile, the one way a file is opened from outside --
+// then drawn (edMount) on its folder.
+import { get, setAgApp, state } from "./page.js";
+import { ed, edAdded, edAgentMarks, edBranches, edConflicts, edHead, edMount, edShowFile,
+  edShowFolder } from "./editor.js";
+import { edTree } from "./editor-tree.js";
+import { edRecentStart } from "./recent.js";
+
+export async function edStart() {
+  window.ed = ed;                                    // what the editor has (editor.js's), as the browser tests read it
+  edRecentStart();
+  const ag = await AgApp.connect();
+  setAgApp(ag);
   window.editor = ag;                                // the browser tests drive it as the page would
   const takeActors = (got) => {
     if (!got) return;
@@ -37,4 +46,4 @@
   get("/api/mode").then((got) => { ed.mode = got.mode; edHead(); }).catch(() => {});
   edMount();
   document.body.dataset.ready = "1";
-})();
+}
