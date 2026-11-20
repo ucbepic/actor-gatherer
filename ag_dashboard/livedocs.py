@@ -71,6 +71,7 @@ except ImportError:                                 # the page says what to inst
     AVAILABLE = False
 
 POLL = 0.4                  # seconds between looks at each open file
+STOP_WAIT = 10.0            # seconds `close` waits for a look under way to end
 LINGER = 30.0               # seconds a file with nothing unsaved stays open after its last page goes
 MAX_BYTES = 2_000_000       # the largest file opened
 MAX_ENTRIES = 2000          # the most entries listed of one directory
@@ -1187,7 +1188,10 @@ class LiveDocs:
                     self.rooms.pop(real, None)
 
     def close(self) -> None:
+        """No more looks -- one under way ended first (STOP_WAIT at most) -- and every page's connection ended."""
         self.stop.set()
+        if self.thread is not threading.current_thread():
+            self.thread.join(STOP_WAIT)
         for room in list(self.rooms.values()):
             for conn in list(room.conns.values()):
                 conn.queue.put(None)

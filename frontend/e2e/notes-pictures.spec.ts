@@ -21,6 +21,13 @@ async function read(page: Page, instance: string, title: string) {
   return got.content as { type: string; text?: string; mimeType?: string; data?: string }[];
 }
 
+/** The picture's Caption button pressed as a reader does: the picture hovered, its tools shown, the button clicked
+ * where it is -- not forced, so the click waits until the button, not what moved over it, is what it lands on. */
+async function caption_(panel: FrameLocator) {
+  await panel.locator(".blk[data-type=image] .pic").hover();
+  await panel.locator(".blk[data-type=image] .pic-tools button", { hasText: "Caption" }).click();
+}
+
 /** A PNG of w x h drawn in the panel, as a File: pasted into the line the caret is in, or dropped on the page at y. */
 async function paste(panel: FrameLocator, w: number, h: number) {
   await panel.locator("body").evaluate(
@@ -70,7 +77,7 @@ test("a picture pasted is kept and shown, captioned and sized, read by agents, a
   await expect(panel.locator("#blocks > .blk").nth(2).locator(".tx")).toBeFocused();
 
   // its caption: typed under it; Enter, a line below it
-  await panel.locator(".blk[data-type=image] .pic-tools button", { hasText: "Caption" }).click({ force: true });
+  await caption_(panel);
   await page.keyboard.type("Loss by step");
   await page.keyboard.press("Enter");
   await expect.poll(() => types(panel)).toEqual(["text", "image", "text", "text"]);
@@ -108,7 +115,7 @@ test("⌘Z takes back a picture's width, its caption, and the picture pasted", a
   await page.keyboard.press("Enter");
   await paste(panel, 200, 100);
   await expect.poll(() => types(panel)).toEqual(["text", "image", "text"]);
-  await panel.locator(".blk[data-type=image] .pic-tools button", { hasText: "Caption" }).click({ force: true });
+  await caption_(panel);
   const caption = panel.locator(".blk[data-type=image] .tx.cap");
   await expect(caption).toBeFocused(); // typed only once there: a slow page took it into another line before
   await page.keyboard.type("A plot");

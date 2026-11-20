@@ -1021,7 +1021,8 @@ class Sessions:
     def discard(self, session_id: str) -> None:
         """A session that never started, forgotten (module doc): its row deleted, and the dashboard's rows of it as an
         actor (store.discard_actor). Refused while a process of the dashboard's runs for it, or a message waits for one, and
-        once a turn of it has ended; that its gatherer has nothing of it is the caller's to tell (data.py's)."""
+        once a turn of it has ended; that its gatherer has no conversation of it is the caller's to tell (data.py's
+        `has_conversation`)."""
         with self.lock:
             s = self._row(session_id)
             if s is None:

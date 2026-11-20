@@ -5,6 +5,7 @@ and the hook servers it starts."""
 import json
 import os
 import unittest
+from unittest import mock
 
 from ag.integrations.harnesses.codex.setup import launch as codex
 from ag.integrations.harnesses.codex.setup.hook_servers import HookServers, _listening, config_part
@@ -211,6 +212,22 @@ class Lifecycle(Home):
         code, out, _ = self.run_ag("stop")
         self.assertEqual(code, 0)
         self.assertEqual(servers.running(), [])
+
+    def test_not_stopped_from_a_session_that_calls_through_it_unless_forced(self):
+        port = 48000 + os.getpid() % 1000
+        servers = HookServers(self.home)
+        server = servers.start(codex.SETUP, "http://127.0.0.1:9", port)
+        self.addCleanup(servers.stop, server)
+        with mock.patch.dict(os.environ, {"OPENAI_BASE_URL": f"{server.url}/h/g/r/1"}):
+            code, out, err = self.run_ag("stop")
+            self.assertEqual(code, 1)
+            self.assertIn(f"calls its model through {server.url}", err)
+            self.assertEqual([s.port for s in servers.running()], [server.port])        # still serving it
+            code, out, _ = self.run_ag("stop", "--force")
+        self.assertEqual(code, 0)
+        self.assertIn(f"stopped the hook server :{server.port}", out)
+        self.assertEqual(servers.running(), [])
+        self.assertEqual(self.run_ag("stop", "--now")[0], 1)                         # no other option
 
     def test_a_launcher_lists_and_stops_only_its_own_harness_servers(self):
         port = 45000 + os.getpid() % 1000
