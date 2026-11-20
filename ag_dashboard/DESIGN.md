@@ -342,6 +342,21 @@ old page's "Files view") is React now; what is around it is still the old page's
   `stoppedLine`, on the words in `core/ui/harness-info.json`, which that test now checks are harness_kit's),
   `core/format.test.ts`.
 
+**A5, the Apps page in React (`features/apps/catalog/`), and Radix with it.** The Apps page (Nov 17) had been built by
+hand again, with its own `el()`, menu and modal; it was the smallest view standing alone, so it came first, to set the
+pattern the list and Chat follow:
+- **Its state in a store** (`catalog/store.ts`, Zustand): the apps read, the search, the app picked, the note at the
+  top, and the dialog open as one typed value (`Dialog`). Every action (install, update, uninstall, a setting, an
+  agent's request answered) is a function of the store, so the components only draw and call.
+- **Radix for what floats:** its dialogs are Radix's Dialog -- focus kept in it while open and given back after, Esc and
+  a press outside closing it, the title announced -- in a root of their own on the page (`catalog.ts`'s `dialogs`), so
+  an agent's request is asked even with the page not shown. A row's ⋯ is Radix's DropdownMenu (arrow keys, Home/End,
+  typing a letter, Esc). Both styled by the page's own classes (`ap-dim`, `ap-dlg`, `ap-menu`).
+- **Mounted in a host of its own** in the tab's box (`display: contents`), which the page around it empties for a new
+  tab's page and hands back: the host put back, the root as it was.
+- Its specs (`apps-page.spec.ts`, `app-on-task.spec.ts`) passed unchanged; unit tests drive the page and its dialogs
+  (`AppsPage.test.tsx`).
+
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
   panes, Details, the chat minimized. It replaces today's separate browser keys, which are read once and dropped.

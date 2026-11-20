@@ -10,7 +10,7 @@ import { term } from "../terminal/terminal.js";
 import { opened } from "../chat/files-view.js";
 import { appAsked, appAskedOf } from "../apps/app-actors.js";
 import { useDashboard } from "../../core/store";
-import { askedByAgent } from "../apps/catalog-dialogs";
+import { askedByAgent } from "../apps/catalog";
 import * as prefs from "../../core/prefs";
 
 // A session made here that never started -- no process of it now, none starting, nothing of it in its gatherer (no

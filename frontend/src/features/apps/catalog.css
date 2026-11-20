@@ -1,4 +1,4 @@
-/* THE APPS PAGE (catalog.ts): in the work area's box for a tab showing nothing, as a new tab's page is -- a list of the
+/* THE APPS PAGE (catalog.ts, catalog/): in the work area's box for a tab showing nothing, as a new tab's page is -- a list of the
    apps, their details beside it, and its dialogs over the page */
 .work.placed > .lay-empty.ap:not([hidden]) {
   display: flex;
@@ -9,6 +9,10 @@
   color: var(--ink);
   align-items: stretch;
   justify-content: stretch;
+}
+/* (the page's React root: catalog.ts's host, laid out as if the page were the box's own child) */
+.ap-host {
+  display: contents;
 }
 .ap-page {
   position: relative;
@@ -277,9 +281,9 @@
   background: var(--wash);
   color: var(--ink);
 }
+/* (placed by Radix's menu, in a portal on the page: over everything but a dialog) */
 .ap-menu {
-  position: absolute;
-  z-index: 5;
+  z-index: var(--z-menu);
   min-width: 160px;
   padding: 5px;
   border: 1px solid var(--grid);
