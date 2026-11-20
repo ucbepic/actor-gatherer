@@ -2,10 +2,10 @@ import { SNAPSHOT, state } from "../../core/page/state.js";
 import { ICONS, el, post, strokeIcon } from "../../core/page/helpers.js";
 import { loadHome, setLive } from "../page/data.js";
 import {
-  FOLDER_CHARS, crewAt, crewRow, deleteFolder, dragFolder, dropOn, endDrag, folderAct, folderBox, folderById,
-  folderPost, isOpenFolder, kidFolders, renderAgents, showFolder, startDrag, startFolderEdit, titleOf, toggleFolder,
-  treeOf, within,
+  CTX, FOLDER_CHARS, deleteFolder, dragFolder, dropOn, endDrag, folderAct, folderBox, folderPost, isOpenFolder,
+  kidFolders, renderAgents, showFolder, startDrag, startFolderEdit, titleOf, toggleFolder, treeOf,
 } from "./list.js";
+import * as LG from "./groups";
 import { cardHide } from "./modes.js";
 import { crewButton, isAt } from "../layout/panes.js";
 import * as prefs from "../../core/prefs";
@@ -36,7 +36,7 @@ function gfShow(id, open) {
   prefs.keep(GF_FOLDED_KEY, [...gfFolded]);
 }
 // The folder the gatherer named `name` is kept in: its id, or null for the list's top (its folder deleted since: the top)
-const gfOf = (name) => { const id = treeOf(GF).filed[name]; return folderById(GF, id) ? id : null; };
+const gfOf = (name) => LG.gfOf(CTX, name);
 // Gatherers put in folder `id` (null: the list's top), by name: it opened
 function fileGatherers(names, id) {
   if (!names.length) return null;
@@ -65,26 +65,6 @@ function dragGatherer(row, g) {
   row.addEventListener("dragend", endDrag);
   return row;
 }
-// One level of the list (`id` null: its top): the box naming a new folder here, its folders by name -- each its line
-// (gfLine) and, open, what is in it set in under it (gf-kids) -- then its gatherers of `shown`, in the home's order
-// (the newest first), each `draw(g)`.
-function gfLevel(shown, id, draw) {
-  const out = [], edit = state.folderEdit;
-  if (edit && edit.g === GF && edit.id === null && edit.parent === id)
-    out.push(el("div", { class: "folder-line gf-line editing", "data-key": `${GF}/folder:new` }, folderBox()));
-  if (gfMaking && gfMaking.parent === id)              // a group being made (makeGroup): its name, till it is listed
-    out.push(el("div", { class: "folder-line gf-line making", "data-key": `${GF}/group:new`, role: "status" },
-      el("span", { class: "fname", text: gfMaking.text }), el("span", { class: "fill", text: "Making the group…" })));
-  for (const f of kidFolders(GF, id)) {
-    out.push(gfLine(f));
-    if (isOpenFolder(GF, f.id)) {
-      const rows = [crewRow(`groups:${f.id}`), ...gfLevel(shown, f.id, draw)].filter(Boolean);   // its coordinator agent first
-      out.push(el("div", { class: "gf-kids" }, ...(rows.length ? rows : [el("div", { class: "f-empty", text: gfEmpty(f) })])));
-    }
-  }
-  for (const g of shown) if (gfOf(g.name) === id) out.push(draw(g));
-  return out;
-}
 // The new folder outside every group named `text`, in folder of groups `parent` (null: the list's top): a group of its
 // own (groups.py's `make`). None typed is nothing done; a name a group beside it has (whatever its case), or one with
 // "/", refused, and said why. -> whether something was done.
@@ -100,6 +80,7 @@ function nameGroup(parent, text) {
   return true;
 }
 let gfMaking = null;
+const gfMakingNow = () => gfMaking;                // (the list's view-model draws it: features/list/model.ts)
 async function makeGroup(text, parent) {
   if (parent !== null) showFolder(GF, parent, true);
   gfMaking = { text, parent };
@@ -113,31 +94,31 @@ async function makeGroup(text, parent) {
     renderAgents();
   }
 }
-// what an open folder with nothing shown in it says: that its gatherers are hidden, or that it has none
-function gfEmpty(f) {
-  const hid = Object.entries(treeOf(GF).filed).some(([name, at]) => within(GF, at, f.id) && state.home.gatherers.some((g) => g.name === name));
-  return hid ? "Its groups are hidden" : SNAPSHOT ? "Empty" : "Empty · drag groups here";
-}
-// A folder of gatherers' line: a button opening or folding it -- its caret, its name, its coordinator agent's face if it
-// has one -- and, hovered or in focus, its buttons: a coordinator agent started over it (none yet), a folder made in it,
-// it renamed (F2), it deleted. No counts, no start buttons. Dragged: into another, or onto
-// the list's head (its top); a gatherer or a folder dropped on it put in it, and it opened when one is held over it.
-function gfLine(f) {
-  const open = isOpenFolder(GF, f.id), edit = state.folderEdit, k = `${GF}/folder:${f.id}`;
-  if (edit && edit.g === GF && edit.id === f.id) return el("div", { class: "folder-line gf-line editing", "data-key": k }, folderBox());
-  const toggle = () => toggleFolder(GF, f.id);
-  const line = el("div", { class: "folder-line gf-line", "data-key": k },
-    el("button", { class: "fbtn", type: "button", "aria-expanded": open ? "true" : "false", title: `${f.name}: a folder of groups`,
-      onclick: toggle, onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startFolderEdit(GF, f.id); } } },
-      el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "fname", text: f.name })),
-    SNAPSHOT || !crewAt(`groups:${f.id}`)[1] ? null : crewButton(null, `groups:${f.id}`),   // its coordinator agent's face
-    el("span", { class: "fill", onclick: toggle },
-      SNAPSHOT ? null : el("span", { class: "f-acts", onclick: (ev) => ev.stopPropagation() },
-        state.home.merged && !crewAt(`groups:${f.id}`)[1] ? crewButton(null, `groups:${f.id}`) : null,
-        folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(GF, null, f.id)),
-        folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(GF, f.id)),
-        folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(GF, f.id)))));
-  return dropOn(dragFolder(line, GFS, f), GFS, f.id, () => { if (!isOpenFolder(GF, f.id)) toggle(); });
+// A folder of gatherers (features/list/model.ts's GfFolderNode `n`): its line -- a button opening or folding it, its
+// caret, its name, its coordinator agent's face if it has one -- and, hovered or in focus, its buttons: a coordinator
+// agent started over it (none yet), a folder made in it, it renamed (F2), it deleted. No counts, no start buttons.
+// Dragged: into another, or onto the list's head (its top); a gatherer or a folder dropped on it put in it, and it opened
+// when one is held over it. Open, what is in it under it (gf-kids), each node drawn by `draw`.
+function gfLines(n, draw) {
+  const f = n.f, out = [];
+  if (n.editing) out.push(el("div", { class: "folder-line gf-line editing", "data-key": n.key }, folderBox()));
+  else {
+    const toggle = () => toggleFolder(GF, f.id);
+    const line = el("div", { class: "folder-line gf-line", "data-key": n.key },
+      el("button", { class: "fbtn", type: "button", "aria-expanded": n.open ? "true" : "false", title: `${f.name}: a folder of groups`,
+        onclick: toggle, onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startFolderEdit(GF, f.id); } } },
+        el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "fname", text: f.name })),
+      SNAPSHOT || !n.crew ? null : crewButton(null, `groups:${f.id}`),   // its coordinator agent's face
+      el("span", { class: "fill", onclick: toggle },
+        SNAPSHOT ? null : el("span", { class: "f-acts", onclick: (ev) => ev.stopPropagation() },
+          state.home.merged && !n.crew ? crewButton(null, `groups:${f.id}`) : null,
+          folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(GF, null, f.id)),
+          folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(GF, f.id)),
+          folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(GF, f.id)))));
+    out.push(dropOn(dragFolder(line, GFS, f), GFS, f.id, () => { if (!isOpenFolder(GF, f.id)) toggle(); }));
+  }
+  if (n.kids) out.push(el("div", { class: "gf-kids" }, ...(n.kids.length ? n.kids.flatMap(draw) : [el("div", { class: "f-empty", text: n.empty })])));
+  return out;
 }
 // A level of the rail (`id` null: its top), as the list's (gfLevel): each folder its name in a bracket, as a gatherer's
 // folders are -- a button folding or opening it, as in the list (no card, no drilling in, nothing dropped on it) -- and,
@@ -166,5 +147,5 @@ export function start() {
   });
 }
 export {
-  GF, GFS, GF_NEW, dragGatherer, fileGatherers, gPicks, gfFolded, gfLevel, gfOf, gfShow, nameGroup, railGfLevel,
+  GF, GFS, GF_NEW, dragGatherer, fileGatherers, gPicks, gfFolded, gfLines, gfMakingNow, gfOf, gfShow, nameGroup, railGfLevel,
 };

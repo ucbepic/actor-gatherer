@@ -8,7 +8,7 @@ import { connect } from "../settings/panel.js";
 import { markSeen, seen, statusOf } from "./seen.js";
 import {
   APP_ITEM, FOLDER_CHARS, GROUPS, LEAD_RANK, OPEN, SHELLS, TASK_ITEM, actorTitle, addButton, appFace, appFolder,
-  appInfo, appItem, appKey, appMarkOf, appNotices, appShown, appStatusOf, appTaskOf, appTitle, appsNotified,
+  appInfo, appItem, appKey, appMarkOf, appNotices, appShown, appStatusOf, appTaskOf, appTitle,
   askRefocus, boxGroups, boxKey, byName, closeApp, closeAsk, closeButton, closedKids, closedSays, collapsed, crewAt,
   crewHidden, crewHideKey, crewLine, deleteFolder, dragItems, dragRow, dropFolderClosing, dropOn, dropOnItem, envelope,
   foldOpen, folderById, folderClosing, folderKey, folderMark, folderOf, folderPath, folderSays, folderTally,
@@ -253,15 +253,9 @@ function railBoxOr(g, id, view) {
 // count; shown only when nothing else is (the bar keeps something to point at, which slides a hidden list out). A
 // coordinator agent counted too, but not idle: every group has one, at rest most of the time. The whole home's, wherever
 // the list or the rail is, so what needs the reader elsewhere still shows.
-function drawTotals(shown) {
-  const t = { asking: 0, error: 0, running: 0, background: 0, finished: 0, idle: 0 };
-  for (const g of shown) for (const a of g.agents) {
-    const group = groupOf(g, a);
-    if (group === "Idle" && isCoordinator(a)) continue;
-    if (group === "Waiting for you") t.asking++; else if (group === "Error") t.error++; else if (group === "Running") t.running++;
-    else if (group === "Background") t.background++; else if (group === "Finished") t.finished++; else if (group === "Idle") t.idle++;
-  }
-  const told = shown.reduce((n, g) => n + appsNotified(g), 0);
+// `t`: the counts (features/list/groups.ts's totals, the list's view-model's).
+function drawTotals(t) {
+  const told = t.notified;
   const counts = [[t.asking, "asking", "waiting for you"], [t.error, "error", "stopped on an error"],
     [told, "notified", told === 1 ? "app with a notification you haven't seen" : "apps with a notification you haven't seen"],
     [t.running, "running", "running"], [t.background, "background", "running in the background"],

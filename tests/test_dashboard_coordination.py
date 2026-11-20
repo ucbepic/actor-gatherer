@@ -18,7 +18,6 @@ from contextlib import redirect_stderr, redirect_stdout
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import harness_kit  # noqa: E402
-import page_source  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag.cli import actors as cli  # noqa: E402
 from ag_dashboard import store  # noqa: E402
@@ -79,7 +78,9 @@ class EnvelopeTest(unittest.TestCase):
         self.assertIsNone(coordination.opened("just a message"))
 
     def test_the_page_reads_envelopes_by_the_same_patterns(self):
-        page = page_source.script()
+        # the list's and Chat's reading of them: frontend/src/features/list/envelope.ts
+        with open(os.path.join(ROOT, "frontend", "src", "features", "list", "envelope.ts"), encoding="utf-8") as fh:
+            page = fh.read()
         for name in ("ENVELOPE", "UPDATE"):
             js = re.search(rf"^const {name} = /(.*)/;$", page, re.M).group(1)
             self.assertEqual(js, getattr(coordination, name).pattern, name)

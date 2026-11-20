@@ -1,8 +1,9 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { closable, gathererNamed, key, post, sessionStatus } from "../../core/page/helpers.js";
+import { gathererNamed, key, post, sessionStatus } from "../../core/page/helpers.js";
 import { setLive } from "../page/data.js";
 import { connect } from "../settings/panel.js";
-import { actorTitle, appItem, appKey, appsFollowHome, renderAgents } from "./list.js";
+import { CTX, actorTitle, appItem, appKey, appsFollowHome, renderAgents } from "./list.js";
+import * as LS from "./status";
 import { appsAtWork, isAt, isAway, openActors } from "../layout/panes.js";
 import { appsChanged } from "../apps/apps-page.js";
 import { dropGone, heedHome } from "../notify/notify.js";
@@ -17,14 +18,10 @@ import * as prefs from "../../core/prefs";
 // events, no calls): its × discards it (sessions.py's `discard`), so it is listed nowhere and nothing of it is kept.
 // The panes showing it close, as a shell's do when it ends (shownGone) -- this page's own out of sight already (its tab
 // closed with it: features/list/list.js's closeActor), left so, no other actor brought into the tab in its place.
-const discardable = (a) => !SNAPSHOT && !!a.session && !a.events && !a.reads && !closable(a) && a.chattable !== false
-  && !["starting", "running", "idle", "terminal"].includes(a.session.status) && !(a.session.queued || []).length && !opened(a);
-const statusOf = (a) => sessionStatus(a.session) || (opened(a) ? ["running", "Running"] : a.status === "asking" ? ["asking", "Waiting for you"]
-  : a.status === "error" ? ["error", "Error"]
-  : a.building ? ["building", "Building"]
-  : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
-  : a.status === "background" ? ["background", "Background"]
-  : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"]);
+// An actor's status (features/list/status.ts's statusOf): what the page started says first, then a turn its harness
+// opened before ag stored it (chat's `opened`), then what data.py decided -- finished, done since the reader last looked.
+const discardable = (a) => LS.discardable(CTX, a);
+const statusOf = (a) => LS.statusOf(CTX, a);
 // Its status as its conversation shows it: statusOf's, but a build of its context that runs once its turn is over -- a
 // check that found a new task, its message then taken back (Esc) -- is ag's work, not its turn's: the status under it.
 const turnStatus = (a) => {
@@ -44,7 +41,6 @@ const turnStatus = (a) => {
 // before `seen` (none in its home): kept in this browser, as it was.
 const SEEN_KEY = "ag-dashboard-seen";                // where this browser kept them before
 const seen = { at: {}, here: false, handing: false, dropped: false };   // here: kept in this browser
-const unseen = (a) => !!a.key && !!a.last && a.last > (seen.at[a.key] || 0);
 function keptHere() {
   const v = prefs.json(SEEN_KEY);
   return v && typeof v === "object" ? v : {};

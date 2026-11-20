@@ -3,11 +3,13 @@ import { ICONS, el, foldMark, gathererNamed, post, strokeIcon } from "../../core
 import { loadHome, setAbout, setLive } from "../page/data.js";
 import { connect } from "../settings/panel.js";
 import {
-  APP_ITEM, COLLAPSED_KEY, FOLDER_CHARS, actorOf, actorTitle, actorsWithin, agentRow, appFolder, appInfo, appItem,
-  appRowsIn, byName, collapsed, dragFolder, dragRow, dropOn, endDrag, foldOpen, folderById, folderOf, gathererApps,
-  gathererBox, groupCrew, groupOf, inPane, isAppItem, isCoordinator, isCrewHome, isHidden, kidFolders, listDrag,
-  nameFolder, plainFace, readApps, renderAgents, rowsOf, showFolder, startDrag, titleOf, toggleFold, withTasks, within,
+  APP_ITEM, COLLAPSED_KEY, CTX, FOLDER_CHARS, actorOf, actorTitle, actorsWithin, appFolder, appInfo, appItem, byName,
+  collapsed, dragFolder, dragRow, dropOn, endDrag, foldOpen, folderById, folderOf, gathererApps, groupCrew, groupOf,
+  inPane, isAppItem, isCoordinator, isCrewHome, isHidden, kidFolders, listDrag, nameFolder, plainFace, readApps,
+  renderAgents, showFolder, startDrag, titleOf, toggleFold, withTasks, within,
 } from "./list.js";
+import * as LG from "./groups";
+import { ALONE_KEY } from "./model";
 import { GF, GFS, nameGroup } from "./gatherer-folders.js";
 import { railActor, railAppsIn, railRowsOf, railShow, select } from "./modes.js";
 import {
@@ -402,12 +404,7 @@ function aloneNew() {
 // title says what it is);
 // it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).
 const ALONE_SAYS = "On its own · shares context with no other actor. Drag it into a group to bring it back.";
-const aloneActor = (g) => g.agents.find((x) => !isCoordinator(x));
-function aloneBox(g) {
-  const a = aloneActor(g);
-  return el("div", { class: "gatherer alone", title: ALONE_SAYS },
-    ...(a ? rowsOf(g, a, groupOf(g, a)) : []), ...appRowsIn(g, null));   // its task, with its apps; its apps in none
-}
+const aloneActor = LG.aloneActor;
 function railAlone(g) {
   const a = aloneActor(g);
   return el("section", { class: "r-gatherer r-alone", "aria-label": "On its own", title: ALONE_SAYS },
@@ -415,36 +412,16 @@ function railAlone(g) {
 }
 // Once closed (groupOf's Closed; saved too, Saved), an actor on its own leaves the top of the list, as a group's closed
 // actors go into its closed line: every such one is in a line at the list's end -- "▸ N closed", and "▸ N saved" --
-// opened again from there as any closed actor is (a message starts it, and it is back at
-// the top). Open or not kept in this browser (foldOpen, by ALONE_KEY); folded, those open in a pane in view under it. Never
-// hidden as a group is (isHidden): closed, it is in its line. The rail likewise (railAloneShut), its lines shown as its
-// foot says for its boxes' saved and closed lines (railShow), "▸ N closed" (the rest in its title: the rail is narrow).
-const ALONE_KEY = "\u0000alone";
-function aloneShut(g) {
-  const a = g.alone && aloneActor(g);
-  return !!a && ["Saved", "Closed"].includes(groupOf(g, a));
-}
+// opened again from there as any closed actor is (a message starts it, and it is back at the top). Open or not kept in
+// this browser (foldOpen, by ALONE_KEY); folded, those open in a pane in view under it (features/list/model.ts draws
+// them in the list). Never hidden as a group is (isHidden): closed, it is in its line. The rail likewise
+// (railAloneShut), its lines shown as its foot says for its boxes' saved and closed lines (railShow), "▸ N closed" (the
+// rest in its title: the rail is narrow).
+const aloneShut = (g) => LG.aloneShut(CTX, g);
 // [Saved | Closed, those of `gs` (each aloneShut) in it, the latest first], each with any
-function aloneFolds(gs) {
-  const latest = (x, y) => (aloneActor(y).last || 0) - (aloneActor(x).last || 0);
-  return ["Saved", "Closed"].map((name) => [name, gs.filter((g) => groupOf(g, aloneActor(g)) === name).sort(latest)])
-    .filter(([, list]) => list.length);
-}
+const aloneFolds = (gs) => LG.aloneFolds(CTX, gs);
 const aloneSays = (name, n) => `${n} ${name.toLowerCase()}`;
 const aloneInPane = (list) => list.filter((g) => inPane(g, aloneActor(g)));
-function aloneShutRows(gs) {
-  const out = [];
-  for (const [name, list] of aloneFolds(gs)) {
-    const shown = foldOpen[name].has(ALONE_KEY);
-    out.push(el("button", { class: "agent-group fold-line", type: "button", "aria-expanded": shown ? "true" : "false",
-      "data-key": `${ALONE_KEY}/${name}`, onclick: () => toggleFold(name, ALONE_KEY),
-      title: `${shown ? "Hide" : "Show"} ${name === "Saved" ? "saved" : "closed"} actors on their own` },
-    foldMark(shown), " ", aloneSays(name, list.length)));
-    if (shown) out.push(...list.flatMap((g) => rowsOf(g, aloneActor(g), name)));
-    else out.push(...aloneInPane(list).map((g) => agentRow(g, aloneActor(g), name)));
-  }
-  return out.length ? [el("div", { class: "gatherer alone shut" }, ...out)] : [];
-}
 function railAloneShut(gs) {
   const out = [];
   for (const [name, list] of aloneFolds(gs)) {
@@ -492,33 +469,13 @@ function askAlone(d, here = false) {
 // (askAbove, askJoin), on its own where it is (askAloneHere). A drag follows the default rule -- what is dropped into a
 // folder takes its group, after the question (askMerge, askMove) -- and one within the group it is in just moves
 // (placeGroup), as a folder does.
-const placesOf = () => (state.home && state.home.places) || {};
-const isAloneName = (name) => String(name || "").startsWith("self:");
-// where the group `name` is drawn: {in, folder} -- a folder of a group drawn (null: its top), that folder gone: its top --
-// or null, at the list's top: placed nowhere, in a group hidden or gone, or in a ring of groups each inside the next
-function placeOf(name) {
-  const p = placesOf()[name];
-  if (!p || !p.in || !state.home.merged) return null;
-  const seen = new Set([name]);
-  for (let at = p.in; at; at = (placesOf()[at] || {}).in) {
-    if (seen.has(at)) return null;
-    seen.add(at);
-  }
-  const outer = gathererNamed(p.in);
-  if (!outer || outer.alone || isHidden(outer) || isCrewHome(outer)) return null;
-  return { in: p.in, folder: p.folder !== null && p.folder !== undefined && folderById(p.in, p.folder) ? p.folder : null };
-}
-// whether group `name` is `outer`, or drawn inside it, at any depth
-function insideOf(name, outer) {
-  for (let at = name, n = 0; at && n < 64; at = (placeOf(at) || {}).in, n++) if (at === outer) return true;
-  return false;
-}
-const nestedIn = (g) => ((p) => p ? gathererNamed(p.in) || null : null)(placeOf(g.name));
+const isAloneName = LG.isAloneName;
+// where the group `name` is drawn: {in, folder}, or null at the list's top (features/list/groups.ts's placeOf)
+const placeOf = (name) => LG.placeOf(CTX, name);
+const insideOf = (name, outer) => LG.insideOf(CTX, name, outer);
+const nestedIn = (g) => LG.nestedIn(CTX, g);
 // the groups drawn in folder `id` of group `gname` (null: its top): groups, by their titles, then actors on their own
-const placedIn = (gname, id) => state.home.gatherers.filter((x) => !isHidden(x) && !isCrewHome(x)
-  && ((p) => !!p && p.in === gname && p.folder === id)(placeOf(x.name)))
-  .sort((x, y) => (x.alone ? 1 : 0) - (y.alone ? 1 : 0) || byName(titleOf(x), titleOf(y)));
-const placedRows = (g, id) => placedIn(g.name, id).map((x) => x.alone ? aloneBox(x) : gathererBox(x));
+const placedIn = (gname, id) => LG.placedIn(CTX, gname, id);
 // the group `gname` open, and its folder `id` with the folders it is in
 function openWhere(gname, id) {
   if (collapsed.delete(gname)) {
@@ -714,7 +671,7 @@ export function start() {
   document.getElementById("manage-groups")?.addEventListener("click", () => { setAbout(false); openManage(); });
 }
 export {
-  ALONE_NEW, aloneBox, aloneNew, aloneShut, aloneShutRows, aloneUnder, askMerge, askMove, canCross, canMerge,
-  drawManage, everyActor, isAloneName, manage, manageEntry, nestedIn, outsideDrop, placeGroup, placeOf, placedIn,
-  placedRows, railAlone, railAloneShut, showOutside,
+  ALONE_NEW, ALONE_SAYS, aloneNew, aloneShut, aloneUnder, askMerge, askMove, canCross, canMerge, drawManage,
+  everyActor, isAloneName, manage, manageEntry, nestedIn, outsideDrop, placeGroup, placeOf, placedIn, railAlone,
+  railAloneShut, showOutside,
 };

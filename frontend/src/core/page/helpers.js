@@ -1,6 +1,7 @@
 import { GROUP_ORDER, NOT_COUNTED, PREAMBLE, SNAPSHOT, state } from "./state.js";
 import { tildePath } from "./code.js";
 import { isShell, key, parse as parseKey, taskId, taskNumber } from "../model/keys";
+import { closable as closableIn, sessionStatus } from "../model/session";
 import { escapeHtml } from "../ui/html";
 import { ago, axisTime, clock, compact, full, lasting, span, usd } from "../format";
 import * as prefs from "../prefs";
@@ -420,8 +421,7 @@ function saveIcon(on) {
 // Whether the dashboard runs a process for the session -- its agent, mid-turn or not, or its terminal -- or kept
 // it, idle, from a restart, or it ran and is listed open with no process now (used since it ended: an app's note to
 // it, say), and no process outside has it: it can be closed from the list.
-const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.session.pid || a.session.kept
-  || (a.session.turns && a.status !== "closed")) && a.chattable !== false;
+const closable = (a) => closableIn(a, !!SNAPSHOT);   // (core/model/session.ts)
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; asking, its
 // turn waiting on the user (a question asked, a plan to approve, in its terminal), which shows before all else; error,
 // its turn stopped on a model call that failed, given up on (data.py's `failing`, `stopped`), shown next; a build
@@ -430,8 +430,7 @@ const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.s
 // and not done. A server from before `status`: running or idle by `running`.
 // A session started from the page says first what its agent is doing: starting, a message waiting, failed. The selected
 // actor runs, too, from the moment its harness sends a message that opens a turn, before ag has stored it (opened()).
-const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", "Starting"]
-  : s.status === "running" || (s.queued && s.queued.length) ? ["running", "Running"] : s.status === "failed" ? ["failed", "Failed"] : null;
+// (sessionStatus: core/model/session.ts)
 // Whether an actor can be messaged here: a session the page started, or any session of a harness the dashboard runs
 // (harness_kit's, that says how to start it: `runs`) with a directory to resume it in. Its message box works while no
 // other process has it open (data.py's `chattable`).
