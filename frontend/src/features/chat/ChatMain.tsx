@@ -6,12 +6,16 @@
 // the page draws, with what the page hands it (its feed). A frame kept drawn while another actor's is on the page stays
 // as it was: the turn list's state (store.ts) is that one's now.
 import { useQuery } from "@tanstack/react-query";
-import { memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { queryClient } from "../../core/api/query";
 import { Cards } from "./asking/Cards";
 import { ChatContext, useChat, type Chat } from "./context";
+import { useActorChat } from "./actors";
 import { useChatData } from "./data";
+import { INTERRUPTING_MS, interruptOver, isInterrupting } from "./esc";
+import { feedOf } from "./feed";
 import { filesKey, type FilesOf } from "./files";
+import { drawn as pulled } from "./pull";
 import { Paths } from "./side/CallView";
 import { FileView } from "./side/FileView";
 import { cmdCounts, gitOnly, shownFiles, Side, SideBar, type Task } from "./side/Side";
@@ -59,22 +63,41 @@ function useFiles(feed: ChatFeed): FilesData | null {
   return kept ?? feed.data;
 }
 
+/** Whether an Esc sent at `at` is still taken to be stopping the actor: drawn again once it no longer is. */
+function useInterrupting(actor: string, at: number | null): boolean {
+  const [, tick] = useState(0);
+  const on = isInterrupting(actor, at);
+  useEffect(() => {
+    if (!on || at === null) return;
+    const t = setTimeout(() => tick((n) => n + 1), Math.max(0, at + INTERRUPTING_MS - Date.now()) + 50);
+    return () => clearTimeout(t);
+  }, [on, at]);
+  return on;
+}
+
 export function ChatMain({ frame }: { frame: HTMLElement }) {
   const { feed: drawn, host } = useChat();
   const onPage = useOnPage((s) => s.key === drawn.key);
-  // the stream's view as it comes, not only as the page last drew it
+  // the stream's view as it comes, and what Chat keeps of the actor (what was sent from here, the turn picked, the Esc
+  // sent), as they change -- not only as the page last drew them
   const taken = useChatData((s) => s.views.get(drawn.key));
-  const feed: ChatFeed = taken && taken.view !== drawn.view ? { ...drawn, view: taken.view } : drawn;
+  const own = useActorChat(drawn.key);
+  const view = taken && taken.view !== drawn.view ? taken.view : drawn.view;
+  const feed = feedOf({ ...drawn, view }, own, useInterrupting(drawn.key, own.interrupting));
   const folds = useTurns();
   const side = useSide();
   const d = useFiles(feed);
   useNarrow(frame, feed.details, onPage);
+  // what the page shows now, for the pulls and the turn kept in place as it is picked (pull.ts)
+  useLayoutEffect(() => {
+    if (onPage) pulled.feed = { ...feed, data: d ?? feed.data };
+  });
   // the Esc sent is over once the turn it was sent for is (opening, at work or asking: an Esc stops it)
   const cur = currentOf(feed);
   const interrupting = feed.interrupting && !(cur && !AT_WORK.has(cur.state));
   useEffect(() => {
-    if (onPage && feed.interrupting && !interrupting) host.interruptOver();
-  }, [onPage, feed.interrupting, interrupting, host]);
+    if (onPage && feed.interrupting && !interrupting) interruptOver(feed.key);
+  }, [onPage, feed.interrupting, interrupting, feed.key]);
   return (
     <Frame
       onPage={onPage}

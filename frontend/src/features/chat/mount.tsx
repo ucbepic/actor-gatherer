@@ -12,7 +12,8 @@ import { drawn, listenForPulls } from "./pull";
 import { commandsAfresh } from "./side/Side";
 import { sideFolded } from "./side/store";
 import { TURNS_SHOWN, useOnPage, useTurns } from "./store";
-import type { ChatFeed, ChatHost } from "./types";
+import { feedOf } from "./feed";
+import type { ChatHost, PageFeed } from "./types";
 import { pickedOf, turnsOf } from "./view";
 
 /** The frames kept drawn, each in its root, so one shown again is as it was at once (its stage's animations running):
@@ -24,10 +25,12 @@ const frames = new Map<string, { node: HTMLDivElement; root: Root }>();
 /** How many frames are kept drawn (for tests). */
 export const talksKept = (): number => frames.size;
 
-/** The actor's frame, as the chat card has it (chat.js's frame, the Chat view's: `name` its name), drawn from `feed`:
- * its node, for the page to put where it goes. */
-export function drawChat(feed: ChatFeed, host: ChatHost, name = "Chat"): HTMLDivElement {
+/** The actor's frame, as the chat card has it (chat.js's frame, the Chat view's: `name` its name), drawn from what the
+ * page hands it for the actor (`page`) and what Chat keeps of the actor itself: its node, for the page to put where it
+ * goes. */
+export function drawChat(page: PageFeed, host: ChatHost, name = "Chat"): HTMLDivElement {
   listenForPulls();
+  const feed = feedOf(page);
   let frame = frames.get(feed.key);
   if (frame) frames.delete(feed.key);
   else {

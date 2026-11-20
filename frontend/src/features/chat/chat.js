@@ -1,7 +1,7 @@
 import { GROUP_ORDER, NOT_COUNTED, PREAMBLE, SNAPSHOT, label, state, uncounted } from "../../core/page/state.js";
 import {
   GATHERER, HISTORY, ICONS, INLINE, OTHER_TYPE, PREAMBLE_TYPE, TYPES, ago, clock, color, compact, el, full,
-  harnessName, hasChat, itemType, key, post, runnableNames, shownTypes, signature, span, statusEl,
+  harnessName, hasChat, itemType, parseKey, post, runnableNames, shownTypes, signature, span, statusEl,
   strokeIcon, usd,
 } from "../../core/page/helpers.js";
 import {
@@ -16,11 +16,16 @@ import { SHAPES, blockCache, str, summary } from "../transcript/transcript.js";
 import { plural } from "../../core/format";
 import { CHAT_VIEWS, chatFeed, chatView, offeredViews, setChatView } from "./views.js";
 import { fullscreenFor, term } from "../terminal/terminal.js";
-import { CHAT_HOST, chatSends, refill, sendFailed, talkToEnd } from "./files-view.js";
+import { CHAT_HOST, boxedFor, chatActor, setFilesTurn } from "./files-view.js";
 import { MINI_VIEW, MIN_TIP, canMinimize, chatMin, setChatMin } from "../layout/top.js";
 import { agDashboard } from "./own-views.js";
 import { TASK_KINDS } from "./side/marks";
 import { askKey, askWhere as askWhereOf } from "./asking/ask";
+import { chatOf } from "./actors";
+import { drawControls } from "./Controls";
+import { refill } from "./esc";
+import { send } from "./send";
+import { drawSendError } from "./SendError";
 import { drawCards } from "./asking/mount";
 
 // ------------------------------------------------------------------ the chat
@@ -38,12 +43,13 @@ const heldWhy = (info) => hasChat(info) && info.chattable === false
   ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}. `
     + "Close it there to message it here." : "";
 function chatCard(info) {
+  const actor = chatActor();                         // the actor this page shows, by its key: all below is its
   const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
   const view = chatMin() ? MINI_VIEW : chatView(), feed = chatFeed(view);
   const writable = hasChat(info) && !SNAPSHOT && !view.readOnly;
   const held = heldWhy(info);
   const data = feed.data() || { items: [], pending: [], earlier: false };
-  const ctx = { info, session: s, data, running: ["running", "building"].includes(turnStatus(info)[0]), queued: s.queued || [], held, writable,
+  const ctx = { actor, info, session: s, data, running: ["running", "building"].includes(turnStatus(info)[0]), queued: s.queued || [], held, writable,
     loadEarlier: async () => {                         // the view's "earlier" control: kept where the reader was
       if (!feed.loadEarlier) return;
       const n = document.getElementById("chat-list"), from = n ? n.scrollHeight - n.scrollTop : 0;
@@ -51,27 +57,22 @@ function chatCard(info) {
       const m = document.getElementById("chat-list"); if (m) m.scrollTop = m.scrollHeight - from;
     },
     rerender: () => keepingPlace(renderMain), api: agDashboard };
-  const card = el("section", { class: "chat" + (view.mini ? " mini" : ""), "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}`,
-    "data-morph": "", "data-for": signature([state.selected, view.id, writable, held, !!info.session]) });
+  const card = el("section", { class: "chat" + (view.mini ? " mini" : ""), "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${parseKey(actor).group}`,
+    "data-morph": "", "data-for": signature([actor, view.id, writable, held, !!info.session]) });
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
     catch (err) { console.error(err); return fallback ? [el("div", { class: "warn", text: `The ${view.name} view failed: ${err.message}` })] : []; }
   };
-  // its controls go in the page's header: the view's own (tools), which view, and the details panel
-  const tools = safely(() => view.tools && view.tools(ctx));
-  const controls = document.getElementById("controls");
-  const heading = [...(tools.length ? [el("div", { class: "chat-tools" }, ...tools)] : []),
-    ...[viewSwitcher(view)].filter(Boolean),
-    el("div", { class: "side-btns" },
-      !canMinimize() ? null : el("button", { type: "button", class: "details-btn", "aria-label": "Minimize the chat", title: MIN_TIP,
-        onclick: () => setChatMin(true) }, strokeIcon(ICONS.minimize, 16)),
-      el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
-        title: DETAILS_TIP, onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.info, 16)))];
-  // the page's own buttons, unchanged, kept as they are: a view that redraws every few seconds (History, while
-  // the Gatherer works) does not make them flash under the pointer. A view's own tools are made again each
-  // draw: what they do may be the draw's.
-  const same = !tools.length && heading.length === controls.children.length && heading.every((n, i) => n.isEqualNode(controls.children[i]));
-  if (!same && !view.mini) controls.replaceChildren(...heading);   // minimized: the head hidden, kept as it was
+  // its controls go in the page's header (features/chat/Controls.tsx): the view's own (tools: Chat's its own), which
+  // view, and the details panel. Minimized: the head hidden, kept as it was.
+  const tools = view.chatTools ? [] : safely(() => view.tools && view.tools(ctx));
+  if (!view.mini) drawControls(document.getElementById("controls"), {
+    actor, chat: !!view.chatTools, tools: tools.length ? tools : null,
+    views: offeredViews().filter((v) => !v.more || v.id === view.id)
+      .map((v) => ({ id: v.id, name: v.name, description: v.description, icon: v.icon })),
+    current: view.id, details: !!state.details, minimize: canMinimize() ? { title: MIN_TIP } : null, detailsTitle: DETAILS_TIP,
+    icons: ICONS, show: (id) => setChatView(id), toggleDetails: () => setDetails(!state.details), doMinimize: () => setChatMin(true),
+    latest: () => setFilesTurn(null) });
   // a view that draws its frame itself (the Chat view: React's, features/chat/mount.tsx), the same node from draw to draw
   const mounted = view.mount ? safely(() => view.mount(ctx), true) : null;
   const frame = mounted && mounted[0] && mounted[0].id === "chat-list" ? mounted[0]
@@ -113,72 +114,22 @@ function chatCard(info) {
     put(...safely(() => view.footer && view.footer(ctx)));
     return built();
   }
-  // Sending, for every view's message box: the box is the view's (`composer`), what it sends and the
-  // error it gets are the tab's.
-  const draft = key(...state.selected);              // what is typed for this actor and not sent (keepDraft)
-  // why its last message was not sent, kept for the draws after (sendFailed); for one its terminal's box could not take
-  // (sessions.py's NotAtBox), the way to the terminal
-  const failed = !held && sendFailed.get(draft);
-  const err = el("div", { class: "err", role: "alert" }, ...(held ? [held] : failed ? [failed.text, ...(failed.box && CHAT_VIEWS.has("terminal")
-    ? [" ", el("button", { type: "button", class: "to-term", onclick: () => setChatView("terminal") }, "Open the terminal")] : [])]
-    : s.status === "failed" && s.last_error ? [s.last_error] : []));
-  let sending = false;
-  refill(info, draft);
+  // Sending, for every view's message box (features/chat/send.ts): the box is the view's (`composer`); what it sends,
+  // the error it gets (features/chat/SendError.tsx) and the message the harness took back (esc.ts's refill) the actor's.
+  refill(actor, info, boxedFor(actor));
   // A message box kept from an earlier draw (`patch`) still calls the send it was drawn with: each send goes to the
   // latest draw's (state.chatSend), which knows the session as it is now.
   ctx.send = (t) => state.chatSend(t);
-  state.chatSend = async (t) => {
-    t = String(t ?? "").trim();
-    if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } keepDraft(draft, ""); return true; }
-    if (!t || sending || held) return false;
-    sending = true; err.textContent = ""; sendFailed.delete(draft); state.interrupting = null;
-    for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
-    // a "/" command of the harness's own (dashboardCommand took the page's): what it does (a dialog, a report) is drawn
-    // in the session's terminal, and may never come back as a message -- not shown pending; the terminal shown once
-    // the session has one (its own, or one the message opened)
-    const slash = t.startsWith("/");
-    // else shown at once, by its id (`cid`), until the server's view of the conversation has it (chatSends, a moment
-    // later: the dashboard keeps it from the moment it comes); `ran`: typed into a terminal open already, at its message
-    // box (sessions.py's `send`) -- not one it opens, which may ask first (canInterrupt)
-    const cid = "page:" + (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const mine = slash ? null : { key: key(...state.selected), cid, text: t, at: Date.now(), ran: !!(info.session && info.session.terminal) };
-    const box = document.getElementById("composer-text"), was = box ? box.value : "";
-    if (mine) chatSends.push(mine);
-    if (box) { box.value = ""; fitBox(box); }
-    keepDraft(draft, "");
-    if (mine) { keepingPlace(renderMain); talkToEnd(); }
-    // a terminal the message opens (sessions.py's `send`): the Terminal view's screen, at its size if it was drawn
-    const opens = { fullscreen: fullscreenFor(info), ...(term.sid === info.channel && term.opened ? { cols: term.xterm.cols, rows: term.xterm.rows } : {}) };
-    try {
-      const got = await post("/api/send", info.session ? { session_id: s.session_id, text: t, cid, ...opens }
-        : { gatherer: state.selected[0], channel: state.selected[1], text: t, cid, ...opens });
-      if (slash && got && got.terminal && CHAT_VIEWS.has("terminal")) { await setChatView("terminal"); return true; }
-      if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); }
-      chatToEnd();
-      return true;
-    } catch (e) {
-      if (mine && chatSends.includes(mine)) chatSends.splice(chatSends.indexOf(mine), 1);
-      // not sent: back as the actor's draft, unless something new was typed for it meanwhile
-      if (!drafts()[draft]) {
-        keepDraft(draft, was);
-        const again = document.getElementById("composer-text");
-        if (again && again.dataset.draft === draft) { again.value = was; fitBox(again); }
-      }
-      sendFailed.set(draft, { text: e.message, box: e.box });
-      keepingPlace(renderMain);
-      return false;
-    }
-    finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
-  };
-  state.chatSend.draft = draft;                      // whose it is: a new tab's first message sent by it (features/layout/new-tab.js)
+  state.chatSend = (t) => send(actor, t, sendFrom(actor, info, held));
+  state.chatSend.draft = actor;                      // whose it is: a new tab's first message sent by it (features/layout/new-tab.js)
   // The text box a composer is built around: Enter sends it, Shift+Enter starts a new line, and what is
   // typed in it survives the tab being drawn again (keepingPlace finds it by its id), and the reader going to another
   // actor or view and back (it starts with the actor's draft). A line high, growing with the lines typed (fitBox).
   ctx.input = (attrs = {}) => {
     const box = el("textarea", { rows: "1", placeholder: "Message the actor", "aria-label": "Message the actor", title: "Enter sends · Shift+Enter for a new line",
-      enterkeyhint: "send", ...attrs, id: "composer-text", "data-draft": draft,
+      enterkeyhint: "send", ...attrs, id: "composer-text", "data-draft": actor,
       ...(held ? { disabled: "", placeholder: "Open in another process" } : {}) });
-    box.value = drafts()[draft] || "";
+    box.value = drafts()[actor] || "";
     if (box.value) requestAnimationFrame(() => { if (box.isConnected) fitBox(box); });   // fitted once drawn into the page
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     // an image pasted or dropped in: saved in the home (/api/upload), and its path typed in the message, for the agent to read
@@ -194,7 +145,7 @@ function chatCard(info) {
             const at = box.selectionStart ?? box.value.length, tag = `[Image: ${path}] `;
             box.value = box.value.slice(0, at) + tag + box.value.slice(at);
             box.selectionStart = box.selectionEnd = at + tag.length;
-            fitBox(box); keepDraft(draft, box.value);
+            fitBox(box); keepDraft(actor, box.value);
           } catch (e) { setLive(`Image not attached: ${e.message}`); }
         };
         reader.readAsDataURL(f);
@@ -212,13 +163,28 @@ function chatCard(info) {
   const composer = safely(() => (view.composer || defaultComposer)(ctx), true);
   for (const n of composer) if (n.nodeType === 1) {
     const box = n.id === "composer-text" ? n : n.querySelector("#composer-text");
-    if (box) box.dataset.sig = signature([draft, !!held]);
+    if (box) box.dataset.sig = signature([actor, !!held]);
     if (box && box !== n) n.dataset.morph = ""; else if (!box) n.dataset.sig = sig;
   }
+  // why nothing is sent, or the last message was not (React's, the actor's own: features/chat/SendError.tsx)
+  const err = drawSendError({ actor, held, session: s, toTerminal: CHAT_VIEWS.has("terminal") ? () => setChatView("terminal") : null });
   put(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
-  if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
+  if (held || chatOf(actor).sending) for (const n of card.querySelectorAll("[data-send], #composer-text")) if (held || n.matches("[data-send]")) n.disabled = true;   // whatever the view drew
   return built();
 }
+// What a send from this page needs of it (features/chat/send.ts): the actor and its session as now, the dashboard's own
+// commands, the size of a terminal the message opens, the page's data loaded again once sent, the Terminal view, the
+// page's own message boxes, and the controls of a view's own that send (data-send), off while a message is on its way.
+const sendFrom = (actor, info, held) => ({
+  info, held: !!held,
+  command: (t) => dashboardCommand(t),
+  // a terminal the message opens (sessions.py's `send`): the Terminal view's screen, at its size if it was drawn
+  opens: () => ({ fullscreen: fullscreenFor(info), ...(term.sid === info.channel && term.opened ? { cols: term.xterm.cols, rows: term.xterm.rows } : {}) }),
+  sent: async () => { if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); } chatToEnd(); },
+  toTerminal: CHAT_VIEWS.has("terminal") ? () => setChatView("terminal") : null,
+  boxed: boxedFor(actor),
+  sending: (on) => { for (const n of document.querySelectorAll("[data-send]")) n.disabled = on || !!held; },
+});
 // What the harness still runs in the background for the actor (data.py's `background`): the commands,
 // agents, monitors and workflows it started and has not been told have ended, each with what it is for and its
 // last sign of life. Null when none runs. `term`: drawn as a terminal's status line.
@@ -274,14 +240,6 @@ function defaultComposer(ctx) {
   const form = el("form", { class: "composer" }, text);
   form.addEventListener("submit", (ev) => { ev.preventDefault(); ctx.send(text.value); });
   return form;
-}
-// The switch in the page's header: the views on the bar, and the one shown, if it is one of the others (in Details).
-function viewSwitcher(current) {
-  const views = offeredViews().filter((v) => !v.more || v.id === current.id);
-  if (views.length < 2) return null;
-  return el("div", { class: "views", role: "group", "aria-label": "View" },
-    ...views.map((v) => el("button", { type: "button", "aria-pressed": v.id === current.id ? "true" : "false", title: v.description || v.name,
-      "aria-label": v.name, onclick: () => setChatView(v.id) }, v.icon ? strokeIcon(v.icon) : null, el("span", { class: "lbl", text: v.name }))));
 }
 // The other views (`more`), in the details panel: one picked is shown in place of the chat, and the panel closed.
 function moreViews() {

@@ -141,6 +141,8 @@ export interface Actor {
   avatar_hue?: string | null;
   /** what it says before its first message */
   avatar_hello?: string | null;
+  /** the message its harness took back on an Esc (data.py's `taken_back`) */
+  taken_back?: ChatView["taken_back"];
   name?: { text?: string | null } | null;
   session?: {
     session_id?: string;
@@ -151,6 +153,8 @@ export interface Actor {
     /** when a key was last typed into its terminal (the dashboard's), and since when that terminal runs */
     typed?: number | null;
     since?: number | null;
+    /** when the key that stopped its turn was typed into its terminal */
+    stopped_at?: number | null;
   } | null;
 }
 
@@ -204,7 +208,9 @@ export interface MySend {
   at: number;
 }
 
-/** What the old page hands the turn list at each draw (features/chat/files-view.js's talkFeed). */
+/** What the turn list draws from: what the page hands it at each draw for the actor given (`PageFeed`:
+ * features/chat/files-view.js's talkFeed), with what Chat keeps of the actor itself (actors.ts: what was sent from here,
+ * the turn picked, the Esc sent), as ChatMain.tsx reads it. */
 export interface ChatFeed {
   /** the actor's key (its gatherer and channel) and its gatherer */
   key: string;
@@ -244,6 +250,9 @@ export interface ChatFeed {
   afresh: boolean;
 }
 
+/** What the page hands Chat for an actor at each draw: all it draws from but what Chat keeps of the actor itself. */
+export type PageFeed = Omit<ChatFeed, "mine" | "picked" | "interrupting" | "canInterrupt">;
+
 /** What the turn list calls of the old page, until those parts move too; and the cards under it (asking/Cards.tsx). */
 export interface ChatHost extends CardsHost {
   /** the actor's stage (core/page/helpers.js): at work, done, waving hello */
@@ -271,8 +280,6 @@ export interface ChatHost extends CardsHost {
   barActs(): Node | null;
   /** a turn's files and commands shown: null, the latest's */
   setFilesTurn(n: number | null): Promise<unknown>;
-  /** the Esc sent is over: its turn is */
-  interruptOver(): void;
 }
 
 /** A message between actors, or a watch's news (coordination.py's `envelope`, `update`). */

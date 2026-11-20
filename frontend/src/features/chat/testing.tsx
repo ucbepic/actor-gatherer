@@ -2,8 +2,9 @@
 // its commands' drawing and recording what the turn list calls of it -- and the turn list drawn as the page draws it
 // (mount.tsx's drawChat), into #main.
 import { act } from "@testing-library/react";
+import { change } from "./actors";
 import { drawChat } from "./mount";
-import type { Actor, ChatFeed, ChatHost, ChatView, Current, Envelope, Turn } from "./types";
+import type { Actor, ChatFeed, ChatHost, ChatView, Current, Envelope, PageFeed, Turn } from "./types";
 
 /** When the turns of the tests were stored, in seconds. */
 export const AT = 1790874000;
@@ -63,7 +64,6 @@ export function testHost(): TestHost {
     refresh: said("refresh", Promise.resolve()) as ChatHost["refresh"],
     setFilesTurn: said("setFilesTurn", Promise.resolve()) as ChatHost["setFilesTurn"],
     setChatView: said("setChatView"),
-    interruptOver: said("interruptOver"),
   };
   return host;
 }
@@ -117,18 +117,31 @@ export const ACTOR: Actor = {
 
 let actors = 0;
 
-/** The page around the turn list, drawing it as the old page does: from `feed`, into #main, its node kept there. */
-export function testPage(turns: Turn[], over: Partial<ChatFeed> = {}) {
+/** What a test says Chat keeps of the actor itself (actors.ts), as the page's feed said it: kept there for the actor. */
+type Own = Partial<Pick<ChatFeed, "mine" | "picked" | "interrupting" | "canInterrupt">>;
+
+/** The page around the turn list, drawing it as the old page does: from `feed`, into #main, its node kept there -- what
+ * Chat keeps of the actor itself (what was sent from here, the turn picked, the Esc sent) put in its store as a page's
+ * send, pick or Esc would. `canInterrupt`: the actor's session a terminal of the dashboard's, an Esc typed into it. */
+export function testPage(turns: Turn[], over: PageFeedOver = {}) {
   const main =
     document.getElementById("main") ??
     document.body.appendChild(Object.assign(document.createElement("div"), { id: "main" }));
+  const own = (o: Own) => {
+    if (o.mine) change(page.feed.key, () => ({ sends: o.mine!.map((m) => ({ ...m, ran: false })) }));
+    if (o.picked !== undefined) change(page.feed.key, () => ({ picked: o.picked! }));
+    if (o.interrupting !== undefined)
+      change(page.feed.key, () => ({ interrupting: o.interrupting ? Date.now() : null }));
+  };
   const page = {
-    feed: null as unknown as ChatFeed,
+    feed: null as unknown as PageFeed,
     /** the actor's frame, as the page puts it in #main */
     frame: null as HTMLElement | null,
     /** the page drawn again: `over` changed in its feed; its conversation's box */
-    draw: (more: Partial<ChatFeed> = {}) => {
-      page.feed = { ...page.feed, ...more };
+    draw: (more: PageFeedOver = {}) => {
+      const { mine, picked, interrupting, canInterrupt, ...rest } = more;
+      page.feed = { ...page.feed, ...rest, ...(canInterrupt ? { info: terminalOf(rest.info ?? page.feed.info) } : {}) };
+      own({ mine, picked, interrupting });
       act(() => {
         page.frame = drawChat(page.feed, host);
       });
@@ -137,22 +150,18 @@ export function testPage(turns: Turn[], over: Partial<ChatFeed> = {}) {
     },
   };
   const host = testHost();
-  const info = over.info ?? ACTOR;
+  const { mine, picked, interrupting, canInterrupt, ...rest } = over;
+  const info = canInterrupt ? terminalOf(rest.info ?? ACTOR) : (rest.info ?? ACTOR);
   page.feed = {
     key: `g\u0000c${++actors}`,
     gatherer: "g",
     files: {},
     data: { turns, turn: turns.length ? turns.length - 1 : null, files: [], commands: [], home: "/home/u" },
-    picked: null,
     home: { home: "/h", now: AT, gatherers: [{ name: "g", agents: [info] }], harness_info: {} },
-    info,
     session: { status: "terminal" },
     view: chatView(turns),
     writable: true,
     held: "",
-    mine: [],
-    interrupting: false,
-    canInterrupt: false,
     earlierTurns: "messages",
     terminalView: true,
     afresh: false,
@@ -161,7 +170,19 @@ export function testPage(turns: Turn[], over: Partial<ChatFeed> = {}) {
     running: false,
     details: false,
     cwd: "",
-    ...over,
+    ...rest,
+    info,
   };
+  own({ mine, picked, interrupting });
   return { page, host, main };
 }
+
+/** What a test changes in the page's feed, and what it says Chat keeps of the actor. */
+type PageFeedOver = Partial<PageFeed> & Own;
+
+/** The actor at work in a terminal of the dashboard's: an Esc would interrupt it. */
+const terminalOf = (info: Actor): Actor => ({
+  ...info,
+  status: "running",
+  session: { ...info.session, session_id: "s", terminal: true },
+});

@@ -1,7 +1,8 @@
 // The conversation's box (.fl-talk): the turns, kept where the reader left it and following its end as it grows; or,
 // before the first turn is stored, the turn a message opened, or the actor waving hello. Kept at its end as its box
-// changes size (follow.ts), and as what it holds grows while the reader is there.
-import { useLayoutEffect, type RefObject } from "react";
+// changes size (follow.ts), and as what it holds grows while the reader is there; brought to its end as a message is
+// sent from here.
+import { useLayoutEffect, useRef, type RefObject } from "react";
 import { useChat } from "./context";
 import { followEnd, keepEnd, unfollow } from "./follow";
 import { FirstTurns } from "./Hello";
@@ -21,6 +22,14 @@ export function Talk({ ref, interrupting }: { ref: RefObject<HTMLDivElement | nu
   useLayoutEffect(() => {
     if (ref.current) keepEnd(ref.current);
   });
+  // a message sent from here: shown at the end, wherever the reader was
+  const sent = feed.mine.length,
+    before = useRef(sent);
+  useLayoutEffect(() => {
+    const n = ref.current;
+    if (n && sent > before.current) n.scrollTop = n.scrollHeight;
+    before.current = sent;
+  }, [ref, sent]);
   return (
     <div
       ref={ref}
