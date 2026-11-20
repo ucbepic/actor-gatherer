@@ -13,6 +13,18 @@ import type { RailModel } from "./rail-model";
 import { TotalsChips, totalsSaid } from "./Totals";
 
 const roots = new Map<HTMLElement, Root>();
+let drawing = 0;
+/** `render` drawn at once -- and, meanwhile, drawingNow(): a box of a view that this draw takes away (its card is
+ * another's now, its folder folded) fires its blur as it goes, which is not the reader leaving it. */
+function draw(render: () => void): void {
+  drawing++;
+  try {
+    flushSync(render);
+  } finally {
+    drawing--;
+  }
+}
+export const drawingNow = (): boolean => drawing > 0;
 function rootOf(box: HTMLElement): Root {
   let r = roots.get(box);
   if (!r) {
@@ -25,7 +37,7 @@ function rootOf(box: HTMLElement): Root {
 
 /** The top bar's counts drawn into `box`, its title naming every count. */
 export function drawTotals(box: HTMLElement, t: Totals): void {
-  flushSync(() => rootOf(box).render(<TotalsChips t={t} />));
+  draw(() => rootOf(box).render(<TotalsChips t={t} />));
   const said = totalsSaid(t).map(([k, , what]) => `${k} ${what}`);
   if (said.length) {
     box.title = said.join(" · ");
@@ -38,18 +50,18 @@ export function drawTotals(box: HTMLElement, t: Totals): void {
 
 /** The monitor drawn into `box`, by now. */
 export function drawMonitor(box: HTMLElement, m: MonitorModel, host: MonitorHost): void {
-  flushSync(() => rootOf(box).render(<Monitor m={m} host={host} />));
+  draw(() => rootOf(box).render(<Monitor m={m} host={host} />));
 }
 
 /** The rail drawn into `box`, by now. */
 let railDraws = 0;
 export function drawRail(box: HTMLElement, m: RailModel, host: RailHost): void {
-  flushSync(() => rootOf(box).render(<Rail m={m} host={host} draw={++railDraws} />));
+  draw(() => rootOf(box).render(<Rail m={m} host={host} draw={++railDraws} />));
 }
 
 /** The hover card's contents drawn into `box` (#actor-card), by now: the page places it next, by its size. */
 export function drawCard(box: HTMLElement, m: CardModel, host: CardHost): void {
-  flushSync(() => rootOf(box).render(<Card m={m} host={host} />));
+  draw(() => rootOf(box).render(<Card m={m} host={host} />));
 }
 
 /** Manage groups and the question a move asks first, as they are now (none open: none drawn). */
@@ -60,7 +72,7 @@ export function drawListDialogs(m: DialogsModel, host: DialogsHost): void {
     document.body.append(dialogsBox);
   }
   const box = dialogsBox;
-  flushSync(() => rootOf(box).render(<ListDialogs m={m} host={host} />));
+  draw(() => rootOf(box).render(<ListDialogs m={m} host={host} />));
 }
 
 /** What is drawn in `box` gone: left, nothing of it kept but what the page read. */

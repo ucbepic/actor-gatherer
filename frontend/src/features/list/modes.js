@@ -23,7 +23,7 @@ import { useSettings } from "../settings/store";
 import * as prefs from "../../core/prefs";
 import { buildMonitor } from "./monitor-model";
 import { buildRail } from "./rail-model";
-import { drawCard, drawMonitor, drawRail, drawTotals as drawTotalsIn, forget } from "./modes-mount";
+import { drawCard, drawMonitor, drawRail, drawTotals as drawTotalsIn, drawingNow, forget } from "./modes-mount";
 
 // ------------------------------------------------------------------ the list folded, or over the whole page
 // The list's shape, kept in this browser: "list"; folded to a rail ("folded"), the actors at work or wanting the reader
@@ -241,7 +241,7 @@ function railDragged() {
 // came from and the actor's key (data-card): the rail or the list drawn again under it, the card is said again from the
 // new data, at the actor's new place. Where there is no hovering (a touch screen), the actor's title says it instead.
 const HOVERS = matchMedia("(hover: hover)");
-const HOVER_WAIT = 250, hover = { from: null, key: null, shown: false, timer: null, node: null, keys: false, still: null };
+const HOVER_WAIT = 250, hover = { from: null, key: null, shown: false, timer: null, node: null, keys: false };
 const HOVER_FROM = { rail: () => listMode === "folded", agents: () => listMode === "list" };
 function hoverTo(from, k) {
   clearTimeout(hover.timer);
@@ -254,12 +254,10 @@ function hoverTo(from, k) {
   else if (hover.shown) go(); else hover.timer = setTimeout(go, HOVER_WAIT);
 }
 const CARD_ON_THE_WAY = 250;
-// `ev`, the click that put it away: no card again until the pointer moves from where that was (`still`) -- the list
-// drawn again under a pointer at rest is a pointerover there, which would bring a task's live card back over the panels
-// the click opened, for as long as the pointer rests
-function cardHide(ev = null) {
+// Put away -- by a click on what it says, too: the rows and tiles under a pointer at rest stay the same elements as they
+// are drawn again, so no card comes back over what the click opened until the pointer moves
+function cardHide() {
   clearTimeout(hover.timer);
-  if (ev && "clientX" in ev) hover.still = [ev.clientX, ev.clientY];
   hover.from = null; hover.key = null; hover.shown = false;
   cardEdit = null;
   dropFolderClosing("card");
@@ -309,9 +307,7 @@ function cardDraw() {
     : f ? { kind: "folder", g, f, live, opened: cardOpen.ids, asking, here: sameAt(railAt, { g: g.name, f: f.id }) }
     : top ? { kind: "gatherer", g, here: sameAt(railAt, { g: g.name, f: null }), folded: collapsed.has(g.name) }
     : { kind: "actor", g, a, shown: hover.from === "agents" && isAt(focusedActor(), g.name, a.channel) };
-  cardDrawing = true;
-  try { drawCard(card, { what, edit: cardEdit && cardEdit.g === g.name && cardEdit.key === hover.key ? cardEdit : null }, CARD_HOST()); }
-  finally { cardDrawing = false; }
+  drawCard(card, { what, edit: cardEdit && cardEdit.g === g.name && cardEdit.key === hover.key ? cardEdit : null }, CARD_HOST());
   card.hidden = false;
   at.setAttribute("aria-describedby", "actor-card");
   const r = at.getBoundingClientRect(), side = box.getBoundingClientRect();
@@ -332,9 +328,9 @@ let cardOpen = { key: null, ids: new Set() };
 // The card's name box: a folder named or made (`cardEdit`: {g, id -- null, made in `parent` -- parent}), the gatherer
 // renamed ({g, gatherer: true}), or a task or an app ({g, item}: features/list/list.js's itemNamed), as the list's own
 // box does, which is out of sight with the list folded -- in the card it was opened in only (its `key`), each a box of
-// its own (`n`). Enter, or leaving it, keeps what is typed; Esc, or nothing typed, leaves it. One the card's own draw
-// takes away (the card is another's now) is not left by the reader (`cardDrawing`): kept, for the card again.
-let cardEdit = null, cardEdits = 0, cardDrawing = false;
+// its own (`n`). Enter, or leaving it, keeps what is typed; Esc, or nothing typed, leaves it. One a draw takes away (the
+// card is another's now: features/list/modes-mount.tsx's drawingNow) is not left by the reader: kept, for the card again.
+let cardEdit = null, cardEdits = 0;
 function editInCard(edit) {
   const g = gathererNamed(edit.g);
   const item = edit.item && g ? itemNamed(g, edit.item) : null;
@@ -360,7 +356,7 @@ const CARD_HOST = () => cardHost ??= { ...LIST_HOST, ctx: CTX, tabAt, cwdOf, til
   actorLogo, cardHide, takeOut, openNotice, dismissNotice, adds: addInfo, openAdd,
   startInfo: cardStart, startPress: cardStartPress,
   editIn: editInCard, editEnd: endCardEdit, editTyped: (v) => { if (cardEdit) cardEdit.value = v; },
-  editBlur: (e) => { if (!cardDrawing && document.hasFocus() && cardEdit === e) endCardEdit(true); },
+  editBlur: (e) => { if (!drawingNow() && document.hasFocus() && cardEdit === e) endCardEdit(true); },
   deleteFolder, reopenFolder, setHidden, railDrill, pressClose: (g, f) => pressClose(g, f, "card"),
   openInRail: (gname, id) => { showFolder(gname, id, true); renderAgents(); },
   treeToggle: (id) => { if (cardOpen.ids.has(id)) cardOpen.ids.delete(id); else cardOpen.ids.add(id); cardDraw(); },
@@ -368,7 +364,7 @@ const CARD_HOST = () => cardHost ??= { ...LIST_HOST, ctx: CTX, tabAt, cwdOf, til
   closeCancel: () => { dropFolderClosing("card"); cardDraw(); },
   // the focus gone from its question (a click elsewhere): taken back, the card let go of once the pointer is off it
   askOut: (ev) => {
-    if (cardDrawing || (ev.relatedTarget && hover.node && hover.node.contains(ev.relatedTarget))) return;
+    if (drawingNow() || (ev.relatedTarget && hover.node && hover.node.contains(ev.relatedTarget))) return;
     setTimeout(() => {
       if (!folderClosing || folderClosing.from !== "card" || (hover.node && hover.node.contains(document.activeElement))) return;
       dropFolderClosing("card");
@@ -543,14 +539,11 @@ export function start() {
     const box = document.getElementById(from);
     box.addEventListener("pointerover", (ev) => {
       if (ev.pointerType === "touch") return;
-      // at rest where a click put the card away (a few pixels: a click's place and a pointer event's are not given alike)
-      if (hover.still && Math.abs(ev.clientX - hover.still[0]) < 4 && Math.abs(ev.clientY - hover.still[1]) < 4) return;
-      hover.still = null;
       hover.keys = false;
       const at = ev.target.closest("[data-card]");
       hoverTo(from, at && !ev.target.closest(".save-btn, .close-btn, .branchline, .f-acts, .pick") ? at.dataset.card : null);
     });
-    box.addEventListener("pointerleave", () => { hover.still = null; hoverTo(from, null); });   // gone and back: a card again
+    box.addEventListener("pointerleave", () => hoverTo(from, null));
     box.addEventListener("focusin", (ev) => {
       const at = ev.target.closest("[data-card]");
       if (at && ev.target === at && at.matches(":focus-visible")) { hover.shown = true; hover.keys = true; hoverTo(from, at.dataset.card); }
@@ -566,6 +559,6 @@ export function start() {
   })();
 }
 export {
-  HOVERS, cardDraw, cardHide, cardLive, cardRelease, drawTotals, hover, listButtons, listMode, listPlaces,
-  railDragged, renderFolded, select, setListMode, slideList,
+  HOVERS, cardDraw, cardHide, cardRelease, drawTotals, hover, listButtons, listMode, listPlaces, railDragged,
+  renderFolded, select, setListMode, slideList,
 };

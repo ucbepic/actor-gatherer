@@ -9,7 +9,7 @@ import {
 } from "./list.js";
 import * as LG from "./groups";
 import { buildManage } from "./manage-model";
-import { drawListDialogs } from "./modes-mount";
+import { drawListDialogs, drawingNow } from "./modes-mount";
 import { GF, GFS, nameGroup } from "./gatherer-folders.js";
 import { select } from "./modes.js";
 import {
@@ -354,7 +354,6 @@ function outsideDrop() {
 // What is dragged dropped there (the list's, or Manage groups': features/list/ManageGroups.tsx's OutsideDrop)
 function outsideDropped() {
   const d = listDrag;
-  d.later = false;
   endDrag();
   if (d.gs) placeGroup(d.gs[0], "", null);          // nothing anyone shares changes: no question
   else if (d.folder !== null) askSplit(d);
@@ -394,16 +393,7 @@ function aloneNew() {
 // ---- an actor on its own: a group of one (groups.py's `alone`, `self:<channel>`), listed as its row alone (no head: its
 // title says what it is);
 // it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).
-const ALONE_SAYS = "On its own · shares context with no other actor. Drag it into a group to bring it back.";
 const aloneActor = LG.aloneActor;
-// Once closed (groupOf's Closed; saved too, Saved), an actor on its own leaves the top of the list, as a group's closed
-// actors go into its closed line: every such one is in a line at the list's end -- "▸ N closed", and "▸ N saved" --
-// opened again from there as any closed actor is (a message starts it, and it is back at the top). Open or not kept in
-// this browser (foldOpen, by ALONE_KEY); folded, those open in a pane in view under it (features/list/model.ts draws
-// them in the list). Never hidden as a group is (isHidden): closed, it is in its line. The rail likewise
-// (features/list/rail-model.ts), its lines shown as its foot says for its boxes' saved and closed lines, "▸ N closed"
-// (the rest in its title: the rail is narrow).
-const aloneShut = (g) => LG.aloneShut(CTX, g);
 // One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own, with its task's apps and
 // its own window if it is an app's agent (withOwn) -- dropped in the list (`d.ask` false), at once
 function askAlone(d, here = false) {
@@ -443,8 +433,6 @@ const isAloneName = LG.isAloneName;
 const placeOf = (name) => LG.placeOf(CTX, name);
 const insideOf = (name, outer) => LG.insideOf(CTX, name, outer);
 const nestedIn = (g) => LG.nestedIn(CTX, g);
-// the groups drawn in folder `id` of group `gname` (null: its top): groups, by their titles, then actors on their own
-const placedIn = (gname, id) => LG.placedIn(CTX, gname, id);
 // the group `gname` open, and its folder `id` with the folders it is in
 function openWhere(gname, id) {
   if (collapsed.delete(gname)) {
@@ -529,7 +517,7 @@ const inTaskWithOthers = (g, a) => withOwn(g, [a.channel]).filter((c) => !isAppI
 let dialogHost = null;
 const DIALOG_HOST = () => dialogHost ??= { ...LIST_HOST, ctx: CTX, close: closeManage, toggle: mgToggle,
   startNaming: mgStartNaming, endNaming: mgEndNaming, namingTyped: (v) => { if (manage.naming) manage.naming.value = v; },
-  namingBlur: () => { if (manage.naming && document.hasFocus()) mgEndNaming(true); },
+  namingBlur: () => { if (!drawingNow() && manage.naming && document.hasFocus()) mgEndNaming(true); },
   askOwn: (g, f) => askOwn(g, f), askAbove, askJoin, askAloneHere,
   dragGroup: (ev, g) => startDrag(ev, GFS, { gs: [g.name] }), outsideCan: canOutside, outsideDrop: outsideDropped,
   moveClose: mvClose };
@@ -548,6 +536,6 @@ export function start() {
   document.getElementById("manage-groups")?.addEventListener("click", () => { setAbout(false); openManage(); });
 }
 export {
-  ALONE_NEW, ALONE_SAYS, aloneNew, aloneShut, aloneUnder, askMerge, askMove, canCross, canMerge, drawManage,
-  everyActor, isAloneName, manage, manageEntry, nestedIn, outsideDrop, placeGroup, placeOf, placedIn, showOutside,
+  ALONE_NEW, aloneNew, aloneUnder, askMerge, askMove, canCross, canMerge, drawManage, everyActor, isAloneName, manage,
+  manageEntry, outsideDrop, placeGroup, placeOf, showOutside,
 };
