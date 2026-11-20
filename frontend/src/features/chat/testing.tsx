@@ -107,7 +107,7 @@ export const now = (turns: Turn[], state: Current["state"], over: Partial<Curren
 
 /** A feed's turns, as the page's files feed and the server's view both have them: the latest shown. */
 export const withTurns = (turns: Turn[], over: Partial<ChatView> = {}): Partial<ChatFeed> => ({
-  data: { turns, turn: turns.length ? turns.length - 1 : null, home: "/home/u" },
+  data: { turns, turn: turns.length ? turns.length - 1 : null, files: [], commands: [], home: "/home/u" },
   view: chatView(turns, over),
 });
 
@@ -149,7 +149,7 @@ export function testPage(turns: Turn[], over: Partial<ChatFeed> = {}) {
     key: `g\u0000c${++actors}`,
     gatherer: "g",
     files: {},
-    data: { turns, turn: turns.length ? turns.length - 1 : null, home: "/home/u" },
+    data: { turns, turn: turns.length ? turns.length - 1 : null, files: [], commands: [], home: "/home/u" },
     picked: null,
     home: { home: "/h", now: AT, gatherers: [{ name: "g", agents: [info] }], harness_info: {} },
     info,

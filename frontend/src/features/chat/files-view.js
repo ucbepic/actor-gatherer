@@ -1,9 +1,9 @@
 import { SNAPSHOT, state } from "../../core/page/state.js";
 import {
-  BESIDE_KEY, ICONS, ago, atRest, atWork, bareAvatar, el, full, get, greeting, harnessName, hueInk, key, post,
-  selectedInfo, signature, strokeIcon,
+  BESIDE_KEY, ICONS, ago, atRest, atWork, bareAvatar, el, full, greeting, harnessName, hueInk, key, post,
+  selectedInfo, strokeIcon,
 } from "../../core/page/helpers.js";
-import { drafts, earlierTurns, fitBox, keepDraft, setLive } from "../page/data.js";
+import { drafts, earlierTurns, fitBox, keepDraft, render, setLive } from "../page/data.js";
 import { $, keepingPlace } from "../settings/panel.js";
 import { MANAGER, crewFace, envelope } from "../list/list.js";
 import { DETAILS_TIP, renderMain, setDetails } from "../page/main-view.js";
@@ -18,7 +18,10 @@ import { MIN_TIP, canMinimize, setChatMin, topShown } from "../layout/top.js";
 import { appWordsOf } from "../apps/app-actors.js";
 import { drawTurns } from "./mount";
 import { cidsOf } from "./view";
+import { stampOf, turnsOf, useChatData, viewOf, viewOrNone, viewSeq } from "./data";
+import { filesSeq, keptFiles, loadFiles as loadFilesOf } from "./files";
 import * as prefs from "../../core/prefs";
+import { parse as parseKey } from "../../core/model/keys";
 
 // ------------------------------------------------------------------ the Files view
 // A turn's files instead of its conversation: each file the agent read, searched or changed in it, the
@@ -54,55 +57,39 @@ const addChanged = (all) => all.reduce((a, x) => !x ? a : !a ? [...x] : [a[0] + 
 // What the disk said of a call, where ag's hook server checked it as it ran (files.py's `checked`)
 const CHECKED = { true: ["checked", "Matched the file on disk after the call"],
   false: ["not as on disk", "Didn't match the file on disk after the call"] };
-// One load at a time, and at most one more after it, for all that asked while it ran -- not one each: a stream
-// message asks with every change, and while a load is held up (the browser's connections all taken by streams:
-// features/settings/panel.js's loadedSoon) they would pile up, each to be fetched in turn once it goes through.
-let filesLoading = null, filesAgain = null;
-function loadFiles() {
-  if (!filesLoading) {
-    const now = loadFilesNow();
-    filesLoading = now.then(() => {}, () => {}).then(() => { filesLoading = null; });   // its caller has its failure
-    return now;
-  }
-  if (!filesAgain) filesAgain = filesLoading.then(() => { filesAgain = null; return loadFiles(); });
-  return filesAgain;
-}
-async function loadFilesNow() {
+// The files feed: the actor's turn's files and commands (files.ts: fetched when the stream's view says its turns moved
+// on, else as kept), for the turn picked (`state.files.turn`; null, the latest) -- the data drawn (`data`) changed when
+// they come, as one moment's with what was drawn of them (the file picked, `sel`; the folders folded). `state.files` is
+// made anew for each actor picked: the turn list's folds start over with it (chat/store.ts's forFiles).
+const filesOf = (f, info) => {
+  const { group: gatherer, id: channel } = parseKey(f.key);
+  const turns = turnsOf(f.key, f.data), row = f.turn === null ? null : (turns[f.turn] || {}).row_id ?? null;
+  return { gatherer, channel, turn: f.turn, row, cwd: (info && (info.cwd || (info.session && info.session.cwd))) || "" };
+};
+// The files feed loaded for the selected actor: as kept unless the turns moved on (the stream's view, its stamp) -- or,
+// the page not streaming (paused), fetched each time, as nothing else says when they move on.
+async function loadFiles() {
   if (!state.selected || SNAPSHOT) return;
   const [g, c] = state.selected, k = key(g, c);
   if (!state.files || state.files.key !== k) state.files = { key: k, turn: null, sel: null, data: null };
-  const f = state.files, info = selectedInfo();
-  const cwd = (info && (info.cwd || (info.session && info.session.cwd))) || "";
-  const turn = f.turn;
-  const got = await get(`/api/files?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`
-    + `${turn === null ? "" : `&turn=${turn}`}&cwd=${encodeURIComponent(cwd)}`);
-  if (state.files !== f) return;
-  if (!got.error) f.data = got;                      // no database yet (none before the gatherer's first call): no turns
-  else if (got.error.startsWith("no database")) f.data = { turns: [], turn: null, files: [], commands: [], home: "" };
-  if (turn === null && f.data) keep(k, "data", f.data);   // the latest turn's: what the actor opens on, kept for next time
+  const f = state.files, which = filesOf(f, selectedInfo()), view = viewOf(k);
+  const got = await loadFilesOf(which, { fresh: !state.stream || !!state.paused, stamp: view ? stampOf(view.turns) : undefined });
+  if (state.files !== f || f.turn !== which.turn) return;   // another actor or turn picked meanwhile: theirs
+  f.data = got;
 }
-// The Chat of the actors shown lately, as last loaded -- its files feed's data (at the latest turn) and the server's view --
-// drawn at once when one is picked again (`showKept`), then each brought up to date as it comes. Together, as one moment's:
-// the turns are not drawn before the view of what they are at (Chat waits for both, `filesRender`).
-const KEPT_ACTORS = 12;
-const chatKept = new Map();                           // key -> {data, view}, the latest shown last
-function keep(k, what, value) {
-  const got = chatKept.get(k) || {};
-  chatKept.delete(k);
-  chatKept.set(k, { ...got, [what]: value });
-  while (chatKept.size > KEPT_ACTORS) chatKept.delete(chatKept.keys().next().value);
-}
-// The actor's Chat as last loaded, made the one shown: true if both its parts were kept, false (nothing changed) if not.
+// The actor's Chat as last loaded -- its latest turn's files kept (files.ts) and the server's view (data.ts) -- made the
+// one shown: true if both are kept, false (nothing changed) if not. Drawn at once when one is picked again, then each
+// brought up to date as it comes; together, as one moment's: the turns are not drawn before the view of what they are at.
 function showKept(g, c) {
-  const k = key(g, c), got = chatKept.get(k);
-  if (!got || !got.data || !got.view) return false;
-  state.files = { key: k, turn: null, sel: null, data: got.data };
-  state.chatView = { key: k, view: got.view };
+  const k = key(g, c), info = state.home && selectedInfo();
+  const f = { key: k, turn: null, sel: null, data: null }, which = filesOf(f, info), data = keptFiles(which);
+  if (!data || !viewOf(k)) return false;
+  state.files = { ...f, data };
   return true;
 }
 async function setFilesTurn(n) {
   if (!state.files || !state.files.data) return;
-  const last = state.files.data.turns.length - 1;
+  const last = turnsOf(state.files.key, state.files.data).length - 1;
   state.files.turn = n === null || n >= last ? null : Math.max(0, n);
   state.files.sel = null;
   await loadFiles();
@@ -259,7 +246,7 @@ function barActs() {
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
   const d = state.files && state.files.data;
-  if (!d || !d.turns.length || state.files.turn === null) return [];
+  if (!d || !turnsOf(state.files.key, d).length || state.files.turn === null) return [];
   return [el("button", { type: "button", title: "Show the latest turn", onclick: () => setFilesTurn(null) }, "Latest")];
 }
 // A shell call's command, as its harness's rules read it (its view's); null for any other call.
@@ -433,7 +420,7 @@ function filesRender({ info, session, running, writable, held }) {
   // message on -- the moment it is sent, its turn opening before any is stored -- beside its files and commands, so the
   // message does not move as its turn is stored.
   const talk = drawTurns(talkFeed(info, session, writable, held, afresh), CHAT_HOST);
-  const view = chatViewOf(info), opening = !d.turns.length;
+  const view = chatViewOf(info), opening = !turnsOf(state.files.key, d).length;
   if (opening && !(view && (view.turns.length || view.opening)) && !mySends().length) return [talk, asking].filter(Boolean);
   // its node, drawn before its first turn was stored at the frame's top, goes into the grid now: taken out first, so
   // patch() does not look for it at the top once the grid has taken it in (fill)
@@ -584,16 +571,18 @@ function filesBackground(info) {
         meta("writes to", t.output, "p"))))));
 }
 const chatSends = [];                                 // {key, cid, text, at (the page's ms), ran}
-function takeChatView(g, c, view) {
-  if (!view || view.error || !view.current) view = null;   // one the server could not make: none
-  const k = key(g, c), has = cidsOf(view);
-  state.chatView = { key: k, view };
-  if (view) keep(k, "view", view);
+// What Chat shows of an actor, as the stream sends it (the server's view, data.ts): kept by the actor; the messages sent
+// from here it has now no longer shown as sent; and, the actor's turns moved on, its latest turn's files fetched again,
+// then drawn (loadFiles).
+function takeChatView(g, c, got) {
+  const k = key(g, c), view = viewOrNone(got), has = cidsOf(view);
+  useChatData.getState().take(k, view);
   for (let i = chatSends.length - 1; i >= 0; i--) if (chatSends[i].key === k && has.has(chatSends[i].cid)) chatSends.splice(i, 1);
+  if (view && state.files && state.files.key === k && state.files.turn === null && state.selected && key(...state.selected) === k)
+    loadFiles().then(() => render(), () => {});
 }
 // the view of an actor -- the selected one's; null before it has come
-const chatViewOf = (a) => !!a && !!state.selected && state.selected[1] === a.channel && !!state.chatView
-  && state.chatView.key === key(...state.selected) ? state.chatView.view : null;
+const chatViewOf = (a) => !!a && !!state.selected && state.selected[1] === a.channel ? viewOf(key(...state.selected)) : null;
 const mySends = () => { const k = state.selected && key(...state.selected); return chatSends.filter((m) => m.key === k); };
 const AT_WORK = ["opening", "working", "asking"];
 // A message as the user typed it, to match what was sent with what is stored (the server gives the user's words as
@@ -690,16 +679,17 @@ export function start() {
   CHAT_FEEDS.files = {
     load: loadFiles,
     data: () => state.files && state.selected && state.files.key === key(...state.selected) && state.files.data
-      ? { items: state.files.data.turns, pending: [], earlier: false } : null,
-    signature: () => state.files ? [state.files.key, state.files.turn, state.files.sel, signature(state.files.data),
-      signature(state.chatView), chatSends.length] : null,
+      ? { items: turnsOf(state.files.key, state.files.data), pending: [], earlier: false } : null,
+    // what it draws from, by which it is -- the files by when they were fetched, the view by which was taken -- not by
+    // what they hold, written out at every draw
+    signature: () => state.files ? [state.files.key, state.files.turn, state.files.sel, filesSeq(state.files.data),
+      viewSeq(state.files.key), chatSends.length] : null,
   };
   // The conversation, at the right: src/features/chat/ (ag_dashboard/DESIGN.md, A5), drawn from what talkFeed hands it,
   // calling what CHAT_HOST gives it of this page. What it shows is the server's view of the conversation
   // (ag_dashboard/CHAT_VIEW.md: the stream's `chat`, chat_view.py's), made from one read -- the turns, the latest's state,
-  // what waits, the message Esc took back -- by the actor's key (`state.chatView`); and the messages sent from this page's
+  // what waits, the message Esc took back -- by the actor's key (data.ts); and the messages sent from this page's
   // box, each by its id (`cid`), until the view has it, a moment later: the dashboard keeps each from the moment it is sent.
-  state.chatView = null;                                // {key, view}
   state.chatSend = async () => false;                    // the message box's send, as the latest draw made it (chatCard)
   // Esc, as in the harness's own terminal: the agent's turn interrupted -- the key typed into the session's terminal, which
   // the dashboard runs. Only while it works or asks (an idle Claude Code takes Esc twice for its rewind; one starting, for

@@ -83,10 +83,34 @@ export interface Turn {
   began?: number | null;
 }
 
-/** /api/files: the actor's turns, and the one shown (`turn`, its index) -- the latest, unless one is picked. */
+/** A file a turn touched (files.py's `files`): what each call did to it, by kind; the lines added and removed. */
+export interface TurnFile {
+  path: string;
+  kinds: string[];
+  created?: boolean;
+  temporary?: boolean;
+  changed?: [number, number] | null;
+  /** what git changed of it as the turn's commands ran: its kinds */
+  git?: string[];
+  sources: unknown[];
+}
+
+/** A call of a turn, as its commands list it (files.py's `commands`): with the files it touched, and what it did to
+ * each. */
+export interface Command extends CallRun {
+  files?: string[];
+  did?: Record<string, string[]>;
+  git?: Record<string, string[]>;
+  changed?: [number, number] | null;
+}
+
+/** /api/files: the actor's turns, and the one shown (`turn`, its index) -- the latest, unless one is picked -- with its
+ * files and commands. */
 export interface FilesData {
   turns: Turn[];
   turn: number | null;
+  files: TurnFile[];
+  commands: Command[];
   home?: string;
 }
 
