@@ -18,6 +18,20 @@ export async function open(page: Page, url = "/") {
   await expect(page.locator("#agents")).toContainText(GATHERER);
 }
 
+/** Once the page's stream has sent its first home: the page settled on what the server says, not only on its first
+ * /api/home. The page opens its stream only once its first loads are done, so a test that moves the clock on before then
+ * has that home come to a list already moved on. Called before the page is opened. */
+export function streamHome(page: Page): Promise<void> {
+  return new Promise((done) =>
+    page.on("websocket", (ws) => {
+      if (!/\/api\/ws$/.test(ws.url())) return;
+      ws.on("framereceived", (f) => {
+        if (typeof f.payload === "string" && f.payload.split("\n", 2)[1] === "home") done();
+      });
+    }),
+  );
+}
+
 /** The page with the actor whose row shows `text` picked in the list. */
 export async function openActor(page: Page, text: string) {
   await open(page);

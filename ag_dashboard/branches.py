@@ -58,6 +58,7 @@ POLL = 1.0              # seconds between looks at a branch whose actor the dash
 SLOW = 10.0             # ... at any other
 GIT_TIMEOUT = 30        # seconds a git command is given
 CLONE_TIMEOUT = 600     # ... a clone
+STOP_WAIT = 10.0        # seconds `close` waits for a look under way to end
 SCHEMA = """CREATE TABLE IF NOT EXISTS projects (
     gatherer TEXT NOT NULL,
     path     TEXT NOT NULL,
@@ -843,5 +844,10 @@ class Branches:
         return next(x for x in self.listed() if x["session_id"] == b["session_id"])
 
     def close(self) -> None:
+        """No more looks: one under way ended first (STOP_WAIT at most), so nothing of it reaches the home once the
+        dashboard has stopped -- its connection to dashboard.db, where its first look makes its tables (one still
+        going on as a test's home was removed put a file back in it)."""
         self.stop.set()
         self.wakeup.set()
+        if self.thread is not threading.current_thread():
+            self.thread.join(STOP_WAIT)

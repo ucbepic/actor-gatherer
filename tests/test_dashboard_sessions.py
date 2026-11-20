@@ -1161,6 +1161,31 @@ class EndedTest(SessionsBase):
         self.assertEqual(shown(100.0, 200.0, kept=150.0), (data.IDLE, False))   # the dashboard's own end: kept
         self.assertEqual(shown(100.0, 200.0, pid=42), (data.IDLE, False))       # open here again
 
+    def test_a_turn_cut_off_as_its_process_ended_is_over_once_its_terminal_runs_again(self):
+        """A turn whose end ag never got -- its hook server stopped mid-turn, then the dashboard restarted, closing the
+        terminal and opening it again -- is over, not running until it goes stale: the new process has had nothing."""
+        def shown(last, ended, said_at=None, alive=None, since=None, **session):
+            a = {"channel": "c", "created": 1.0, "last": last, "status": data.RUNNING, "alive": alive, "since": since,
+                 "said_at": said_at, "running": True, "turn_over": False, "building": False, "harness": "claude",
+                 "cwd": "/"}
+            g = [{"name": "g", "agents": [a], "last": last}]
+            data._with_started(g, [{"session_id": "c", "gatherer": "g", "cwd": "/", "harness": "claude", "pid": 42,
+                                    "created_at": "2026-10-24T00:00:00+00:00", "status": "terminal", "kept": 0,
+                                    "ended": ended, **session}], now=1000.0)
+            a = g[0]["agents"][0]
+            return a["status"], a["running"], a["turn_over"]
+        self.assertEqual(shown(100.0, 200.0), (data.IDLE, False, True))        # cut off: over
+        self.assertEqual(shown(300.0, 200.0), (data.RUNNING, True, False))     # a call since, in the new process
+        self.assertEqual(shown(100.0, 200.0, said_at=250.0), (data.RUNNING, True, False))   # a message since, its
+        #                                                                         read not recorded yet
+        self.assertEqual(shown(100.0, 0), (data.RUNNING, True, False))         # never ended here: as the gatherer says
+        self.assertEqual(shown(100.0, 200.0, pid=None), (data.CLOSED, False, False))   # not open again: closed
+        self.assertEqual(shown(100.0, 200.0, alive=True, since=50.0), (data.RUNNING, True, False))  # open elsewhere
+        #                                                                         since before that end: it may go on
+        self.assertEqual(shown(100.0, 200.0, alive=True, since=210.0), (data.IDLE, False, True))   # its new process
+        self.assertEqual(shown(100.0, 200.0, status="running"), (data.RUNNING, True, False))       # the dashboard's
+        #                                                                         own agent at work
+
     def test_a_table_from_before_ended_gets_it_set_for_what_had_run_and_stopped(self):
         self.s.close()
         os.remove(store.path())
@@ -1769,10 +1794,44 @@ class EndpointTest(SessionsBase):
         self.assertEqual(([a["channel"] for g in home["gatherers"] for a in g["agents"]], home["saved"]), ([], {}))
         self.assertEqual(self.post("/api/discard", {"session_id": sid})[0], 400)        # gone already
         kept = self.post("/api/sessions", {"gatherer": "g", "cwd": self.work})[1]["session_id"]
-        with unittest.mock.patch.object(data, "actors", return_value=[{"channel": kept}]):   # its gatherer has its history
+        with unittest.mock.patch.object(data, "has_conversation", return_value=True):   # its gatherer has its history
             code, said = self.post("/api/discard", {"session_id": kept})
         self.assertEqual((code, said["error"]), (400, "it already has a conversation. Close it instead."))
         self.assertEqual([x["session_id"] for x in sessions.stored()], [kept])
+
+    def test_an_app_agent_its_app_told_of_the_user_before_its_first_call_is_closed_from_the_list(self):
+        import contextlib
+        import io
+        from ag.ag_harness import home as ag_home
+        from ag.ag_harness.home.__main__ import cmd_insert
+        from ag.ag_harness.server import serve
+        from ag.ag_harness.server.__main__ import server_for
+        from ag.ag_harness.store import paths
+        from app_kit.events import context_stream
+        was = paths.TRACE_DIR, paths.AG_HOME
+        paths.AG_HOME = dashboard_home.HOME                     # ag writing into the dashboard's home
+        paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
+        ag_home._HOMES.clear()
+
+        def restore():
+            paths.TRACE_DIR, paths.AG_HOME = was
+            ag_home._HOMES.clear()
+        self.addCleanup(restore)
+        self.chat(None)                                         # ag's defaults: a config.toml of the dashboard's alone names none
+        open(paths.home_db(), "w").close()                      # the home's one database: an actor listed by its group
+        out = io.StringIO()                                     # another actor's call: group g there
+        serve(server_for(), [json.dumps({"op": "insert", "gatherer": "g", "properties": {"channel": "other"}, "id": 1,
+                                         "events": [{"type": "user_message", "payload": {"text": "hi"}}]})], out)
+        self.assertNotIn("error", json.loads(out.getvalue()))
+        sid = self.post("/api/sessions", {"gatherer": "g", "cwd": self.work})[1]["session_id"]
+        with contextlib.redirect_stdout(io.StringIO()):         # what the user did in its app, as the app host writes
+            self.assertEqual(cmd_insert(ag_home.home(), "g", json.dumps({"channel": sid}),    # it (`ag home insert`):
+                                        json.dumps([context_stream("Browser", "the user", "opened a page")])), 0)
+        a, = [a for g in json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))["gatherers"]
+              for a in g["agents"] if a["channel"] == sid]
+        self.assertEqual((a["events"], a["reads"], a["session"]["turns"]), (0, 0, 0))   # no call yet: in no group's
+        self.assertEqual(self.post("/api/discard", {"session_id": sid}), (200, {}))      # read, so its x discards it
+        self.assertEqual([x["session_id"] for x in sessions.stored()], [])
 
     def test_when_the_reader_last_looked_at_each_actor_is_the_same_for_every_dashboard_on_the_home(self):
         self.assertIsNone(json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))["seen"])   # none kept yet
