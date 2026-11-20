@@ -1,11 +1,12 @@
-// THE LIST'S OTHER SHAPES, as the page around them draws them (features/list/modes.js): the top bar's counts, the rail,
-// the monitor over the whole page -- each drawn into its box at once, from its view-model, so what the page does next (its
+// THE LIST'S OTHER SHAPES, as the page around them draws them (features/list/modes.js, group-moves.js): the top bar's
+// counts, the rail, the monitor over the whole page, the hover card, Manage groups -- each drawn into its box at once, from its view-model, so what the page does next (its
 // place measured, its cards watched) finds it drawn.
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { Card, type CardHost, type CardModel } from "./Card";
 import type { Totals } from "./groups";
 import type { MonitorModel } from "./monitor-model";
+import { ListDialogs, type DialogsHost, type DialogsModel } from "./ManageGroups";
 import { Monitor, type MonitorHost } from "./Monitor";
 import { Rail, type RailHost } from "./Rail";
 import type { RailModel } from "./rail-model";
@@ -49,6 +50,17 @@ export function drawRail(box: HTMLElement, m: RailModel, host: RailHost): void {
 /** The hover card's contents drawn into `box` (#actor-card), by now: the page places it next, by its size. */
 export function drawCard(box: HTMLElement, m: CardModel, host: CardHost): void {
   flushSync(() => rootOf(box).render(<Card m={m} host={host} />));
+}
+
+/** Manage groups and the question a move asks first, as they are now (none open: none drawn). */
+let dialogsBox: HTMLElement | null = null;
+export function drawListDialogs(m: DialogsModel, host: DialogsHost): void {
+  if (!dialogsBox) {
+    dialogsBox = Object.assign(document.createElement("div"), { className: "list-dialogs" });
+    document.body.append(dialogsBox);
+  }
+  const box = dialogsBox;
+  flushSync(() => rootOf(box).render(<ListDialogs m={m} host={host} />));
 }
 
 /** What is drawn in `box` gone: left, nothing of it kept but what the page read. */

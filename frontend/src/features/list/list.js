@@ -511,7 +511,7 @@ function renderAgents() {
   manageEntry();                                     // Manage groups, in the settings panel (features/list/group-moves.js)
   drawList(aside, model, LIST_HOST);                 // (features/list/mount.tsx: drawn by now)
   slideList(aside, was);
-  if (manage.dialog && manage.dialog.open) drawManage();   // the groups as they are now (features/list/group-moves.js)
+  if (manage.open) drawManage();                     // the groups as they are now (features/list/group-moves.js)
   if (hover.from === "agents") cardDraw();           // its card, said again from the new data
   if (state.renaming && !(nameInput && nameInput.isConnected)) { state.renaming = null; nameInput = null; }   // its row folded away
   if (state.folderEdit && !(folderInput && folderInput.isConnected)) { state.folderEdit = null; folderInput = null; }   // folded away
