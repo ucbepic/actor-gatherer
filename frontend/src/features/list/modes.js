@@ -1143,11 +1143,12 @@ async function monLoad() {
   if (stale.length > batch.length) monFetch(0);
 }
 // Where each gatherer's actors were put when the list was last drawn: channel -> place, top first.
-// The list is drawn whole each time; so that an actor changing status does not jump to its new place, each
-// row, group heading and gatherer is keyed (data-key), its place and status taken before the list is drawn
-// again (listPlaces), and after it (slideList) set back where it was and moved to where it is now. An actor
-// whose status changed, and so its group, slides over the others; one new to the list fades in; its status dot
-// grows into its new state. None of it for a reader who asks for less motion.
+// So that a row moved by a change (an actor closed into its fold, a folder opened above it) does not jump to its new
+// place, each row, group heading and gatherer is keyed (data-key) -- React keeps it the same element from one draw to
+// the next (features/list/AgentList.tsx) -- its place and status taken before the list is drawn again (listPlaces), and
+// after it (slideList) set back where it was and moved to where it is now. An actor whose status changed, and so its
+// group, slides over the others; one new to the list fades in; its status dot grows into its new state. None of it
+// for a reader who asks for less motion.
 function listPlaces(root) {
   const places = new Map();
   for (const n of root.querySelectorAll("[data-key]")) {

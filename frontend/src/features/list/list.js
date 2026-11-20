@@ -1,16 +1,16 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
-  BESIDE_KEY, ICONS, ago, closable, closeIcon, el, foldMark, gathererNamed, get, harnessBadge, harnessInfo,
+  BESIDE_KEY, ICONS, ago, closable, closeIcon, el, gathererNamed, get, harnessBadge, harnessInfo,
   harnessLogo, harnessName, hideIcon, key, post, saveIcon, shellPath, strokeIcon,
 } from "../../core/page/helpers.js";
 import { drawn, listSignature, loadHome, redrawList, setLive } from "../page/data.js";
 import { discardable, homeSince, homesTaken, newerTasks, seen, statusOf } from "./seen.js";
 import {
-  GF, GFS, GF_NEW, dragGatherer, fileGatherers, gPicks, gfFolded, gfLines, gfMakingNow, gfOf, gfShow, nameGroup,
+  GF, GFS, GF_NEW, fileGatherers, gPicks, gfFolded, gfMakingNow, gfOf, gfShow, nameGroup, pickGatherer,
 } from "./gatherer-folders.js";
 import {
-  ALONE_SAYS, aloneNew, askMerge, askMove, canCross, canMerge, drawManage, isAloneName, manage, manageEntry,
-  outsideDrop, placeGroup, placeOf, showOutside,
+  aloneNew, askMerge, askMove, canCross, canMerge, drawManage, isAloneName, manage, manageEntry, outsideDrop,
+  placeGroup, placeOf, showOutside,
 } from "./group-moves.js";
 import {
   HOVERS, cardDraw, cardHide, cardLive, cardMoving, drawTotals, hover, listButtons, listPlaces, railDragged,
@@ -19,7 +19,7 @@ import {
 import {
   actorPanes, appClosed, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnlyKey, branchChip,
   closeAppPane, closePane, closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, isAt,
-  isAway, moveEnd, newForm, openActors, openPop, openTaskBeside, paneNote, pick, pickBeside, showAppPanel,
+  isAway, moveEnd, newForm, openActors, openCoordinator, openPop, openTaskBeside, paneNote, pick, pickBeside, showAppPanel,
   placeIfShown, popMenu, rekeyTask, rememberTask, rowMore, rowPop, selectAppPane, selectedTask, show, shownPanels,
   startButtons, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut, viaTabs,
   workPlacer,
@@ -27,12 +27,13 @@ import {
 import { refreshNewTab } from "../layout/new-tab.js";
 import { TASK_KINDS } from "../chat/chat.js";
 import { opened } from "../chat/files-view.js";
-import { firstLine, plural } from "../../core/format";
+import { plural } from "../../core/format";
 import { shownGone } from "../terminal/shell.js";
 import * as appHost from "../apps/host";
 import * as prefs from "../../core/prefs";
 // the list's view-model (features/list/model.ts) and what it derives from the home: statuses, folders, tasks, groups
 import { boxKey, buildList, folderKey } from "./model";
+import { drawList, listDrawing } from "./mount";
 import * as LS from "./status";
 import * as LT from "./tree";
 import * as LK from "./tasks";
@@ -411,9 +412,94 @@ function listView() {
 }
 // The list as its view-model has it now (features/list/model.ts)
 const listModel = () => buildList(CTX, listView());
+// THE LIST, drawn by React (features/list/AgentList.tsx) from its view-model: each node where the model puts it, by its key,
+// so a row stays the same element from one draw to the next -- a row in focus, hovered or dragged stays so as the list
+// is drawn again. What a press on it does, and what of it the page still builds (its start buttons and menus, an
+// actor's face, its branch), it asks of the page here (features/list/host.ts's ListHost).
+const avatarSrc = (name) => {
+  if (!name) return null;
+  if (!SNAPSHOT) return `/avatars/${name}.svg`;
+  const svg = (SNAPSHOT.avatars || {})[name];
+  return svg ? "data:image/svg+xml," + encodeURIComponent(svg) : null;
+};
+const LIST_HOST = {
+  snapshot: !!SNAPSHOT,
+  hovers: () => HOVERS.matches,
+  besideKey: BESIDE_KEY,
+  harnessName, ago, avatarSrc, shellPath,
+  nameNote: (g, a) => nameNote(g, a),
+  taskKind: (k) => TASK_KINDS[k] || k,
+  // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (features/list/gatherer-folders.js)
+  head: (model) => [el("h2", { text: "Agents" }), outsideDrop(),
+    SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: GF_NEW, "aria-label": GF_NEW,
+      onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),   // a group (features/list/gatherer-folders.js)
+    aloneNew(),                                      // an actor on its own (features/list/group-moves.js)
+    SNAPSHOT || !model.merged ? null : crewButton(null, "all"),   // the coordinator agent over everything
+    el("span", { class: "list-btns" }, ...listButtons())].filter(Boolean),
+  // over a gatherer's counts while it is hovered (or in focus), in a folder's line's order: "+" (all that starts there),
+  // and "⋯": a new folder, rename, and hide
+  gathererActs: (g, title) => [...(SNAPSHOT ? [] : startButtons(g)), rowMore(`gmore:${g.name}`, title, [
+    ...(SNAPSHOT ? [] : [{ icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, null) },
+      { icon: ICONS.pencil, text: "Rename", run: () => retitle(g) }]),
+    { mark: hideIcon(), text: "Hide", run: () => setHidden(g, true) }])],
+  folderActs: (n) => folderActs(n.g, n.f, n.closed, n.crew),
+  gfActs: (f, crew) => [state.home.merged && !crew ? crewButton(null, `groups:${f.id}`) : null,
+    folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(GF, null, f.id)),
+    folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(GF, f.id)),
+    folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(GF, f.id))].filter(Boolean),
+  newForm: () => newForm(),
+  formAt: () => JSON.stringify([state.adding, state.starting]),
+  branch: (g, a) => branchChip(g, a),
+  harnessLogo,
+  appFace: (o) => appFace(o),
+  appMark: (o) => appMarkOf(o),
+  icon: (name, size) => strokeIcon(ICONS[name] || name, size),
+  saveIcon, hideIcon, closeIcon,
+  crew: (g, node) => crewInfo(g, node),
+  openCoordinator: (g, node) => openCoordinator(g, node),
+  adds: (g, k) => addInfo(g, k),
+  addMenu: (g, k) => addItems(g, k),
+  toggleGatherer, toggleFolder, toggleFold,
+  openGatherer: (name) => { if (collapsed.has(name)) toggleGatherer(name); },
+  openFolder: (gname, id) => { if (!isOpenFolder(gname, id)) toggleFolder(gname, id); },
+  pick, pickBeside, togglePick, cardHide,
+  openTask: (gname, id, ev) => openTask(gname, id, null, ev),
+  selectApp, appPanelMenu, setSaved, saveTask, closeTask, closeApp, closeShell, setHidden, startFolderEdit,
+  hideCrew: (g, a) => setCrewHidden(crewHideKey(crewNode(g, a)), true),
+  closeActor: (g, a, how) => closeActor(g, a, how === "close" ? closeSession : () => discardSession(g, a)),
+  startRename, startItemRename, endRename, endFolderEdit,
+  renaming: () => {
+    const r = state.renaming;
+    return r && { value: r.value, placeholder: r.c === null ? r.g : r.kind ? r.auto : "Name this actor",
+      label: r.c === null ? "This group's name" : r.kind ? `This ${r.kind}'s name` : "This actor's name" };
+  },
+  nameRef: (n) => { nameInput = n; nameFor = n ? state.renaming : null; },
+  nameTyped: (v) => { if (state.renaming) state.renaming.value = v; },
+  // Tab away keeps it (a press has ended it already) -- not a blur of the list's own drawing, nor the window going to
+  // the back (it comes back focused)
+  nameBlur: () => { if (!listDrawing() && document.hasFocus() && state.renaming && state.renaming === nameFor) endRename(true); },
+  folderEditing: () => {
+    const f = state.folderEdit;
+    return f && { value: f.value, label: f.id === null ? "The new folder's name" : "The folder's name" };
+  },
+  folderRef: (n) => { folderInput = n; folderFor = n ? state.folderEdit : null; },
+  folderTyped: (v) => { if (state.folderEdit) state.folderEdit.value = v; },
+  folderBlur: () => { if (!listDrawing() && document.hasFocus() && state.folderEdit && state.folderEdit === folderFor) endFolderEdit(true); },
+  closeAsk: (g, f) => closeAskSays(g, f),
+  closeFolderGo: (g, f) => { folderClosing = null; closeFolder(g, f); },
+  closeAskCancel: () => { folderClosing = null; renderAgents(); },
+  askFocus: (which) => { if (folderClosing) folderClosing.focus = which; },
+  dragActor: (ev, g, a) => startDrag(ev, g, { cs: draggedWith(g, a) }),
+  dragItems: (ev, g, items) => startDrag(ev, g, { cs: items }),
+  dragFolder: (ev, g, f) => startDrag(ev, g, { folder: f.id }),
+  dragGatherer: (ev, g) => startDrag(ev, GFS, { gs: gPicks.has(g.name) ? [...gPicks] : [g.name] }),
+  pickGatherer: (ev, g) => pickGatherer(ev, g),
+  dragEnd: () => endDrag(),
+  dropEnter, dropOver, dropLeave, drop: dropDone, joinEnter, joinOver, joinDrop,
+};
 function renderAgents() {
   if (PANE) return;                                  // a frame has no list: the page around it has
-  if (listDrag && !listDrag.force) { listDrag.later = true; return; }   // an actor dragged: once it is over
+  if (listDrag && !listDrag.force) { listDrag.later = true; return; }   // dragged: the rail drawn once it is over (modes.js)
   drawn.agents = listSignature();                    // what render() compares a home's with
   const model = listModel();
   for (const g of model.visible) readApps(g.name);   // the apps its actors are attached to
@@ -421,42 +507,14 @@ function renderAgents() {
   drawTotals(model.totals);                          // in the top bar, whatever shape the list is in
   const aside = document.getElementById("agents");
   const was = listPlaces(aside);
-  const typing = nameInput && document.activeElement === nameInput && [nameInput.selectionStart, nameInput.selectionEnd];
-  const folderTyping = folderInput && document.activeElement === folderInput && [folderInput.selectionStart, folderInput.selectionEnd];
-  nameMoving = true;                                 // taken out and put back: not a blur that names it
   document.getElementById("home").textContent = document.getElementById("home").title = model.home;
   manageEntry();                                     // Manage groups, in the settings panel (features/list/group-moves.js)
-  // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (features/list/gatherer-folders.js)
-  aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }), outsideDrop(),
-    SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: GF_NEW, "aria-label": GF_NEW,
-      onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),   // a group (features/list/gatherer-folders.js)
-    aloneNew(),                                      // an actor on its own (features/list/group-moves.js)
-    SNAPSHOT || !model.merged ? null : crewButton(null, "all"),   // the coordinator agent over everything
-    el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
-  if (model.empty) aside.append(el("div", { class: "servers", text: model.empty }));
-  // the coordinator agent over everything; its gatherers, in the folders the reader keeps them in, if any; then the
-  // actors on their own closed, in their lines
-  if (model.overAll) aside.append(el("div", { class: "g-kids crew-top" }, agentRow(model.overAll)));
-  aside.append(...model.top.flatMap(drawNode));
-  if (model.hidden.length) {
-    const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
-      el("summary", { text: `${model.hidden.length} hidden group${model.hidden.length === 1 ? "" : "s"}` }));
-    for (const h of model.hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: h.title }),
-      el("span", { class: "why" }, ...(h.hidden ? ["hidden"]
-        : ["inactive, last active ", el("span", { "data-ago": h.last, text: ago(h.last) })])),
-      el("button", { type: "button", onclick: () => setHidden(h.g, false) }, "Show")));
-    const wasOpen = document.getElementById("hidden-gatherers");
-    if (wasOpen && wasOpen.open) list.open = true;
-    aside.append(list);
-  }
+  drawList(aside, model, LIST_HOST);                 // (features/list/mount.tsx: drawn by now)
   slideList(aside, was);
   if (manage.dialog && manage.dialog.open) drawManage();   // the groups as they are now (features/list/group-moves.js)
   if (hover.from === "agents") cardDraw();           // its card, said again from the new data
-  nameMoving = false;
   if (state.renaming && !(nameInput && nameInput.isConnected)) { state.renaming = null; nameInput = null; }   // its row folded away
-  else if (typing) { nameInput.focus({ preventScroll: true }); nameInput.setSelectionRange(...typing); }
   if (state.folderEdit && !(folderInput && folderInput.isConnected)) { state.folderEdit = null; folderInput = null; }   // folded away
-  else if (folderTyping) { folderInput.focus({ preventScroll: true }); folderInput.setSelectionRange(...folderTyping); }
   if (folderClosing && folderClosing.from === "list" && !document.querySelector("#agents .f-ask")) folderClosing = null;   // folded away
   askRefocus();
   markDragged();                                     // drawn again mid-drag: what is dragged, still shown as it
@@ -468,52 +526,19 @@ function renderAgents() {
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
 }
-// A node of the list's view-model drawn: its elements, in order
-function drawNode(n) {
-  switch (n.kind) {
-    case "gatherer": return [gathererBox(n)];
-    case "alone": return [el("div", { class: "gatherer alone", title: ALONE_SAYS }, ...n.kids.flatMap(drawNode))];   // an actor on its own: its rows alone
-    case "alone-shut": return [el("div", { class: "gatherer alone shut" }, ...n.folds.flatMap(foldRows))];   // those closed, in their lines
-    case "gf-folder": return gfLines(n, drawNode);   // a folder of gatherers (features/list/gatherer-folders.js)
-    case "gf-making": return [el("div", { class: "folder-line gf-line making", "data-key": n.key, role: "status" },
-      el("span", { class: "fname", text: n.text }), el("span", { class: "fill", text: "Making the group…" }))];
-    case "folder-new": return [el("div", { class: "folder-line" + (n.g === GF ? " gf-line" : "") + " editing", "data-key": n.key }, folderBox())];
-    case "folder": return folderRows(n);
-    case "fold": return foldRows(n);
-    case "actor": return [agentRow(n)];
-    case "task": return [taskRow(n)];
-    case "app": return [appRow(n)];
-    case "shell": return [shellRow(n)];
-    default: return [];
-  }
-}
-// A gatherer's box in the list: its row -- its name, its gatherer agent, its counts, its buttons over them on hover --
-// and, open, what is in it set in under it. Its row dragged (dragGatherer): put in a folder of gatherers.
-function gathererBox(n) {
-  const g = n.g;
-  const box = el("div", { class: "gatherer" + (n.nested ? " nested" : "") + (n.picking ? " picking" : "") },
-    dropOn(dragGatherer(el("div", { class: "gatherer-row", "data-key": n.key },
-      el("button", { class: "name", type: "button", "aria-expanded": n.open ? "true" : "false", onclick: () => toggleGatherer(g.name),
-        title: g.policy ? `${g.name} · policy ${g.policy}` : g.name },
-        el("span", { class: "caret", text: "▶" }),
-        n.renaming ? null : el("span", { class: "gname", text: n.title })),
-      n.renaming ? nameBox() : null,
-      SNAPSHOT ? null : crewButton(g),                 // its coordinator agent, just after its name
-      // how many of its actors wait on the user, how many stopped on an error, and how many run now; nothing while none does
-      // -- and over them while it is hovered (or in focus), in a folder's line's order: "+ actor", "+ ⋯", a new folder,
-      // rename, and hide (a folder's: delete)
-      el("span", { class: "fill", onclick: () => toggleGatherer(g.name) }, ...countChips(n.counts),
-        el("span", { class: "g-acts", onclick: (ev) => ev.stopPropagation() }, ...(SNAPSHOT ? [] : startButtons(g)),
-          rowMore(`gmore:${g.name}`, n.title, [
-            ...(SNAPSHOT ? [] : [{ icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, null) },
-              { icon: ICONS.pencil, text: "Rename", run: () => retitle(g) }]),
-            { mark: hideIcon(), text: "Hide", run: () => setHidden(g, true) }])))), g), g, null,
-    () => { if (collapsed.has(g.name)) toggleGatherer(g.name); }));
-  if (n.adding) box.append(newForm());
-  if (n.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${n.error}` }));
-  // open: what is in it -- its gatherer agent, then its box's rows -- set in under its row, as a folder's are (g-kids)
-  if (n.kids.length) box.append(el("div", { class: "g-kids" }, ...n.kids.flatMap(drawNode)));
-  return box;
+// A coordinator agent's button on a node's row (features/layout/panes.js's crewButton), as the list draws it: none while
+// none can be started and the node has none
+function crewInfo(g, node) {
+  const [, crew] = crewAt(node, g), hidden = !!crew && crewHidden.has(crewHideKey(node));
+  if (!startable().length && !crew) return null;
+  const place = crewPlace(node, g), what = node === "all" ? "every group's actors" : node.startsWith("groups:")
+    ? `the actors of the groups in ${place}` : node.startsWith("group:") ? "this group's actors" : `the actors in ${place}`;
+  const st = hidden ? statusOf(crew) : null;
+  return { crew: crew || null, hidden: st, disabled: !!state.starting,
+    busy: !!state.starting && state.starting.harness === "crew" && state.starting.node === node,
+    title: hidden ? `Coordinator agent over ${place} · ${st[1]} · hidden from the list`
+      : crew ? `Coordinator agent over ${place}` : `Start a coordinator agent for ${what}`,
+    label: crew ? `The coordinator agent over ${place}` : `Start a coordinator agent over ${place}` };
 }
 // A user's message in a chat bubble: src/features/chat/Bubble.tsx (ag_dashboard/DESIGN.md, A5). A message between the
 // actors of a gatherer (coordination.py's `envelope`), or the news of a watch: features/list/envelope.ts (envelope,
@@ -536,41 +561,6 @@ const groupCrew = LG.groupCrew;
 const crewAt = (node, g = null) => LG.crewAt(CTX, node, g);
 const crewHideKey = LG.crewHideKey;
 const crewPlace = (node, g = null) => LG.crewPlace(CTX, node, g);
-// An actor is a TASK too (features/layout/panes.js's taskKey): its row says how it stands at its left, its state in a word on its
-// meta line (none, idle), and shows its face at its right. `r`: its row in the list's view-model (model.ts's ActorRow).
-function agentRow(r) {
-  const { g, a, group, current, naming, named, asked } = r, [cls, label] = r.status;
-  // its name -- else what it was last asked -- double-clicked once it is the one shown (or F2): named there. Not a single
-  // click: the row is its name alone, and a click on the row shown shows it (its task laid out again, if it was not)
-  const nameIt = SNAPSHOT || !current ? {} : { ...(HOVERS.matches ? {} : { title: `${nameNote(g, a)}Double-click to ${named ? "rename" : "name"} it` }),
-    ondblclick: (ev) => { if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return; ev.stopPropagation(); startRename(g, a); } };
-  const row = el(naming ? "div" : "button", { class: "agent" + (naming ? " renaming" : "") + (r.coordinator ? " coordinator" : "") + (r.picked ? " picked" : ""),
-    ...(naming ? {} : { type: "button" }),
-    "aria-current": current ? "true" : "false", "data-key": r.key, "data-group": group,
-    ...(r.open ? { "data-open": "true" } : {}), ...(naming ? {} : { "data-card": key(g.name, a.channel) }),
-    // hovered, the card (actorCard) says who it is; where there is no hovering, its title
-    ...(HOVERS.matches ? {} : { title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}`
-      + (asked && named ? `\nAsked: ${firstLine(asked, 300)}` : "") + (a.recap && a.recap.text ? `\nRecap, ${ago(a.recap.at)}: ${a.recap.text}` : "")
-      + (SNAPSHOT ? "" : `\n${BESIDE_KEY}+click to open side by side${r.coordinator ? "" : "\nShift+click to select several"}`) }),
-    ...(naming ? {} : { onclick: (ev) => {
-      if (ev.shiftKey && !SNAPSHOT && !r.coordinator) { ev.preventDefault(); togglePick(g, a); return; }
-      pick(g.name, a.channel, ev);
-    }, oncontextmenu: (ev) => pickBeside(g.name, a.channel, ev),
-      onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startRename(g, a); } } }) },
-    // its state at its left -- the list is drawn again on every change: the glyph's turn set by the clock, not restarted
-    // each time -- and its face at its right
-    el("span", { class: `dot ${cls}`, "aria-label": label, style: `--spin-at: -${Date.now() % 1200}ms` }),
-    el("div", {},
-      // just its name, else what it was last asked, on one line: what it was asked and its recap, in its title (and over
-      // the whole page, the monitor's card)
-      naming ? nameBox() : el("div", { class: "name" + (r.label.cls ? ` ${r.label.cls}` : ""), ...nameIt }, r.label.text),
-      rowActs(addButton(g, a.channel), saveButton(g, a, r.saved), closeButton(g, a, r.close)),
-      branchChip(g, a),
-      (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
-        `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null),
-    el("span", { class: "a-face" }, tabMark(r.tab), pickMark(g, a, plainFace(a), r.checked)));
-  return naming || r.coordinator ? row : dropOnItem(dragRow(row, g, a), g, a.channel);
-}
 // TASKS (tasks.py, `home.tasks`: {gatherer: {tasks: [{id, name}], tasked: {item: task id}}}): what the reader works with
 // at once -- actors and apps alike, its ITEMS: an actor by its channel, an app's instance by "app:<its id>" (appItem) --
 // one row in the list (taskRow), a leaf: what is in it shown in its card (features/list/modes.js's taskCard), and in its layout,
@@ -674,12 +664,6 @@ const appStack = (list, most = 3) => list.length ? el("span", { class: "t-apps" 
 // boxed number by a face read as an unread count, and the row's bar already says it is open; the hover card says which
 // tab (tabLine). None, open nowhere: a click opens it in a tab of its own, and it can be dragged onto the work area.
 const tabAt = (k) => k && workPlacer && !SNAPSHOT ? workPlacer.tabs.where(k) : null;
-// `at`: where it is open (tabAt), as the row has it
-function tabMark(at) {
-  if (!at) return null;
-  const said = at.here ? `Open here in tab ${at.n}` : `Open in tab ${at.n} · click to switch to it`;
-  return el("span", { class: "tab-no" + (at.here ? " here" : ""), "aria-label": said }, String(at.n));
-}
 // the same, said in its hover card
 function tabLine(k) {
   const at = tabAt(k);
@@ -710,32 +694,12 @@ function taskFaces(g, id) {
   const list = taskActors(g, id);
   return facesOf(list.slice(0, 3).map((a) => ({ a, status: statusOf(a) })), Math.max(0, list.length - 3), taskApps(g, id));
 }
-// A task's row: as an actor's -- its lead's state at its left, its name -- its actors' faces and its apps' marks at its
-// right, its "+" over them hovered. A group, not a folder: what is in it is listed in its card (hovered), not in the
-// list. Pressed: opened (openTask). Dragged: all in it; an item dropped on it, put in it. `r`: its row in the list's
-// view-model (model.ts's TaskRow).
-function taskRow(r) {
-  const { g, t, name, first, naming } = r, [cls, label] = r.status;
-  const k = `${TASK_ITEM}${t.id}`;
-  const row = el(naming ? "div" : "button", { class: "agent task" + (naming ? " renaming" : ""), ...(naming ? {} : { type: "button" }),
-    "aria-current": r.current ? "true" : "false", "data-key": r.key,
-    "data-group": r.group, ...(r.open ? { "data-open": "true" } : {}), ...(naming ? {} : { "data-card": key(g.name, `task:${t.id}`) }),
-    ...(HOVERS.matches ? {} : { title: `${name} · ${r.what || "empty"}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click to open side by side\nDouble-click the name (or F2) to ${t.name ? "rename" : "name"} it`}` }),
-    // pressed, its card put away (as the rail's tile does): a live card stays while the pointer is on the row, over the
-    // panels the task opens
-    ...(naming ? {} : { onclick: (ev) => { cardHide(ev); openTask(g.name, t.id, null, ev); }, onkeydown: (ev) => renameKey(ev, g, k) }) },
-  el("span", { class: `dot ${cls}`, "aria-label": label, style: `--spin-at: -${Date.now() % 1200}ms` }),
-  el("div", {},
-    naming ? nameBox() : el("div", { class: "name", text: name, ...nameOnDouble(g, k) }),
-    rowActs(first ? addButton(g, first) : null, taskSaveButton(g, t, r.members, r.saved), taskCloseButton(g, t, r.closable))),
-  el("span", { class: "t-faces" }, tabMark(r.tab), ...facesOf(r.faces, r.more, r.apps)));
-  return naming || !first ? row : dropOnItem(dragItems(row, g, () => taskItems(g, t.id)), g, first);
-}
 // A task SAVED: every actor in it saved for later, as an actor's bookmark saves it -- the bookmark filled once every one
-// is; closed, the task is then listed in its folder's saved line, not its closed one (where its first actor comes).
-// `all`, `saved`: its actors, and whether each is saved.
-function taskSaveButton(g, t, all = taskMembers(g, t.id), saved = all.length > 0 && all.every((a) => !!savedAs(g.name, a))) {
+// is; closed, the task is then listed in its folder's saved line, not its closed one (where its first actor comes)
+function taskSaveButton(g, t) {
+  const all = taskMembers(g, t.id);
   if (!all.length) return null;
+  const saved = all.every((a) => !!savedAs(g.name, a));
   if (SNAPSHOT) return saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null;
   return rowButton("save-btn" + (saved ? " on" : ""), { "aria-pressed": saved ? "true" : "false",
     title: saved ? "Saved for later · click to unsave" : "Save the task for later",
@@ -750,9 +714,8 @@ async function saveTask(gname, id, save) {
 // does, and its apps put to sleep -- kept, in the task, with nothing running for them (a Browser's tabs closed, their pages
 // kept: app_host.py's `sleep_instance`) -- their panels here closed first. Clicked again later, it opens as
 // it was: its apps above (a Browser's tabs opened again), its actors as closed ones are, started again by a message.
-// `can`: one of its actors can be closed.
-function taskCloseButton(g, t, can = !SNAPSHOT && taskMembers(g, t.id).some(closable)) {
-  if (!can) return null;
+function taskCloseButton(g, t) {
+  if (SNAPSHOT || !taskMembers(g, t.id).some(closable)) return null;
   return rowButton("close-btn", { title: "Close the task · it reopens as it was",
     "aria-label": "Close the task" }, () => closeTask(g.name, t.id), closeIcon());
 }
@@ -769,26 +732,6 @@ async function closeTask(gname, id) {
     .catch((e) => paneNote(`${o.app.label}: ${e.message}`))));
   await loadHome();
   renderAgents();
-}
-// An app in no task, a task of its own: its row, as an actor's -- what it shows (its title, else its kind) and its kind
-// under it, its "+" and its × (closeApp), its face at its right. Pressed: selected (selectApp); right-clicked, its panel's
-// menu (features/layout/panes.js's appPanelMenu: moved, or closed); dragged onto another item's row, put in its task, as an item
-// dropped on it is put in one with it. `r`: its row in the list's view-model (model.ts's AppRow).
-function appRow(r) {
-  const { g, o, item: k, told, last, naming } = r;
-  const row = el(naming ? "div" : "button", { class: "agent app-row" + (naming ? " renaming" : ""), ...(naming ? {} : { type: "button" }),
-    "aria-current": r.chosen ? "true" : "false", "data-key": r.key, "data-instance": o.id,
-    "data-group": OPEN, ...(r.shown ? { "data-open": "true" } : {}), ...(naming ? {} : { "data-card": appKey(g.name, o.id) }),
-    ...(HOVERS.matches ? {} : { title: `${o.name ? `${o.name} · ` : ""}${o.title ? `${o.app.label} · ${o.title}` : o.app.label}${last ? `\n${last.title}` : ""}${o.folder ? `\n${o.folder}` : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click to open side by side\nRight-click to move or close the panel\nDouble-click the name (or F2) to ${o.name ? "rename" : "name"} it`}` }),
-    ...(naming ? {} : { onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); }, onkeydown: (ev) => renameKey(ev, g, k),
-      oncontextmenu: (ev) => appPanelMenu(g.name, o, ev) }) },
-  told ? el("span", { class: `dot ${told[0]}`, "aria-label": told[1] }) : el("span", { class: "dot-none", "aria-hidden": "true" }),
-  el("div", {},
-    naming ? nameBox() : el("div", { class: "name", text: appShown(o), ...nameOnDouble(g, k) }),
-    rowActs(addButton(g, k), SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}`, "aria-label": `Close ${o.app.label}` },
-      () => closeApp(g.name, o), closeIcon()))),
-  el("span", { class: "a-face" }, tabMark(r.tab), appFace(o)));
-  return naming ? row : dropOnItem(dragItems(row, g, () => [k]), g, k);
 }
 // An app SELECTED, as an actor is (features/layout/panes.js's selectAppPane): its task entered first, if another is shown -- as a click
 // on that task would; one of apps only, its apps alone shown (enterAppTask) -- its panel shown (opened, if it was not) and
@@ -876,27 +819,48 @@ async function openTask(gname, id, focus = null, ev = null) {
 }
 // "+" on an item's row, a task's (on its first item), and in a task's card (`label` beside it): something added to the
 // item's task -- a new agent on a harness picked (addToTask), or an app, as adding it does (onTask): put in the task
-// (addAppToTask), or opened at the item's directory beside it (openAppAt) -- from its menu
-function addButton(g, k, label = null) {
+// (addAppToTask), or opened at the item's directory beside it (openAppAt) -- from its menu. addInfo: its menu's key and
+// title, none (null) where nothing can be added; openAdd: its menu, from `button`.
+function addWhat(g, k) {
   const a = isAppItem(k) ? null : actorOf(g, k), o = a ? null : appInfo(g.name, k.slice(APP_ITEM.length));
   if ((!a && !o) || (a && isCoordinator(a)) || (o && groupApp(o.app))) return null;
   const hs = SNAPSHOT ? [] : startable();
   const apps = SNAPSHOT || PANE ? [] : appHost.found().filter((app) => onTask(app) !== "no" && !app.failed);
-  if (!hs.length && !apps.length) return null;
-  // its menu's key: its own, apart from the list's "+" for the same item, which the menu would hang from otherwise
-  const mk = `${label ? "card-" : ""}task-add:${g.name}/${k}`, id = itemTaskOf(g, k);
+  return hs.length || apps.length ? { a, o, hs, apps } : null;
+}
+// its menu's key: its own, apart from the list's "+" for the same item, which the menu would hang from otherwise
+const addKey = (g, k, label) => `${label ? "card-" : ""}task-add:${g.name}/${k}`;
+function addInfo(g, k, label = null) {
+  const w = addWhat(g, k);
+  return w && { key: addKey(g, k, label),
+    title: `Add ${[w.hs.length ? "an agent" : null, w.apps.length ? "an app" : null].filter(Boolean).join(" or ")} to this task` };
+}
+// what its menu says: where it adds to, and its items ({mark, icon, text, note, run}) -- the list's own menu is drawn by
+// features/list/RowViews.tsx's AddMenu, a card's here (openAdd)
+function addItems(g, k) {
+  const w = addWhat(g, k);
+  if (!w) return null;
+  const { a, o, hs, apps } = w, id = itemTaskOf(g, k);
   const where = id !== null ? taskName(g, taskById(g.name, id)) : a ? actorTitle(a) : appTitle(o);
-  const items = [
+  return { where, items: [
     ...hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), note: "a new agent in the same directory", run: () => addToTask(g.name, k, h) })),
     ...apps.map((app) => onTask(app) === "folder"
       ? { icon: ICONS.app, mark: app.mark ? appMarkImg(app) : null, text: app.label, note: "opened at its directory, beside the task",
         run: () => openAppAt(g.name, k, app.name) }
       : { icon: ICONS.app, mark: app.mark ? appMarkImg(app) : null, text: app.label, note: "an app the task's agents can use",
         run: () => addAppToTask(g.name, k, app.name) }),
-  ];
-  const b = rowButton("task-add", { title: `Add ${[hs.length ? "an agent" : null, apps.length ? "an app" : null].filter(Boolean).join(" or ")} to this task`,
-    "aria-label": "Add to this task", "data-pop": mk, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === mk) },
-  () => openPop(mk, b, popMenu(`Add to ${where}`, items)),
+  ] };
+}
+function openAdd(g, k, label, button) {
+  const m = addItems(g, k);
+  if (m) openPop(addKey(g, k, label), button, popMenu(`Add to ${m.where}`, m.items));
+}
+// the same, built for a task's card (features/list/modes.js's taskCard)
+function addButton(g, k, label = null) {
+  const add = addInfo(g, k, label);
+  if (!add) return null;
+  const b = rowButton("task-add", { title: add.title, "aria-label": "Add to this task", "data-pop": add.key, "aria-haspopup": "menu",
+    "aria-expanded": String(rowPop.key === add.key) }, () => openAdd(g, k, label, b),
   el("span", { class: "task-add-in", "aria-hidden": "true" }, "+", label ? el("span", { class: "t-lbl", text: label }) : null));
   return b;
 }
@@ -1003,11 +967,9 @@ async function joinTask(gname, k, items) {
   readApps(gname, true);
   renderAgents();
 }
-// A row's buttons ("+", bookmark, ×), one group -- shown over its face while it is hovered (features/list/list.css); none: nothing
-const rowActs = (...bs) => bs.some(Boolean) ? el("span", { class: "a-acts" }, ...bs) : null;
-// A selected actor's check, on its avatar, once two or more are selected (`checked`): a click on it leaves it out
-function pickMark(g, a, logo, checked = picked(g, a) && picks.cs.size >= 2) {
-  if (!checked || !(logo instanceof HTMLElement)) return logo;
+// A selected actor's check, on its avatar, once two or more are selected: a click on it leaves it out
+function pickMark(g, a, logo) {
+  if (!picked(g, a) || picks.cs.size < 2 || !(logo instanceof HTMLElement)) return logo;
   logo.append(el("span", { class: "pick", role: "button", title: "Selected · click to deselect", "aria-label": "Deselect",
     onclick: (ev) => { ev.stopPropagation(); togglePick(g, a); } }, strokeIcon("M4.25 8.25l2.5 2.5 5-5.25", 11)));
   return logo;
@@ -1019,17 +981,19 @@ const rowButton = (cls, attrs, run, icon) => el("span", { class: cls, role: "but
   onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); run(); } } }, icon);
 // Its bookmark: saved for later (filled), or to be, a press either way -- in a snapshot, filled if saved, and nothing to
 // press. The gatherer agent's, in its place: hidden from the list (its face on the gatherer's row shows it again).
-function saveButton(g, a, saved = !!savedAs(g.name, a)) {
+function saveButton(g, a) {
   if (isCoordinator(a)) return SNAPSHOT ? null : rowButton("save-btn", { title: "Hide the coordinator agent · click its face on the folder's row to show it again",
     "aria-label": "Hide the coordinator agent" }, () => setCrewHidden(crewHideKey(crewNode(g, a)), true), hideIcon());
+  const saved = !!savedAs(g.name, a);
   if (SNAPSHOT) return saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null;
   return rowButton("save-btn" + (saved ? " on" : ""), { "aria-pressed": saved ? "true" : "false",
     title: saved ? "Saved for later · click to unsave" : "Save for later",
     "aria-label": saved ? "Unsave" : "Save for later" }, () => setSaved(g.name, a, !saved), saveIcon(saved));
 }
-// Its ×: its process closed (closable), or, one that never started, it discarded (discardable); null: neither. `how`:
-// which (features/list/status.ts's closeHow).
-function closeButton(g, a, how = LS.closeHow(CTX, a)) {
+// Its ×: its process closed (closable), or, one that never started, it discarded (discardable); null: neither
+// (features/list/status.ts's closeHow).
+function closeButton(g, a) {
+  const how = LS.closeHow(CTX, a);
   return how === "close" ? rowButton("close-btn", { title: "Close this session, even mid-turn",
       "aria-label": "Close session" }, () => closeActor(g, a, closeSession), closeIcon())
     : how === "discard" ? rowButton("close-btn", { title: "Never started · remove it from the list",
@@ -1045,15 +1009,13 @@ async function closeActor(g, a, how) {
 // Enter (or a press anywhere else in the page, or Tab away) keeps what is typed, Esc leaves it as it was, and nothing
 // typed takes the reader's name back -- the harness's own, or what it was last asked, shows again. Kept as an event in
 // its gatherer and given to its harness (POST /api/name): Claude Code's or codex's own list of sessions shows it, and
-// a session in the dashboard's terminal is told with its harness's /rename once its turn is over. The box is one
-// element for as long as it is open (`nameInput`), put back in each redraw of the list (`nameMoving`), its caret kept.
-let nameInput = null, nameMoving = false;
-// A press anywhere but in the box ends it -- also where the keys stay put (History's rows, a scroll bar) or go into a
-// pane's frame (agPanes.focus) -- and the list is drawn again only once the press is over (`pressHeld`: what waits
-// for it), so its click still lands on the row it was pressed on: another actor's shows that actor.
-let pressHeld = null;
-function drawNamed() { renderAgents(); drawWho(); }
-const redrawNamed = () => pressHeld ? pressHeld.add(drawNamed) : drawNamed();
+// a session in the dashboard's terminal is told with its harness's /rename once its turn is over. The box (the list's,
+// features/list/Parts.tsx's NameBox) is one element for as long as it is open (`nameInput`; `nameFor`, the naming it
+// was opened for). A press anywhere but in the box ends it -- also where the keys stay put (History's rows, a scroll bar)
+// or go into a pane's frame (agPanes.focus): the list's rows stay where they are as it is drawn again, so the press's
+// click still lands on the row it was pressed on.
+let nameInput = null, nameFor = null;
+function redrawNamed() { renderAgents(); drawWho(); }
 const nameAnswers = new Map();                       // what came of each name given from this page: actor -> the answer
 const nameKey = (gname, c) => `${gname}\u0000${c}`;
 function nameNote(g, a) {
@@ -1070,24 +1032,6 @@ function startRename(g, a) {
   nameInput = null;
   renderAgents();
   if (nameInput) { nameInput.focus(); nameInput.select(); }
-}
-function nameBox() {
-  if (nameInput) return nameInput;
-  const r = state.renaming;
-  nameInput = el("input", { class: "name-box", type: "text", maxlength: "120", spellcheck: "false", autocomplete: "off",
-    placeholder: r.c === null ? r.g : r.kind ? r.auto : "Name this actor",
-    "aria-label": r.c === null ? "This group's name" : r.kind ? `This ${r.kind}'s name` : "This actor's name" });
-  nameInput.value = r.value;
-  nameInput.addEventListener("input", () => { r.value = nameInput.value; });
-  nameInput.addEventListener("keydown", (ev) => {
-    ev.stopPropagation();                            // the page's own keys are not this box's
-    if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); endRename(true); }
-    else if (ev.key === "Escape") { ev.preventDefault(); endRename(false); }
-  });
-  // Tab away keeps it (a press has ended it already); not a redraw (`nameMoving`), nor the window going to the back
-  // (it comes back focused)
-  nameInput.addEventListener("blur", () => { if (!nameMoving && document.hasFocus() && state.renaming === r) endRename(true); });
-  return nameInput;
 }
 async function endRename(keep) {
   const r = state.renaming;
@@ -1118,13 +1062,6 @@ async function endRename(keep) {
 // Nothing typed takes the name back: a task named by what is in it again, an app by its own title.
 const TASK_ITEM = "task:";
 const renamingItem = (gname, k) => !!state.renaming && state.renaming.g === gname && state.renaming.c === k;
-const nameOnDouble = (g, k) => SNAPSHOT ? {} : { ondblclick: (ev) => {
-  if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
-  ev.stopPropagation(); cardHide(ev); startItemRename(g, k);
-} };
-function renameKey(ev, g, k) {
-  if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startItemRename(g, k); }
-}
 // a task's or an app's item -> [kind, it, its name now, its name when not named, the user's]; null: no longer here
 function itemNamed(g, k) {
   if (k.startsWith(TASK_ITEM)) {
@@ -1163,24 +1100,6 @@ async function nameItem(gname, k, value) {
   await readApps(gname, true);
   redrawNamed();
 }
-// A folder's rows (model.ts's FolderNode `n`): its line, and under it, opened, its box, set in -- a closed one's all it
-// holds -- or, folded, its actors open in a pane; under its line, while its × asks first, the question (closeAsk).
-function folderRows(n) {
-  const out = [folderLine(n)];
-  if (n.asking) out.push(closeAsk(n.g, n.f));
-  if (n.kids) out.push(el("div", { class: "f-kids" }, ...(n.kids.length ? n.kids.flatMap(drawNode) : [el("div", { class: "f-empty", text: n.empty })])));
-  else if (n.peek.length) out.push(el("div", { class: "f-kids peek" }, ...n.peek.map(agentRow)));
-  return out;
-}
-// A box's fold (model.ts's FoldNode `n`): its line ("▸ N closed"), and under it, once opened, its actors (or shells) --
-// folded, those open in a pane (no shell) -- open or not kept in this browser, for each box (boxKey). Its closed line holds
-// its closed folders too, first, and counts their actors (closedSays). The actors on their own closed have theirs too.
-function foldRows(n) {
-  const line = el("button", { class: "agent-group fold-line", type: "button", "aria-expanded": n.shown ? "true" : "false",
-    "data-key": n.key, title: n.title, onclick: () => toggleFold(n.name, n.foldKey) },
-    foldMark(n.shown), " ", n.says);
-  return [line, ...n.kids.flatMap(drawNode)];
-}
 // a folder's icon: the full-page view's folder headings (the list's lines have none, its caret and indent enough)
 const folderMark = (open) => el("span", { class: "folder-mark", "aria-hidden": "true" }, strokeIcon(open ? ICONS.folderOpen : ICONS.folder, 14));
 // a small button on a folder's line, beside its start buttons
@@ -1196,38 +1115,21 @@ function tallyChips(t, of, idle = false) {
     idle ? count(t.idle, " idle", "idle") : null].filter(Boolean);
 }
 const folderSays = (f, t) => `${f.name}: ${plural(t.open, "actor")} open${t.saved ? `, ${t.saved} saved` : ""}${t.closed ? `, ${t.closed} closed` : ""}`;
-// A folder's line (model.ts's FolderNode `n`): a button opening or folding it -- its caret, its name -- and at its right
-// how many of the actors it holds open (its folders' too) wait on the reader, stopped on an error, run, are idle (a click
-// there too opens or folds it). Hovered or in focus, its buttons over those counts: "+ actor" and "+ ⋯", started in it
-// (startButtons), a folder made in it, it renamed (F2), it deleted (its bin), it closed (its ×: closeFolder). A closed one
-// (shownClosed), greyed, says how many actors it holds, its buttons: rename, delete, reopen. Dragged: put in another
-// folder, or onto its gatherer's row, at its top; actors dropped on it are put in it (a closed one reopened), and it
-// opens when one is held over it.
-function folderLine(n) {
-  const { g, f, closed, held } = n, t = n.tally;
-  if (n.editing) return el("div", { class: "folder-line editing", "data-key": n.key }, folderBox());
-  const toggle = () => toggleFolder(g.name, f.id);
-  const acts = closed ? [
+// A folder's buttons, over its counts on its line while it is hovered or in focus (features/list/Boxes.tsx's FolderLine):
+// "+" (all that starts in it: startButtons), its coordinator agent (none yet), "⋯" -- a folder made in it, it renamed
+// (F2), it deleted -- and its × (closeFolder). A closed one's: rename, delete, reopen.
+function folderActs(g, f, closed, crew) {
+  if (closed) return [
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
     folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
     folderAct("reopen", `Reopen ${f.name} · its actors stay closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
-  ] : [...startButtons(g, f), n.crew ? null : crewButton(g, `folder:${f.id}`),
+  ];
+  return [...startButtons(g, f), crew ? null : crewButton(g, `folder:${f.id}`),
     rowMore(`fmore:${g.name}:${f.id}`, f.name, [
       { icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, f.id) },
       { icon: ICONS.pencil, text: "Rename", run: () => startFolderEdit(g.name, f.id) },
-      { icon: ICONS.bin, text: n.crew ? "Delete (its coordinator agent closes)" : "Delete", run: () => deleteFolder(g.name, f.id) }]),
-    folderAct("close", `Close ${f.name} and every actor in it`, closeIcon(), () => pressClose(g, f, "list"))];
-  const line = el("div", { class: "folder-line" + (closed ? " closed" : ""), "data-key": n.key, "data-card": key(g.name, `folder:${f.id}`) },
-    el("button", { class: "fbtn", type: "button", "aria-expanded": n.open ? "true" : "false",
-      ...(HOVERS.matches ? {} : { title: closed ? `${f.name}: closed, ${plural(held, "actor")} in it` : folderSays(f, t) }), onclick: toggle,
-      onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startFolderEdit(g.name, f.id); } } },
-      el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "fname", text: f.name })),
-    SNAPSHOT || closed || !n.crew ? null : crewButton(g, `folder:${f.id}`),   // its coordinator agent's
-    el("span", { class: "fill", onclick: toggle },
-      ...(closed ? [held ? el("span", { class: "count closed", title: plural(held, "closed actor") }, el("i", { "aria-hidden": "true" }), String(held)) : null]
-        : tallyChips(t, plural(t.open, "actor"), true)),
-      SNAPSHOT ? null : el("span", { class: "f-acts", onclick: (ev) => ev.stopPropagation() }, ...acts)));
-  return dropOn(dragFolder(line, g, f), g, f.id, () => { if (!isOpenFolder(g.name, f.id)) toggle(); });
+      { icon: ICONS.bin, text: crew ? "Delete (its coordinator agent closes)" : "Delete", run: () => deleteFolder(g.name, f.id) }]),
+    folderAct("close", `Close ${f.name} and every actor in it`, closeIcon(), () => pressClose(g, f, "list"))].filter(Boolean);
 }
 // CLOSING a folder (its ×, on its line or its card): at once, if all in it is closed already, none saved, no terminal in
 // it; else first the question under it (`folderClosing`: {g, id, from: "list" | "card"}) -- what closing it would close,
@@ -1248,11 +1150,16 @@ function pressClose(g, f, from) {
   if (from === "card") cardDraw(); else renderAgents();
   askRefocus(true);
 }
-function closeAsk(g, f) {
+// what the question says: what closing it does, and where it goes ({said, where}) -- the list's own question is drawn
+// by features/list/Boxes.tsx's CloseAsk, a card's here (closeAsk)
+function closeAskSays(g, f) {
   const w = closeWhat(g, f), up = parentOf(g.name, f), where = up === null ? titleOf(g) : folderById(g.name, up).name;
   const parts = [w.open ? `closes ${plural(w.open, "actor")}${w.busy ? ` (stopping ${w.busy} mid-turn)` : ""}` : null,
     w.shells ? `ends ${plural(w.shells, "terminal")}` : null, w.marks ? `removes ${plural(w.marks, "bookmark")}` : null].filter(Boolean);
-  const said = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "closes it";
+  return { where, said: parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "closes it" };
+}
+function closeAsk(g, f) {
+  const { said, where } = closeAskSays(g, f);
   const from = folderClosing.from;
   const cancel = () => { folderClosing = null; if (from === "card") cardDraw(); else renderAgents(); };
   const btn = (which, cls, text, fn) => el("button", { type: "button", class: `pb ${cls}`, "data-ask": which, onclick: (ev) => { ev.stopPropagation(); fn(); },
@@ -1307,10 +1214,11 @@ function reopenFolder(gname, id) {
   showFolder(gname, id, true);
   return folderPost(gname, { do: "reopen", id }, (t) => { for (const x of t.folders) if (ids.has(x.id)) x.closed = null; });
 }
-// Naming a folder, new (`state.folderEdit.id` null, made in its `parent`) or not: a box in its line, kept through the
-// list's redraws as the actor's is (`folderInput`, `nameMoving`); Enter or leaving it keeps what is typed, Esc or nothing
-// typed leaves it. A name another folder beside it has (whatever its case), or one with "/", is refused, and said why.
-let folderInput = null;
+// Naming a folder, new (`state.folderEdit.id` null, made in its `parent`) or not: a box in its line (the list's,
+// features/list/Parts.tsx's FolderBox: `folderInput`, opened for `folderFor`); Enter or leaving it keeps what is typed,
+// Esc or nothing typed leaves it. A name another folder beside it has (whatever its case), or one with "/", is refused,
+// and said why.
+let folderInput = null, folderFor = null;
 function startFolderEdit(gname, id = null, parent = null) {
   const f = id === null ? null : folderById(gname, id);
   state.folderEdit = { g: gname, id, parent: f ? parentOf(gname, f) : parent, value: f ? f.name : "", group: gname === GF && id === null };
@@ -1322,21 +1230,6 @@ function startFolderEdit(gname, id = null, parent = null) {
   showFolder(gname, state.folderEdit.parent, true);
   renderAgents();
   if (folderInput) { folderInput.focus(); folderInput.select(); }
-}
-function folderBox() {
-  if (folderInput) return folderInput;
-  const f = state.folderEdit;
-  folderInput = el("input", { class: "name-box folder-box", type: "text", maxlength: String(FOLDER_CHARS), spellcheck: "false",
-    autocomplete: "off", placeholder: "Folder name", "aria-label": f.id === null ? "The new folder's name" : "The folder's name" });
-  folderInput.value = f.value;
-  folderInput.addEventListener("input", () => { f.value = folderInput.value; });
-  folderInput.addEventListener("keydown", (ev) => {
-    ev.stopPropagation();                            // the page's own keys are not this box's
-    if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); endFolderEdit(true); }
-    else if (ev.key === "Escape") { ev.preventDefault(); endFolderEdit(false); }
-  });
-  folderInput.addEventListener("blur", () => { if (!nameMoving && document.hasFocus() && state.folderEdit === f) endFolderEdit(true); });
-  return folderInput;
 }
 function endFolderEdit(keep) {
   const f = state.folderEdit;
@@ -1397,13 +1290,14 @@ function markDragged() {
 }
 // An actor's row dragged: the selection, if it is in it; else it -- one of a task, the task: all in it, which are in one
 // place
+function draggedWith(g, a) {
+  if (picked(g, a) && picks.cs.size > 1) return [...picks.cs];
+  const id = taskOf(g.name, a);
+  return id === null ? [a.channel] : taskItems(g, id);
+}
 function dragRow(row, g, a) {
   if (SNAPSHOT || isCoordinator(a)) return row;
-  return dragItems(row, g, () => {
-    if (picked(g, a) && picks.cs.size > 1) return [...picks.cs];
-    const id = taskOf(g.name, a);
-    return id === null ? [a.channel] : taskItems(g, id);
-  });
+  return dragItems(row, g, () => draggedWith(g, a));
 }
 // a row dragged: the items `cs()` says (actors' channels, apps' "app:<id>")
 function dragItems(row, g, cs) {
@@ -1439,21 +1333,25 @@ function canJoin(g, k) {
   const t = itemTaskOf(g, k);
   return d.cs.some((c) => t === null || itemTaskOf(g, c) !== t);
 }
-// An item's row, what is dragged dropped on it: put in its task (joinTask)
+// An item's row, what is dragged dropped on it: put in its task (joinTask) -- as the list's rows (React's handlers,
+// features/list/RowViews.tsx) and the rail's (dropOnItem, listeners on its tile) have it: `ev.currentTarget` the row
+function joinEnter(ev, g, k) { if (canJoin(g, k)) { ev.preventDefault(); ev.currentTarget.classList.add("drop-on"); } }
+function joinOver(ev, g, k) { if (canJoin(g, k)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } }
+function joinDrop(ev, g, k) {
+  if (!canJoin(g, k)) return;
+  ev.preventDefault();
+  const d = listDrag;
+  d.later = false;                                   // drawn by the change, next
+  endDrag();
+  if (d.cs.length > 1) clearPicks(false);
+  joinTask(g.name, k, d.cs);
+}
 function dropOnItem(row, g, k) {
   if (SNAPSHOT) return row;
-  row.addEventListener("dragenter", (ev) => { if (canJoin(g, k)) { ev.preventDefault(); row.classList.add("drop-on"); } });
-  row.addEventListener("dragover", (ev) => { if (canJoin(g, k)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } });
-  row.addEventListener("dragleave", (ev) => { if (!row.contains(ev.relatedTarget)) row.classList.remove("drop-on"); });
-  row.addEventListener("drop", (ev) => {
-    if (!canJoin(g, k)) return;
-    ev.preventDefault();
-    const d = listDrag;
-    d.later = false;                                 // drawn by the change, next
-    endDrag();
-    if (d.cs.length > 1) clearPicks(false);
-    joinTask(g.name, k, d.cs);
-  });
+  row.addEventListener("dragenter", (ev) => joinEnter(ev, g, k));
+  row.addEventListener("dragover", (ev) => joinOver(ev, g, k));
+  row.addEventListener("dragleave", dropLeave);
+  row.addEventListener("drop", (ev) => joinDrop(ev, g, k));
   return row;
 }
 function dragFolder(line, g, f) {
@@ -1489,63 +1387,55 @@ function canDrop(g, id) {
   if (d.gs) return d.gs.some((name) => gfOf(name) !== id || !!placeOf(name));   // (inside a group's folder: out of it)
   return withTasks(g, d.cs).some((c) => (isAppItem(c) || !!actorOf(g, c)) && itemFolder(g, c) !== id);
 }
-// `id`: the folder what is dropped on `n` goes into (null: the gatherer's top); `open`, what opens when one is held over it
+// What is dragged dropped on a line or a row (`ev.currentTarget`): into folder `id` (null: the gatherer's top); `open`,
+// what opens when one is held over it -- as the list's (React's handlers, features/list/Boxes.tsx) and the rail's and
+// Manage groups' (dropOn, listeners on the node) have it
+function dropEnter(ev, g, id, open) {
+  if (!canDrop(g, id)) return;
+  const n = ev.currentTarget;
+  ev.preventDefault();
+  n.classList.add("drop-on");
+  n.classList.toggle("drop-across", listDrag.ask && listDrag.g !== g.name);   // into another group, in Manage groups: asked first
+  clearTimeout(listDrag.spring);
+  listDrag.spring = setTimeout(() => {
+    if (!listDrag || !canDrop(g, id)) return;
+    listDrag.force = true;
+    try { open(); } finally { if (listDrag) listDrag.force = false; }
+  }, DROP_OPEN_MS);
+}
+function dropOver(ev, g, id) { if (canDrop(g, id)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } }
+function dropLeave(ev) {
+  const n = ev.currentTarget;
+  if (n.contains(ev.relatedTarget)) return;
+  n.classList.remove("drop-on", "drop-across");
+  if (listDrag) clearTimeout(listDrag.spring);
+}
+function dropDone(ev, g, id) {
+  if (!canDrop(g, id)) return;
+  ev.preventDefault();
+  const d = listDrag, now = gathererNamed(g.name) || g;
+  d.later = false;                                   // drawn by the move, next
+  endDrag();
+  const was = placeOf(d.gs ? d.gs[0] : d.g);         // a group, or an actor on its own, already inside `g`: just moved
+  if (d.gs && g.name !== GF) { gPicks.clear(); if (was && was.in === g.name) placeGroup(d.gs[0], g.name, id); else askMerge(d.gs[0], now, id, false, d.ask); return; }
+  if (d.g !== g.name) { if (isAloneName(d.g) && was && was.in === g.name) placeGroup(d.g, g.name, id); else askMove(d, g, id); return; }
+  if (d.folder !== null) { moveFolder(g.name, d.folder, id); return; }
+  if (d.gs) { gPicks.clear(); fileGatherers(d.gs.filter((name) => gfOf(name) !== id), id); return; }
+  const items = withTasks(now, d.cs).filter((c) => (isAppItem(c) || !!actorOf(now, c)) && itemFolder(now, c) !== id);
+  if (d.cs.length > 1) clearPicks(false);
+  fileItems(g.name, items, id);
+}
 function dropOn(n, g, id, open) {
   if (SNAPSHOT) return n;
-  n.addEventListener("dragenter", (ev) => {
-    if (!canDrop(g, id)) return;
-    ev.preventDefault();
-    n.classList.add("drop-on");
-    n.classList.toggle("drop-across", listDrag.ask && listDrag.g !== g.name);   // into another group, in Manage groups: asked first
-    clearTimeout(listDrag.spring);
-    listDrag.spring = setTimeout(() => {
-      if (!listDrag || !canDrop(g, id)) return;
-      listDrag.force = true;
-      try { open(); } finally { if (listDrag) listDrag.force = false; }
-    }, DROP_OPEN_MS);
-  });
-  n.addEventListener("dragover", (ev) => { if (canDrop(g, id)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } });
-  n.addEventListener("dragleave", (ev) => {
-    if (n.contains(ev.relatedTarget)) return;
-    n.classList.remove("drop-on", "drop-across");
-    if (listDrag) clearTimeout(listDrag.spring);
-  });
-  n.addEventListener("drop", (ev) => {
-    if (!canDrop(g, id)) return;
-    ev.preventDefault();
-    const d = listDrag, now = gathererNamed(g.name) || g;
-    d.later = false;                                 // drawn by the move, next
-    endDrag();
-    const was = placeOf(d.gs ? d.gs[0] : d.g);       // a group, or an actor on its own, already inside `g`: just moved
-    if (d.gs && g.name !== GF) { gPicks.clear(); if (was && was.in === g.name) placeGroup(d.gs[0], g.name, id); else askMerge(d.gs[0], now, id, false, d.ask); return; }
-    if (d.g !== g.name) { if (isAloneName(d.g) && was && was.in === g.name) placeGroup(d.g, g.name, id); else askMove(d, g, id); return; }
-    if (d.folder !== null) { moveFolder(g.name, d.folder, id); return; }
-    if (d.gs) { gPicks.clear(); fileGatherers(d.gs.filter((name) => gfOf(name) !== id), id); return; }
-    const items = withTasks(now, d.cs).filter((c) => (isAppItem(c) || !!actorOf(now, c)) && itemFolder(now, c) !== id);
-    if (d.cs.length > 1) clearPicks(false);
-    fileItems(g.name, items, id);
-  });
+  n.addEventListener("dragenter", (ev) => dropEnter(ev, g, id, open));
+  n.addEventListener("dragover", (ev) => dropOver(ev, g, id));
+  n.addEventListener("dragleave", dropLeave);
+  n.addEventListener("drop", (ev) => dropDone(ev, g, id));
   return n;
 }
-// A shell's row (isShell; model.ts's ShellRow `r`): where it was opened, and when; its close button closes its terminal,
-// as a window's does.
+// A shell's row (isShell): where it was opened, and when (features/list/RowViews.tsx's ShellRowView); its close button
+// closes its terminal, as a window's does.
 const SHELLS = LT.SHELLS;
-function shellRow(r) {
-  const { g, s, current } = r;
-  const where = shellPath(s), close = (ev) => { ev.stopPropagation(); closeShell(s); };
-  return el("button", { class: "agent shell", type: "button", "aria-current": current ? "true" : "false", "data-key": r.key,
-    "data-group": SHELLS, ...(r.open ? { "data-open": "true" } : {}),
-    title: `Terminal · ${s.cwd}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click to open side by side`}`,
-    onclick: (ev) => pick(g.name, s.id, ev), oncontextmenu: (ev) => pickBeside(g.name, s.id, ev) },
-    shellLogo(),
-    el("div", {},
-      el("div", { class: "name", text: where.split("/").filter(Boolean).pop() || where }),
-      el("div", { class: "asked", text: where }),
-      el("div", { class: "meta" }, el("span", {}, "Terminal · opened ", el("span", { "data-ago": s.since || "", text: ago(s.since) })),
-        rowActs(el("span", { class: "close-btn", role: "button", tabindex: "0", title: "End the shell and everything running in it",
-          "aria-label": "Terminate shell", onclick: close,
-          onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); close(ev); } } }, closeIcon())))));
-}
 const shellLogo = () => el("span", { class: "logo shell-logo", "aria-hidden": "true" }, strokeIcon(ICONS.terminal, 18));
 async function closeShell(s) {
   try { await post("/api/shells/close", { id: s.id }); }
@@ -1565,16 +1455,8 @@ export function start() {
     if (ev.target.closest && ev.target.closest("input, textarea, [contenteditable], .xterm")) return;
     clearPicks();
   });
-  document.addEventListener("pointerdown", (ev) => {
-    if (!state.renaming || ev.target === nameInput) return;
-    pressHeld = pressHeld || new Set();
-    const over = () => {
-      removeEventListener("pointerup", over, true); removeEventListener("pointercancel", over, true); clearTimeout(late);
-      setTimeout(() => { const waiting = pressHeld; pressHeld = null; for (const fn of waiting || []) fn(); }, 0);   // after its click
-    };
-    addEventListener("pointerup", over, true); addEventListener("pointercancel", over, true);
-    const late = setTimeout(over, 3000);               // released where this page never hears it
-    endRename(true);
+  document.addEventListener("pointerdown", (ev) => {   // a press anywhere but in the name's box: named as typed
+    if (state.renaming && ev.target !== nameInput) endRename(true);
   }, true);
   document.addEventListener("dragover", () => { if (listDrag) listDrag.seen = Date.now(); }, true);
   document.addEventListener("drop", () => { if (listDrag) setTimeout(endDrag, 0); }, true);   // anywhere: after the line's own
@@ -1586,7 +1468,7 @@ export {
   appShown, appStatusOf, appTaskOf, appTitle, appsFollowHome, appsKnown, appsNotified, askRefocus, boxGroups, boxKey,
   byName, closeApp, closeAsk, closeButton, closeShell, closedKids, closedSays, collapsed, crewAt, crewFace, crewHidden,
   crewHideKey, crewLine, crewPlace, deleteFolder, dragFolder, dragItems, dragRow, dropFolderClosing, dropOn,
-  dropOnItem, endDrag, endRename, envelope, fileStarted, firstAgent, foldOpen, folderAct, folderBox, folderById,
+  dropOnItem, endDrag, endRename, envelope, fileStarted, firstAgent, foldOpen, folderAct, folderById,
   folderClosing, folderKey, folderMark, folderOf, folderPath, folderPost, folderSays, folderTally, gathererApps,
   gathererCounts, groupCrew, groupMark, groupOf, inPane, isAppItem, isCoordinator, isCrewHome, isHidden,
   isOpenFolder, itemNamed, keepTitle, kidFolders, listDrag, listModel, markDragged, moveHidingToServer, nameFolder, nameItem,

@@ -357,6 +357,35 @@ pattern the list and Chat follow:
 - Its specs (`apps-page.spec.ts`, `app-on-task.spec.ts`) passed unchanged; unit tests drive the page and its dialogs
   (`AppsPage.test.tsx`).
 
+**A5, the list in React (`features/list/`).** The list of actors (aside#agents) was drawn whole at every change, by
+`renderAgents()` (77 callers), and worked out what it drew as it drew it. In two steps:
+- *Its view-model, typed and tested:* what it draws is worked out by pure modules -- `status.ts` (an actor's status,
+  its group, saved, what its × does; an app's notification), `tree.ts` (folders, what is filed where, closed folders,
+  tallies, a box's order), `tasks.ts` (membership, lead, state, name), `groups.ts` (hidden and inactive groups, titles,
+  folders of groups, groups placed in another's folder, actors on their own, coordinator nodes, counts and the top
+  bar's totals), `envelope.ts` (a message between actors in a line; its patterns checked against coordination.py's) --
+  and `model.ts`'s `buildList(ctx, view)` turns the home (`ListCtx`: the home and what the page knows of it) and the
+  reader's choices and what is shown (`ListView`) into one tree of plain data (`rows.ts`). The old modules keep thin
+  wrappers by the old names (`list.js`'s `CTX`), so the rail, the monitor, the cards and Manage groups call them as
+  before. Vitest: `derive.test.ts`, `model.test.ts`.
+- *Drawn by React:* `renderAgents()` builds the model and hands it to `mount.tsx`'s `drawList` (a Zustand store,
+  `store.ts`, rendered at once with `flushSync`, as Chat's turn list is), then does what it did after drawing (the
+  hover card, the pick bar, the tabs). `AgentList.tsx`, `Boxes.tsx` and `RowViews.tsx` draw every node by its key,
+  so a row stays the same element from one draw to the next: in focus, hovered or dragged, it stays so. What a press
+  does, and what of a row the page still builds -- a gatherer's and a folder's start buttons and "⋯" menus, the
+  list's head, the form for a new actor, a branch, a harness's mark -- the list asks of the page (`host.ts`'s
+  `ListHost`, `list.js`'s `LIST_HOST`); those built parts go whole into the list's own elements (`useFilled`), so
+  the DOM, and every class the CSS and the browser specs read, is as before. A row's "+" is Radix's DropdownMenu.
+  Gone with the redraws: the name box carried through them (`nameMoving`, the caret put back), the press held till
+  its click (`pressHeld`). The rows' slide into their new places stays (`listPlaces`, `slideList`, on the same nodes
+  now); the drag kept from redraws (`listDrag.later`, `DRAG_LOST_MS`), the menus found again by `data-pop` and the
+  card kept off a resting pointer (`hover.still`) stay for the rail, the cards and the menus, still drawn by hand.
+  Vitest: `AgentList.test.tsx` (the list drawn by its mount, with a host standing in for the page).
+- *Left as it was:* a row is a `<button class="agent">` whose own buttons (bookmark, ×, "+") are `span[role=button]`
+  inside it -- the specs locate them inside `button.agent`, so moving them out waits for specs that allow it. The rail
+  and the monitor (`modes.js`) and Manage groups (`group-moves.js`) are the old page's still, reading the same
+  derivations.
+
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
   panes, Details, the chat minimized. It replaces today's separate browser keys, which are read once and dropped.
