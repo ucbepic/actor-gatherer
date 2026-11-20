@@ -8,13 +8,24 @@
 // written, around what was typed and not saved, marked in that actor's hue until the next change on disk -- but for
 // the conflict zone: the lines edited here since the file was opened, tinted, which an actor's change is asked about
 // (Restore yours / Accept its rewrite / Keep both / Edit: its lines edited in the box first, edBox), not merged into,
-// until the zone is cleared (its button in the header) or the file closed. An app that edits plain (`ed.plain`, the
-// Files app) has none of that: a file read, edited here alone, saved whole (plain.js). Who changed each file, of the
-// actors, is what ag's hook found each tool call did on disk (the listing's `writers`): two or more changing one file
-// are said in the tree and over the file. Saved by Save (or ⌘S / Ctrl+S): until then the file on disk, which the
-// actors read, is as it was -- or, with Auto-save on (as it is unless the reader turns it off, kept in this browser), a moment after each
-// edit. The editor (CodeMirror and Yjs, vendor/editor.js) is loaded the first time a file opens. A file that is not text --
-// an image, a PDF, a sound, a video, anything else -- is shown in its place, not edited (18-editor-view.js).
+// until the zone is cleared (its button in the header) or the file closed. An app that edits plain (its `plain` part,
+// edAdd's: the Files app's, plain.js) has none of that: a file read, edited here alone, saved whole. Who changed each
+// file, of the actors, is what ag's hook found each tool call did on disk (the listing's `writers`): two or more
+// changing one file are said in the tree and over the file. Saved by Save (or ⌘S / Ctrl+S): until then the file on
+// disk, which the actors read, is as it was -- or, with Auto-save on (as it is unless the reader turns it off, kept in
+// this browser), a moment after each edit. The editor (CodeMirror and Yjs, vendor/editor.js) is loaded the first time a
+// file opens. A file that is not text -- an image, a PDF, a sound, a video, anything else -- is shown in its place, not
+// edited (editor-view.js).
+import { agApp, ago, avatarSrc, branchRoute, el, firstLine, forEditor, get, HUE_MAIN, ICONS, MAC,
+  plural, post, shownTheme, state, statusOf, strokeIcon, tildePath, widthGrip } from "./page.js";
+import { ED_TREE_FOLDED_KEY, edBar, edFetchList, edFoldTree, edOpenTo, edRemember, edReveal,
+  edTree, edTreeWire } from "./editor-tree.js";
+import { edRememberFile } from "./editor-open.js";
+import { ED_VIEW_SAID, edAbout, edShow, edViewCheck, edViewClose, edViewHead } from "./editor-view.js";
+import { edSendClose, edSendPlace } from "./editor-send.js";
+import { edAvatarButton, edChanges, edDrawChanges, edRecentFetch, edRecentMarks, edShowActor,
+  edWindowLoad, edWindowPick, edWindowSaid } from "./recent.js";
+
 const ED_TICK = 2500;            // ms between looks at the open folders (and the header's "Ns ago")
 const ED_SEND = 40;              // ms the edits of a burst of keys are gathered before they are sent
 const ED_CREDIT = [3, 20];       // s an actor's recorded change may come before, and after, a change seen on disk, to be its
@@ -23,26 +34,25 @@ const ED_NAME_KEY = "ag-editor-name", ED_COLOR_KEY = "ag-editor-color", ED_ROOT_
 const ED_WRAP_KEY = "ag-editor-wrap", ED_FILE_KEY = "ag-editor-file";
 const ED_KEEP_AT_MS = 250;       // ms after the cursor or the scroll last moved that the open file's place is kept
 const ED_LEFT_MS = 1000;         // ms from the panel losing the keys to its going, still left while typing (edHadKeys)
-const ED_SHOWN_KEY = "ag-dashboard-editor", ED_HEIGHT_KEY = "ag-dashboard-editor-height";
-const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
+export const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
   timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
-  v: null, turn: 0, keys: false, blurAt: -Infinity,                                 // v: 18-editor-view.js's; keys, blurAt: edHadKeys's
+  v: null, turn: 0, keys: false, blurAt: -Infinity,                                 // v: editor-view.js's; keys, blurAt: edHadKeys's
   branches: [], brSig: "", brs: null, brOpen: null,
-  nav: null, fold: null, cursor: null, revealing: null, flashFolder: null, flash: null, newItem: null, pick: null, menu: null, find: null,   // 18-editor-tree.js's
-  choose: null, choosing: null, go: null,                                                                     // 18-editor-open.js's
+  nav: null, fold: null, cursor: null, revealing: null, flashFolder: null, flash: null, newItem: null, pick: null, menu: null, find: null,   // editor-tree.js's
+  choose: null, choosing: null, go: null,                                                                     // editor-open.js's
   mode: "live", modePick: null,                                                    // how an agent's change lands, its menu (edModePick)
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })(),   // on unless turned off
   wrap: (() => { try { return localStorage.getItem(ED_WRAP_KEY) !== "0"; } catch (e) { return true; } })() };  // long lines wrapped: likewise
 const edB64 = (u8) => { let t = ""; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
 const edBytes = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
-const edJoin = (dir, name) => (dir === "/" ? "/" : dir + "/") + name;
-const edUnder = (p, dir) => dir === "/" ? p.startsWith("/") : p === dir || p.startsWith(dir + "/");
-const edDir = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
-const edBase = (p) => p.slice(p.lastIndexOf("/") + 1);
-const edTilde = (p) => tildePath(p, ed.home);
-const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root + "/") ? p.slice(ed.root.length + 1) : edTilde(p);
-// What an app built on this adds to it (its own scripts, loaded after these and before start.js), each part given to
-// edAdd as one more of its kind:
+export const edJoin = (dir, name) => (dir === "/" ? "/" : dir + "/") + name;
+export const edUnder = (p, dir) => dir === "/" ? p.startsWith("/") : p === dir || p.startsWith(dir + "/");
+export const edDir = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
+export const edBase = (p) => p.slice(p.lastIndexOf("/") + 1);
+export const edTilde = (p) => tildePath(p, ed.home);
+export const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root + "/") ? p.slice(ed.root.length + 1) : edTilde(p);
+// What an app built on this adds to it (its own module, the panel's entry, before it starts the panel: start.js's
+// edStart), each part given to edAdd as one more of its kind:
 //   head(x)     -> controls for the header, before Save (x: the file open, ed.s; or one shown, ed.v; or null: none)
 //   work(box)   called once, as the panel is drawn: a column of its own added beside the file's (box: its .ed-work)
 //   keys(ev)    a keydown, before the file's own -- in the panel, and in a PDF's viewer
@@ -51,9 +61,14 @@ const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root + "/") ?
 //   viewed(s)   its view, made
 //   markup      {test(path), bold, italic, off(doc, from, to, k)}: bold and italic in a kind of file (edMarkupKeys)
 //   message(m)  a message from its backend (start.js)
-const edAdded = { head: [], work: [], keys: [], down: [], view: [], viewed: [], markup: [], message: [] };
-function edAdd(parts) { for (const [k, f] of Object.entries(parts)) edAdded[k].push(f); }
-const edAddedHead = (x) => edAdded.head.flatMap((f) => [].concat(f(x) || [])).filter(Boolean);
+//   plain       {open, edited, check, save, due, gone, head}: its text files edited plain, in place of a live document
+//               -- read whole, edited in this page alone, saved whole (plain.js's, the Files app's); one at most
+export const edAdded = { head: [], work: [], keys: [], down: [], view: [], viewed: [], markup: [], message: [], plain: [] };
+export function edAdd(parts) { for (const [k, f] of Object.entries(parts)) edAdded[k].push(f); }
+export const edAddedHead = (x) => edAdded.head.flatMap((f) => [].concat(f(x) || [])).filter(Boolean);
+// The part its text files are edited plain with, if the app gave one: no live document, no mode, no conflict zone, no
+// actors' branches to approve. A file opened so has it as its session's `plain` (ed.s.plain).
+const edPlainPart = () => edAdded.plain[0] || null;
 function edLib() {
   return ed.lib ||= new Promise((ok, no) => {
     const tag = document.createElement("script");
@@ -90,12 +105,12 @@ function edActor(g, c) {
   const gat = ((state.home && state.home.gatherers) || []).find((x) => x.name === g);
   return gat ? gat.agents.find((a) => a.channel === c) || null : null;
 }
-const edWhoName = (a) => {                           // its name; without one, its first message, quoted
+export const edWhoName = (a) => {                    // its name; without one, its first message, quoted
   if (a.name && a.name.text) return a.name.text;
   const said = firstLine(a.last_user_message || "");
   return said ? `“${said.length > 40 ? said.slice(0, 40).trimEnd() + "…" : said}”` : a.channel.slice(0, 8);
 };
-const edWhoColor = (a) => (a && HUE_MAIN[a.avatar_hue]) || null;
+export const edWhoColor = (a) => (a && HUE_MAIN[a.avatar_hue]) || null;
 // Until ag's hook has recorded who changed the file (a moment after), whose a change seen on disk likely is: the one
 // actor running in a directory that holds the file, if just one is.
 function edWho(path) {
@@ -106,7 +121,7 @@ function edWho(path) {
   return found.length === 1 ? found[0] : null;
 }
 // A file's writers (the listing's: [{gatherer, channel, at, how}], the latest first), one per actor, each with its actor.
-const edWriters = (entry) => {
+export const edWriters = (entry) => {
   const seen = new Set(), out = [];
   for (const w of (entry && entry.writers) || []) {
     const k = w.gatherer + "\u0000" + w.channel;
@@ -114,21 +129,21 @@ const edWriters = (entry) => {
   }
   return out;
 };
-const edWriterName = (w) => w.actor ? edWhoName(w.actor) : w.channel.slice(0, 8);
+export const edWriterName = (w) => w.actor ? edWhoName(w.actor) : w.channel.slice(0, 8);
 // The writers the tree shows: not a closed actor (one not saved for later), unless a change of its there still waits
 // for the reader (the listing's `waiting`: its branch's, a proposal, a conflict not settled) -- then marked `closed`.
 const edClosed = (a) => !!a && statusOf(a)[0] === "closed" && !a.saved;
-const edTreeWriters = (entry, writers) => {
+export const edTreeWriters = (entry, writers) => {
   const waits = new Set(((entry && entry.waiting) || []).map((w) => w.gatherer + "\u0000" + w.channel));
   return writers.filter((w) => !edClosed(w.actor) || waits.has(w.gatherer + "\u0000" + w.channel))
     .map((w) => edClosed(w.actor) ? { ...w, closed: true } : w);
 };
-const edAvatar = (w) => w.actor && w.actor.avatar
+export const edAvatar = (w) => w.actor && w.actor.avatar
   ? el("img", { src: avatarSrc(w.actor.avatar), alt: "", draggable: "false" })
   : el("span", { class: "ed-noav", style: `--who: ${edWhoColor(w.actor) || "var(--axis)"}` });
-const edKey = (w) => `${w.gatherer}\u0000${w.channel}`;
+export const edKey = (w) => `${w.gatherer}\u0000${w.channel}`;
 // The changes beside the file, and the lines actors changed lately: recent.js.
-function edSelectText(text) {
+export function edSelectText(text) {
   const s = ed.s, v = s && s.view, i = v ? v.state.doc.toString().indexOf(text) : -1;
   if (i < 0) return;
   v.dispatch({ selection: { anchor: i, head: i + text.length }, effects: s.A.EditorView.scrollIntoView(i, { y: "center" }) });
@@ -147,7 +162,7 @@ async function edGoLine(path, line) {
 // place in a PDF's source. A file outside the folder shown: its folder shown -- at once, before anything is asked, so a
 // panel the link just opened starts there (edMount keeps a folder already shown). The path a folder's (a plain path an
 // agent wrote, or a link of the file form, to one): that folder shown instead (edShowFolder), the file open left open.
-async function edShowFile(path, line) {
+export async function edShowFile(path, line) {
   path = path.replace(/\/+$/, "") || "/";
   if (!ed.root || !edUnder(path, ed.root)) edGo(edDir(path));
   if (await edIsFolder(path)) return edShowFolder(path);
@@ -167,7 +182,7 @@ async function edIsFolder(path) {
 // opened, its row scrolled to, flashed and made the tree's place for the keys. Not inside the folder shown: the tree
 // moved to the folder holding it first, as for a file. The files shown again if folded away (not kept: the reader's
 // choice stays theirs); the file open stays open.
-function edShowFolder(dir) {
+export function edShowFolder(dir) {
   dir = dir.replace(/\/+$/, "") || "/";
   if (ed.nav && ed.nav.hidden) edFoldTree(false, false);
   if (!ed.root || !edUnder(dir, ed.root)) edGo(edDir(dir));
@@ -179,10 +194,10 @@ function edShowFolder(dir) {
 // A PDF the Editor shows (editor-view.js), in pdf.js's viewer (/_ag/lib/pdfjs: the dashboard's copy, libs.py), in the
 // dashboard's colours, with no scripts of the PDF's and its sidebar closed when it opens.
 const ED_NO_SIDEBAR = 0;                             // pdf.js's SidebarView.NONE
-const edPdfViewer = (url) => `/_ag/lib/pdfjs/web/viewer.html?file=${encodeURIComponent(url)}`;
+export const edPdfViewer = (url) => `/_ag/lib/pdfjs/web/viewer.html?file=${encodeURIComponent(url)}`;
 // A PDF opened again in its viewer (it changed on disk): where the reader was -- its page, zoom and place -- its sidebar
 // as it was.
-async function edPdfOpen(f, url) {
+export async function edPdfOpen(f, url) {
   f.url = url;
   let app = null;
   try { app = f.frame.contentWindow.PDFViewerApplication; } catch (e) { /* not the viewer's page */ }
@@ -195,7 +210,7 @@ async function edPdfOpen(f, url) {
   } catch (e) { /* an older viewer */ }
   try { await app.open({ url }); } catch (e) { f.frame.src = edPdfViewer(url); }
 }
-function edPdfTheme(f) {
+export function edPdfTheme(f) {
   let root;
   try { root = f && f.frame.contentDocument && f.frame.contentDocument.documentElement; } catch (e) { return; }
   if (!root) return;
@@ -216,7 +231,7 @@ document.addEventListener("webviewerloaded", (ev) => {     // the viewer, before
   } catch (e) { /* an older viewer */ }
 });
 // The writers in the tree: their avatars, overlapped; two or more, on an amber ground with their count.
-function edAvatars(writers, what) {
+export function edAvatars(writers, what) {
   if (!writers.length) return null;
   const many = writers.length > 1;
   return el("span", { class: "ed-avs" + (many ? " many" : ""),
@@ -226,12 +241,12 @@ function edAvatars(writers, what) {
 }
 // Whose a change seen on disk at `t` was: the actor whose recorded change is nearest it, and not long before it (ag records
 // a call's change a moment after the call made it; one recorded well before was an earlier change).
-const edCredit = (writers, t) => writers.filter((w) => w.at >= t - ED_CREDIT[0] && w.at <= t + ED_CREDIT[1])
+export const edCredit = (writers, t) => writers.filter((w) => w.at >= t - ED_CREDIT[0] && w.at <= t + ED_CREDIT[1])
   .sort((a, b) => Math.abs(a.at - t) - Math.abs(b.at - t))[0] || null;
-const edEntry = (path) => ((ed.lists.get(edDir(path)) || {}).entries || []).find((e) => e.name === edBase(path)) || null;
+export const edEntry = (path) => ((ed.lists.get(edDir(path)) || {}).entries || []).find((e) => e.name === edBase(path)) || null;
 
 // The tree: the folder's entries, and those of each folder opened in it; drawn again only when what it shows changed.
-async function edList(dir, draw = true) {
+export async function edList(dir, draw = true) {
   const got = await edFetchList(dir);
   if (!(ed.root && edUnder(dir, ed.root)) && !(ed.file && dir === edDir(ed.file))) return;   // a folder shown before
   if (got.user) ed.user = got.user;
@@ -240,10 +255,10 @@ async function edList(dir, draw = true) {
   ed.lists.set(dir, got);
   if (draw) { edTree(); edHead(); }
 }
-const edWaiting = (n) => n && !ed.plain ? el("span", { class: "mk br", title: `${plural(n, "change")} from an actor's branch waiting for you`, text: String(n) }) : null;
+export const edWaiting = (n) => n && !edPlainPart() ? el("span", { class: "mk br", title: `${plural(n, "change")} from an actor's branch waiting for you`, text: String(n) }) : null;
 // Above the tree, under the folder: the actors on branches of the project shown (branches.py), and what waits from them.
 async function edFetchBranches() {
-  if (!ed.root || ed.plain) return;                  // edited plain: no actors' branches to approve
+  if (!ed.root || edPlainPart()) return;             // edited plain: no actors' branches to approve
   let got;
   try { got = await get(`/api/branches?${new URLSearchParams({ root: ed.root })}`); } catch (e) { return; }
   ed.branches = got;
@@ -263,7 +278,7 @@ function edBrToggle(b) {
   try { localStorage.setItem(ED_BR_OPEN_KEY, ed.brOpen); } catch (e) { /* this page only */ }
   ed.brSig = ""; edBranches();
 }
-function edBranches() {
+export function edBranches() {
   if (!ed.brs) return;
   const list = ed.branches || [], picked = edBrPicked();
   const sig = JSON.stringify([list, list.map((b) => { const a = edActor(b.gatherer, b.channel); return a ? [edWhoName(a), a.avatar, a.avatar_hue] : null; }), picked]);
@@ -317,7 +332,7 @@ async function edDecide(b, path, take) {
   Promise.all([...dirs].map((d) => edList(d, false))).then(() => edTree());
 }
 
-function edGo(dir) {
+export function edGo(dir) {
   dir = (dir || "").replace(/\/+$/, "") || "/";
   if (!dir.startsWith("/")) { ed.barSig = ""; edBar(); return; }        // not a path: shown as it was
   if (dir === ed.root) return;
@@ -338,7 +353,7 @@ function edTick() {
       edTree(); edHead(); if (ed.s && !ed.s.plain) edConflicts(ed.s); if (ed.v) edViewCheck(ed.v); edRecentFetch();
     });
     edBar(); edFetchBranches();
-    if (ed.s && ed.s.plain) edPlainCheck(ed.s);
+    if (ed.s && ed.s.plain) ed.s.plain.check(ed.s);
     else if (ed.s) { edConflicts(ed.s); edAgentMarks(ed.s); }
   }, ED_TICK);
 }
@@ -347,7 +362,7 @@ function edTick() {
 // that has it open and with the disk; any other file, shown (edShow). `how`: "edit", its text whatever it is (an SVG's,
 // from its header's Edit); "view", shown (an SVG's View). `kept`: the file this Editor had open when its panel last went
 // (edKeptFile), opened again where it was -- or, gone since, not.
-async function edOpen(path, how = null, kept = null) {
+export async function edOpen(path, how = null, kept = null) {
   if (how !== "view" && ed.s && ed.s.path === path && !ed.s.err) return;
   if (how !== "edit" && ed.v && ed.v.path === path) return;
   edClose();
@@ -368,7 +383,7 @@ async function edOpen(path, how = null, kept = null) {
   if (how !== "edit" && (info.kind !== "text" || !info.text)) return edShow(path, info);
   try { A = await edLib(); } catch (e) { if (ed.turn === turn) { ed.err = e.message; edHead(); } return; }
   if (ed.turn !== turn || ed.s) return;              // another picked meanwhile
-  if (ed.plain) return edPlainOpen(path, how, kept, info, A, turn);   // edited plain (plain.js): no live document
+  if (edPlainPart()) return edPlainPart().open(path, how, kept, info, A, turn);   // edited plain: no live document
   const doc = new A.Y.Doc(), ytext = doc.getText("text"), awareness = new A.Awareness(doc);
   const conn = Math.random().toString(36).slice(2) + Date.now().toString(36);
   const s = ed.s = { A, path, root: "/", doc, ytext, awareness, conn, es: null, view: null, marks: null, markN: 0, boxes: new Map(),
@@ -471,7 +486,7 @@ function edMarkdownOff(doc, from, to, n) {
   }
   return null;
 }
-function edView(s) {
+export function edView(s) {
   const A = s.A;
   const add = A.StateEffect.define(), clear = A.StateEffect.define();
   const marks = A.StateField.define({                // what was written to the file on disk, marked a moment
@@ -544,7 +559,7 @@ function edView(s) {
         ...(s.plain ? [] : [A.yCollab(s.ytext, s.awareness)]), marks, recent,
         zone, agents, conflicts, ...edAdded.view.flatMap((f) => f(s) || []), s.wrapping.of(ed.wrap ? A.EditorView.lineWrapping : []),
         A.EditorView.updateListener.of((u) => {
-          if (u.docChanged && s.plain) edPlainEdited(s);
+          if (u.docChanged && s.plain) s.plain.edited(s);
           if (u.docChanged && s.top) s.top = u.changes.mapPos(s.top);     // the line at the top, where edits moved it
           if (u.selectionSet) edPlaceMoved(s);
           if (u.selectionSet || u.focusChanged || u.geometryChanged) edSendPlace();   // its Send to an actor (editor-send.js)
@@ -606,7 +621,7 @@ function edPlaceAt(s) {
 }
 // The lines actors' branches put in the file (the state's `marks`), tinted in each one's hue -- as long as the actor is
 // not closed.
-function edAgentMarks(s) {
+export function edAgentMarks(s) {
   const v = s.view;
   if (!v || !s.agents) return;
   const list = ((s.state && s.state.marks) || []).map((m) => ({ ...m, a: edActor(m.gatherer, m.channel) }))
@@ -793,7 +808,7 @@ function edConflictBy(s, c) {
   const ws = edWriters(edEntry(s.path)).filter((w) => w.at >= (c.since ?? c.at) - ED_CREDIT[0] && w.at <= c.at + ED_CREDIT[1]).reverse();
   return { label: ws.length > 1 ? `${ws.length} actors` : ws.length ? edWriterName(ws[0]) : "", names: ws.map(edWriterName) };
 }
-function edConflicts(s) {
+export function edConflicts(s) {
   const v = s.view, list = (s.state && s.state.conflicts) || [];
   if (!v || !s.conflicts) return;
   for (const id of [...s.boxes.keys()]) if (!list.some((c) => c.id === id)) edBoxClose(s, id);   // settled elsewhere
@@ -856,7 +871,7 @@ const ED_MODES = [
 // Its menu: one, made once and kept from one header to the next (edHeadPut) -- the header is drawn again every ED_TICK
 // and at each edit, and a menu taken out of the page then closes under the reader as they pick.
 function edModePick() {
-  if (ed.plain) return null;                         // edited plain: no mode (plain.js)
+  if (edPlainPart()) return null;                    // edited plain: no mode (plain.js)
   const now = ED_MODES.find((m) => m[0] === ed.mode) || ED_MODES[0];
   ed.modePick ||= el("label", { class: "ed-mode-pick", title: `How agents' changes reach open files:\n${ED_MODES.map((m) => `${m[1]}: ${m[2]}`).join("\n")}` },
     el("span", { class: "lbl", text: "Agents:" }),
@@ -1221,8 +1236,8 @@ function edAware(s) {
     if (s.awareAgain) { s.awareAgain = false; edAware(s); }
   });
 }
-async function edSave(s) {
-  if (s.plain) return edPlainSave(s);
+export async function edSave(s) {
+  if (s.plain) return s.plain.save(s);
   for (let i = 0; i < 100 && (s.sending || s.out.length) && !s.err; i++) await new Promise((r) => setTimeout(r, 20));   // its last keys first
   try { s.state = await post("/api/edit/save", { path: s.path, root: s.root }); s.err = ""; }
   catch (e) { s.err = e.message; }
@@ -1231,17 +1246,17 @@ async function edSave(s) {
 // Auto-save: the file saved ED_AUTO_MS after the last edit to it, this page's or another's -- not a file deleted on disk,
 // which only Save writes again, nor one with a conflict with the file on disk, which waits for the reader (an actor's
 // branch's change waiting does not hold it back: the file has none of it).
-const edDiskConflicts = (s) => ((s && s.state && s.state.conflicts) || []).filter((c) => !c.agent);
-function edAutoLater(s) {
+export const edDiskConflicts = (s) => ((s && s.state && s.state.conflicts) || []).filter((c) => !c.agent);
+export function edAutoLater(s) {
   clearTimeout(s.autoT);
   if (s.plain) {
-    if (edPlainDue(s)) s.autoT = setTimeout(() => { if (edPlainDue(s)) edPlainSave(s); }, ED_AUTO_MS);
+    if (s.plain.due(s)) s.autoT = setTimeout(() => { if (s.plain.due(s)) s.plain.save(s); }, ED_AUTO_MS);
     return;
   }
   const due = () => ed.auto && ed.s === s && s.state && s.state.dirty && !s.state.missing && !edDiskConflicts(s).length;
   if (due()) s.autoT = setTimeout(() => { if (due()) edSave(s); }, ED_AUTO_MS);
 }
-function edSetWrap(on) {
+export function edSetWrap(on) {
   ed.wrap = on;
   try { localStorage.setItem(ED_WRAP_KEY, on ? "1" : "0"); } catch (e) { /* this page only */ }
   if (ed.body) ed.body.classList.toggle("wrap", on);
@@ -1249,7 +1264,7 @@ function edSetWrap(on) {
   if (s && s.view && s.wrapping) s.view.dispatch({ effects: s.wrapping.reconfigure(on ? s.A.EditorView.lineWrapping : []) });
   edHead();
 }
-function edSetAuto(on) {
+export function edSetAuto(on) {
   ed.auto = on;
   try { localStorage.setItem(ED_AUTO_KEY, on ? "1" : "0"); } catch (e) { /* this page only */ }
   if (ed.s) edAutoLater(ed.s);
@@ -1265,7 +1280,7 @@ function edClose() {
   clearTimeout(s.autoT);
   edKeepPlace(s, edHadKeys(s));                      // where it was, for the next time this Editor's panel is drawn
   ed.keys = false;
-  if (s.plain) { edPlainGone(s); return; }
+  if (s.plain) { s.plain.gone(s); return; }
   // its last keys, still sent, and -- auto-saved -- saved, not over a conflict: in one request, which outlives the panel
   // (taken away with its task, the page closed), where a second one sent after the first would never be
   const save = ed.auto && s.epoch && (s.out.length || (s.state && s.state.dirty && !s.state.missing)) && !edDiskConflicts(s).length;
@@ -1296,7 +1311,7 @@ window.addEventListener("pagehide", edClose);
 // same as one shown (the file's path, its status unchanged), so text selected in it stays selected through the redraws
 // (every ED_TICK, and at each edit). A part with a control in it is the new one: its clicks are for what is shown now.
 const ED_CONTROLS = "button, input, select, textarea, a";
-function edHeadPut(parts) {
+export function edHeadPut(parts) {
   const old = [...ed.head.childNodes];
   let from = 0;
   parts = parts.map((n) => {
@@ -1315,7 +1330,7 @@ function edHeadPut(parts) {
     else ed.head.insertBefore(n, at);
   }
 }
-function edHead() {
+export function edHead() {
   if (!ed.head) return;
   const s = ed.s;
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
@@ -1324,7 +1339,7 @@ function edHead() {
       el("span", { class: "grow", style: "flex: 1" }), edModePick(), ...edAddedHead(null)].filter(Boolean));
     return;
   }
-  if (s && s.plain) return edHeadPut(edPlainHead(s));
+  if (s && s.plain) return edHeadPut(s.plain.head(s));
   const st = s && s.state;
   const all = (st && st.conflicts) || [], proposed = all.filter((c) => c.agent && c.agent.put && c.agent.why === "approve");
   const nc = edDiskConflicts(s).length, np = proposed.length, na = all.length - nc - np, nb = s ? s.boxes.size : 0;
@@ -1380,7 +1395,7 @@ function edHead() {
 
 // The actors changing the file open: their avatars -- each pressed, its changes to it in the last minutes (edChanges) --
 // and, two or more, how many.
-function edByChip(writers) {
+export function edByChip(writers) {
   if (!writers.length) return null;
   const many = writers.length > 1;
   return el("span", { class: "ed-writers" + (many ? " many" : "") },
@@ -1393,7 +1408,7 @@ function edByChip(writers) {
 }
 // "Changed on disk Ns ago" for a while after the file changed on disk, in the hue of the actor whose recorded change is
 // nearest it, else (not yet recorded) the likely one.
-function edChangedChip(s, writers) {
+export function edChangedChip(s, writers) {
   const st = s && s.state;
   if (!(st && st.changed && (s.marked || Date.now() / 1000 - st.changed < 120))) return null;
   const near = edCredit(writers, st.changed);
@@ -1404,33 +1419,9 @@ function edChangedChip(s, writers) {
     s.marked ? el("button", { type: "button", class: "ed-unmark", title: "Clear change highlights", "aria-label": "Clear change highlights",
       onclick: () => edUnmark(s) }, "×") : null);
 }
-// The header of a file open plain (plain.js): its path, its status (and the reader's choice, changed on disk under their
-// unsaved edits), the actors that changed it lately, wrap, Auto-save, the app's own, Save.
-function edPlainHead(s) {
-  const st = s.state, [[cls, said], choice] = edPlainStatus(s), writers = edWriters(edEntry(ed.file));
-  return [
-    el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
-    el("span", { class: `ed-status ${cls}`, role: "status", text: said }), choice,
-    edByChip(writers), s.stale ? null : edChangedChip(s, writers),
-    s.note ? el("span", { class: "ed-status bad", text: s.note }) : null,
-    el("span", { class: "grow", style: "flex: 1" }),
-    el("button", { type: "button", class: "ed-wrap" + (ed.wrap ? " on" : ""), "aria-pressed": ed.wrap ? "true" : "false",
-      title: ed.wrap ? "Wrapping long lines · click to turn off" : "Wrap long lines",
-      "aria-label": "Wrap long lines", onclick: () => edSetWrap(!ed.wrap) }, strokeIcon(ICONS.wrap, 15)),
-    el("label", { class: "ed-auto", title: "Save a moment after each edit. Paused while the file has changed on disk under your edits." },
-      el("input", { type: "checkbox", checked: ed.auto ? "" : null, onchange: (ev) => edSetAuto(ev.target.checked) }), "Auto-save"),
-    s.info && s.info.kind !== "text" ? el("button", { type: "button", class: "ed-mode", title: `Show ${edBase(s.path)} as it is`,
-      onclick: () => edOpen(s.path, "view") }, strokeIcon(ICONS.page, 13), "View") : null,
-    ...edAddedHead(s),
-    el("button", { type: "button", class: "primary", title: `Save (${MAC ? "⌘S" : "Ctrl+S"})`,
-      disabled: st.dirty || st.missing ? null : "", onclick: () => edSave(s) }, "Save"),
-  ].filter(Boolean);
-}
-
 // The panel: in the dashboard's top row, above the actors' panes, as the Browser's and DocWriter's are -- closed by the
 // head the dashboard draws over it. Its folder is the one it was started on (its instance's), until the reader shows
 // another (kept in this browser, for this Editor).
-const edShown = () => true;
 const edRootKey = () => `${ED_ROOT_KEY}:${(agApp && agApp.instance) || ""}`;
 // The file open in this Editor -- {path, how (edOpen's), at: where it was (edKeepPlace) or null} -- kept in this browser as
 // its folder is: its panel goes when the reader goes to another task (the dashboard's enterTask), or the page reloads,
@@ -1446,7 +1437,7 @@ function edKeptFile() {
 }
 // Drawn the first time, and its folder shown: the one last shown in this Editor, else the one it was started on -- and the
 // file it last had open, if any, where it was.
-function edMount() {
+export function edMount() {
   const top = document.getElementById("ed-top");
   if (!ed.host) {
     ed.bar = el("div", { class: "ed-bar" });

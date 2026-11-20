@@ -3,7 +3,8 @@
 // Kept in its task's arrangement: moved where nothing is above or below it, shown whole; moved back, minimized again.
 // Minimized by the bar above it too, dragged past its least (BELOW_MIN): shorter than FOLD_UNDER, minimized; longer again,
 // whole -- in the same drag, or a later one; shown whole by its own button, as tall as before it was dragged. So too a
-// task of one pane above or below another task in the tab: the line between them dragged.
+// task of one pane above or below another task in the tab: the line between them dragged. Never all of a column: nothing
+// whole left to take the room, a blank under them.
 import type { Locator, Page } from "@playwright/test";
 import { expect, panelMenu, test } from "./test";
 import { CLAUDE, CODEX, open } from "./home";
@@ -175,6 +176,8 @@ test("a task of one pane under another task in the tab: minimized by the line be
   await expect.poll(async () => (await box(pane)).y > (await box(other(page))).y + 100).toBe(true);
   await expect(bar).toHaveCount(1);
   await expect(minimize(page)).toHaveCount(1); // (its own button offered too: something above it)
+  const codex = other(page).frameLocator("iframe");
+  await expect(minimize(codex)).toHaveCount(1); // (and Codex's, above it)
   const bottom = (await box(pane)).y + (await box(pane)).height,
     b = await box(bar),
     x = b.x + b.width / 2;
@@ -188,6 +191,7 @@ test("a task of one pane under another task in the tab: minimized by the line be
   await expect(mini).toHaveCount(1);
   expect((await box(pane)).height).toBeLessThan(150);
   await expect.poll(async () => (await box(other(page))).height).toBeGreaterThan(500);
+  await expect(minimize(codex)).toHaveCount(0); // Codex's not offered now: nothing whole left to take the room
   await page.reload(); // kept
   await expect(mini).toHaveCount(1);
   const b2 = await box(bar); // dragged back up: whole
@@ -197,4 +201,27 @@ test("a task of one pane under another task in the tab: minimized by the line be
   await page.mouse.up();
   await expect(mini).toHaveCount(0);
   await expect.poll(async () => Math.round((await box(pane)).height)).toBeGreaterThan(300);
+});
+
+test("two panes of a task one above the other: either minimized, the other then not offered; shown whole again, both are", async ({
+  page,
+}) => {
+  await taskHome(page, true); // Claude and Codex, one task, side by side
+  await open(page);
+  await taskRow(page).click();
+  await expect(other(page)).toHaveCount(1);
+  await page.locator("#pane-here > .pane-top").click({ button: "right" }); // Claude's pane under Codex's
+  await page.locator(".row-menu[role=menu]").getByRole("menuitem", { name: "To the bottom" }).click();
+  const pane = page.locator("#pane-here"),
+    mini = page.locator("#main > .chat.mini"),
+    codex = other(page).frameLocator("iframe");
+  await expect.poll(async () => (await box(pane)).y > (await box(other(page))).y + 100).toBe(true);
+  await expect(minimize(codex)).toHaveCount(1);
+  await minimize(page).click(); // Claude's: Codex's taking the room
+  await expect(mini).toHaveCount(1);
+  await expect.poll(async () => (await box(other(page))).height).toBeGreaterThan(500);
+  await expect(minimize(codex)).toHaveCount(0); // nothing whole left under or over Codex's to take it: not offered
+  await page.locator("#main > .chat.mini .mini-hist .mh-row, #main > .chat.mini button.mini-me").first().click();
+  await expect(mini).toHaveCount(0);
+  await expect(minimize(codex)).toHaveCount(1); // offered again
 });

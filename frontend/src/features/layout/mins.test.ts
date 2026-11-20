@@ -3,8 +3,8 @@
 import { describe, expect, it } from "vitest";
 import { leaves, leafNodes } from "./arrange";
 import { build, firstTree, type Shown } from "./build";
-import { canMin, foldable, marked, minimized, together } from "./mins";
-import type { Node } from "./tree";
+import { canMin, foldable, marked, markingOf, minimized, takes, together } from "./mins";
+import type { Node, Split } from "./tree";
 
 const at = (key: string | null, item: string): Shown<string> => ({
   key,
@@ -16,6 +16,12 @@ const T = "g\u0000t1",
   U = "g\u0000t2";
 const opts = { top: null, h: 900 };
 const items = (built: ReturnType<typeof build<string>>, ids: string[]) => ids.map((id) => built.items.get(id)!.item);
+// the work area built (as work.ts does): with each task's arrangement made, and how to build it again with panes marked
+function built0(shown: Shown<string>[], trees: Record<string, Node>, o: Parameters<typeof build<string>>[3] = opts) {
+  const b = build(shown, trees, () => null, o),
+    all = { ...trees, ...b.added };
+  return { b, marking: markingOf(b, all, (t) => build(shown, t, () => null, o)) };
+}
 const key = (built: ReturnType<typeof build<string>>, task: string | null, dir: string) =>
   [...built.splits.values()].find((s) => s.task === task && s.dir === dir && !s.screen)!.key;
 
@@ -126,11 +132,11 @@ describe("panes minimized by a pane's own button, or shown whole: those beside i
 
   it("an app beside it: never minimized (a blank would stand above it), nor offered", () => {
     const tree = col({ id: "c0" }, row({ id: "app:b" }, { id: "c1" }));
-    const built = build([at(T, "c0"), at(T, "app:b"), at(T, "c1")], { [T]: tree }, () => null, opts);
+    const { b: built, marking } = built0([at(T, "c0"), at(T, "app:b"), at(T, "c1")], { [T]: tree });
     expect(built.under.has(id(built, "c1"))).toBe(true);
     expect(together(built, id(built, "c1"), true)).toEqual([]);
-    expect(canMin(built, "c1")).toBe(false);
-    expect(canMin(built, "c0")).toBe(true); // (above them: alone in its kid)
+    expect(canMin(built, "c1", marking)).toBe(false);
+    expect(canMin(built, "c0", marking)).toBe(true); // (above them: alone in its kid)
   });
 
   it("two tasks side by side under a third: both tasks' panes, each in its own task's arrangement", () => {
@@ -156,5 +162,49 @@ describe("panes minimized by a pane's own button, or shown whole: those beside i
     expect(ids(built, together(built, id(built, "b"), true))).toEqual(["b"]);
     expect(ids(built, together(built, id(built, "b"), false))).toEqual(["a", "b"]); // c stays, in its column
     expect(ids(built, together(built, id(built, "a"), false))).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("panes minimized only where something whole is left above or below them, to take the room", () => {
+  const col = (...kids: Node[]): Node => ({ key: "", dir: "col", bar: 1, kids, sizes: kids.map(() => ({})) });
+  const min = (id: string): Node => ({ id, min: true });
+  const shownOf = (built: ReturnType<typeof build<string>>) =>
+    [...built.minimized].map((i) => built.items.get(i)!.item);
+
+  it("two panes one above the other: either minimized, the other then not; both marked (kept so), both shown whole", () => {
+    const shown = [at(T, "c1"), at(T, "c2")];
+    const fresh = built0(shown, { [T]: col({ id: "c1" }, { id: "c2" }) });
+    expect(canMin(fresh.b, "c1", fresh.marking)).toBe(true);
+    expect(canMin(fresh.b, "c2", fresh.marking)).toBe(true);
+    const one = built0(shown, { [T]: col(min("c1"), { id: "c2" }) });
+    expect(shownOf(one.b)).toEqual(["c1"]);
+    expect(canMin(one.b, "c2", one.marking)).toBe(false); // (nothing whole left: a blank below them)
+    expect(takes(foldable(one.b, key(one.b, T, "col"), 1), one.marking)).toBe(false); // nor by its bar
+    const both = build(shown, { [T]: col(min("c1"), min("c2")) }, () => null, opts);
+    expect(both.minimized.size).toBe(0);
+    expect((both.tree as Split).sizes.map((z) => !!z.fit)).toEqual([false, false]); // sharing the column
+  });
+
+  it("an app above them: each minimized, both -- the app takes the room", () => {
+    const shown = [at(T, "app:b"), at(T, "c1"), at(T, "c2")];
+    const one = built0(shown, { [T]: col({ id: "app:b" }, min("c1"), { id: "c2" }) });
+    expect(canMin(one.b, "c2", one.marking)).toBe(true);
+    const both = build(shown, { [T]: col({ id: "app:b" }, min("c1"), min("c2")) }, () => null, opts);
+    expect(shownOf(both).sort()).toEqual(["c1", "c2"]);
+  });
+
+  it("two tasks one above the other: one minimized, not the other; a task of its panes all minimized, as long as them", () => {
+    const shown = [at(T, "c1"), at(U, "c2")];
+    const screen = col({ id: T }, { id: U });
+    const one = built0(shown, { [T]: min("c1"), [U]: { id: "c2" } }, { ...opts, screen });
+    expect(shownOf(one.b)).toEqual(["c1"]);
+    expect(canMin(one.b, "c2", one.marking)).toBe(false);
+    // a task of two panes one above the other, both marked, over a task whole: its column as long as they are
+    const shown3 = [at(T, "c1"), at(T, "c3"), at(U, "c2")];
+    const stacked = build(shown3, { [T]: col(min("c1"), min("c3")), [U]: { id: "c2" } }, () => null, {
+      ...opts,
+      screen,
+    });
+    expect(shownOf(stacked).sort()).toEqual(["c1", "c3"]);
   });
 });

@@ -4,6 +4,10 @@
 // and the one picked is sent the user's words, then where the lines are and the lines themselves, as the user's own
 // message, as its Chat sends one (ag.actors.send, capability message_actors): it reads it as any message of theirs. The
 // file is saved first, auto-saved, so the lines it reads there are the ones quoted; else the message says they are not.
+import { agApp, avatarSrc, el, state, statusOf, strokeIcon } from "./page.js";
+import { ed, edBase, edDiskConflicts, edSave, edWhoColor, edWhoName } from "./editor.js";
+import { edNote } from "./editor-open.js";
+
 const ED_SEND_QUOTE_MAX = 20000;   // characters of a selection quoted in the message; more: only where they are
 const edSend = { btn: null, pop: null, down: false, frame: 0 };
 
@@ -23,7 +27,7 @@ const edSendLines = (q) => q.first === q.last ? `line ${q.first}` : `lines ${q.f
 
 // The button, kept beside the selection's end as the selection, the view and its scroll change -- shown while the file
 // has the keys and text is selected (not while the mouse is still selecting), within the file's view.
-function edSendPlace() {
+export function edSendPlace() {
   cancelAnimationFrame(edSend.frame);
   edSend.frame = requestAnimationFrame(edSendDraw);  // the view's layout is read after its update, not in it
 }
@@ -123,7 +127,7 @@ function edSendKey(ev) {
   }
   if (ev.key === "Escape") { ev.preventDefault(); edSendClose(true); }
 }
-function edSendClose(back = false) {
+export function edSendClose(back = false) {
   const p = edSend.pop;
   if (!p) return;
   edSend.pop = null;

@@ -230,14 +230,17 @@ export function build<N>(
     else if (on && (out.items.get(n.id)?.key ?? null) !== null) out.under.add(n.id);
   };
   // minimized: a pane marked so in a kid of a column as long as what it shows -- every pane beside it marked too (one
-  // marked beside one whole would stand in their row's full height, a blank above its message box: shown whole)
+  // marked beside one whole would stand in their row's full height, a blank above its message box: shown whole). A
+  // column every kid of which is so, in room longer than they show (not itself as long as what it shows), has nothing
+  // to take the rest -- a blank below them: its kids shown whole, sharing it.
   const fitted = (n: Node, fit: boolean): void => {
     if (!isSplit(n)) {
       if (fit && out.under.has(n.id) && marked.has(n.id)) out.minimized.add(n.id);
       return;
     }
-    const strip = isStrip(out, n); // (a block's strip on its panels: no column of theirs)
-    n.kids.forEach((k, i) => fitted(k, n.dir === "col" && !strip ? !!n.sizes[i]?.fit : fit));
+    const col = n.dir === "col" && !isStrip(out, n); // (a block's strip on its panels: no column of theirs)
+    if (col && !fit && n.sizes.every((z) => z.fit)) n.sizes = n.sizes.map(() => ({ share: 1, min: BELOW_MIN }));
+    n.kids.forEach((k, i) => fitted(k, col ? !!n.sizes[i]?.fit : fit));
   };
   const v = out.screen && view(out.screen, () => true);
   out.tree = v ? blocks(v) : null;
