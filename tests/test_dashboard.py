@@ -4,6 +4,7 @@ served on localhost or written with its data inside it."""
 import json
 import os
 import re
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -20,7 +21,7 @@ from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
 from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
-from ag_dashboard import data, server  # noqa: E402
+from ag_dashboard import branches, coordination, data, livedocs, saved, server, sessions  # noqa: E402
 from ag_dashboard import store as dstore  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 import page_source  # noqa: E402
@@ -561,8 +562,7 @@ class PageTest(HomeBase):
     def test_the_server_answers_the_page_and_its_data(self):
         httpd = server.serve("127.0.0.1", 0)
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        self.addCleanup(httpd.server_close)
-        self.addCleanup(httpd.shutdown)
+        self.serving(httpd)                               # stopped before the home goes
         url = f"http://127.0.0.1:{httpd.server_port}"
         get = lambda path: urllib.request.urlopen(url + path, timeout=10)  # noqa: E731
         self.assertIn("<title>AGUI</title>", get("/").read().decode())     # the page, built or saying how to build it
@@ -582,8 +582,7 @@ class PageTest(HomeBase):
     def test_the_page_installs_as_an_app_with_its_icons(self):
         httpd = server.serve("127.0.0.1", 0, live_updates=False)
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        self.addCleanup(httpd.server_close)
-        self.addCleanup(httpd.shutdown)
+        self.serving(httpd)                               # stopped before the home goes
         url = f"http://127.0.0.1:{httpd.server_port}"
         get = lambda path: urllib.request.urlopen(url + path, timeout=10)  # noqa: E731
         size = lambda png: (int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big"))  # noqa: E731
@@ -610,6 +609,74 @@ class PageTest(HomeBase):
         self.assertIn('<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">', head)
         with open(os.path.join(root, "desktop", "icon.png"), "rb") as fh:   # the desktop app's, in the Dock
             self.assertEqual(size(fh.read(24)), (1024, 1024))
+
+
+class StopTest(HomeBase):
+    """A dashboard stopped (`server_close`) is stopped: what its parts' threads have under way -- a look at the actors'
+    branches, at the files open live, at the saved actors, at the watches -- ended before it returns, so none of it
+    reaches the home after, as the home is removed."""
+
+    def test_a_look_under_way_as_the_server_closes_writes_nothing_in_the_home_after(self):
+        """CI's "Directory not empty: 'ag'" removing a test's home (test_app_latex's, test_dashboard_app_host's served
+        tests): the branches' first look -- about a second in, its tables made in dashboard.db -- still going on once
+        server_close had returned, put a file back in the home as tearDown removed it."""
+        looking, looked = threading.Event(), threading.Event()
+        look = branches.Branches.look
+
+        def slow(b, everything=False):                   # a slow machine's look: begun, not done, as the server closes
+            looking.set()
+            time.sleep(0.5)
+            try:
+                return look(b, everything)
+            finally:
+                looked.set()
+        with unittest.mock.patch.object(branches.Branches, "look", slow), \
+                unittest.mock.patch.object(branches, "POLL", 0.01):
+            httpd = server.serve("127.0.0.1", 0, live_updates=False)
+            try:
+                self.assertTrue(looking.wait(10))
+            finally:
+                httpd.server_close()
+        shutil.rmtree(paths.AG_HOME)                      # the home removed, as tearDown does
+        self.assertTrue(looked.wait(10))                  # the look over, whenever it ended
+        self.assertFalse(os.path.exists(paths.AG_HOME), "the home written after the server closed")
+
+    def test_each_part_s_close_returns_once_its_look_under_way_has_ended(self):
+        started = sessions.Sessions()
+        self.addCleanup(started.close)
+        closing = threading.Event()
+        under_way: dict = {}
+        looking: dict = {}                                # each part's thread, at its look
+
+        def held(name, step):                             # a look begun, still going on as its part closes
+            def look(*args, **kwargs):
+                looking[name] = threading.current_thread()
+                under_way.setdefault(name, threading.Event()).set()
+                if closing.wait(10):
+                    time.sleep(0.2)
+                return step(*args, **kwargs)
+            return look
+        patches = [unittest.mock.patch.object(branches.Branches, "look", held("branches", branches.Branches.look)),
+                   unittest.mock.patch.object(livedocs.LiveDocs, "look", held("live-docs", livedocs.LiveDocs.look)),
+                   unittest.mock.patch.object(saved.Rest, "check", held("ag-rest", saved.Rest.check)),
+                   unittest.mock.patch.object(saved, "REST_CHECK", 0.01),
+                   unittest.mock.patch.object(coordination.Coordination, "check",
+                                              held("ag-watches", coordination.Coordination.check)),
+                   unittest.mock.patch.object(coordination, "WATCH_CHECK", 0.01)]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        docs = livedocs.LiveDocs(poll=0.01)
+        parts = [docs, branches.Branches(docs, started, poll=0.01), saved.Rest(started, lambda: set()),
+                 coordination.Coordination(started, watch=True)]
+        try:
+            for name in ("branches", "live-docs", "ag-rest", "ag-watches"):
+                self.assertTrue(under_way.setdefault(name, threading.Event()).wait(10), name)
+        finally:
+            closing.set()
+            for part in parts:
+                part.close()
+        self.assertEqual([name for name, t in looking.items() if t.is_alive()], [])
 
 
 class CommandTest(HomeBase):
@@ -650,8 +717,7 @@ class CommandTest(HomeBase):
     def test_open_on_a_port_taken_opens_the_dashboard_there_if_it_is_this_homes(self):
         httpd = server.serve("127.0.0.1", 0, live_updates=False)          # this home's, running already
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        self.addCleanup(httpd.server_close)
-        self.addCleanup(httpd.shutdown)
+        self.serving(httpd)                               # stopped before the home goes
         port = httpd.server_port
         self.assertEqual(self.run_dashboard("--port", str(port), "--open"), (0, [f"http://127.0.0.1:{port}/"]))
         import http.server
