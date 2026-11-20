@@ -6,6 +6,7 @@ import { plural } from "../../core/format";
 import type { ListHost } from "./host";
 import { AskClose, CountChips, CrewButton, FoldMark, FolderBox, NameBox, TallyChips, useFilled } from "./Parts";
 import type { FoldNode, FolderNode, GathererNode, GfFolderNode, Node } from "./rows";
+import { FolderActs, GathererActs } from "./Menus";
 import { ActorRowView, AppRowView, ShellRowView, TaskRowView } from "./RowViews";
 import { GF } from "./tree";
 import type { Folder, Gatherer } from "./types";
@@ -112,7 +113,6 @@ function NewForm({ host, at }: { host: ListHost; at: string }) {
  * open, what is in it set in under it. Its row dragged: put in a folder of gatherers, or another group. */
 function GathererBox({ host, n }: { host: ListHost; n: GathererNode }) {
   const g = n.g;
-  const acts = useFilled<HTMLSpanElement>(() => host.gathererActs(g, n.title));
   const toggle = () => host.toggleGatherer(g.name);
   const drag = n.draggable
     ? {
@@ -144,7 +144,9 @@ function GathererBox({ host, n }: { host: ListHost; n: GathererNode }) {
         {host.snapshot ? null : <CrewButton host={host} g={g} node={`group:${g.name}`} />}
         <span className="fill" onClick={toggle}>
           <CountChips c={n.counts} />
-          <span className="g-acts" ref={acts} onClick={stop} />
+          <span className="g-acts" onClick={stop}>
+            <GathererActs host={host} g={g} title={n.title} />
+          </span>
         </span>
       </div>
       {n.adding ? <NewForm host={host} at={host.formAt()} /> : null}
@@ -190,7 +192,6 @@ function FolderRows({ host, n }: { host: ListHost; n: FolderNode }) {
 function FolderLine({ host, n }: { host: ListHost; n: FolderNode }) {
   const { g, f, closed, held } = n,
     t = n.tally;
-  const acts = useFilled<HTMLSpanElement>(() => host.folderActs(n));
   const toggle = () => host.toggleFolder(g.name, f.id);
   const says = closed
     ? `${f.name}: closed, ${plural(held, "actor")} in it`
@@ -228,7 +229,11 @@ function FolderLine({ host, n }: { host: ListHost; n: FolderNode }) {
         ) : (
           <TallyChips t={t} />
         )}
-        {host.snapshot ? null : <span className="f-acts" ref={acts} onClick={stop} />}
+        {host.snapshot ? null : (
+          <span className="f-acts" onClick={stop}>
+            <FolderActs host={host} n={n} />
+          </span>
+        )}
       </span>
     </div>
   );

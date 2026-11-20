@@ -425,8 +425,11 @@ pattern the list and Chat follow:
   resting pointer (`hover.still`), the card's name box carried through them (`cardMoving`) and Manage groups' (`manage.
   drawing`); a box a draw itself takes away is not the reader leaving it (`drawingNow`). A rail tile's bookmark and ×
   are made anew at each draw, as the whole rail was: a press on one keeps no focus that would hold them shown (and the
-  rail's spec of a draw under a resting pointer sees a new one). The list's own "+" and "⋯" are still the page's,
-  found again by `data-pop`.
+  rail's spec of a draw under a resting pointer sees a new one). A gatherer's and a folder's "+" and "⋯" are Radix's
+  DropdownMenu (`Menus.tsx`; the page says what each holds: `startMenu`, `gathererMore`, `folderMore`), closed by a
+  press the page never hears as the page's own drop-downs are (`pressedAway`'s `PRESSED_AWAY`); an item that opens a box
+  or the branch picker opens it from the same button, the menu closed (its second step, `openPop` by the button's
+  `data-pop`). The card's "+ actor" and "+ ⋯", the new-tab page's and the panes' drop-downs are `openPop`'s still.
 
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the

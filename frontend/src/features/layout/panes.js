@@ -31,6 +31,7 @@ import { shadow } from "./shadow";
 import { work as workLayout } from "./work";
 import * as appHost from "../apps/host";
 import { FILE_FORM, fileHref, filePath, isAppHref, joinPath, matchPath, parseHref } from "../apps/links";
+import { PRESSED_AWAY } from "../list/Menus";
 import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ panes
@@ -488,6 +489,7 @@ function pressedAway() {
   setAbout(false);
   closePop();
   brMenuClose();
+  dispatchEvent(new Event(PRESSED_AWAY));            // the list's own drop-downs (features/list/Menus.tsx)
   const types = document.getElementById("hist-types");
   if (types && types.open) types.open = false;
 }
@@ -1681,39 +1683,27 @@ function crewButton(g, node = g ? `group:${g.name}` : "all") {
     onclick: (ev) => { ev.stopPropagation(); openCoordinator(g, node); } },
     crewFace(crew, MANAGER), hidden ? el("i", { class: `crew-dot ${cls}`, "aria-hidden": "true" }) : null);
 }
-// A gatherer row's start buttons -- and a folder's line's (`folder`: what they start goes in it, folders.py), shown, on
-// each, while it is hovered: "+ actor" -- a drop-down of the harnesses a new actor may run on, or, with one, that one at
-// once -- and "+ more", a drop-down of the other things started there: an actor on a branch of its own, a DocWriter, a
-// Browser, a terminal. Each, pressed, aims what is started next at its folder, or its gatherer's top (aimStart): the
-// actor filed there once started (fileStarted).
-function startButtons(g, folder = null, prefix = "") {
+// A gatherer row's "+" -- and a folder's line's (`folder`: what it starts goes in it, folders.py), shown, on each, while
+// it is hovered (features/list/Menus.tsx's StartPlus): ONE "+", everything that can start here, in one menu -- an actor
+// on each harness, then an actor on a branch, the apps, a terminal (moreStarts) -- headed by where (the folder, else the
+// group) and its directory. Its classes are both the old buttons' (new-actor, new-more): what started from either starts
+// from it. Pressed, it aims what is started next at its folder, or its gatherer's top (aimStart): the actor filed there
+// once started (fileStarted). With nothing to start (no items), its title says why.
+function startMenu(g, folder = null) {
   const hs = startable(), cwd = startCwd(g), where = cwd ? tildePath(cwd, state.home.home_dir) : null;
   const fid = folder ? folder.id : null, place = folder ? folder.name : g.name, at = folder ? `:${fid}` : "";
   const ours = state.starting && state.starting.gatherer === g.name;
   const starting = ours && startIn.g === g.name && startIn.folder === fid ? String(state.starting.harness) : "";
-  const off = state.starting ? { disabled: "" } : {};
-  // ONE "+": everything that can start here, in one menu -- an actor on each harness, then an actor on a branch, the
-  // apps, a terminal (moreStarts) -- headed by where (the folder, else the group) and its directory. Its classes are both
-  // the old buttons' (new-actor, new-more): what started from either starts from it.
-  const key = `${prefix}start:${g.name}${at}`;   // a card's: its own (prefix)
+  const key = `start:${g.name}${at}`;
   const items = [...hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => addSession(g, h) })),
     ...(hs.length ? [{ sep: true }] : []), ...moreStarts(g, hs, where, key)];
-  if (!items.some((it) => !it.sep))
-    return [el("button", { class: "act add", type: "button", disabled: "", title: noHarness(), "aria-label": noHarness() }, strokeIcon(ICONS.plus, 16))];
   const busy = hs.includes(starting) || starting === SHELL_START || starting === BRANCH_START || starting.startsWith(APP_START);
-  return [el("button", { class: "act start new-actor new-more" + (busy ? " busy" : ""), type: "button", ...off, "data-pop": key,
-    title: `New in ${place}${where ? ` · ${where}` : ""}`, "aria-label": `New in ${place}`, "aria-haspopup": "menu",
-    "aria-expanded": String(rowPop.key === key),
-    onclick: (ev) => { aimStart(g.name, fid); openPop(key, ev.currentTarget, popMenu(`New in ${place}`, items, where, where)); } },
-  strokeIcon(ICONS.plus, 16))];
+  if (!items.some((it) => !it.sep)) return { key, busy: false, off: true, title: noHarness(), label: noHarness(), head: "", items: [] };
+  return { key, busy, off: !!state.starting, title: `New in ${place}${where ? ` · ${where}` : ""}`, label: `New in ${place}`,
+    head: `New in ${place}`, sub: where, items };
 }
-// A row's "⋯": what it can do besides start things (a new folder in it, rename it, hide or delete it), as a menu -- so its
-// row, hovered, shows two buttons, not six. `items`: [{icon, text, run}].
-function rowMore(key, name, items) {
-  return el("button", { class: "act row-more", type: "button", "data-pop": key, title: `More for ${name}`, "aria-label": `More for ${name}`,
-    "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === key),
-    onclick: (ev) => { ev.stopPropagation(); openPop(key, ev.currentTarget, popMenu(name, items)); } }, strokeIcon(ICONS.more, 16));
-}
+// Every drop-down of the page's open closed: one hung from a button by openPop, the branch drop-down
+function closePops() { closePop(); brMenuClose(); }
 // The "+ more" drop-down's starts: what each is (an app by its name and mark alone, no description under it; a branch and
 // a terminal say where they work), and what choosing it does. `key`: its button's data-pop.
 function moreStarts(g, hs, where, key = `more:${g.name}`) {
@@ -2348,8 +2338,8 @@ export {
   closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, focusedPane, folderPicks, holdAppPane, isAt,
   isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, opensWithAgent, paneNote,
   paneOf, paneReady, paneSig, paneUrl, panesTake, pick, pickBeside, placeIfShown, placeWork, popButton, popMenu,
-  cardStart, cardStartPress, railNewBox, rekeyTask, retarget, rememberTask, restoreAppPanes, restorePanes, rowMore, rowPop, saveAppPanes,
-  savePanes, selectAppPane, selectedTask, setAutoShown, show, showActorsApp, shownPanels, startButtons, startCwd,
+  cardStart, cardStartPress, railNewBox, rekeyTask, retarget, rememberTask, restoreAppPanes, restorePanes, rowPop, saveAppPanes,
+  savePanes, selectAppPane, selectedTask, setAutoShown, show, showActorsApp, shownPanels, startMenu, startCwd, closePops,
   startPlacing, startSession, startShell, startTabs, startWithApp, startable, swapAppPane, taskAppsOpening, taskKey,
   taskLayout, tasksLaidOut, topLayout, unselectApp, viaTabs, watchTop, workPlacer,
 };

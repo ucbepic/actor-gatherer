@@ -148,7 +148,7 @@ function renderFolded() {
   if (hover.from === "rail" && listMode !== "folded") cardHide();
 }
 // The rail: the list, small (features/list/Rail.tsx, from rail-model.ts's model). Each gatherer not hidden, its name over
-// its actors -- a button folding it, as the list's does; hovered, its card has its buttons (gathererCard) -- then its box
+// its actors -- a button folding it, as the list's does; hovered, its card has its buttons (CardFolder.tsx) -- then its box
 // as the list has it: its folders folded to their names and counts, or open in place; its saved and closed lines, as the
 // reader checks at its foot (railShow); its actors' tiles. A double-click on a gatherer's or folder's name shows only it
 // (railDrill). Dragged (every selected one with it) onto a folder's name, a gatherer's, the name drilled into or a step
@@ -220,8 +220,8 @@ function renderRail() {
   markDragged();                                     // drawn mid-drag: what is dragged, still shown as it
   if (hover.from === "rail") cardDraw();
 }
-// An actor dragged from the rail (dragRow, startDrag): the rail drawn again with every folder of its gatherer -- those
-// the foot's "folders" leaves out too, folded -- so it can be dropped in one (renderRail's view); as it was once the
+// An actor dragged from the rail (startDrag): the rail drawn again with every folder of its gatherer -- those
+// the foot's "folders" leaves out too, folded -- so it can be dropped in one (rail-model.ts's `dragging`); as it was once the
 // drag is over (endDrag, `revealed`). Drawn next, not now: the browser takes what is dragged's picture first.
 function railDragged() {
   if (listMode !== "folded" || railShow.folders) return;

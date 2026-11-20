@@ -20,8 +20,8 @@ import {
   actorPanes, appClosed, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnlyKey, branchChip,
   closeAppPane, closePane, closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, isAt,
   isAway, moveEnd, newForm, openActors, openCoordinator, openPop, openTaskBeside, paneNote, pick, pickBeside, showAppPanel,
-  placeIfShown, popMenu, rekeyTask, rememberTask, rowMore, rowPop, selectAppPane, selectedTask, show, shownPanels,
-  startButtons, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut, viaTabs,
+  placeIfShown, popMenu, rekeyTask, rememberTask, rowPop, selectAppPane, selectedTask, show, shownPanels,
+  startMenu, closePops, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut, viaTabs,
   workPlacer,
 } from "../layout/panes.js";
 import { refreshNewTab } from "../layout/new-tab.js";
@@ -283,7 +283,7 @@ const deleteFolder = (gname, id) => folderPost(gname, { do: "delete", id }, (tre
   tree.folders = tree.folders.filter((x) => x.id !== id);
 });
 // Where the next actor started from the list goes: the folder whose "+ actor" or "+ ⋯" was pressed last, or its gatherer's
-// top (null) -- set by each start button as it is pressed (startButtons; railNew, railMore in the rail's cards). Once started, the actor is filed
+// top (null) -- set by each start button as it is pressed (startMenu's; cardStartPress in the rail's cards). Once started, the actor is filed
 // there (fileStarted), as the server answers with its id; a terminal is opened there (startShell, `shellFolder`).
 let startIn = { g: "", folder: null };
 const aimStart = (gname, id) => { startIn = { g: gname, folder: id }; };
@@ -416,13 +416,21 @@ const LIST_HOST = {
     aloneNew(),                                      // an actor on its own (features/list/group-moves.js)
     SNAPSHOT || !model.merged ? null : crewButton(null, "all"),   // the coordinator agent over everything
     el("span", { class: "list-btns" }, ...listButtons())].filter(Boolean),
-  // over a gatherer's counts while it is hovered (or in focus), in a folder's line's order: "+" (all that starts there),
-  // and "⋯": a new folder, rename, and hide
-  gathererActs: (g, title) => [...(SNAPSHOT ? [] : startButtons(g)), rowMore(`gmore:${g.name}`, title, [
+  // a gatherer's and a folder's buttons (features/list/Menus.tsx): "+" (all that starts there: startMenu) and "⋯"
+  startMenu: (g, f) => startMenu(g, f),
+  startOpening: (g, f) => { closePops(); aimStart(g.name, f ? f.id : null); },
+  closePops,
+  // a gatherer's "⋯": a new folder, rename, and hide
+  gathererMore: (g, title) => ({ head: title, items: [
     ...(SNAPSHOT ? [] : [{ icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, null) },
       { icon: ICONS.pencil, text: "Rename", run: () => retitle(g) }]),
-    { mark: hideIcon(), text: "Hide", run: () => setHidden(g, true) }])],
-  folderActs: (n) => folderActs(n.g, n.f, n.closed, n.crew),
+    { mark: hideIcon(), text: "Hide", run: () => setHidden(g, true) }] }),
+  // a folder's "⋯": a folder made in it, it renamed (F2), it deleted
+  folderMore: (g, f, crew) => ({ head: f.name, items: [
+    { icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, f.id) },
+    { icon: ICONS.pencil, text: "Rename", run: () => startFolderEdit(g.name, f.id) },
+    { icon: ICONS.bin, text: crew ? "Delete (its coordinator agent closes)" : "Delete", run: () => deleteFolder(g.name, f.id) }] }),
+  deleteFolder, reopenFolder, pressClose: (g, f) => pressClose(g, f, "list"),
   gfActs: (f, crew) => [state.home.merged && !crew ? crewButton(null, `groups:${f.id}`) : null,
     folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(GF, null, f.id)),
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(GF, f.id)),
@@ -541,7 +549,7 @@ const crewHideKey = LG.crewHideKey;
 const crewPlace = (node, g = null) => LG.crewPlace(CTX, node, g);
 // TASKS (tasks.py, `home.tasks`: {gatherer: {tasks: [{id, name}], tasked: {item: task id}}}): what the reader works with
 // at once -- actors and apps alike, its ITEMS: an actor by its channel, an app's instance by "app:<its id>" (appItem) --
-// one row in the list (taskRow), a leaf: what is in it shown in its card (features/list/modes.js's taskCard), and in its layout,
+// one row in the list (taskRow), a leaf: what is in it shown in its card (features/list/CardTask.tsx), and in its layout,
 // opened by a click (openTask). An item in none is a task of its own: an actor's row (agentRow), an app's (appRow). Within
 // a task every agent is attached to every app (task_links.py). Its "+" (addButton) adds to it a new agent (addToTask) or
 // an app (addAppToTask); an item dragged onto another's row is put in its task (dropOnItem); the × in its card takes one
@@ -997,22 +1005,6 @@ async function nameItem(gname, k, value) {
 // a small button on a folder's line, beside its start buttons
 const folderAct = (cls, title, icon, fn) => el("button", { class: `act folder-act ${cls}`, type: "button", title, "aria-label": title,
   onclick: (ev) => { ev.stopPropagation(); fn(); } }, icon);
-// A folder's buttons, over its counts on its line while it is hovered or in focus (features/list/Boxes.tsx's FolderLine):
-// "+" (all that starts in it: startButtons), its coordinator agent (none yet), "⋯" -- a folder made in it, it renamed
-// (F2), it deleted -- and its × (closeFolder). A closed one's: rename, delete, reopen.
-function folderActs(g, f, closed, crew) {
-  if (closed) return [
-    folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
-    folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
-    folderAct("reopen", `Reopen ${f.name} · its actors stay closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
-  ];
-  return [...startButtons(g, f), crew ? null : crewButton(g, `folder:${f.id}`),
-    rowMore(`fmore:${g.name}:${f.id}`, f.name, [
-      { icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, f.id) },
-      { icon: ICONS.pencil, text: "Rename", run: () => startFolderEdit(g.name, f.id) },
-      { icon: ICONS.bin, text: crew ? "Delete (its coordinator agent closes)" : "Delete", run: () => deleteFolder(g.name, f.id) }]),
-    folderAct("close", `Close ${f.name} and every actor in it`, closeIcon(), () => pressClose(g, f, "list"))].filter(Boolean);
-}
 // CLOSING a folder (its ×, on its line or its card): at once, if all in it is closed already, none saved, no terminal in
 // it; else first the question under it (`folderClosing`: {g, id, from: "list" | "card"}) -- what closing it would close,
 // end, take off -- with "Close folder" and Cancel (Esc). Its buttons keep their focus through the list's redraws
