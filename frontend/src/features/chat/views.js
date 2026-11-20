@@ -6,7 +6,7 @@ import { paneUrl } from "../layout/panes.js";
 import { renderMain } from "../page/main-view.js";
 import { backgroundNote, chatToEnd } from "./chat.js";
 import { chatActor } from "./files-view.js";
-import { hist } from "../history/history.js";
+import { viewOpened } from "../history/store";
 import { chatMin } from "../layout/top.js";
 import * as prefs from "../../core/prefs";
 import { drawMessages, typeChipsNode } from "../details/mount";
@@ -81,7 +81,7 @@ const chatView = () => {
   return offeredTo(v, info) ? v : CHAT_VIEWS.get("files");
 };
 async function setChatView(id) {
-  if (id === "history" && chatView().id !== "history") hist.askedFor = hist.group = hist.stay = null;   // opened again: built again
+  if (id === "history" && chatView().id !== "history") viewOpened();   // opened again: built again
                                                      // if due, and at its tasks if it has them
   state.chatViewId = id;
   if (PANE) { paneUrl(); PANE.viewed(window, id); }  // a frame's: kept with its pane, not as every page's

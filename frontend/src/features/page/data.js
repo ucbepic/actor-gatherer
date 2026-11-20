@@ -77,7 +77,7 @@ const drawn = { agents: null, main: null, who: null };
 // What the list draws from: kept as `drawn.agents` by renderAgents whoever calls it -- a home, or the reader's own
 // action, which draws at once -- so a home that only confirms that action draws nothing anew (a row drawn again under
 // the pointer as the reader presses it to drag starts no drag). Not the clock: its "ago" texts count where they are, as
-// every `data-ago` does (features/history/history.js's ticker), and a redraw for them alone would take the keyboard's
+// every `data-ago` does (core/ui/clocks.ts), and a redraw for them alone would take the keyboard's
 // place in the list away every 30 s -- only what the time decides, the groups hidden for being inactive (`staleNames`).
 const listSignature = () => signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.titles,
   state.home.saved, state.home.folders, state.home.gatherer_folders, state.home.places, state.home.tasks, state.home.seen, state.home.harnesses, state.home.shells, state.home.branches,

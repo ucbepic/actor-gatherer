@@ -476,6 +476,18 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
   the feed (mainSignature). The notes switch is a store (`useNotes`), as the type chips are. Gone: transcript.js,
   `state.chat`, `state.tx`, `state.txCwd`. The reader's own views keep `agDashboard.transcriptBlocks`, `.foldedOutput`
   and `.notesSwitch`, as nodes. Vitest: `transcript.test.tsx`, `details/messages.test.tsx`.
+- **History** (`features/history/`): the view (`HistoryView.tsx`: the bar, the list, each row drawn by its key and
+  drawn again only when what it shows changed), the panel at the right (`Side.tsx`, a record's saving in `Save.tsx`), the
+  tree, its rows and what a selection holds worked out apart (`tree.ts`), selecting by press, drag, shift and ⌘ and the
+  keys (`select.ts`: while a drag goes on only the selection changes), its own state in a store (`store.ts`: grouped,
+  opened, searched, selected -- started over for another gatherer's rows -- the panel, a record being saved). What it
+  fetches is TanStack Query's (`data.ts`): the outline by actor (loaded a page at a time, then what came after; kept for
+  an actor shown again, where it was fetched afresh), the gatherer's records (fetched again after 10 s, every 2 s while
+  one is made), a search's hits, an opened message's whole text. The types shown are Radix's DropdownMenu (checkbox
+  items; a pick keeps it open), in place of a `details` closed by a click elsewhere; its button and menu restyled as the
+  summary and box were. history.js only registers the view (and keeps `enc`, which the list's modes.js imports); it is
+  off the long files' list. Not virtualized: the list keeps its rows' `content-visibility`, and the browser's find and
+  the specs read every row. Vitest: `history.test.tsx`.
 
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
