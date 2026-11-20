@@ -3,7 +3,13 @@
 // closed, and the files folded away into a thin bar (edFoldTree). Under it the tree (edTree): each folder's entries,
 // folders first, with a twistie, an icon of its kind, guides down the levels and what actors and pages do to each;
 // moved through with the keys (edTreeKey), and a menu on a right-click (edMenu).
-const ED_TREE_FOLDED_KEY = "ag-dashboard-editor-tree-folded";
+import { agApp, ago, el, ICONS, MAC, plural, post, state, statusOf, strokeIcon } from "./page.js";
+import { ed, edAvatars, edBase, edDir, edGo, edJoin, edList, edOpen, edTilde, edTreeWriters,
+  edUnder, edWaiting, edWhoName, edWriters } from "./editor.js";
+import { edGoClose, edGoto, edNative, edNativeName, edNote } from "./editor-open.js";
+import { edSince, edStartOpen } from "./recent.js";
+
+export const ED_TREE_FOLDED_KEY = "ag-dashboard-editor-tree-folded";
 const ED_RECENT_KEY = "ag-editor-recent-folders", ED_RECENT_N = 8;
 const ED_FIND_MS = 800;              // ms between keys typed in the tree that still find one name
 
@@ -31,7 +37,7 @@ const ED_SEARCH = "M7 2.25a4.75 4.75 0 1 0 0 9.5a4.75 4.75 0 1 0 0-9.5zM10.5 10.
 const ED_COLLAPSE = "M3.25 2.75h9.5a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1v-8.5a1 1 0 0 1 1-1zM5.25 8h5.5";
 // an actor started here: a head and shoulders, a + beside it (the tree's menu)
 const ED_ACTOR_GLYPH = "M6.5 7.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5zM2.25 13.25c.4-2.3 2.1-3.75 4.25-3.75 1 0 1.9.3 2.6.85M12 9.5v4M10 11.5h4";
-const ED_DIR_GLYPH = {
+export const ED_DIR_GLYPH = {
   shut: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z",
   open: "M1.75 11.6V4a1 1 0 0 1 1-1h3.4l1.5 1.6h4.85a1 1 0 0 1 1 1v1.65M1.95 12.7l1.6-4.75a1 1 0 0 1 .95-.7h9.05a.6.6 0 0 1 .57.8"
     + "l-1.45 4.3a1 1 0 0 1-.95.7H2.6a.7.7 0 0 1-.65-.35z",
@@ -82,7 +88,7 @@ function edKind(name) {
     || ED_KINDS[n.includes(".") ? n.slice(n.lastIndexOf(".") + 1) : ""] || "doc gray";
   return k.split(" ");
 }
-function edFileIcon(name) {
+export function edFileIcon(name) {
   const [glyph, hue] = edKind(name);
   const svg = strokeIcon(ED_GLYPH[glyph], 15);
   svg.setAttribute("class", `ic ft-${hue}`);
@@ -99,7 +105,7 @@ function edDirIcon(open) {
 // The folder shown, a button that picks another; then Go to file, the system's Open dialog for the folder to show (when
 // there is one: a file from it is Go to file's last choice), a new file or folder, and the files folded away. Reading the folders again and closing every one are in the menu. The thin
 // bar that stands for the files folded says the folder too.
-function edBar() {
+export function edBar() {
   if (!ed.bar) return;
   const sig = JSON.stringify([ed.root, ed.home, ed.choose]);
   if (sig === ed.barSig) return;
@@ -126,7 +132,7 @@ function edBar() {
 // A long path said by its last two folders, the end of it what tells one from another (the whole in its title).
 const edShort = (p) => { const t = edTilde(p), parts = t.split("/").filter(Boolean); return t.length <= 26 || parts.length <= 2 ? t : `…/${parts.slice(-2).join("/")}`; };
 // The files folded away, or shown again: a thin bar in their place while folded, the reader's choice kept in this browser.
-function edFoldTree(fold, store = true) {
+export function edFoldTree(fold, store = true) {
   if (!ed.nav) return;
   const moving = ed.host.contains(document.activeElement);
   ed.nav.hidden = fold; ed.fold.hidden = !fold;
@@ -150,7 +156,7 @@ function edTarget() {
   return row && row.dataset.dir ? p : edDir(p);
 }
 // The folders the tree was shown at, the latest first (kept in this browser): the picker's "Recent".
-function edRemember(dir) {
+export function edRemember(dir) {
   let had = [];
   try { had = JSON.parse(localStorage.getItem(ED_RECENT_KEY) || "[]"); } catch (e) { /* none */ }
   const now = [dir, ...(Array.isArray(had) ? had : []).filter((d) => typeof d === "string" && d !== dir)].slice(0, ED_RECENT_N);
@@ -175,7 +181,7 @@ function edFolders() {
   return [...by.entries()].sort((x, y) => y[1].last - x[1].last).slice(0, 15);
 }
 // A folder's listing, or why there is none in words (the server's error, not the request's status).
-async function edFetchList(dir) {
+export async function edFetchList(dir) {
   try {
     const r = await fetch(`/api/edit/list?${new URLSearchParams({ dir, root: "/", since: String(edSince()) })}`, { cache: "no-store" });
     const got = await r.json().catch(() => ({}));
@@ -225,7 +231,7 @@ function edPickPlace() {
   pk.box.style.top = `${Math.round(b.bottom + 4)}px`;
   pk.box.style.maxHeight = `${Math.max(180, Math.round(window.innerHeight - b.bottom - 16))}px`;
 }
-function edPickClose(focus = false) {
+export function edPickClose(focus = false) {
   const pk = ed.pick;
   if (!pk) return;
   ed.pick = null;
@@ -355,7 +361,7 @@ function edToggle(dir) {
   edTree();
 }
 // The folders between the one shown and `dir` (both included, the one shown always is) opened, and listed.
-function edOpenTo(dir) {
+export function edOpenTo(dir) {
   if (!ed.root || !edUnder(dir, ed.root)) return;
   for (let d = dir; d !== ed.root && d !== "/"; d = edDir(d)) {
     ed.open.add(d);
@@ -363,7 +369,7 @@ function edOpenTo(dir) {
   }
 }
 // The file open, shown in the tree: the folders down to it opened and its row scrolled to (once listed).
-function edReveal(path) {
+export function edReveal(path) {
   if (!ed.root || !path || path === ed.root || !edUnder(path, ed.root)) return;
   ed.revealing = path;
   edOpenTo(edDir(path));
@@ -377,7 +383,7 @@ const edFlashing = (path) => {
 };
 // The rows, each a treeitem: a twistie (a folder's), its icon, its name and what is going on with it. Drawn again only
 // when what it shows changed; the keyboard's place (a row, or a new name being typed) kept across a draw.
-function edTree() {
+export function edTree() {
   if (!ed.tree || !ed.root) return;
   const rows = [], sig = [ed.root, ed.file, ed.newItem && [ed.newItem.dir, ed.newItem.folder]];
   const lvl = (depth) => `--d: ${depth}`;
@@ -451,7 +457,7 @@ function edRove() {
 }
 // The tree's own keys: ↑ ↓ Home End to move, → to open a folder (or into it), ← to close it (or to the folder above),
 // Enter or Space to open, letters typed to go to the next name starting with them, the menu key or Shift+F10 for its menu.
-function edTreeWire(nav) {
+export function edTreeWire(nav) {
   ed.tree.addEventListener("focusin", (ev) => {
     const r = ev.target.closest(".ed-row");
     if (!r) return;
@@ -556,7 +562,7 @@ function edMenu(row, x, y) {
   box.style.top = `${Math.round(Math.max(8, y + box.offsetHeight + 8 > window.innerHeight ? y - box.offsetHeight : y))}px`;
   buttons()[0].focus({ preventScroll: true });
 }
-function edMenuClose(back = false) {
+export function edMenuClose(back = false) {
   const m = ed.menu;
   if (!m) return;
   ed.menu = null;

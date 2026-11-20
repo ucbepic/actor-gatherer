@@ -704,19 +704,24 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    `offer = "attached"`, `instances = "many"`), sharing what they both do as a library, not one of them the other's:
    - **`app_kit/fileedit/`**: the file editing -- `FileEdit` (backend.py: the panel's edit/..., mode, branches and
      files/changes requests, the mode, the file tools `<app>_read/_edit/_write/_open`, the guard, the agent told what
-     the user settled), `chooser.py`, and `panel/` (page.js, editor*.js, start.js, the CSS, vendor/editor.js), served
-     to every app's panel at `/_ag/lib/fileedit/` (the dashboard's libs.py). An app adds its parts with `edAdd`
-     (editor.js): header buttons, a column beside the file, keys, CodeMirror extensions, bold/italic markup, its
-     backend's messages. Which files are open, and as what mode, is one registry for every app built on it: a file's
-     mode is the strictest of all that have it open, and a change put in through one is settled in any.
+     the user settled), `chooser.py`, and `panel/` (page.js, editor*.js, recent.js, plain.js, start.js, the CSS,
+     vendor/editor.js), served to every app's panel at `/_ag/lib/fileedit/` (the dashboard's libs.py). Its `.js` are ES
+     modules, imported by the app's own (its panel's one `<script type="module">`, after the kit and the SDK, which they
+     read as globals): the app's module adds its parts with `edAdd` (editor.js) -- header buttons, a column beside the
+     file, keys, CodeMirror extensions, bold/italic markup, its backend's messages, plain editing -- then starts the
+     panel (start.js's `edStart`). Only the app's module, which loads last, uses another as it loads; what the others
+     set up runs when the panel starts, so their import cycles load in any order (2026-11-19). Which files are open, and
+     as what mode, is one registry for every app built on it: a file's mode is the strictest of all that have it open,
+     and a change put in through one is settled in any.
    - **Files** (`ag_apps/files/`): FileEdit, edited **plain** (the user, 2026-11-18: "just a regular viewer (i.e., no
      support for accepting/reviewing agent edit), or considering for concurrency of conflicts", then "You can do
      non-read-only"). A text file is read whole (`edit/text`: text and version), edited in the page alone, and saved
      whole (`edit/put`) by Save, ⌘S or Auto-save. Changed on disk with nothing unsaved, it is read again; with edits
      unsaved, the reader picks Reload or Keep mine, and no save goes over the change until then (409). It has no live
-     document, mode, conflict zone or branch approvals (`panel/plain.js`, the panel's `ed.plain`). Its agents edit
-     with their own tools; their one tool is `files_open`. `access = "group"` (any actor of the group may show the
-     user a file in it), `offered = false` (it opens alone). It takes `open-file` for any file.
+     document, mode, conflict zone or branch approvals (`panel/plain.js`'s part, which its panel gives to `edAdd` as
+     `plain`; the LaTeX editor's never loads it). Its agents edit with their own tools; their one tool is `files_open`.
+     `access = "group"` (any actor of the group may show the user a file in it), `offered = false` (it opens alone). It
+     takes `open-file` for any file.
    - **LaTeX** (`ag_apps/latex/`, tools `latex_*`, events `latex.mode`, `latex.preview_*`): FileEdit plus the
      Editor's preview (runs.py, texlog.py: Execute, the PDF, SyncTeX, Problems) and its LaTeX parts (latex.js:
      "→ PDF", the problems' marks, ⌘B/⌘I in LaTeX). The command can still be any; the guess for a .tex is latexmk.

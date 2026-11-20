@@ -2,12 +2,18 @@
 // What the LaTeX editor adds to app_kit.fileedit's editor (its panel's code, from /_ag/lib/fileedit/), given to it by edAdd:
 // the project's preview in a column beside the file (preview.js: ed.pv), run by Execute (⌘↵); a LaTeX build's problems
 // marked on their lines; "→ PDF" and a double-click in a TeX source, to its place in the PDF; and ⌘B / ⌘I in LaTeX's
-// markup, \textbf{…} and \textit{…}.
+// markup, \textbf{…} and \textit{…}. The panel's one entry (index.html): the rest imported, its parts given to edAdd,
+// then the panel started (edStart).
+import { el, ICONS, MAC, paneNote, strokeIcon, widthGrip } from "/_ag/lib/fileedit/page.js";
+import { ed, edAdd, edDiskConflicts, edSave } from "/_ag/lib/fileedit/editor.js";
+import { edStart } from "/_ag/lib/fileedit/start.js";
+import { pvLocate, pvMount, pvRun } from "./preview.js";
+
 Object.assign(ed, { problems: new Map(), problemsAt: 0, pv: null });   // a LaTeX build's, by file (edProblems); the column
 // Execute (⌘↵) runs the project's preview for the file open, else the folder shown (pvRun); → PDF, or a double-click
 // in a TeX source, shows that place in what it built (pvLocate). A place in a PDF's source it sends back is opened here
 // (edShowFile).
-const pvPath = () => ed.file || ed.root;
+export const pvPath = () => ed.file || ed.root;
 // ⌘↵ (Ctrl+Enter elsewhere) anywhere in the LaTeX editor -- the file, its tree, its header, a PDF's viewer: Execute. Taken
 // before CodeMirror's own (a blank line below); a text box keeps its own Enter.
 function edExecKey(ev) {
@@ -18,7 +24,7 @@ function edExecKey(ev) {
   if (!ev.repeat) edExecute();                       // held down: once
 }
 // Execute: the file saved first (as it is here), then its project's preview run, beside it.
-async function edExecute() {
+export async function edExecute() {
   const path = pvPath();
   if (!path) return;
   const s = ed.s;
@@ -38,7 +44,7 @@ function edExecBtn() {
 // file of the document it is: a marker in the gutter, the place underlined (an undefined macro, a label: itself; else
 // the line's text), the message on hover over either, the lines of errors and warnings tinted. Moved with the edits
 // made since; the next build's replace them. `at`: the build's (its log's time).
-function edProblems(list, at) {
+export function edProblems(list, at) {
   const by = new Map();
   for (const p of list || []) if (p.path && p.line) { if (!by.has(p.path)) by.set(p.path, []); by.get(p.path).push(p); }
   ed.problems = by; ed.problemsAt = at || 0;
@@ -150,3 +156,4 @@ edAdd({
   viewed: edMarkProblems,
   markup: ED_TEX_MARKUP,
 });
+edStart();
