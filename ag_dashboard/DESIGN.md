@@ -447,6 +447,23 @@ pattern the list and Chat follow:
   and the monitor (`modes.js`) and Manage groups (`group-moves.js`) are the old page's still, reading the same
   derivations.
 
+**A5, the actor's other views in React.** What the old page still drew by hand of an actor beside Chat, each moved as
+Chat was: a component scoped to the actor key the page hands it (taken from `state.selected` in one place, chat's
+`chatActor`), its state in a store, what it fetches through TanStack Query, the same DOM, classes, roles and labels.
+- **Details** (`features/details/`): the panel (`Details.tsx`), its context and size cards (`Context.tsx`), how a context
+  or all calls divide (`Decomposition.tsx`) and the size chart (`Charts.tsx`), what they show worked out apart
+  (`model.ts`). The panel's `aside` is its React root, the same node from draw to draw (`mount.tsx`'s `drawDetails`, from
+  main-view.js's `detailsPanel`). The read picked on the chart is the actor's (`store.ts`'s `usePicked`, let go of when
+  another actor is shown: data.js's `takeAgent`); a read's context is a query by gatherer and read, fetched before the page
+  draws it (`loadContext`) and before a pick shows it (`pickRead`). The chart measures its box as it is put on the page and
+  as it is resized (a ResizeObserver), where it was drawn again only on the window's resize. The types the lists show (the
+  chips) are a store in `core/model/items.ts`, with the items' types and groups the old page took from helpers.js and
+  state.js; a harness's facts the views read are `core/model/harness.ts`. Gone: chat.js's cards, main-view.js's panel and
+  facts, `details/charts.js`, the page's `state.readId`, `state.context`, `drawCharts`. The reader's own views keep
+  `agDashboard.contextItem`, `.columns`, `.typeChips`, `.contextCard` and `.sizeCard`: the same components, each drawn in a
+  node of its own (`core/ui/node.tsx`'s `nodeOf`, its root, so its clicks reach React). Vitest: `model.test.ts`,
+  `Details.test.tsx`.
+
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
   panes, Details, the chat minimized. It replaces today's separate browser keys, which are read once and dropped.

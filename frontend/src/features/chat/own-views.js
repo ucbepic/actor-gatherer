@@ -3,9 +3,9 @@ import {
   ago, clock, compact, el, full, get, harnessBadge, harnessLogo, harnessName, itemType, svgEl,
 } from "../../core/page/helpers.js";
 import { statusOf } from "../list/seen.js";
-import {
-  askingNote, backgroundNote, columns, contextCard, contextItem, errorNote, sizeCard, typeChips,
-} from "./chat.js";
+import { askingNote, backgroundNote, errorNote } from "./chat.js";
+import { callsNow } from "../page/main-view.js";
+import { columnsNode, contextCardNode, contextItemNode, sizeCardNode, typeChipsNode } from "../details/mount";
 import { foldedOutput, notesSwitch, transcriptBlocks } from "../transcript/transcript.js";
 import { markdown } from "../../core/ui/md";
 import { firstLine, plural } from "../../core/format";
@@ -37,7 +37,8 @@ export function start() {
   agDashboard = window.agDashboard = Object.freeze({
     chatView: addChatView,
     el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
-    contextItem, columns, typeChips, itemType, transcriptBlocks, foldedOutput, notesSwitch, sizeCard, contextCard,
+    contextItem: contextItemNode, columns: columnsNode, typeChips: typeChipsNode, itemType, transcriptBlocks, foldedOutput,
+    notesSwitch, sizeCard: (reads, hasReal) => sizeCardNode(callsNow(), reads, hasReal), contextCard: () => contextCardNode(callsNow()),
     statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote, askingNote, errorNote,
   });
 }

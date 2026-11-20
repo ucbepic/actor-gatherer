@@ -6,7 +6,7 @@ import {
 import { drawn, mainSignature } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
 import { renderMain } from "../page/main-view.js";
-import { wordless } from "../chat/chat.js";
+import { wordless } from "../../core/model/items";
 import { blockCache, str } from "../transcript/transcript.js";
 import { markdown } from "../../core/ui/md";
 import { plural } from "../../core/format";

@@ -1,6 +1,6 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
-  avatarMode, clock, el, get, isShell, keepAvatarMode, key, selectedInfo, signature,
+  avatarMode, clock, el, get, isShell, keepAvatarMode, key, parseKey, selectedInfo, signature,
 } from "../../core/page/helpers.js";
 import { keepingPlace } from "../settings/panel.js";
 import { statusOf, takeHome } from "../list/seen.js";
@@ -9,13 +9,16 @@ import { drawWho, paneSig, restorePanes, setAutoShown, showActorsApp, startTabs,
 import { renderMain } from "./main-view.js";
 import { chatAtEnd, chatToEnd } from "../chat/chat.js";
 import { chatFeed, chatView } from "../chat/views.js";
-import { opened } from "../chat/files-view.js";
+import { chatActor, opened } from "../chat/files-view.js";
 import { canMinimize, chatMin, topShown } from "../layout/top.js";
 import { useTurns } from "../chat/store";
 import { drafts, keepDraft } from "../chat/drafts";
 import { ownBox } from "../chat/Composer";
 import { useSettings } from "../settings/store";
 import * as prefs from "../../core/prefs";
+import { counted } from "../details/model";
+import { loadContext, pickedFor, shownRead, usePicked } from "../details/store";
+import { detailsShown } from "../details/mount";
 
 // ------------------------------------------------------------------ data
 let hidingMoved = false;
@@ -47,19 +50,16 @@ async function loadAgent() {
   if (!state.selected || state.selected[0] !== g || state.selected[1] !== c) return;   // another picked meanwhile: not it
   await takeAgent(got);
 }
-// The selected agent, fetched or pushed: its calls' counts, and the context of the call shown.
+// The selected agent, fetched or pushed: its calls' counts, and the context of the call Details shows (the latest's,
+// unless one is picked: features/details/store.ts), fetched before the page draws it.
 async function takeAgent(agent) {
   state.agent = agent; state.agentVersion = (state.agentVersion || 0) + 1;
   const reads = (state.agent && state.agent.reads) || [];
-  for (const r of reads)                             // ag's count of all a call sent, as it counted it then (else as stored now:
-    r.counted_tokens = r.recorded_tokens ?? (r.sent_tokens === null || r.sent_tokens === undefined ? null   // its messages,
-      : r.sent_tokens + (r.preamble_tokens || 0));                                                          // the preamble where recorded)
-  if (!reads.length) { state.readId = null; state.context = null; return; }
-  const followLatest = state.readId === null || state.followLatest;
-  const want = followLatest ? reads[reads.length - 1].read_id : state.readId;
-  state.readId = want;
-  state.followLatest = followLatest;
-  await loadContext(want);
+  counted(reads);                                    // ag's count of all each call sent
+  const actor = chatActor();
+  if (!actor) return;
+  detailsShown(actor);
+  if (reads.length) await loadContext(parseKey(actor).group, shownRead(agent, pickedFor(usePicked.getState(), actor)));
 }
 // The transcript feed's events: the newest TRANSCRIPT_ITEMS at first, then each time only those
 // after the last one kept, so an event is never listed twice; the pending ones replaced each time.
@@ -130,14 +130,6 @@ async function loadChatHistoryNow() {
   state.chat.items.push(...stored);
   if (stored.length) state.chat.last_row = stored[stored.length - 1].row_id;
   state.chat.pending = got.items.filter((i) => i.row_id === undefined || i.row_id === null);
-}
-async function loadContext(readId) {
-  const [g] = state.selected;
-  if (state.context && state.context.read_id === readId && state.context.gatherer === g) return;   // unchanged
-  const got = SNAPSHOT ? SNAPSHOT.contexts && SNAPSHOT.contexts[key(g, readId)]
-    : await get(`/api/context?gatherer=${encodeURIComponent(g)}&read_id=${readId}`);
-  if (state.readId !== readId || !state.selected || state.selected[0] !== g) return;   // another wanted since: a load
-  state.context = got ? { ...got, gatherer: g } : null;                                  // that came late is not it
 }
 // What was last drawn, so an update that brings nothing new draws nothing: no flash, and an open
 // table, a scrolled list or a tooltip stays as it is.
@@ -230,7 +222,7 @@ function render(userAction = false) {
 // answer's end comes after its last words, which the actor's data already had), and its "Working…" would stay.
 const mainSignature = () => {
   const info = selectedInfo();
-  return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
+  return signature([state.selected, state.agentVersion, info && info.session,
     info && [info.chattable, info.holder],
     info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id),
       info.taken_back],
@@ -331,7 +323,7 @@ export function start() {
 }
 
 export {
-  drafts, drawn, earlierTurns, fitBox, keepDraft, listSignature, loadAgent, loadChat, loadChatHistory, loadContext,
+  drafts, drawn, earlierTurns, fitBox, keepDraft, listSignature, loadAgent, loadChat, loadChatHistory,
   loadHome, loadTranscript, mainSignature, redrawList, refresh, render, setAbout, setAvatarMode, setEarlierTurns,
   setLive, setTheme, takeAgent,
 };

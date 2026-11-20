@@ -1,4 +1,6 @@
 "use strict";
+// what the context's groups are (core/model/items.ts): the page's other modules import them from here
+import { GROUP_ORDER, NOT_COUNTED, PREAMBLE, label, uncounted } from "../model/items";
 const SNAPSHOT = window.AG_SNAPSHOT ?? null;            // a snapshot's data (index.html), or none
 // In a pane: the page again, in a frame of the page around it (panes, below), showing one actor -- the URL's
 // (?pane=1&gatherer=G&channel=C&view=V) -- with no list or header of its own. PANE is the page around it:
@@ -11,15 +13,7 @@ const PANE = (() => {
 if (PANE) document.documentElement.classList.add("pane-mode");
 // The server pushes each change (/api/stream); this is only how often the "ago" texts are redrawn.
 const AGO_MS = 30000;
-// What the page calls each kind the data names (data.py's group names stay as they are).
-const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history", "Other agents' requests": "Other actors' requests" };
-const label = (group) => LABELS[group] || group;
-const PREAMBLE = "Harness preamble", NOT_COUNTED = "Not counted by ag";
-// the provider's count beyond ag's, shown only when the gap is more than this: smaller is tokenizer noise
-const NOT_COUNTED_MIN = 50000;
-const uncounted = (n) => n > NOT_COUNTED_MIN ? n : 0;
-const GROUP_ORDER = [PREAMBLE, "Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages", NOT_COUNTED];
-let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, stream: null,
+let state = { home: null, selected: null, agent: null, paused: false, stream: null,
   tx: null,             // the transcript feed's events, loaded as they come: {key, items, pending, first_row, last_row, earlier}
   details: !!SNAPSHOT,  // the details panel open beside the chat: at first in a snapshot, which has no conversation
   chat: null,           // the history feed's messages: {key, items (stored, append-only), pending, last_row}

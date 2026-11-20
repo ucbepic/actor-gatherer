@@ -1,14 +1,17 @@
 import { PANE, PANE_URL, state } from "../../core/page/state.js";
-import { ICONS, agoEl, el, itemType, key, selectedInfo, shownTypes, signature } from "../../core/page/helpers.js";
+import { ICONS, agoEl, el, itemType, key, selectedInfo, signature } from "../../core/page/helpers.js";
 import { drawn, loadChat, loadChatHistory, loadTranscript, render } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
 import { paneUrl } from "../layout/panes.js";
 import { renderMain } from "../page/main-view.js";
-import { backgroundNote, chatToEnd, columns, contextItem, tally, typeChips } from "./chat.js";
+import { backgroundNote, chatToEnd } from "./chat.js";
 import { blockCache, notesSwitch, showNotes, transcriptBlocks } from "../transcript/transcript.js";
 import { hist } from "../history/history.js";
 import { chatMin } from "../layout/top.js";
 import * as prefs from "../../core/prefs";
+import { useShown } from "../../core/model/items";
+import { tally } from "../details/model";
+import { columnsNode, contextItemNode, typeChipsNode } from "../details/mount";
 
 // ------------------------------------------------------------------ chat views
 // How the chat shows an actor's history: one VIEW of several, the reader's choice (kept in this
@@ -113,8 +116,7 @@ const txBlocks = blockCache(), msgRows = blockCache();
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   state.chatViewId = (PANE && PANE_URL.get("view")) || prefs.text(CHAT_VIEW_KEY) || "files";
-  // "agent": what ag recorded of the actor's calls -- each read (items), and the context the chart has picked
-  // (state.context) -- loaded with the actor already.
+  // "agent": what ag recorded of the actor's calls -- each read (items) -- loaded with the actor already.
   CHAT_FEEDS.agent = {
     load: async () => {},
     data: () => state.agent && state.agent.reads ? { items: state.agent.reads, pending: [], earlier: false } : null,
@@ -124,14 +126,14 @@ export function start() {
   addChatView({
     id: "messages", name: "Messages", feed: "history", frame: "ctx", icon: ICONS.list, more: true, readOnly: true,
     description: "The session's events, one row each, filtered by type.",
-    tools: () => typeChips(null),
+    tools: () => typeChipsNode(null),
     render: ({ data }) => {
       const items = [...data.items, ...data.pending].map((i) => ({ ...i, group: "Recent history" }));
-      const listed = items.filter((it) => shownTypes.has(itemType(it)[0]));
-      return [columns(), el("div", { class: "run" }, el("strong", { text: "Messages" }),
+      const shown = useShown.getState().types, listed = items.filter((it) => shown.has(itemType(it)[0]));
+      return [columnsNode(), el("div", { class: "run" }, el("strong", { text: "Messages" }),
         el("span", { text: tally(items.length, listed.length, items.reduce((n, i) => n + i.tokens, 0), listed.reduce((n, i) => n + i.tokens, 0), "message") })),
-        ...(msgRows.begin(signature(state.selected)), listed.map((it) => it.row_id === null || it.row_id === undefined ? contextItem(it)
-          : msgRows.get(it.row_id, `${it.tokens}:${it.clipped}:${it.text.length}`, () => contextItem(it))))];
+        ...(msgRows.begin(signature(state.selected)), listed.map((it) => it.row_id === null || it.row_id === undefined ? contextItemNode(it)
+          : msgRows.get(it.row_id, `${it.tokens}:${it.clipped}:${it.text.length}`, () => contextItemNode(it))))];
     },
   });
   addChatView({
