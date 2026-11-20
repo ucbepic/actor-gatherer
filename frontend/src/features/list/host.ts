@@ -35,24 +35,37 @@ export interface AddItem {
   run: () => void;
 }
 
-export interface ListHost {
+/** What every view of the list -- the list, the rail, the monitor, a card -- draws as the page draws it. */
+export interface PageParts {
   /** a snapshot of the page: no server, nothing to press */
   snapshot: boolean;
   /** where the pointer hovers, a row's card says who it is: no title */
   hovers(): boolean;
   /** "⌘" on a Mac, else "Ctrl" */
   besideKey: string;
-
-  // -- words
   harnessName(h: string | undefined): string;
   ago(t: number | null | undefined): string;
+  /** where a session's image is: its avatar's, or a snapshot's own copy; null, none */
+  avatarSrc(name: string | null | undefined): string | null;
+  /** a harness's mark, for an actor with no avatar */
+  harnessLogo(h: string | undefined): Node;
+  /** an app's face, and its mark */
+  appFace(o: AppItem): Node;
+  appMark(o: AppItem): Node;
+  /** an icon: a stroke ICONS names; a bookmark (filled: saved); the coordinator agent hidden; a ×; a check */
+  icon(name: string, size: number): Node;
+  saveIcon(on: boolean): Node;
+  hideIcon(): Node;
+  closeIcon(): Node;
+}
+
+export interface ListHost extends PageParts {
+  // -- words
   /** who named an actor, and how it went ("" for none) */
   nameNote(g: Gatherer, a: Actor): string;
   /** what runs in the background, by its kind */
   taskKind(kind: string | undefined): string;
   shellPath(s: Shell): string;
-  /** where a session's image is: its avatar's, or a snapshot's own copy; null, none */
-  avatarSrc(name: string | null | undefined): string | null;
 
   // -- the page's own drawing, put in the list's elements as it builds it, afresh at each draw
   /** the list's head: its title, the drop outside every group, a new group, an actor on its own, the coordinator
@@ -69,16 +82,6 @@ export interface ListHost {
   formAt(): string;
   /** an actor's branch, under its name (none: null) */
   branch(g: Gatherer, a: Actor): Node | null;
-  /** a harness's mark, for an actor with no avatar */
-  harnessLogo(h: string | undefined): Node;
-  /** an app's face, and its mark */
-  appFace(o: AppItem): Node;
-  appMark(o: AppItem): Node;
-  /** an icon: a stroke ICONS names; a bookmark (filled: saved); the coordinator agent hidden; a ×; a check */
-  icon(name: string, size: number): Node;
-  saveIcon(on: boolean): Node;
-  hideIcon(): Node;
-  closeIcon(): Node;
 
   // -- a coordinator agent's button, a "+" adding to a task
   crew(g: Gatherer | null, node: string): CrewInfo | null;

@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { plural } from "../../core/format";
 import { Html } from "../../core/ui/PageNode";
-import type { ListHost } from "./host";
+import type { ListHost, PageParts } from "./host";
 import type { Counts } from "./groups";
 import type { TabAt } from "./rows";
 import type { Tally } from "./tree";
@@ -62,8 +62,8 @@ export function CountChips({ c }: { c: Counts }) {
     </>
   );
 }
-/** A folder's: the same, and how many are idle. */
-export function TallyChips({ t }: { t: Tally }) {
+/** A folder's: the same, and (on its line in the list) how many are idle. */
+export function TallyChips({ t, idle = true }: { t: Tally; idle?: boolean }) {
   const of = plural(t.open, "actor");
   return (
     <>
@@ -71,7 +71,7 @@ export function TallyChips({ t }: { t: Tally }) {
       <Chip k={t.error} cls=" error" of={of} what="stopped on an error" />
       <Told n={t.notified} />
       <Chip k={t.running} cls="" of={of} what="running" />
-      <Chip k={t.idle} cls=" idle" of={of} what="idle" />
+      {idle ? <Chip k={t.idle} cls=" idle" of={of} what="idle" /> : null}
     </>
   );
 }
@@ -244,9 +244,17 @@ export function TabMark({ at }: { at: TabAt | null }) {
 
 /** An actor's face alone, no harness's badge: its avatar, else its harness's mark -- with a check on it, selected with
  * another (`check`: a click on it leaves it out). */
-export function Face({ host, a, check }: { host: ListHost; a: Actor; check?: ReactNode }) {
+export function Face({
+  host,
+  a,
+  check,
+}: {
+  host: Pick<PageParts, "avatarSrc" | "harnessLogo">;
+  a: Actor;
+  check?: ReactNode;
+}) {
   const src = host.avatarSrc(a.avatar);
-  if (!src) return <Html node={host.harnessLogo(a.harness)} />;
+  if (!src) return <Html node={host.harnessLogo(a.harness)} extra={check} />;
   return (
     <span className="logo avatar">
       <img src={src} alt="" draggable="false" />

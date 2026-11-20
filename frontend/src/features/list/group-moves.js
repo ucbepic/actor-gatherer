@@ -1,17 +1,16 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { ICONS, el, foldMark, gathererNamed, post, strokeIcon } from "../../core/page/helpers.js";
+import { ICONS, el, gathererNamed, post, strokeIcon } from "../../core/page/helpers.js";
 import { loadHome, setAbout, setLive } from "../page/data.js";
 import { connect } from "../settings/panel.js";
 import {
   APP_ITEM, COLLAPSED_KEY, CTX, FOLDER_CHARS, actorOf, actorTitle, actorsWithin, appFolder, appInfo, appItem, byName,
-  collapsed, dragFolder, dragRow, dropOn, endDrag, foldOpen, folderById, folderOf, gathererApps, groupCrew, groupOf,
-  inPane, isAppItem, isCoordinator, isCrewHome, isHidden, kidFolders, listDrag, nameFolder, plainFace, readApps,
-  renderAgents, showFolder, startDrag, titleOf, toggleFold, withTasks, within,
+  collapsed, dragFolder, dragRow, dropOn, endDrag, folderById, folderOf, gathererApps, groupCrew, groupOf,
+  isAppItem, isCoordinator, isCrewHome, isHidden, kidFolders, listDrag, nameFolder, plainFace, readApps,
+  renderAgents, showFolder, startDrag, titleOf, withTasks, within,
 } from "./list.js";
 import * as LG from "./groups";
-import { ALONE_KEY } from "./model";
 import { GF, GFS, nameGroup } from "./gatherer-folders.js";
-import { railActor, railAppsIn, railRowsOf, railShow, select } from "./modes.js";
+import { select } from "./modes.js";
 import {
   actorPanes, closeAppPane, closePop, noHarness, openPop, railNewBox, retarget, rowPop, savePanes, startCwd, startable,
   swapAppPane,
@@ -405,36 +404,14 @@ function aloneNew() {
 // it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).
 const ALONE_SAYS = "On its own · shares context with no other actor. Drag it into a group to bring it back.";
 const aloneActor = LG.aloneActor;
-function railAlone(g) {
-  const a = aloneActor(g);
-  return el("section", { class: "r-gatherer r-alone", "aria-label": "On its own", title: ALONE_SAYS },
-    ...(a ? railRowsOf(g, a) : []), ...railAppsIn(g, null));
-}
 // Once closed (groupOf's Closed; saved too, Saved), an actor on its own leaves the top of the list, as a group's closed
 // actors go into its closed line: every such one is in a line at the list's end -- "▸ N closed", and "▸ N saved" --
 // opened again from there as any closed actor is (a message starts it, and it is back at the top). Open or not kept in
 // this browser (foldOpen, by ALONE_KEY); folded, those open in a pane in view under it (features/list/model.ts draws
 // them in the list). Never hidden as a group is (isHidden): closed, it is in its line. The rail likewise
-// (railAloneShut), its lines shown as its foot says for its boxes' saved and closed lines (railShow), "▸ N closed" (the
-// rest in its title: the rail is narrow).
+// (features/list/rail-model.ts), its lines shown as its foot says for its boxes' saved and closed lines, "▸ N closed"
+// (the rest in its title: the rail is narrow).
 const aloneShut = (g) => LG.aloneShut(CTX, g);
-// [Saved | Closed, those of `gs` (each aloneShut) in it, the latest first], each with any
-const aloneFolds = (gs) => LG.aloneFolds(CTX, gs);
-const aloneSays = (name, n) => `${n} ${name.toLowerCase()}`;
-const aloneInPane = (list) => list.filter((g) => inPane(g, aloneActor(g)));
-function railAloneShut(gs) {
-  const out = [];
-  for (const [name, list] of aloneFolds(gs)) {
-    const what = name.toLowerCase(), unfolded = foldOpen[name].has(ALONE_KEY);
-    const peek = () => aloneInPane(list).map((g) => railActor(g, aloneActor(g)));
-    if (!railShow[what]) { out.push(...peek()); continue; }   // its line not shown: those open in a pane, in view
-    out.push(el("button", { class: "r-fold", type: "button", "aria-expanded": unfolded ? "true" : "false",
-      title: `${aloneSays(name, list.length)}: ${unfolded ? "hide" : "show"} ${list.length === 1 ? "it" : "them"}`,   // its words: too wide here
-      onclick: () => toggleFold(name, ALONE_KEY) }, foldMark(unfolded), ` ${list.length} ${what}`));
-    out.push(...(unfolded ? list.flatMap((g) => railRowsOf(g, aloneActor(g))) : peek()));
-  }
-  return out.length ? [el("section", { class: "r-gatherer r-alone shut", "aria-label": "Closed, on their own" }, ...out)] : [];
-}
 // One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own, with its task's apps and
 // its own window if it is an app's agent (withOwn) -- dropped in the list (`d.ask` false), at once
 function askAlone(d, here = false) {
@@ -672,6 +649,5 @@ export function start() {
 }
 export {
   ALONE_NEW, ALONE_SAYS, aloneNew, aloneShut, aloneUnder, askMerge, askMove, canCross, canMerge, drawManage,
-  everyActor, isAloneName, manage, manageEntry, nestedIn, outsideDrop, placeGroup, placeOf, placedIn, railAlone,
-  railAloneShut, showOutside,
+  everyActor, isAloneName, manage, manageEntry, nestedIn, outsideDrop, placeGroup, placeOf, placedIn, showOutside,
 };

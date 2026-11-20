@@ -18,7 +18,12 @@ const stop = (ev: MouseEvent) => ev.stopPropagation();
 
 /** What a gatherer's row, a folder's line or the list's head does with what is dragged over it: put in folder `id` of
  * `g` (null: its top); held over it a moment, `open` opens it. */
-export const drops = (host: ListHost, g: Gatherer, id: number | null, open: () => void) =>
+export const drops = (
+  host: Pick<ListHost, "snapshot" | "dropEnter" | "dropOver" | "dropLeave" | "drop">,
+  g: Gatherer,
+  id: number | null,
+  open: () => void,
+) =>
   host.snapshot
     ? {}
     : {

@@ -11,8 +11,26 @@ import { Face, NameBox, RowButton, TabMark, useSpin } from "./Parts";
 import type { ActorRow, AppRow, ShellRow, TaskRow } from "./rows";
 import type { Actor, Gatherer } from "./types";
 
+/** What a row's own buttons and drags call of the page: the list's, or the rail's. */
+export type RowHost = Pick<
+  ListHost,
+  | "snapshot"
+  | "saveIcon"
+  | "hideIcon"
+  | "closeIcon"
+  | "icon"
+  | "hideCrew"
+  | "setSaved"
+  | "togglePick"
+  | "dragEnd"
+  | "joinEnter"
+  | "joinOver"
+  | "dropLeave"
+  | "joinDrop"
+>;
+
 /** What an item's row does with what is dragged over it: put in its task (`k`, its item). */
-const joins = (host: ListHost, g: Gatherer, k: string) =>
+export const joins = (host: RowHost, g: Gatherer, k: string) =>
   host.snapshot
     ? {}
     : {
@@ -22,7 +40,7 @@ const joins = (host: ListHost, g: Gatherer, k: string) =>
         onDrop: (ev: DragEvent) => host.joinDrop(ev, g, k),
       };
 /** A row dragged: `start` says what. */
-const drags = (host: ListHost, start: (ev: DragEvent) => void) =>
+export const drags = (host: RowHost, start: (ev: DragEvent) => void) =>
   host.snapshot
     ? {}
     : {
@@ -108,7 +126,13 @@ function AddMenu({ host, g, k, title }: { host: ListHost; g: Gatherer; k: string
   );
 }
 /** A bookmark: saved (filled), or to be; in a snapshot, filled if saved, and nothing to press. */
-function saveButton(host: ListHost, saved: boolean, title: [string, string], label: [string, string], run: () => void) {
+export function saveButton(
+  host: RowHost,
+  saved: boolean,
+  title: [string, string],
+  label: [string, string],
+  run: () => void,
+) {
   if (host.snapshot)
     return saved ? (
       <span key="save" className="save-btn on" title="Saved for later">
@@ -130,7 +154,7 @@ function saveButton(host: ListHost, saved: boolean, title: [string, string], lab
 }
 /** An actor's bookmark; a coordinator agent's, in its place: hidden from the list (its face on its node's row shows it
  * again). */
-function actorSave(host: ListHost, g: Gatherer, a: Actor, saved: boolean): ReactNode {
+export function actorSave(host: RowHost, g: Gatherer, a: Actor, saved: boolean): ReactNode {
   if (a.role === "coordinator")
     return host.snapshot ? null : (
       <RowButton
@@ -148,11 +172,29 @@ function actorSave(host: ListHost, g: Gatherer, a: Actor, saved: boolean): React
   );
 }
 /** A ×: `title`, `label` what it says, `run` what it does. */
-const closeButton = (host: ListHost, title: string, label: string, run: () => void) => (
+export const closeButton = (host: Pick<ListHost, "closeIcon">, title: string, label: string, run: () => void) => (
   <RowButton key="close" className="close-btn" title={title} aria-label={label} run={run}>
     <Html node={host.closeIcon()} />
   </RowButton>
 );
+
+/** A selected actor's check, on its face, once two or more are selected: a click on it leaves it out. */
+export function PickCheck({ host, g, a }: { host: RowHost; g: Gatherer; a: Actor }) {
+  return (
+    <span
+      className="pick"
+      role="button"
+      title="Selected · click to deselect"
+      aria-label="Deselect"
+      onClick={(ev) => {
+        ev.stopPropagation();
+        host.togglePick(g, a);
+      }}
+    >
+      <Html node={host.icon("M4.25 8.25l2.5 2.5 5-5.25", 11)} />
+    </span>
+  );
+}
 
 /** An actor's row: its state at its left, its name -- else what it was last asked -- its face at its right. Its name
  * double-clicked once it is the one shown (or F2): named there. Shift+click selects it with others. */
@@ -182,20 +224,7 @@ export function ActorRowView({ host, r }: { host: ListHost; r: ActorRow }) {
       () => host.closeActor(g, a, r.close!),
     );
   const bg = a.background || [];
-  const check = r.checked ? (
-    <span
-      className="pick"
-      role="button"
-      title="Selected · click to deselect"
-      aria-label="Deselect"
-      onClick={(ev) => {
-        ev.stopPropagation();
-        host.togglePick(g, a);
-      }}
-    >
-      <Html node={host.icon("M4.25 8.25l2.5 2.5 5-5.25", 11)} />
-    </span>
-  ) : null;
+  const check = r.checked ? <PickCheck host={host} g={g} a={a} /> : null;
   const kids = (
     <>
       <span className={`dot ${cls}`} aria-label={label} style={spin} />
