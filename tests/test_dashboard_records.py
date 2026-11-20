@@ -101,6 +101,18 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual(self.agent()["status"], data.IDLE)                      # its turn over all the same
         self.assertEqual([r["text"] for r in data.replies(store.gatherer("g"), "s")], ["There are 42 rows."])
 
+    def test_what_an_app_told_an_agent_before_its_first_call_is_no_conversation(self):
+        from app_kit.events import context_stream
+        self.assertFalse(data.has_conversation("g", "s"))                        # no database yet
+        self.record(context_stream("Browser", "the user", "opened a page"),       # its app's notes, waiting for its call
+                    {"type": "environment_update", "payload": {"text": "a file changed"}, "text": "a file changed"},
+                    records.name("Browser", "user"))                             # and a record of it
+        self.assertFalse(data.has_conversation("g", "s"))                        # so the list's x may discard it
+        self.assertEqual([a["events"] for a in data.actors("g", {"s"}, [])], [2])   # though they are its events
+        self.turn([user("count the rows")])
+        self.assertTrue(data.has_conversation("g", "s"))
+        self.assertFalse(data.has_conversation("g", "another"))
+
     def test_an_answer_that_broke_off_as_it_streamed_is_dropped_at_the_next_turn(self):
         read = self.turn([user("count the rows")])
         self.reply("msg_1", [TEXT])                                          # streams, then breaks off: no end

@@ -374,6 +374,29 @@ class CodexSdk(Home):
         self.assertIn("pip install openai-codex", err)
 
 
+class OwnServerTest(unittest.TestCase):
+    """`ag stop` tells the server the session it runs in calls its model through (main.py's `calling_through`)."""
+
+    URLS = ["http://127.0.0.1:4118", "http://127.0.0.1:4014"]
+
+    def test_named_in_its_environment_or_on_the_command_line_of_a_process_it_runs_under(self):
+        claude = {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4118/h/g/r/9/l/967000"}
+        self.assertEqual(main.calling_through(self.URLS, claude, ["ag stop", "zsh"]), [self.URLS[0]])
+        codex = ['codex -c openai_base_url="http://127.0.0.1:4014/h/g/r/9" resume t', "zsh"]
+        self.assertEqual(main.calling_through(self.URLS, {}, ["ag stop", "zsh", *codex]), [self.URLS[1]])
+        self.assertEqual(main.calling_through(self.URLS, {"X": "http://127.0.0.1:41180/h"}, ["ag stop"]), [])  # another
+        self.assertEqual(main.calling_through(self.URLS, {}, ["ag stop", "zsh", "login"]), [])     # a plain terminal
+
+    def test_the_command_lines_of_the_processes_it_runs_under(self):
+        url = "http://127.0.0.1:4999"
+        script = "from ag.cli import main; print(main.calling_through([%r], {}))" % url
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(main.__file__)))
+        got = subprocess.run(["sh", "-c", f'"{sys.executable}" -c "{script}"; :', "sh", f"openai_base_url={url}/h/g"],
+                             capture_output=True, text=True, env={**os.environ, "PYTHONPATH": os.path.dirname(repo)},
+                             timeout=60)
+        self.assertEqual(got.stdout.strip(), str([url]), got.stderr)     # the shell it runs under names it
+
+
 class Reference(unittest.TestCase):
     """The data the docs and `ag --help` are made from says what the code does."""
 

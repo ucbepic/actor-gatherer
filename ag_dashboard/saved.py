@@ -30,6 +30,7 @@ from . import sessions, store
 
 REST_SECONDS = 120.0            # how long a saved actor's process is left unused before it is put away
 REST_CHECK = 10.0               # how often that is looked at
+STOP_WAIT = 10.0                # seconds `close` waits for a look under way to end
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS saved (
     gatherer TEXT NOT NULL,
@@ -97,7 +98,8 @@ class Rest:
     def __init__(self, started: "sessions.Sessions", shown: Callable[[], set]):
         self.started, self.shown = started, shown
         self.stop = threading.Event()
-        threading.Thread(target=self._run, name="ag-rest", daemon=True).start()
+        self.thread = threading.Thread(target=self._run, name="ag-rest", daemon=True)
+        self.thread.start()
 
     def check(self, now: Optional[float] = None) -> List[str]:
         """The sessions put away now."""
@@ -131,4 +133,7 @@ class Rest:
                 pass
 
     def close(self) -> None:
+        """No more looks: one under way -- putting a session away -- ended first (STOP_WAIT at most)."""
         self.stop.set()
+        if self.thread is not threading.current_thread():
+            self.thread.join(STOP_WAIT)

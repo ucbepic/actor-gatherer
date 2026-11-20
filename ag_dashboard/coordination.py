@@ -109,6 +109,7 @@ NOTE_CHARS = 2000               # the longest note a watch keeps
 WHO_SECONDS = 24 * 3600         # how far back `who` looks
 WATCH_CHECK = 3.0               # how often the watches are looked at
 WATCH_GRACE = 20.0              # a target never seen at work: over, this long after the watch was asked
+STOP_WAIT = 10.0                # seconds `close` waits for a look at the watches under way to end
 #: An actor at work: its turn not over -- waiting on the user, or on work it left running in the background, which
 #: wakes it again when done (Claude Code's background commands, agents and monitors).
 BUSY = (data.RUNNING, data.ASKING, data.BACKGROUND)
@@ -268,8 +269,10 @@ class Coordination:
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.marked: Dict[str, dict] = {}        # each coordinator agent's role record, as last put in (`_mark_roles`)
+        self.thread: Optional[threading.Thread] = None
         if watch:
-            threading.Thread(target=self._run, name="ag-watches", daemon=True).start()
+            self.thread = threading.Thread(target=self._run, name="ag-watches", daemon=True)
+            self.thread.start()
 
     # ---- who asks, and whom
 
@@ -1371,7 +1374,10 @@ class Coordination:
                     pass
 
     def close(self) -> None:
+        """No more looks at the watches: one under way -- its messages, its records -- ended first (STOP_WAIT at most)."""
         self.stop.set()
+        if self.thread is not None and self.thread is not threading.current_thread():
+            self.thread.join(STOP_WAIT)
 
 
 class Scope(NamedTuple):

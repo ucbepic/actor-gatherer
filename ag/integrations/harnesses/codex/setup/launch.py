@@ -422,3 +422,7 @@ class CodexLauncher(Launcher):
     def stop(self) -> List[str]:
         """Stop the hook servers ag started for codex."""
         return self.servers.stop_all(SETUP)
+
+    def serving(self) -> List[str]:
+        """The addresses of the hook servers ag started for codex."""
+        return [s.url for s in self.servers.of(SETUP)]
