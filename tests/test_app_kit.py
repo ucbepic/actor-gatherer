@@ -90,8 +90,8 @@ def without(toml: str, block: str) -> str:
 
 class PanelKitTest(unittest.TestCase):
     """The panels' kit (js/kit.js, at /_ag/lib/kit.js): served by the host, loaded before each panel's own script,
-    and its `el` what each panel builds with. A panel built on app_kit.fileedit (Files, LaTeX) loads its code as one ES
-    module, its own, which imports the rest: after the kit and the SDK, which it reads as globals."""
+    and its `el` what each panel builds with. A panel built on app_kit.fileedit (Files, LaTeX), and Notes, loads its
+    code as one ES module, its own, which imports the rest: after the kit and the SDK, which it reads as globals."""
     ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def test_it_is_served_and_every_panel_that_builds_with_it_loads_it_first(self):
@@ -104,10 +104,11 @@ class PanelKitTest(unittest.TestCase):
                 with open(os.path.join(self.ROOT, "ag_apps", app, "panel", "index.html"), encoding="utf-8") as fh:
                     page = fh.read()
                 self.assertLess(page.index('src="/_ag/lib/kit.js"'), page.index('src="/_ag/app.js"'))
-                if app in ("files", "latex"):
+                if app in ("files", "latex", "notes"):
                     entry = f'<script type="module" src="{app}.js"></script>'
                     self.assertLess(page.index('src="/_ag/app.js"'), page.index(entry))
-                    self.assertEqual(page.count("<script"), 5)            # marked, DOMPurify, the kit, the SDK, its own
+                    # (marked,) DOMPurify, the kit, the SDK, its own
+                    self.assertEqual(page.count("<script"), 4 if app == "notes" else 5)
 
     def test_el_sets_what_it_is_given_and_leaves_out_what_is_not(self):
         if not shutil.which("node"):

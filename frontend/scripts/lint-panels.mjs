@@ -4,9 +4,9 @@
 // its entry (`<script type="module">`), after them:
 // - the plain scripts on a page share one scope: each is given, as globals, what the others on its pages declare -- so a
 //   name declared on none of them is still caught;
-// - a module, and each module it imports (app_kit.fileedit's, for the Files and LaTeX apps), is linted as one: no names
-//   but its own, what it imports, and the libraries' globals -- so a missing import is an undefined name -- and each
-//   import must name a module of the panels, and what that module exports.
+// - a module, and each module it imports (app_kit.fileedit's, for the Files and LaTeX apps; the panel's own, as Notes'
+//   are), is linted as one: no names but its own, what it imports, and the libraries' globals -- so a missing import is
+//   an undefined name -- and each import must name a module of the panels, and what that module exports.
 import js from "@eslint/js";
 import { ESLint, Linter } from "eslint";
 import globals from "globals";

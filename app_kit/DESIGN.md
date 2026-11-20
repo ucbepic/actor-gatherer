@@ -847,6 +847,13 @@ on its "+ ⋯" menu entry too.
 The pages' list (2026-11-12) hides by its own « button or ⌘\ (the bar's button shows it again, and is there only
 while it is hidden), and its right edge drags its width (160-520 px, double-click for the usual 236); both are kept in
 the browser, per instance. Narrow (≤600 px) it opens over the page instead, as before.
+The panel's code (2026-11-19) is ES modules, a part each -- the notebook, sending its ops, undo, others' changes, the
+sidebar, the page, typing, the pop-ups, lines picked, tables, pictures, the actors and work items, the conversation,
+the Work and Agents pages... -- loaded by one entry (`notes.js`, its page's one `<script type="module">`, after
+DOMPurify, the kit and the SDK, read as globals), as app_kit.fileedit's are. What more than one module changes (the
+SDK's `ag`, the notebook, the page open, the line whose conversation is open) is in `state.js`, each with its setter.
+Nothing runs as they load: `start.js` connects the panel, then sets each module's listeners (its `wire...` function) in
+the order they always were -- the document's key handlers rely on it -- and reads the notebook.
 
 **Notes and the actors** (2026-11-08): the user works with the gatherer's actors from the notebook.
 - **Sending a line:** `@` typed in a block (or its Assign / Ask button) picks an actor, the gatherer agent, or a new
