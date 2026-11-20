@@ -54,7 +54,7 @@ import * as prefs from "../../core/prefs";
 //                                       // no message box under it, and nothing it did not draw itself
 //   });
 //
-// `ctx`: {info (the actor), session (its row: status, cwd, ...), data: {items, pending (what the model
+// `ctx`: {actor (its key), info (the actor), session (its row: status, cwd, ...), data: {items, pending (what the model
 // answered that no call has stored yet: row_id null), earlier (older items not loaded)}, running,
 // queued, held (why the session cannot be messaged here -- another process has it open -- or ""), writable
 // (whether it can be messaged from here at all),

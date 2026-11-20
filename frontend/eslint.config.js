@@ -12,7 +12,6 @@ import tseslint from "typescript-eslint";
 // other features' modules, as the one script they were, so the import rules leave them out; each goes, or becomes a
 // feature's own code, as its view is rewritten (A5, A6). Files of it over max-lines, until then: this list only shrinks.
 const PAGE_LONG = [
-  "src/features/chat/chat.js",
   "src/features/history/history.js",
   "src/features/layout/panes.js",
   "src/features/list/group-moves.js",
