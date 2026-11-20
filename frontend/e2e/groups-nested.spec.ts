@@ -267,6 +267,9 @@ test("Manage groups: rows dragged and dropped as in the list, asking the same qu
 
 test("a group whose actors are long idle stays in view once something is moved into it", async ({ page }) => {
   let moved = false;
+  // the home as given here only: the stream's own, without the long-idle group, held back (as home() does)
+  await streamsAsRequests(page);
+  await page.route("**/api/stream*", (route) => route.abort());
   await page.route("**/api/home", async (route) => {
     const home = await (await route.fetch()).json();
     const demo = home.gatherers.find((x: Group) => x.name === GATHERER) as Group;

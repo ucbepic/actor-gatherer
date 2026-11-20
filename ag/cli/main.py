@@ -361,10 +361,50 @@ def status(settings) -> int:
     return 0
 
 
-def stop(settings) -> int:
-    lines = [f"{name}: {line}" for name, the_launcher in each_launcher(settings) for line in the_launcher.stop()]
+def stop(settings, args: List[str]) -> int:
+    """`ag stop [--force]`: the hook servers each harness's launcher started, stopped. A session that calls its model
+    through one has its calls refused until ag next starts a harness (which starts the server again), so the server
+    the shell this runs in calls through -- an actor's own -- is not stopped without --force: it would cut that
+    session off mid-turn, with nothing to tell ag its turn ended."""
+    if any(a != "--force" for a in args):
+        raise AgError(f"ag stop takes only --force, not {' '.join(a for a in args if a != '--force')}")
+    launchers = list(each_launcher(settings))
+    if "--force" not in args:
+        own = calling_through([url for _, the_launcher in launchers for url in the_launcher.serving()])
+        if own:
+            raise AgError(f"not stopped: this shell runs in a session that calls its model through {', '.join(own)}, "
+                          "which ag stop would stop, cutting that session off mid-turn (its calls refused until ag "
+                          "starts a harness again). Run ag stop from a terminal outside it, or ag stop --force.")
+    lines = [f"{name}: {line}" for name, the_launcher in launchers for line in the_launcher.stop()]
     print("\n".join(lines) or "nothing ag started is running")
     return 0
+
+
+def calling_through(urls: List[str], env: Optional[Dict[str, str]] = None,
+                    commands: Optional[List[str]] = None) -> List[str]:
+    """Those of `urls` (a server's "http://127.0.0.1:<port>") that the harness session this process runs in calls its
+    model through, as its launcher pointed it there: in its environment (`env`: a base URL the harness reads) or on
+    the command line of this process or one it runs under (`commands`: an option the harness was started with)."""
+    said = [*(os.environ if env is None else env).values(), *(running_under() if commands is None else commands)]
+    return [url for url in urls if any(re.search(re.escape(url) + r"(?![0-9])", text) for text in said)]
+
+
+def running_under(most: int = 64) -> List[str]:
+    """The command lines of this process and of each it runs under, nearest first, as `ps` gives them ([] where there
+    is no `ps`)."""
+    out, pid = [], os.getpid()
+    while pid > 1 and len(out) < most:
+        try:
+            got = subprocess.run(["ps", "-o", "ppid=", "-o", "command=", "-p", str(pid)], capture_output=True,
+                                 text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            break
+        parent, _, command = got.partition(" ")
+        if not parent.isdigit():
+            break
+        out.append(command.strip())
+        pid = int(parent)
+    return out
 
 
 def migrations(quiet: bool = False) -> None:
@@ -452,7 +492,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if cmd == "status":
             return status(settings)
         if cmd == "stop":
-            return stop(settings)
+            return stop(settings, rest)
         if cmd == "dashboard":
             return dashboard(rest)
         if cmd == "actors":
