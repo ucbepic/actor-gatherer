@@ -132,6 +132,7 @@ test("a line an agent changed since is left as it is, and the reader told", asyn
   await page.keyboard.press("Tab");
   await expect.poll(() => lines(panel)).toEqual(["0:mine", "1:next"]);
   await row(panel, "mine").locator(".tx").click(); // (a line typed in isn't drawn again under the reader's caret)
+  await expect(panel.locator("#saved")).toHaveText("Saved"); // what was typed sent: the agent reads the page as saved
   const id = /\[([a-z0-9]{8})\]\s+next/.exec((await call(page, instance, "read", { page: "Theirs" })).text)![1];
   await call(page, instance, "change", { page: "Theirs", block: id, markdown: "next, as the agent has it" });
   const after = ["0:mine", expect.stringMatching(/^\d:next, as the agent has it$/)];

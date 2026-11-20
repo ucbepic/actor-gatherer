@@ -133,6 +133,11 @@ class Launcher(ABC):
         """For `ag stop`: stop that; what was stopped."""
         return []
 
+    def serving(self) -> List[str]:
+        """For `ag stop`: the address of each server `stop` would stop that harnesses call their model through
+        ("http://127.0.0.1:<port>"), so that `ag stop` can tell when it would cut off the session it runs in."""
+        return []
+
 
 def _import(spec: str, what: str):
     module, _, attr = spec.partition(":")

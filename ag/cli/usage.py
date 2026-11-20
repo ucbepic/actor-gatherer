@@ -23,7 +23,9 @@ COMMANDS = (
     ("ag <harness> [args]", "Run the harness with the Gatherer."),
     ("ag model [NAME] [--api-base URL] [--key-env VAR]", "Show or set the LLM the Gatherer calls."),
     ("ag config", "Show where the settings are, and what each harness resolves to."),
-    ("ag status / ag stop", "List / stop the proxies `ag` started (not the dashboard)."),
+    ("ag status / ag stop [--force]", "List / stop the proxies `ag` started (not the dashboard). Sessions that call "
+                                     "through them have their calls refused until `ag` starts a harness again, so "
+                                     "from an actor's shell `ag stop` leaves its own alone unless --force."),
     ("ag dashboard [--port N] [--no-open] [--out FILE]", "The same, on another port, without opening the browser, or written to one file."),
     ("ag dashboard restart", "Stop the home's dashboard and start it again, on the code now on disk; the terminals "
                              "it runs close (`ag dashboard restart --help`)."),

@@ -291,8 +291,7 @@ class StreamTest(HomeBase):
     def start(self, live_updates=True):
         httpd = server.serve("127.0.0.1", 0, live_updates)
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        self.addCleanup(httpd.server_close)
-        self.addCleanup(httpd.shutdown)
+        self.serving(httpd)                               # stopped before the home goes
         return httpd
 
     def open(self, httpd, query):

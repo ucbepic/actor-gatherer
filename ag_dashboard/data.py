@@ -154,6 +154,10 @@ NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHE
 #: (events_id) by the `+`. Joined on e.event_type_id itself it searches by type, through every channel's records newer
 #: than the row asked for -- once per actor, so the list slowed with every record in the gatherer.
 BY_CHANNEL = "t.event_type_id = +e.event_type_id"
+#: What the agent is told, not what it says or is asked: an app's or a stream's message (`context_stream`), a change of
+#: its environment (`environment_update`) -- kept in its channel until a model call of it carries them.
+TOLD = ("environment_update", "context_stream")
+TOLD_SQL = ", ".join(f"'{t}'" for t in TOLD)
 
 
 def members(conn, gatherer: str) -> Optional[set]:
@@ -365,6 +369,26 @@ def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
     for a in g[0]["agents"]:                     # what home() would watch: not from here
         a.pop("wake", None)
     return g[0]["agents"]
+
+
+def has_conversation(gatherer: str, channel: str) -> bool:
+    """Whether `gatherer` holds a conversation of the agent `channel`: a model call of it (`_reads`), or an event of its
+    conversation. What it was only told (TOLD: an app's notes of what the user does in it, written before its first
+    call) and the records of it (its name, its app attached) are none. sqlite3.Error: the database could not be read."""
+    conn = store.gatherer(gatherer)
+    if conn is None:
+        return False
+    try:
+        if CHANNEL in _columns(conn, "_reads") and conn.execute(
+                f"SELECT 1 FROM _reads WHERE ifnull({CHANNEL}, '') = ? LIMIT 1", (channel,)).fetchone():
+            return True
+        if CHANNEL not in _columns(conn, "events"):
+            return False
+        return conn.execute(f"SELECT 1 FROM events e WHERE ifnull(e.{CHANNEL}, '') = ? AND {NOT_RECORD} "
+                            f"AND e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHERE name IN ({TOLD_SQL})) "
+                            f"LIMIT 1", (channel,)).fetchone() is not None
+    finally:
+        conn.close()
 
 
 def gatherer_actors(gatherer: str, started: List[dict]) -> List[dict]:
@@ -593,6 +617,8 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         elif s.get("ended") and not s.get("kept") and not s.get("pid") and a.get("alive") is None and not a.get("holder") \
                 and (a["last"] or 0) <= s["ended"]:
             a["status"], a["running"] = CLOSED, bool(a.get("building"))   # its process gone, seen ending here, not used since
+        elif a["status"] == RUNNING and _cut_off(s, a):
+            a["status"], a["running"], a["turn_over"] = IDLE, bool(a.get("building")), True
         if shown and shown.get("menu") and not a.get("asking"):
             a["asking"], a["status"] = shown, ASKING  # a menu its terminal shows as it starts: nothing goes on until it is
             #                                           answered, whatever its status was (none of it recorded yet)
@@ -603,6 +629,19 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
             a["chattable"] = chattable(a)
             _settle_background(a, time.time() if now is None else now)
         g["agents"].sort(key=lambda a: a.get("created") or 0, reverse=True)
+
+
+def _cut_off(s: dict, a: dict) -> bool:
+    """Whether the agent's unfinished turn was cut off: the session's process ended here (`ended`) after anything
+    happened for it -- its latest activity, or the newest message ag stored for it (`said_at`) -- and its terminal runs
+    again (`pid`), a new process that has had nothing since (Chat's `stopped: closed`). Its turn's end never reached
+    ag: its hook server was stopped mid-turn (`ag stop`), or the dashboard closed its terminal (`ag dashboard restart`)
+    before the end was recorded. Not where a process the gatherer can tell runs had the session open before that end
+    (`holder`, `since`): the turn may go on there."""
+    ended = s.get("ended") or 0
+    if not (ended and s.get("pid")) or max(a.get("last") or 0, a.get("said_at") or 0) > ended:
+        return False
+    return not (a.get("alive") and (a.get("since") or 0) < ended)
 
 
 def _sent_pending(s: dict, a: dict, now: float) -> bool:
@@ -713,11 +752,10 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["last"] = max(a["last_read"] or 0, answered.get(ch) or 0) or (None if a["reads"] else a["last_event"])
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
-        a["said_at"] = user_at.get(ch)
+        a["said_at"] = user_at.get(ch)       # kept: a message stored, its read not yet recorded, is activity (`_cut_off`)
         a["status"] = status_of(a.get("alive"), a["turn_over"], max(a["last"] or 0, a["said_at"] or 0) or None, now)
         a["taken_back"] = None
         _status(conn, ch, a, tables, now)
-        del a["said_at"]
         a["running"] = a["building"] or a["status"] == RUNNING
         a["background"] = a.pop("record_background", [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
@@ -839,7 +877,7 @@ def turn_over(conn, channel: str, tables: set):
         over = False if why in GOES_ON else True if why in OVER else last["type"] == "agent_message"
         return over, _seconds(last["received_at"])
     last = conn.execute(f"SELECT t.name, e.inserted_at FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-                        f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name NOT IN ('environment_update', 'context_stream') "
+                        f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name NOT IN ({TOLD_SQL}) "
                         f"AND {NOT_RECORD} ORDER BY e.row_id DESC LIMIT 1", (channel,)).fetchone()
     if last is None:
         return True, None
@@ -867,7 +905,7 @@ def replies(conn, channel: str, tables: Optional[set] = None) -> List[dict]:
     # answer back: an app telling it what the user does, after its answer, leaves the answer pending, its turn over)
     since = conn.execute(f"SELECT max(e.row_id) FROM events e WHERE ifnull(e.{CHANNEL}, '') = ? AND {NOT_RECORD} "
                          f"AND e.event_type_id NOT IN (SELECT event_type_id FROM event_types "
-                         f"WHERE name IN ('environment_update', 'context_stream'))", (channel,)).fetchone()[0] or 0
+                         f"WHERE name IN ({TOLD_SQL}))", (channel,)).fetchone()[0] or 0
     rows = conn.execute(f"SELECT e.row_id, t.name, e.inserted_at, e.payload_json, e.p_answer_id FROM events e JOIN event_types t "
                         f"ON {BY_CHANNEL} WHERE ifnull(e.{CHANNEL}, '') = ? AND e.row_id > ? AND "
                         f"t.name IN ('reply_part', 'reply_end', 'model_call') ORDER BY e.row_id", (channel, since)).fetchall()
