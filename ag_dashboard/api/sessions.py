@@ -81,13 +81,14 @@ def stop(srv: Parts, body: Body) -> Response:
 
 @router.post("/api/discard")
 def discard(srv: Parts, body: Body) -> Response:
-    """{session_id}: one that never started -- no process of it running, nothing of it in its gatherer -- forgotten:
-    listed nowhere, nothing of it kept (sessions.py's `discard`) -> {}."""
+    """{session_id}: one that never started -- no process of it running, no conversation of it in its gatherer
+    (data.py's `has_conversation`: an app's notes to an agent it started, which no model call has carried, are none) --
+    forgotten: listed nowhere, nothing of it kept (sessions.py's `discard`) -> {}."""
     sid = str(body.get("session_id") or "")
     row = next((x for x in srv.sessions.list() if x["session_id"] == sid), None)
     if row is None:
         raise sessions.SessionError(f"no session {sid} started from the dashboard")
-    if data.actors(row["gatherer"], {sid}, []):   # its gatherer has something of it: a history to keep
+    if data.has_conversation(row["gatherer"], sid):   # a history to keep
         raise sessions.SessionError("it already has a conversation. Close it instead.")
     srv.sessions.discard(sid)
     if srv.branches is not None:                 # its branch, if it had one: gone too

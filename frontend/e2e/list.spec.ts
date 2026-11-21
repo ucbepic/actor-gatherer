@@ -1,7 +1,7 @@
 // The list of actors (page.html: "the agent list", "the list folded, or over the whole page").
 import type { WebSocketRoute } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
-import { CLAUDE, CODEX, GATHERER, NOW, masks, open } from "./home";
+import { CLAUDE, CODEX, GATHERER, NOW, masks, open, streamHome } from "./home";
 
 test("lists the gatherer's actors, each by its name alone: hovered, a card says who it is", async ({ page }) => {
   await open(page);
@@ -195,9 +195,11 @@ test("the rail's avatars have the list's bookmark and ×, over their corners: pr
 test("a row keeps the keyboard's focus as time passes: the list is not drawn again for its clocks", async ({
   page,
 }) => {
+  const homed = streamHome(page);
   await page.clock.install({ time: new Date(NOW * 1000) }); // a clock that runs (open() fixes it)
   await page.goto("/");
   await expect(page.locator("#agents")).toContainText(GATHERER);
+  await homed; // the stream's first home come before the clock moves on, not to a list already 95 s on
   await page.clock.fastForward(15_000); // the list as it settles after loading, drawn again once
   const claude = page.locator("#agents button.agent", { hasText: "Parser fixes" });
   await claude.focus();
@@ -234,6 +236,7 @@ test("a rail bookmark under a resting pointer stays shown, every frame, while th
   });
   await page.setViewportSize({ width: 1300, height: 260 }); // short, so the rail scrolls
   await open(page);
+  await expect.poll(() => !!seen.home).toBe(true); // the rail drawn from the stream's home before it's scrolled
   await page.locator("#agents .lb-fold").click();
   const list = page.locator("#rail .r-actors");
   await list.evaluate((n) => (n.scrollTop = 60));
@@ -242,7 +245,6 @@ test("a rail bookmark under a resting pointer stays shown, every frame, while th
   const card = await tile.getAttribute("data-card");
   await tile.locator(".save-btn").hover();
   await expect(tile.locator(".save-btn")).toHaveCSS("opacity", "1");
-  await expect.poll(() => !!seen.home).toBe(true);
   // its bookmark's opacity each frame for a while, the home sent again twice meanwhile
   const frames = page.evaluate(
     (card) =>

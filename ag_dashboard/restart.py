@@ -1,7 +1,7 @@
 """`ag dashboard restart [--host H] [--port N] [--open]`: the home's dashboard stopped and started again, so that it runs
 the code now on disk (after a pull). `ag stop` leaves the dashboard alone: it stops what ag's launchers started, the hook
-servers, which come back by themselves at the next call; a dashboard does not, and stopping it closes every terminal it
-runs.
+servers, which start again only as ag next starts a harness -- until then the sessions that call through them have
+their calls refused; a dashboard does not come back by itself either, and stopping it closes every terminal it runs.
 
 Which dashboard: the one the home's address file names (home.address_path, written as each dashboard starts), and only
 once its process runs and its page says it serves this home -- never a process only the file names, whose pid may since

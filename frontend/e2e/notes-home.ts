@@ -34,21 +34,31 @@ export async function newPage(page: Page, panel: FrameLocator, title: string) {
   await page.keyboard.press("Enter");
 }
 
-/** The page, put in the trash from its row's menu, then deleted for good from the trash. By its title exactly: "Undo"
- * is not "Undone", a page another test left. */
+/** The page, put in the trash from its row's menu, then deleted for good from the trash, and saved. By its title
+ * exactly: "Undo" is not "Undone", a page another test left. Every page of that title goes: an attempt of the same
+ * test that failed earlier in this home (a retry) may have left its own. */
 export async function binPage(panel: FrameLocator, title: string) {
   const exact = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const rows = panel.locator(".pg-row").filter({ has: panel.locator(".nm", { hasText: new RegExp(`^${exact}$`) }) });
   const binned = panel
     .locator(".trash-row")
     .filter({ has: panel.locator(".nm", { hasText: new RegExp(`(^|\\s)${exact}$`) }) });
-  const row = rows.first();
-  await row.hover();
-  await row.locator(".acts button[title=More]").click();
-  await panel.locator(".pop .it", { hasText: "Move to trash" }).click();
-  await expect(rows).toHaveCount(0);
+  await expect(rows).not.toHaveCount(0);
+  for (let n = await rows.count(); n > 0; n--) {
+    const row = rows.first();
+    await row.hover();
+    await row.locator(".acts button[title=More]").click();
+    await panel.locator(".pop .it", { hasText: "Move to trash" }).click();
+    await expect(rows).toHaveCount(n - 1);
+  }
   await panel.locator("#trash-btn").click();
-  await binned.locator("button[title='Delete for good']").click();
-  await expect(binned).toHaveCount(0);
+  await expect(binned).not.toHaveCount(0);
+  for (let n = await binned.count(); n > 0; n--) {
+    await binned.first().locator("button[title='Delete for good']").click();
+    await expect(binned).toHaveCount(n - 1);
+  }
   await panel.locator("#trash-btn").click();
+  // sent before the test goes on, or ends: a change made while one is still being sent waits for it, and a page closed
+  // meanwhile never sends it -- the page left in the trash for the next test of that title
+  await expect(panel.locator("#saved")).toHaveText("Saved");
 }

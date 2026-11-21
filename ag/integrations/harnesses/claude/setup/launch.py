@@ -413,3 +413,7 @@ class ClaudeLauncher(Launcher):
     def stop(self) -> List[str]:
         """Stop the hook servers ag started for Claude Code."""
         return self.servers.stop_all(SETUP)
+
+    def serving(self) -> List[str]:
+        """The addresses of the hook servers ag started for Claude Code."""
+        return [s.url for s in self.servers.of(SETUP)]
