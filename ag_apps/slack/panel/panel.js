@@ -56,6 +56,11 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   const byTs = (a, b) => num(a.ts) - num(b.ts);
 
   // ---------------------------------------------------------------- what the panel holds
+  // The backend's setup (its connection's status) as a request's answer gave it -- unless the backend told a status
+  // since the request was sent (`asked`: statusTold then), which is newer: a connection made while a connect was on
+  // its way, its "connected" told before the answer saying "connecting", stays connected.
+  let statusTold = 0;
+  function setupFrom(setup, asked) { if (statusTold === asked) S.setup = setup; }
   const S = {
     setup: null, settings: {}, convs: new Map(), unread: {}, users: {}, drafts: new Map(),
     open: null, filter: keep.get("filter", "recent"), q: "",
@@ -1531,7 +1536,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
           "Also as system notifications")),
         el("div", { class: "row" }, el("button", { type: "button", class: "btn small", onclick: async () => {
           closePop();
-          try { const got = await post("disconnect", {}); S.setup = got.setup; drawAll(); } catch { /* shown by the status */ }
+          const asked = statusTold;
+          try { const got = await post("disconnect", {}); setupFrom(got.setup, asked); drawAll(); } catch { /* shown by the status */ }
         } }, "Disconnect Slack")));
     });
     const was = popClose;
@@ -1549,7 +1555,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const go = el("button", { type: "button", class: "btn primary", onclick: async () => {
       err.textContent = "";
       go.disabled = true;
-      try { const got = await post("connect", { user_token: user.value.trim(), app_token: app.value.trim() }); S.setup = got.setup; drawAll(); }
+      const asked = statusTold;
+      try { const got = await post("connect", { user_token: user.value.trim(), app_token: app.value.trim() }); setupFrom(got.setup, asked); drawAll(); }
       catch (e) { err.textContent = e.message; }
       go.disabled = false;
     } }, "Connect");
@@ -1591,9 +1598,10 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       const err = el("div", { class: "note", role: "alert" });
       const go = el("button", { type: "button", class: "btn small primary", onclick: async () => {
         go.disabled = true; err.textContent = "Checking…";
+        const asked = statusTold;
         try {
           const got = await post("recheck", { user_token: tok.value.trim() });
-          S.setup = got.setup; drawAll();
+          setupFrom(got.setup, asked); drawAll();
           const left = got.setup.missing || [];
           err.textContent = left.length ? `Still missing: ${left.join(", ")}` : "All set.";
           if (!left.length) setTimeout(closePop, 900);
@@ -1658,7 +1666,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   ag.onMessage((x) => {
     if (x.badges) S.badges = x.badges;
     switch (x.kind) {
-      case "status": S.setup = x.setup; drawAll(); if (x.setup.status === "connected" && !S.convs.size) reload(); break;
+      case "status": statusTold++; S.setup = x.setup; drawAll(); if (x.setup.status === "connected" && !S.convs.size) reload(); break;
       case "conversations": setLists(x); drawConvs(); drawHead(); if ($("setup").hidden === false && S.convs.size) drawAll(); if (noticeAsked) openNoticed(noticeAsked); break;
       case "unread": S.unread = x.unread; drawConvs(); if (S.view === "activity") showView("activity", true); break;
       case "message": case "reply":
@@ -1805,8 +1813,9 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
 
   async function reload() {
     let got;
+    const asked = statusTold;
     try { got = await get("state"); } catch { got = { setup: { status: "error", error: "the backend didn't answer" }, conversations: [], drafts: [] }; }
-    S.setup = got.setup; S.settings = got.settings || {};
+    setupFrom(got.setup, asked); S.settings = got.settings || {};
     if (got.badges) S.badges = got.badges;
     if (got.emoji) CUSTOM = got.emoji;
     setLists(got);
