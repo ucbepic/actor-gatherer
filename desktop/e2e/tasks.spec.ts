@@ -22,6 +22,15 @@ let otherAgent = "";
 const keys: string[] = [];
 let dashboard: ChildProcess | null = null;
 let siteServer: http.Server | null = null;
+// a page of noise over the whole window: a PNG of it as big as one can be
+const HEAVY = `<!doctype html><title>Heavy</title><style>html,body{margin:0}canvas{display:block}</style><canvas></canvas><script>
+const c = document.querySelector("canvas"), r = devicePixelRatio;
+c.width = 2400 * r; c.height = 1600 * r; c.style.width = "2400px"; c.style.height = "1600px";
+const x = c.getContext("2d"), im = x.createImageData(c.width, c.height);
+const d = new Uint32Array(im.data.buffer);
+for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 0xffffff) | 0xff000000;
+x.putImageData(im, 0, 0);
+</script>`;
 
 function env(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -148,7 +157,8 @@ test.beforeAll(async () => {
   writeFileSync(path.join(root, "two.html"), "<!doctype html><title>Two</title><h1>Two</h1>");
   siteServer = http.createServer((req, res) => {
     res.setHeader("content-type", "text/html");
-    res.end((req.url || "").includes("two") ? "<!doctype html><title>Two</title><h1>Two</h1>" : "<!doctype html><title>One</title><h1>One</h1>");
+    const u = req.url || "";
+    res.end(u.includes("heavy") ? HEAVY : u.includes("two") ? "<!doctype html><title>Two</title><h1>Two</h1>" : "<!doctype html><title>One</title><h1>One</h1>");
   });
   await new Promise<void>((r) => siteServer!.listen(0, "127.0.0.1", r));
   site = `http://127.0.0.1:${(siteServer.address() as AddressInfo).port}/`;
@@ -349,6 +359,55 @@ test("a Browser shown while its still picture is being taken keeps up with its p
     await fits(app, url, "the chat minimized", (v) => v.height > shown.height + 100);
   } finally {
     if (narrowed) await narrower(app, -200).catch(() => {});
+    await app.close();
+  }
+});
+
+// The list hidden, the pointer on the page's left edge: the list slides out over the panes -- over a Browser's page, in
+// the app, only once that page is out of sight under its picture (features/apps/native.ts's onceUncovered), not under it
+// while the picture is made. A page of noise: its picture slow to make (a PNG of it is big), as a page of photos is.
+test("the hidden list slides out over a Browser's page, never under it: the page out of sight first", async () => {
+  const { app, page } = await launchInFront();
+  const url = `${site}heavy`;
+  try {
+    await (await rowOf(page, agent)).click();
+    await expect(page.locator("#top-row .app-pane[data-app=browser]")).toHaveCount(2);
+    expect((await ask(`/api/w/g/${keys[0]}/nav`, { url }, "browser")).done).toBe(url);
+    await until(async () => (await pagesOf(app)).some((p) => p.visible && p.url === url), 30_000);
+    await page.locator("#agents .lb-hide").click(); // the list hidden: the panes the window's whole width
+    await expect(page.locator("html.list-hidden")).toHaveCount(1);
+    await until(async () => (await pagesOf(app)).some((p) => p.visible && p.url === url && p.bounds.x < 40), 10_000);
+    await new Promise((r) => setTimeout(r, 500)); // (its noise drawn)
+    // when each page is hidden (the app), and when the list starts out (the dashboard): one clock, the machine's
+    await app.evaluate(({ BrowserWindow }) => {
+      const g = globalThis as unknown as { hid: { url: string; at: number }[] };
+      g.hid = [];
+      for (const v of BrowserWindow.getAllWindows()[0].contentView.children) {
+        const set = v.setVisible.bind(v);
+        v.setVisible = (on: boolean) => {
+          if (!on && v.getVisible()) g.hid.push({ url: (v as Electron.WebContentsView).webContents.getURL(), at: Date.now() });
+          set(on);
+        };
+      }
+    });
+    await page.evaluate(() => {
+      const w = window as unknown as { peekAt?: number };
+      new MutationObserver(() => {
+        if (!w.peekAt && document.documentElement.classList.contains("list-peek")) w.peekAt = Date.now();
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    });
+    const bar = (await page.locator("#top-totals").boundingBox())!;
+    const asked = await page.evaluate(() => Date.now());
+    await page.mouse.move(3, bar.y + bar.height + 200); // on the edge
+    await expect(page.locator("html.list-peek")).toHaveCount(1);
+    const out = await page.evaluate(() => (window as unknown as { peekAt: number }).peekAt);
+    const hid = await app.evaluate(() => (globalThis as unknown as { hid: { url: string; at: number }[] }).hid);
+    const at = hid.find((h) => h.url === url)?.at;
+    console.log(`the list out ${out - asked} ms after the pointer came; the page hidden ${at === undefined ? "never" : `${out - at} ms before`}`);
+    expect(at, `the page under the list hidden: ${JSON.stringify(hid)}`).toBeDefined();
+    expect(at!, "the page hidden before the list starts out").toBeLessThanOrEqual(out);
+  } finally {
+    await page.evaluate(() => localStorage.removeItem("ag-dashboard-list-hidden")).catch(() => {});
     await app.close();
   }
 });
