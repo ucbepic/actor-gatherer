@@ -1,11 +1,13 @@
 // Notes: the page open, drawn as the notebook has it -- its trail, title, icon and lines, a row each -- and its
-// ended work items folded away.
-import { $, AGENTS, clean, el, LOG, MEDIA, PH, SPECIAL, SVG, WORK } from "./helpers.js";
+// ended work items folded away. The lines are one editor's (editor.js): the doc drawn from the notebook, each row's
+// parts other than its words drawn here.
+import { $, AGENTS, el, LOG, MEDIA, PH, SPECIAL, SVG, WORK } from "./helpers.js";
 import { convo, current, pages, setConvo, setCurrent, store } from "./state.js";
-import { drawLinks, live, withLinks } from "./model.js";
-import { dirty, flushTyped, pump } from "./send.js";
+import { drawLinks, live } from "./model.js";
+import { flushTyped, pump } from "./send.js";
 import { app, drawSide, narrow, opened, purge, restore } from "./sidebar.js";
-import { caretIn, setCaret } from "./caret.js";
+import { drawDoc } from "./editor.js";
+import { typeOf } from "./doc.js";
 import { drawPicked, picked, unpick } from "./picked.js";
 import { drawTable } from "./tables.js";
 import { drawMedia } from "./pictures.js";
@@ -44,7 +46,7 @@ export function drawPage(flash = null) {
   $("banner").hidden = !(p && p.deleted);
   drawCrumbs(p);
   drawDoneBtn(p);
-  if (!p) { $("blocks").replaceChildren(); $("fold-all").hidden = true; return drawConvo(); }
+  if (!p) { drawDoc(null, [], true); $("fold-all").hidden = true; return drawConvo(); }
   const ro = !!p.deleted;
   $("page").classList.toggle("ro", ro);
   if (ro) $("banner").replaceChildren(el("span", { text: "This page is in the trash." }),
@@ -73,25 +75,41 @@ export const box = $("blocks");
 export const rowOf = (id) => box.querySelector(`.blk[data-id="${CSS.escape(id)}"]`);
 export const page = () => current && pages.get(current);
 export const blockOf = (id) => { const p = page(); return p && p.blocks.find((b) => b.id === id); };
-function makeRow(b) {
-  const gut = el("div", { class: "gut" },
+// A block's row, as the editor makes one for its node (editor.js's Row): its words (.tx, if it has any) the node's
+// content; the rest -- the gutter, the marker, a picture, a table, its buttons, what it was sent -- not words
+// (contenteditable false), drawn by updateRow.
+export function makeRow(type, id) {
+  const gut = el("div", { class: "gut", contenteditable: "false" },
     el("button", { class: "add", type: "button", tabindex: "-1", title: "Add a block below", "aria-label": "Add a block below", html: SVG.plus }),
     el("button", { class: "grip", type: "button", tabindex: "-1", title: "Drag to move · click for menu", "aria-label": "Move or open menu", html: SVG.grip }));
-  const n = el("div", { class: "blk", "data-id": b.id }, gut);
-  if (b.type === "divider") n.append(el("div", { class: "hr", tabindex: "0", role: "separator" }));
-  else if (b.type === "agents") n.append(el("div", { class: "agt", tabindex: "0", role: "group", "aria-label": "Actors" }));
-  else if (b.type === "work") n.append(el("div", { class: "agt wkb", tabindex: "0", role: "group", "aria-label": "Open work items" }));
-  else if (MEDIA.includes(b.type)) n.append(el("div", { class: "fig", tabindex: "0", role: "figure" }), el("div", { class: "tx cap", spellcheck: "true" }));
-  else if (b.type === "table") n.append(el("div", { class: "tbl" }, el("div", { class: "tbl-scroll" }, el("div", { class: "tbl-in" },
+  const n = el("div", { class: "blk", "data-id": id, "data-type": type }, gut);
+  if (type === "divider") n.append(el("div", { class: "hr", tabindex: "0", role: "separator" }));
+  else if (type === "agents") n.append(el("div", { class: "agt", tabindex: "0", role: "group", "aria-label": "Actors" }));
+  else if (type === "work") n.append(el("div", { class: "agt wkb", tabindex: "0", role: "group", "aria-label": "Open work items" }));
+  else if (MEDIA.includes(type)) n.append(el("div", { class: "fig", tabindex: "0", role: "figure", contenteditable: "false" }), el("div", { class: "tx cap", spellcheck: "true" }));
+  else if (type === "table") n.append(el("div", { class: "tbl" }, el("div", { class: "tbl-scroll" }, el("div", { class: "tbl-in" },
     el("table", { class: "grid" }, el("colgroup"), el("tbody")),
     el("div", { class: "tbl-edges" }),
     el("button", { class: "tbl-h tbl-ch", type: "button", tabindex: "-1", title: "Drag to move · click for menu", "aria-label": "Move column or open menu", html: SVG.more }),
     el("button", { class: "tbl-h tbl-rh", type: "button", tabindex: "-1", title: "Drag to move · click for menu", "aria-label": "Move row or open menu", html: SVG.grip }),
     el("button", { class: "tbl-add tbl-add-col", type: "button", tabindex: "-1", title: "Add a column (drag for more)", "aria-label": "Add a column", html: SVG.plus }),
     el("button", { class: "tbl-add tbl-add-row", type: "button", tabindex: "-1", title: "Add a row (drag for more)", "aria-label": "Add a row", html: SVG.plus })))));
-  else n.append(el("div", { class: "mk" }), el("div", { class: "tx", spellcheck: "true" }),
-    el("button", { class: "to-btn", type: "button", tabindex: "-1", title: "Send to an agent (or type @)", html: SVG.at }));
+  else n.append(el("div", { class: "mk", contenteditable: "false" }), el("div", { class: "tx", spellcheck: "true" }),
+    el("button", { class: "to-btn", type: "button", tabindex: "-1", contenteditable: "false", title: "Send to an agent (or type @)", html: SVG.at }));
   return n;
+}
+// A row's node, as the editor has it now: its type, indent, tick and marker, and whether it has words (its
+// placeholder); a row just made (`made`), all of it, as the notebook has its block.
+export function rowNode(n, node, made) {
+  const type = typeOf(node), id = node.attrs.id, b = blockOf(id), p = page();
+  n.dataset.id = id;
+  const tx = n.querySelector(":scope > .tx");
+  if (tx) { tx.classList.toggle("blank", node.content.size === 0); tx.dataset.ph = PH[type] || ""; }
+  if (made && b && b.type === type) return updateRow(n, b, !!(p && p.deleted));
+  n.dataset.type = type;
+  n.style.setProperty("--ind", node.attrs.indent || 0);
+  n.classList.toggle("done", type === "todo" && !!node.attrs.checked);
+  if (n.querySelector(":scope > .mk")) drawMark(n, type, node.attrs.indent || 0, !!node.attrs.checked);
 }
 function updateRow(n, b, ro) {
   n.dataset.type = b.type;
@@ -103,59 +121,48 @@ function updateRow(n, b, ro) {
   if (b.type === "agents") return drawAgentsBlock(n);
   if (b.type === "work") return drawWorkBlock(n);
   if (b.type === "table") return drawTable(n, b, ro);
-  const tx = n.querySelector(".tx");
+  const tx = n.querySelector(":scope > .tx");
   if (!tx) return;
   const to = n.querySelector(".to-btn");                 // its words drawn by the style: not the block's text
   if (to) { to.dataset.label = b.type === "todo" ? "Assign" : "Ask"; to.setAttribute("aria-label", b.type === "todo" ? "Assign to an agent" : "Ask an agent"); }
   n.classList.toggle("picked", picked.has(b.id));
   sentPart(n, b, ro);
-  tx.setAttribute("contenteditable", ro ? "false" : b.type === "code" ? "plaintext-only" : "true");
   tx.dataset.ph = PH[b.type] || "";
-  if (tx !== document.activeElement && !dirty.has(b.id)) {
-    if (b.type === "code") { if (tx.textContent !== b.text) tx.textContent = b.text; }
-    else { const h = withLinks(clean(b.text)); if (tx.innerHTML !== h) tx.innerHTML = h; }
-  } else if (b.type !== "code") drawLinks(tx);
+  if (b.type !== "code") drawLinks(tx);                  // (its links to pages: as the pages are now)
   if (MEDIA.includes(b.type)) return drawMedia(n, b, ro);
-  const mk = n.querySelector(".mk");
-  const want = b.type === "todo" ? `todo:${!!b.checked}` : b.type === "bullet" ? `bullet:${(b.indent || 0) % 3}` : b.type;
-  if (mk.dataset.is !== want) {
-    mk.dataset.is = want;
-    mk.replaceChildren();
-    if (b.type === "todo") mk.append(el("button", { class: "chk", type: "button", role: "checkbox", tabindex: "-1",
-      "aria-checked": String(!!b.checked), "aria-label": b.checked ? "Done" : "To do", html: SVG.check }));
-    else if (b.type === "bullet") mk.append(el("span", { class: `dot d${(b.indent || 0) % 3}` }));
-  }
+  drawMark(n, b.type, b.indent || 0, !!b.checked);
 }
-// The page's blocks drawn as the notebook has them: rows kept, moved, made or removed, but the one typed in left
-// as the reader has it (it is theirs until it is sent). Lines folded away (`foldOf`) are not drawn: a fold says
-// where they are.
+function drawMark(n, type, indent, checked) {
+  const mk = n.querySelector(":scope > .mk");
+  const want = type === "todo" ? `todo:${checked}` : type === "bullet" ? `bullet:${indent % 3}` : type;
+  if (mk.dataset.is === want) return;
+  mk.dataset.is = want;
+  mk.replaceChildren();
+  if (type === "todo") mk.append(el("button", { class: "chk", type: "button", role: "checkbox", tabindex: "-1",
+    "aria-checked": String(checked), "aria-label": checked ? "Done" : "To do", html: SVG.check }));
+  else if (type === "bullet") mk.append(el("span", { class: `dot d${indent % 3}` }));
+}
+// The page's blocks drawn as the notebook has them: the doc made so (editor.js's drawDoc: a line with words typed and
+// not yet sent left as the reader has it -- they are theirs until they are sent), then each row's other parts. Lines
+// folded away (`foldOf`) are not in the doc: a fold says where they are.
 function drawBlocks(p, flash, ro) {
   foldedNow = foldOf(p);
-  const have = new Map([...box.children].map((n) => [n.dataset.id, n]));
-  const want = new Set(p.blocks.filter((b) => !foldedNow.has(b.id)).map((b) => b.id));
-  const focus = document.activeElement && box.contains(document.activeElement) ? document.activeElement : null;
-  const at = focus && focus.classList.contains("tx") ? caretIn(focus) : null;
-  for (const [id, n] of have) if (!want.has(id)) n.remove();
-  let prev = null;
-  const shape = (t) => (["divider", "agents", "work", "table", ...MEDIA].includes(t) ? t : "tx");
-  for (const b of p.blocks) {
-    if (foldedNow.has(b.id)) continue;
-    let n = have.get(b.id);
-    if (n && shape(n.dataset.type) !== shape(b.type)) { n.remove(); n = null; }
-    if (!n) n = makeRow(b);
-    updateRow(n, b, ro);
-    const there = prev ? prev.nextSibling : box.firstChild;
-    if (n !== there) box.insertBefore(n, there);
-    prev = n;
+  drawDoc(p.id, p.blocks.filter((b) => !foldedNow.has(b.id)), ro);
+  drawRows(flash);
+}
+// each row's parts other than its words, as the notebook has the block; the folds, the numbers, the lines picked
+export function drawRows(flash = null) {
+  const p = page();
+  if (!p) return;
+  for (const n of box.children) {
+    const b = blockOf(n.dataset.id);
+    if (!b) continue;
+    updateRow(n, b, !!p.deleted);
     if (flash && flash.has(b.id)) { n.classList.remove("flash"); void n.offsetWidth; n.classList.add("flash"); }
   }
   drawFolds(p);
   numbers(p);
   drawPicked();
-  if (focus && focus.isConnected && document.activeElement !== focus) {
-    focus.focus();
-    if (at) setCaret(focus, at.start, at.end);
-  }
 }
 function numbers(p) {
   const counts = new Map();
@@ -218,7 +225,7 @@ function drawFolds(p) {
 function foldRow(p, items) {
   const d = items.filter((b) => endedOf(b) === "done").length, c = items.filter((b) => endedOf(b) === "canceled").length;
   const said = [d ? `${d} done` : "", c ? `${c} canceled` : ""].filter(Boolean).join(" · ") || `${items.length} folded`;
-  return el("div", { class: "fold" }, el("button", { type: "button", title: "Show done and canceled lines", "aria-label": `Show ${said}`,
+  return el("div", { class: "fold", contenteditable: "false" }, el("button", { type: "button", title: "Show done and canceled lines", "aria-label": `Show ${said}`,
     onclick: () => { showDone(p.id, true); drawPage(); } }, el("span", { html: SVG.check }), el("span", { text: said })));
 }
 function drawDoneBtn(p) {

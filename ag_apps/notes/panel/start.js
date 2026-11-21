@@ -1,4 +1,5 @@
-// The panel, started (by notes.js, its entry): connected to the dashboard (app_kit's SDK), each module's listeners set
+// The panel, started (by notes.js, its entry): connected to the dashboard (app_kit's SDK), the page's editor made
+// (editor.js: its own listeners on the lines, first), each module's listeners set
 // -- in the order the panel has always set them: a key the picked lines take is one the line's own handler left, and
 // the like -- then the notebook read, the batches heard meanwhile applied, the page the reader left open shown again,
 // and the actors followed.
@@ -21,9 +22,11 @@ import { wirePictures } from "./pictures.js";
 import { takeActors } from "./actors.js";
 import { drawSent } from "./convo.js";
 import { goLink, linked, wireLinks } from "./links.js";
+import { startView } from "./editor.js";
 
 export async function start() {
   setAg(await AgApp.connect());
+  startView();
   wireSend();
   wireOthers();
   wireSidebar();
