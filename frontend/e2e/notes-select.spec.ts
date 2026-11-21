@@ -60,7 +60,8 @@ test("lines picked by a drag from one line into others are deleted together, and
   await expect.poll(() => pickedLines(panel)).toEqual(["two", "three"]);
   await expect(panel.locator("#pk-bar")).toBeVisible();
   await expect(panel.locator("#pk-bar .pk-n")).toHaveText("2 lines");
-  await expect(panel.locator("#blocks")).toBeFocused(); // the page's keys: no caret in a line
+  await expect(panel.locator("#blocks")).toBeFocused(); // the page's keys: no caret in a line, the lines not editable
+  await expect(panel.locator("#blocks")).toHaveAttribute("contenteditable", "false");
 
   await page.keyboard.press("Backspace");
   await expect.poll(() => lines(panel)).toEqual(["one", "four"]);
@@ -126,16 +127,12 @@ test("Shift+↑↓ from inside a line select to its end first, then pick lines; 
   const { panel } = await openNotes(page);
   await newPage(page, panel, "Shift");
   await type(page, "- alpha", "bravo", "charlie", "delta");
-  const caret = (text: string, at: number) =>
-    row(panel, text)
-      .locator(".tx")
-      .evaluate((tx, n) => {
-        (tx as HTMLElement).focus();
-        const r = document.createRange();
-        r.setStart(tx.firstChild!, n);
-        getSelection()!.removeAllRanges();
-        getSelection()!.addRange(r);
-      }, at);
+  /** The caret put in a line, `at` characters into its words: a click in it, then to its start and on. */
+  const caret = async (text: string, at: number) => {
+    await row(panel, text).locator(".tx").click();
+    await page.keyboard.press("Home");
+    for (let i = 0; i < at; i++) await page.keyboard.press("ArrowRight");
+  };
   const selected = () => panel.locator("body").evaluate(() => getSelection()!.toString());
 
   // from inside "charlie": its start first (the browser would carry the words up into "bravo"), then the lines
@@ -146,6 +143,7 @@ test("Shift+↑↓ from inside a line select to its end first, then pick lines; 
   await page.keyboard.press("Shift+ArrowUp");
   await expect.poll(() => pickedLines(panel)).toEqual(["bravo", "charlie"]);
   await expect(panel.locator("#blocks")).toBeFocused();
+  await expect(panel.locator("#blocks")).toHaveAttribute("contenteditable", "false");
   await page.keyboard.press("Tab");
   for (const t of ["bravo", "charlie"]) await expect(row(panel, t)).toHaveAttribute("style", /--ind: ?1/);
   await page.keyboard.press("Escape");
