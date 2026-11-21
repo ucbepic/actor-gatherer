@@ -5,9 +5,10 @@ import { act, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../../core/api/query";
 import { key } from "../../core/model/keys";
+import { sizesForTests } from "../../core/ui/lists";
 import { loadOutline, outlineKey, outlineOf, setHistHost, useAsked } from "./data";
 import { drawHistory } from "./mount";
-import { SHOWN, useHist } from "./store";
+import { useHist } from "./store";
 import {
   buildTree,
   marked,
@@ -19,6 +20,9 @@ import {
   type Outline,
   type OutlineEvent,
 } from "./tree";
+
+// jsdom lays nothing out: the list (react-virtuoso) takes its box as tall as a few hundred rows, each 40px
+sizesForTests.now = { viewportHeight: 20_000, itemHeight: 40 };
 
 const ev = (row_id: number, type: string, text = type, channel = "c1"): OutlineEvent => ({
   row_id,
@@ -147,7 +151,6 @@ afterEach(() => {
     panel: false,
     q: "",
     query: "",
-    limit: SHOWN,
     gatherer: null,
     actor: null,
   });

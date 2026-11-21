@@ -4,7 +4,7 @@
 import { act } from "@testing-library/react";
 import { change } from "./actors";
 import { drawChat } from "./mount";
-import { sizesForTests } from "./Turns";
+import { sizesForTests } from "../../core/ui/lists";
 import type { Actor, ChatFeed, ChatHost, ChatView, Current, Envelope, PageFeed, Turn } from "./types";
 
 // jsdom lays nothing out: the turn list (react-virtuoso) takes its box as tall as a few hundred turns, each 40px, and

@@ -18,14 +18,9 @@
 // (keepTurn) -- where the end is followed by the reader's last scroll (follow.ts), as each turn's box and the footer
 // change size: a turn added, a reply streaming in, a turn growing in, alike.
 import { createContext, memo, use, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import {
-  Virtuoso,
-  VirtuosoMockContext,
-  type ItemProps,
-  type VirtuosoHandle,
-  type VirtuosoMockContextValue,
-} from "react-virtuoso";
+import { Virtuoso, type ItemProps, type VirtuosoHandle } from "react-virtuoso";
 import { plural } from "../../core/format";
+import { Measured, OVERSCAN_PX } from "../../core/ui/lists";
 import { TurnBoundary } from "./Boundary";
 import { useChat } from "./context";
 import { followContent, followEnd, placed, unfollow } from "./follow";
@@ -37,16 +32,10 @@ import type { ChatFeed, Turn as TurnData } from "./types";
 import { currentOf, nowWords, openingOf, pickedOf, turnsOf } from "./view";
 import { Done, Status } from "./Working";
 
-/** How far above and below what is in sight the turns are put on the page. */
-export const OVERSCAN_PX = 4000;
 /** The most turns put on the page as the list is made, before it has measured its box: all of an ordinary one. */
 const DRAWN_AT_FIRST = 60;
 /** Above each turn, in its item box (files-view.css's .fl-item): a turn picked is brought to its own top, not its box's. */
 const TURN_GAP = 2;
-
-/** What Virtuoso takes its box's and each item's height to be in place of measuring them: none on the page (it
- * measures); jsdom's tests, which lay nothing out, set them (testing.tsx). */
-export const sizesForTests: { now: VirtuosoMockContextValue | undefined } = { now: undefined };
 
 /** What each part of the list reads of this draw, beside the feed (ChatContext): where each turn is, and the list's own. */
 interface Drawing {
@@ -98,7 +87,7 @@ export function Turns({ talkRef, interrupting }: { talkRef: RefObject<HTMLDivEle
   useSent(feed, talkRef, list, last);
   return (
     <DrawingContext value={{ placeOf, first, firstDrawn, setFirstDrawn, interrupting }}>
-      <VirtuosoMockContext value={sizesForTests.now}>
+      <Measured>
         <Virtuoso
           ref={list}
           scrollerRef={(n) => {
@@ -115,7 +104,7 @@ export function Turns({ talkRef, interrupting }: { talkRef: RefObject<HTMLDivEle
           atTopStateChange={reachedTop}
           components={PARTS}
         />
-      </VirtuosoMockContext>
+      </Measured>
     </DrawingContext>
   );
 }
