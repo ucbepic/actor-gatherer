@@ -116,6 +116,36 @@ def build(home: str) -> str:
     return home
 
 
+#: arXiv's feed of the default categories (cs.AI, cs.DB) on the day the tests run (NOW: Thursday 2026-10-01 in New
+#: York), in its real shape (test_app_paper_news's helpers): what Paper news fetches as its panel first opens.
+ARXIV_FEED = "https://rss.arxiv.org/rss/cs.AI+cs.DB"
+
+
+def outside_faked() -> None:
+    """The apps that reach outside the machine given what their own tests give them -- Slack test_app_slack's
+    FakeSlack, arXiv a day's feed made up in its real shape (every other page of it not found) -- so no browser test
+    reaches slack.com or arxiv.org, and their panels have something to show. The host makes each app's backend
+    (app_host._import); these two are made again with their fakes."""
+    from ag_dashboard import app_host
+    import test_app_paper_news as news
+    import test_app_slack
+    day = "Thu, 01 Oct 2026 00:00:00 -0400"
+    feed = news.rss(day,
+                    news.item("2610.00101", "Learned Indexes for Joins", "new", ("cs.DB", "cs.LG")),
+                    news.item("2610.00102", "Agents That Plan &amp; Query", "new", ("cs.AI",), "Mia Ruiz, Tom Ode"),
+                    news.item("2610.00103", "Vision for Tables", "cross", ("cs.CV", "cs.DB")))
+    made = app_host._import
+
+    def _import(m):
+        app = made(m)
+        if m.name == "slack":
+            return type(app)(make_client=test_app_slack.FakeSlack)
+        if m.name == "paper_news":                # on the served clock: time.time as serve_at holds it, at NOW
+            return type(app)(fetch=news.Arxiv({ARXIV_FEED: feed}), clock=lambda: time.time(), pause=0)
+        return app
+    app_host._import = _import
+
+
 def serve_at(port: int) -> None:
     """A home built in a temporary folder, and the dashboard on it at `port` until stopped; the folder removed then."""
     import faulthandler
@@ -126,6 +156,9 @@ def serve_at(port: int) -> None:
     # ag run from this checkout (the apps' host inserts through `ag home insert`), and the test apps found (tests/apps/)
     os.environ.setdefault("AG_COMMAND", f"{shlex.quote(sys.executable)} {shlex.quote(os.path.join(ROOT, 'ag', 'cli', 'ag'))}")
     os.environ.setdefault("AG_APPS_PATH", os.path.join(ROOT, "tests", "apps"))
+    for name in ("AG_SLACK_USER_TOKEN", "AG_SLACK_APP_TOKEN"):     # never the machine's own Slack
+        os.environ.pop(name, None)
+    outside_faked()
     tmp = tempfile.mkdtemp(prefix="ag-web-home-")
     try:
         home = build(os.path.join(tmp, "ag"))

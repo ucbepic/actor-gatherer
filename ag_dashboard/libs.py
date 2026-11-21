@@ -7,6 +7,7 @@
     fileedit/...      app_kit.fileedit's panel code, for the apps built on it: a folder's files edited live, and
                       vendor/editor.js, CodeMirror and Yjs
     kit.js            app_kit's panel kit (app_kit/js/kit.js): what every panel builds its page with, `agKit`
+    kit.css           the kit's colours (app_kit/js/kit.css): the dashboard's theme, light and dark, for every panel
 
     lib_file(rel)     (bytes, media type) of one of their files, by its path under /_ag/lib/; None: none such
 
@@ -21,9 +22,10 @@ import app_kit.fileedit
 VENDOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 FILEEDIT = os.path.join(os.path.dirname(os.path.abspath(app_kit.fileedit.__file__)), "panel")
 PDFJS = os.path.join(VENDOR, "pdfjs")      # pdf.js's viewer, as DocWriter's build puts it here (assets/src/docwriter)
-KIT = os.path.join(os.path.dirname(os.path.abspath(app_kit.fileedit.__file__)), "..", "js", "kit.js")
+KIT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(app_kit.fileedit.__file__)), "..", "js"))
 LIBS = {"pdfjs": PDFJS, "fileedit": FILEEDIT, "marked.min.js": os.path.join(VENDOR, "marked.min.js"),
-        "purify.min.js": os.path.join(VENDOR, "purify.min.js"), "kit.js": os.path.normpath(KIT)}
+        "purify.min.js": os.path.join(VENDOR, "purify.min.js"), "kit.js": os.path.join(KIT, "kit.js"),
+        "kit.css": os.path.join(KIT, "kit.css")}
 #: What a file is served as, where Python's mimetypes says otherwise or nothing (pdf.js's modules, fonts and maps).
 TYPES = {".mjs": "text/javascript; charset=utf-8", ".js": "text/javascript; charset=utf-8",
          ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json",

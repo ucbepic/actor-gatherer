@@ -1,0 +1,28 @@
+/* The panels' kit's colours: the dashboard's theme, as every app's panel reads it -- served by the host at
+   /_ag/lib/kit.css (ag_dashboard/libs.py) and linked before the panel's own stylesheets. The page around the panel
+   sets the theme's colours on the panel's :root once it connects (app.js's applyTheme, frontend/src/features/apps/
+   theme-vars.ts's THEME_VARS); these are the same colours, so a panel reads var(--ink) with no fallback of its own and
+   is drawn right before then too, in the dark theme as well (app.js marks :root data-ag-theme="dark"). The values are
+   the dashboard's (frontend/src/core/page/base.css), kept the same by theme-vars.test.ts. */
+:root {
+  color-scheme: light;
+  --page: #f6f6f4; --surface: #fcfcfb; --side: #f4f4f2; --ink: #1d1d1b; --ink-2: #55544f; --muted: #898781;
+  --grid: #e4e3dc; --axis: #c3c2b7; --ring: rgba(20,20,18,0.09); --wash: rgba(20,20,18,0.04); --good: #0ca30c;
+  --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10); --md-link: #0a7d91; --md-code: #912583;
+  --hl-com: #6e6c66; --hl-kw: #7a35b0; --hl-str: #1d7a3a; --hl-num: #a3570a; --hl-fn: #1f5fb4; --hl-prop: #0a7489;
+  --hl-meta: #8a6200; --hl-bg: color-mix(in srgb, var(--ink) 4%, var(--surface)); --scroll: rgba(0,0,0,.16);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6;
+  --term-dim: #6f6c65; --term-link: #2468c8; --term-accent: #c4643f; --term-bash: #c7307a; --term-code: #f2f1ed;
+  --term-err: #cf3a50; --term-ok: #2f9a4c; --term-rule: #e2e0d9; --term-run: #c08a00;
+}
+:root[data-ag-theme="dark"] {
+  color-scheme: dark;
+  --page: #111110; --surface: #1f1f1d; --side: #121211; --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+  --selected: rgba(57,135,229,0.16); --md-link: #3fb1c5; --md-code: #f3c7ee; --hl-com: #9a978f; --hl-kw: #c7a2ff;
+  --hl-str: #8fd19e; --hl-num: #f0a868; --hl-fn: #82b8ff; --hl-prop: #62c6d6; --hl-meta: #e3bd5f;
+  --hl-bg: color-mix(in srgb, var(--ink) 4%, var(--surface)); --scroll: rgba(255,255,255,.16); --s1: #3987e5;
+  --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --term-dim: #8f8c84;
+  --term-link: #7cb7ff; --term-accent: #d97757; --term-bash: #fd5db1; --term-code: #222220; --term-err: #ff6b80;
+  --term-ok: #4eba65; --term-rule: #2e2d2a; --term-run: #e8b600;
+}
