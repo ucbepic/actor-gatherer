@@ -5,12 +5,23 @@ The panel's routes (its own origin, /api/...):
 
     GET  state                  the notebook: {version, pages}
     POST ops    {by, ops}       ops applied: {version}; told to the panels as {ops, by, version}
+         or {by, batches: [{id, ops}], leaving?}   batches applied in order, each id once (below)
     POST parse  {markdown}      blocks made from pasted markdown, with new ids (nothing changed)
     POST image  <the picture>   a picture kept (media.py): {file, w, h}, for an image block to show
     GET  file/<file>            a picture kept
     GET  figma                  whether the user gave a Figma token: {token, who}
     POST figma/token {token}    the token kept (checked with Figma), or forgotten ("")
     POST figma/snap {block}     a figma block's snapshot fetched again (when Figma changed it): {ok} or {error}
+
+A panel names each batch it sends, and the backend takes each name once (the latest TAKEN of a notebook's
+remembered): a batch sent again -- tried again after no answer came, or sent again with what was queued behind it by a
+panel going away (closed, reloaded, its tab shut) while it was still being sent -- is not applied twice, and what came
+of it is said again (refused: 400, as the first time). A panel sends one batch at a time, each after the one before was
+taken, except as it goes: then one request (`leaving`, kept alive past the page) has the batch it was sending and
+everything queued behind it, in order -- whichever of the two requests comes first applies that batch, and what is
+behind it only after it. A batch of a leaving request refused whole has each of its ops tried alone here, as the panel
+would have done (each named `<batch>.<n>`, as the panel names them): no panel is left to, and only the op refused is
+lost.
 
 Pictures (notebook.py, PICTURES) are kept in one folder for every gatherer's notebook. notes_read gives an agent the
 pictures of the page it reads with its words (MAX_SHOWN of them); notes_add and notes_change take `![caption](a file)`
@@ -41,6 +52,8 @@ from . import notebook as nb
 MAX_SHOWN = 6
 TABLES_READ = 200
 MAX_SHOWN_BYTES = 3_700_000
+#: how many of a notebook's latest batches from its panels are remembered by name: one sent again is taken once
+TAKEN = 2_000
 #: how a picture is served: as itself, never a page that runs (an SVG opened on its own)
 PICTURE_HEADERS = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"}
 
@@ -49,6 +62,8 @@ class NotesApp(App):
     def __init__(self):
         self._books: Dict[str, nb.Notebook] = {}
         self._lock = threading.Lock()
+        #: each notebook's batches from its panels taken lately, by name: "" applied, else why it was refused
+        self._taken: Dict[str, "OrderedDict[str, str]"] = {}
         self.files: Optional[media.Files] = None
         self.figma: Optional[media.Figma] = None
         self._snapping: set = set()
@@ -83,6 +98,44 @@ class NotesApp(App):
                                                 **({"agent": agent} if agent else {}),
                                                 **({"quiet": True} if quiet else {})})
         return version
+
+    def take(self, instance: Instance, batches: List[Tuple[str, list]], by: str, leaving: bool = False) -> int:
+        """A panel's batches, each `(name, ops)`, applied in order -- one already taken skipped -- and the version
+        after. One refused raises NotebookError (and says so again when sent again), unless the panel is `leaving`:
+        then each of its ops is tried alone, and only the one refused is lost (module doc)."""
+        book = self.book(instance.gatherer)
+        with book.lock:                                       # each name taken once: none applied between
+            taken = self._taken.setdefault(instance.gatherer, OrderedDict())
+            for name, ops in batches:
+                was = taken.get(name)
+                if was is None:
+                    try:
+                        self.change(instance, ops, by)
+                        self._took(taken, name, "")
+                        continue
+                    except nb.NotebookError as exc:
+                        was = self._took(taken, name, str(exc) or "refused")
+                if not was:
+                    continue
+                if not leaving:
+                    raise nb.NotebookError(was)
+                for n, op in enumerate(ops):
+                    one = f"{name}.{n}"
+                    if one in taken:
+                        continue
+                    try:
+                        self.change(instance, [op], by)
+                        self._took(taken, one, "")
+                    except nb.NotebookError as exc:
+                        self._took(taken, one, str(exc) or "refused")
+            return book.version
+
+    @staticmethod
+    def _took(taken: "OrderedDict[str, str]", name: str, how: str) -> str:
+        taken[name] = how
+        while len(taken) > TAKEN:
+            taken.popitem(last=False)
+        return how
 
     # -- the instance
 
@@ -146,7 +199,10 @@ class NotesApp(App):
                 if path == "figma/snap":
                     return Response.json(self.snap(instance, str(ask.get("block") or "")))
                 by = str(ask.get("by") or "user")[:40]
-                return Response.json({"version": self.change(instance, _users(ask.get("ops")), by)})
+                if "batches" not in ask:
+                    return Response.json({"version": self.change(instance, _users(ask.get("ops")), by)})
+                return Response.json({"version": self.take(instance, _batches(ask.get("batches")), by,
+                                                           leaving=bool(ask.get("leaving")))})
         except media.MediaError as exc:
             return Response.json({"error": str(exc)}, 400)
         except nb.NotebookError as exc:
@@ -471,6 +527,20 @@ class NotesApp(App):
 
 #: How long a report may be: a few lines, not an answer.
 REPORT_CHARS = 1_200
+
+
+def _batches(batches) -> List[Tuple[str, list]]:
+    """A panel's named batches, `[{id, ops}]`: each (its name, its ops the user's, as _users makes them)."""
+    if not isinstance(batches, list) or not batches:
+        raise nb.NotebookError("batches: a list of {id, ops}")
+    out = []
+    for b in batches:
+        if not isinstance(b, dict) or not isinstance(b.get("id"), str) or not 0 < len(b["id"]) <= 120:
+            raise nb.NotebookError("a batch: {id, ops}, its id a name")
+        if not isinstance(b.get("ops"), list):
+            raise nb.NotebookError("a batch's ops: a list")
+        out.append((b["id"], _users(b["ops"])))
+    return out
 
 
 def _users(ops):

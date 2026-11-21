@@ -708,6 +708,82 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(self.ask("POST", "ops", ["not", "an", "object"])[0], 400)
         self.assertEqual(self.app.request(self.inst, "GET", "nothing", {}, b"").status, 404)
 
+    # -- a panel's named batches (backend.py's module doc): each taken once
+
+    def sent(self, by, *batches, leaving=False):
+        """`batches`, each (its name, its ops), sent as a panel sends them."""
+        body = {"by": by, "batches": [{"id": name, "ops": ops} for name, ops in batches]}
+        return self.ask("POST", "ops", {**body, "leaving": True} if leaving else body)
+
+    def text(self, bid):
+        return self.app.book(self.inst.gatherer).block(bid)[1]["text"]
+
+    @staticmethod
+    def put(bid, text):
+        return {"op": "block.put", "page": "pagepage", "block": {"id": bid, "text": text}}
+
+    BAD = {"op": "block.put", "page": "pagepage", "block": block("aaaaaa09", "nope")}
+
+    def made(self):
+        self.sent("p-one", ("p-one.1", [{"op": "page.new", "page": {"id": "pagepage", "title": "Mine"},
+                                         "blocks": [block("aaaaaa01", text="hi"), block("aaaaaa02")]}]))
+
+    def test_a_batch_a_panel_sends_again_is_taken_once(self):
+        self.made()
+        self.sent("p-one", ("p-one.2", [self.put("aaaaaa01", "one")]))
+        self.sent("p-one", ("p-one.3", [self.put("aaaaaa01", "one two")]))
+        self.assertEqual(self.sent("p-one", ("p-one.2", [self.put("aaaaaa01", "one")])), (200, {"version": 3}))
+        self.assertEqual(self.text("aaaaaa01"), "one two")                        # not taken back by it, late
+        self.assertEqual([m["version"] for m in self.host.told], [1, 2, 3])
+
+    def test_a_panel_going_away_sends_the_batch_it_was_sending_and_what_was_behind_it_in_order(self):
+        self.made()
+        # the batch being sent reached the backend: in the request again, before what was behind it
+        self.sent("p-one", ("p-one.2", [self.put("aaaaaa01", "one")]))
+        status, got = self.sent("p-one", ("p-one.2", [self.put("aaaaaa01", "one")]),
+                                ("p-one.3", [self.put("aaaaaa01", "one two"), self.put("aaaaaa02", "second")]),
+                                leaving=True)
+        self.assertEqual((status, got), (200, {"version": 3}))
+        self.assertEqual((self.text("aaaaaa01"), self.text("aaaaaa02")), ("one two", "second"))
+        # it never did: applied from that request, first; and when it comes after all, not again
+        self.sent("p-two", ("p-two.1", [self.put("aaaaaa01", "x")]), ("p-two.2", [self.put("aaaaaa01", "x y")]),
+                  leaving=True)
+        self.assertEqual(self.sent("p-two", ("p-two.1", [self.put("aaaaaa01", "x")])), (200, {"version": 5}))
+        self.assertEqual(self.text("aaaaaa01"), "x y")
+        self.assertEqual([m["version"] for m in self.host.told], [1, 2, 3, 4, 5])
+
+    def test_a_batch_refused_is_refused_again_and_one_a_panel_going_away_sends_has_each_op_tried_alone(self):
+        self.made()
+        refused = self.sent("p-one", ("p-one.2", [self.put("aaaaaa01", "kept"), self.BAD]))
+        self.assertEqual(refused[0], 400)
+        self.assertIn("not a block's type", refused[1]["error"])
+        self.assertEqual(self.sent("p-one", ("p-one.2", [self.put("aaaaaa01", "kept"), self.BAD])), refused)
+        self.assertEqual(self.text("aaaaaa01"), "hi")                             # nothing of it applied
+        # the panel sends each of its ops alone, named after it; then, going away, it again, and what was behind it
+        self.assertEqual(self.sent("p-one", ("p-one.2.0", [self.put("aaaaaa01", "kept")]))[0], 200)
+        self.assertEqual(self.sent("p-one", ("p-one.2.1", [self.BAD]))[0], 400)
+        self.assertEqual(self.sent("p-one", ("p-one.2", [self.put("aaaaaa01", "kept"), self.BAD]),
+                                   ("p-one.3", [self.put("aaaaaa02", "after")]), leaving=True), (200, {"version": 3}))
+        self.assertEqual((self.text("aaaaaa01"), self.text("aaaaaa02")), ("kept", "after"))
+        # gone before it could send them alone: each tried alone here, only the one refused lost
+        self.assertEqual(self.sent("p-two", ("p-two.1", [self.put("aaaaaa01", "mine"), self.BAD,
+                                                         self.put("aaaaaa02", "mine too")]),
+                                   ("p-two.2", [self.put("aaaaaa01", "mine, then")]), leaving=True)[0], 200)
+        self.assertEqual((self.text("aaaaaa01"), self.text("aaaaaa02")), ("mine, then", "mine too"))
+        self.assertEqual(self.sent("p-two", ("p-two.1.0", [self.put("aaaaaa01", "mine")]))[0], 200)   # late: once
+        self.assertEqual(self.text("aaaaaa01"), "mine, then")
+        self.assertEqual(self.sent("p-two", ("p-two.1.1", [self.BAD]))[0], 400)
+
+    def test_batches_not_named_or_not_lists_are_refused(self):
+        self.made()
+        for batches in ("x", [], [{"ops": []}], [{"id": "", "ops": []}], [{"id": "a" * 121, "ops": []}],
+                        [{"id": "p-one.9", "ops": "x"}], ["x"]):
+            with self.subTest(batches=batches):
+                status, got = self.ask("POST", "ops", {"by": "p-one", "batches": batches})
+                self.assertEqual(status, 400)
+                self.assertIn("batch", got["error"])
+        self.assertEqual(self.ask("GET", "state")[1]["version"], 1)
+
 
 class SourceTest(BookBase):
     """A block an agent wrote from its own conversation with the user names it, and when: its source. The user's
