@@ -574,6 +574,12 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - The SDK, `app_kit/js/app.js`, served on every app's origin at `/_ag/app.js`: events (read, subscribe, insert),
      tools (answer, call), agents, intents, the selection, the theme (its colours set on the panel's `:root`), the
      backend's messages, its own `/api/`; Esc and ⌘/Ctrl keys it leaves unhandled go on to the page.
+   - The kit, served on every app's origin at `/_ag/lib/` (`ag_dashboard/libs.py`): `kit.js` (`agKit`: `el`,
+     `patch`, `ago`) and `kit.css`, the theme's colours -- every one the host hands a panel (`theme-vars.ts`), light
+     and, under `:root[data-ag-theme="dark"]`, dark, with the dashboard's values (`theme-vars.test.ts` keeps them the
+     same as `base.css`'s). Each panel links it before its own stylesheets and reads `var(--ink)` with no fallback of
+     its own, so it is drawn in the theme's colours before the host's arrive too. DocWriter, built from its own
+     sources with its own palette, doesn't.
    - The page's side, `frontend/src/features/apps/host.ts`: an app's pane -- its frame, with no head over it, and a
      small × over its top right corner that closes the panel (the app left open); the panel keeps that corner clear,
      its bars along the top padded at their right by `var(--ag-corner)`, which the SDK sets. Its row in the list (or in

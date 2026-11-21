@@ -99,11 +99,16 @@ class PanelKitTest(unittest.TestCase):
         body, kind = libs.lib_file("kit.js")
         self.assertIn(b"window.agKit", body)
         self.assertTrue(kind.startswith("text/javascript"))
+        body, kind = libs.lib_file("kit.css")              # its colours: the theme's, light and dark
+        self.assertIn(b'[data-ag-theme="dark"]', body)
+        self.assertTrue(kind.startswith("text/css"))
         for app in ("browser", "files", "latex", "notes", "paper_news", "slack"):
             with self.subTest(app=app):
                 with open(os.path.join(self.ROOT, "ag_apps", app, "panel", "index.html"), encoding="utf-8") as fh:
                     page = fh.read()
                 self.assertLess(page.index('src="/_ag/lib/kit.js"'), page.index('src="/_ag/app.js"'))
+                first_sheet = page.index('<link rel="stylesheet"')        # the kit's colours, before its own
+                self.assertEqual(first_sheet, page.index('<link rel="stylesheet" href="/_ag/lib/kit.css">'))
                 if app in ("files", "latex", "notes"):
                     entry = f'<script type="module" src="{app}.js"></script>'
                     self.assertLess(page.index('src="/_ag/app.js"'), page.index(entry))
