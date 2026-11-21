@@ -17,7 +17,17 @@
 // at-bottom, which a turn growing turns false and its next draw acts on -- undoing a turn kept in place by a click
 // (keepTurn) -- where the end is followed by the reader's last scroll (follow.ts), as each turn's box and the footer
 // change size: a turn added, a reply streaming in, a turn growing in, alike.
-import { createContext, memo, use, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  createContext,
+  memo,
+  use,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { Virtuoso, type ItemProps, type VirtuosoHandle } from "react-virtuoso";
 import { plural } from "../../core/format";
 import { Measured, OVERSCAN_PX } from "../../core/ui/lists";
@@ -85,19 +95,24 @@ export function Turns({ talkRef, interrupting }: { talkRef: RefObject<HTMLDivEle
   });
   useShown(feed, talkRef, list, at);
   useSent(feed, talkRef, list, last);
+  // the same from draw to draw: Virtuoso takes another as its scroller made again
+  const scroller = useCallback(
+    (n: HTMLElement | Window | null) => {
+      if (n instanceof HTMLDivElement) followEnd((talkRef.current = n));
+    },
+    [talkRef],
+  );
   return (
     <DrawingContext value={{ placeOf, first, firstDrawn, setFirstDrawn, interrupting }}>
       <Measured>
         <Virtuoso
           ref={list}
-          scrollerRef={(n) => {
-            if (n instanceof HTMLDivElement) followEnd((talkRef.current = n));
-          }}
+          scrollerRef={scroller}
           className="fl-talk fl-list"
           tabIndex={undefined} // no tab stop of its own, as the box had none
           data={items}
           firstItemIndex={first}
-          computeItemKey={(_, n) => n}
+          computeItemKey={keyOf}
           itemContent={turnItem}
           initialItemCount={items.length <= DRAWN_AT_FIRST ? items.length : 0}
           increaseViewportBy={OVERSCAN_PX}
@@ -126,6 +141,7 @@ const TurnItem = memo(function TurnItem({ n }: { n: number }) {
   );
 });
 const turnItem = (_: number, n: number) => <TurnItem n={n} />;
+const keyOf = (_: number, n: number) => n;
 
 /** Above the turns: how many earlier ones are not drawn -- said as the first turn is on the page, not a frame before. */
 function Top() {

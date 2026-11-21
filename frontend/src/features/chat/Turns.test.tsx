@@ -31,6 +31,7 @@ describe("Turns", () => {
     const { page } = testPage(turns(8));
     const node = page.draw();
     expect(node.className).toBe("fl-talk fl-list");
+    expect(node.hasAttribute("tabindex")).toBe(false); // no tab stop of its own, as before
     expect(node.querySelector(".fl-top > .fl-earlier")!.textContent).toBe("3 earlier turns · scroll up for more");
     expect(ids(node)).toEqual(["fl-turn-3", "fl-turn-4", "fl-turn-5", "fl-turn-6", "fl-turn-7"]);
     expect(drawnTurns(node).map((t) => t.className)).toEqual([

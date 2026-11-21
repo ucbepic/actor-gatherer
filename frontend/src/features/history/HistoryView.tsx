@@ -7,7 +7,16 @@
 // below the rows, clears it; ⌘A selects every row listed. Each row is drawn by its key, so a selection, a row opened and
 // the scroll stay as the history grows. The rows laid out by react-virtuoso (Rows): all of them listed, those in sight
 // and a few screens around them on the page.
-import { memo, useEffect, useMemo, useRef, type CSSProperties, type MouseEvent, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+  type MouseEvent,
+  type RefObject,
+} from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Virtuoso } from "react-virtuoso";
@@ -430,18 +439,23 @@ function Rows({
   more: (() => unknown) | null;
 }) {
   const last = rows.length - 1;
+  // the same from draw to draw: Virtuoso takes another as its scroller made again
+  const scroller = useCallback(
+    (n: HTMLElement | Window | null) => {
+      listRef.current = n instanceof HTMLDivElement ? n : null;
+    },
+    [listRef],
+  );
   return (
     <Measured>
       <Virtuoso
         className="h-list h-rows"
         data-keep={`hist-list:${h.key}`}
         {...press}
-        scrollerRef={(n) => {
-          listRef.current = n instanceof HTMLDivElement ? n : null;
-        }}
+        scrollerRef={scroller}
         tabIndex={undefined} // no tab stop of its own, as the list had none
         data={rows}
-        computeItemKey={(_, row) => row.key}
+        computeItemKey={rowKey}
         itemContent={(i, row) => {
           const hitRows = hits ? row.n.rows.filter((r) => hits.has(r)) : [];
           return (
@@ -468,6 +482,7 @@ function Rows({
 
 /** The rows put on the page as the view opens, before the list has measured its box: more than a tall screen holds. */
 const ROWS_AT_FIRST = 200;
+const rowKey = (_: number, row: VisibleRow) => row.key;
 
 const ROWS_PARTS = {
   Header: () => <div className="h-top" />,

@@ -222,6 +222,7 @@ describe("a long history", () => {
     try {
       const node = drawn(outline({ events: long(3000), more: true }));
       const shown = rows(node);
+      expect(node.querySelector(".h-list")!.hasAttribute("tabindex")).toBe(false); // no tab stop of its own
       expect(shown.length).toBeGreaterThan(10);
       expect(shown.length).toBeLessThan(200);
       expect(shown[0].className).toBe("h-row turn nested first");
