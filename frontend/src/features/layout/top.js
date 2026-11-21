@@ -4,7 +4,7 @@ import {
 } from "../../core/page/helpers.js";
 import { drawn, loadChat, mainSignature } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
-import { markSeen, statusOf } from "../list/seen.js";
+import { markSeen, statusOf } from "../list/seen";
 import { paneOf, placeIfShown, placeWork, workPlacer } from "./panes.js";
 import { renderMain } from "../page/main-view.js";
 import { chatToEnd } from "../chat/chat.js";

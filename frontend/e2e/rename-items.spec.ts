@@ -1,4 +1,4 @@
-// A TASK or an APP NAMED by the user, as an actor is (features/list/list.js's startItemRename): its name in its row
+// A TASK or an APP NAMED by the user, as an actor is (features/list/naming.ts's startItemRename): its name in its row
 // double-clicked (or F2 on its row), or its card's pencil -- a box with its name in it; Enter keeps what is typed, Esc
 // leaves it, nothing typed takes the name back. A task's name kept by the dashboard (POST /api/tasks rename), an app's
 // with its instance (POST /api/apps/rename), which its panel's head shows too and is named in by a double-click

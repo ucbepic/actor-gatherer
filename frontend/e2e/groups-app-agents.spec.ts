@@ -1,4 +1,4 @@
-// An app's own agent and its window between groups (features/list/group-moves.js's withOwn; groups.py's `_own`): in the home's one
+// An app's own agent and its window between groups (features/list/drag-rules.ts's withOwn; groups.py's `_own`): in the home's one
 // database, an app's agent -- one it started, its role naming the app's window -- and that window go together, as a
 // task does, whichever is dragged: so a group's only one of its app goes with its own agent, outside every group, or
 // into a group that has one of its own, where it closes and its agent works with that one, its pane showing that one.

@@ -1,4 +1,4 @@
-// A TASK SAVED AND CLOSED (features/list/list.js's taskSaveButton, taskCloseButton): its bookmark saves every actor in it; its
+// A TASK SAVED AND CLOSED (features/list/RowViews.tsx's taskSaveButton, taskCloseButton): its bookmark saves every actor in it; its
 // × closes them and puts its apps to sleep (kept, in the task: app_host.py's `sleep_instance`), opened again as it was --
 // from its row in the list, or its tile in the folded rail; in its card, each actor's and each app's own close (an app's
 // closing it for good: closeApp), and "take out" a mark of its own. An app on its own: closed from its card or its tile.

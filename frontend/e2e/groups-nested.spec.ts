@@ -1,5 +1,5 @@
 // Groups inside another group's folder, and the two settings (the Notes design "Groups: folders, defaults and Manage
-// groups"; features/list/group-moves.js's placeOf, askOwn, askAbove, askAloneHere, askJoin; groups.py's `place`, `own`, `above`):
+// groups"; features/list/groups.ts's placeOf, askOwn, askAbove, askAloneHere, askJoin; groups.py's `place`, `own`, `above`):
 // a folder takes its parent's group or has its own, an actor has its folder's group or is on its own. The list says
 // nothing of groups: a group placed in a folder is drawn there as a folder is, an actor on its own there as any actor,
 // with no switch of theirs; a drop follows the default rule (into a folder: its group). Manage groups has the switches,

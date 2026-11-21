@@ -1,4 +1,4 @@
-// Folders in the list (folders.py; features/list/list.js "FOLDERS"): made, filled, nested, renamed, deleted; an actor's
+// Folders in the list (folders.py; features/list/list.ts "FOLDERS"): made, filled, nested, renamed, deleted; an actor's
 // saved and closed lines in its folder; several actors moved at once; actors started in a folder; and in the rail, a
 // folder's and a gatherer's cards, with their buttons and their tree, what it shows over every gatherer, and where an
 // actor's bookmark sits however deep its folder.

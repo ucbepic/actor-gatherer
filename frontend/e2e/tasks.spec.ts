@@ -1,4 +1,4 @@
-// TASKS (features/list/list.js, tasks.py): actors and apps alike kept together as one task -- one row in the list, its actors'
+// TASKS (features/list/list.ts, tasks.py): actors and apps alike kept together as one task -- one row in the list, its actors'
 // faces and its apps' marks at its right, opened as one layout (its apps above, its actors side by side), its card listing
 // them, each taken out from there -- "+", on an item's row or a task's, adding to its task a new actor or an app (a task
 // made of the two, for a lone one), an item dragged onto another's row put in its task, and an app in no task a row of

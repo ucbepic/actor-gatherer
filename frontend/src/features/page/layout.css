@@ -114,7 +114,7 @@ button.agent-group:hover { color: var(--ink-2); }
 /* what it runs in the background, under its facts: how many, and what they are for */
 .agent .bgline { font-size: var(--fs-meta); color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agent .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
-/* an actor is a task too (features/list/list.js's agentRow): its state at its left, on its name's line, its face at its right;
+/* an actor is a task too (features/list/RowViews.tsx's agentRow): its state at its left, on its name's line, its face at its right;
    its state in a word on its meta line, as a task's line says it */
 .a-main > .dot { justify-self: center; margin-top: 6px; }
 .a-main > .dot.running { margin-top: 4.5px; }
@@ -272,7 +272,7 @@ button.agent-group:hover { color: var(--ink-2); }
    folder's, the centre line kept */
 .rail .r-gatherer > :is(.r-kids, .r-actor, .r-fopen, .r-ffold, .r-fold, .r-none) { margin-left: 4px; margin-right: 4px; }
 .rail .r-fopen > .r-kids > :is(.r-fopen, .r-ffold) { margin-left: 3px; margin-right: 3px; }
-/* A FOLDER OF GATHERERS (features/list/gatherer-folders.js, r-gf): as a gatherer's folders are -- its name in a bracket, a little
+/* A FOLDER OF GATHERERS (features/list/gatherer-folders.ts, r-gf): as a gatherer's folders are -- its name in a bracket, a little
    bolder -- in the rail's gutter at its top, 4px in from both sides; the gatherers in it not set in further, so every
    avatar stays on the centre line; a folder in it 3px in from both, as a folder in a folder */
 .rail .r-actors > .r-gf { width: calc(100% - 8px); margin-left: 4px; margin-right: 4px; }
@@ -308,7 +308,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .rail .r-here .r-hname[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .rail .r-here .r-hname:is(:hover, :focus-visible) { background: var(--wash); outline: none; }
 .rail .r-here.folder .r-hname { font-weight: 600; }
-/* an actor dragged onto a name (features/list/list.js "DRAGGING"): the name it would go in lit, as the list's folder line is;
+/* an actor dragged onto a name (features/list/list.ts "DRAGGING"): the name it would go in lit, as the list's folder line is;
    what is dragged, faded; selected with Shift+click, tinted in the selection's colour, a check at its avatar's top right
    (its bookmark and × are at its left) once two are */
 .rail :is(.r-fname, .r-fhead, .r-gname, .r-hname, .r-step).drop-on { background: color-mix(in srgb, var(--s1) 18%, transparent);
@@ -411,7 +411,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .actor-card .c-row .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .actor-card .c-row .st { flex: none; color: var(--muted); font-size: var(--fs-label); }
 .actor-card .c-more { color: var(--muted); font-size: var(--fs-meta); }
-.actor-card .c-tab { color: var(--ink-2); font-size: var(--fs-meta); }   /* where it is open: the tab (features/list/list.js's tabLine) */
+.actor-card .c-tab { color: var(--ink-2); font-size: var(--fs-meta); }   /* where it is open: the tab (features/list/CardParts.tsx's tabLine) */
 .actor-card .c-hint { color: var(--muted); font-size: var(--fs-label); border-top: 1px solid var(--grid); padding-top: 5px; margin-top: 1px; }
 :root.list-full .side { position: fixed; inset: var(--bar-h) 0 0 0; z-index: var(--z-list-over); border-right: 0; }
 :root.list-full .work { grid-column: 2; grid-row: 1; }
@@ -530,7 +530,7 @@ button.agent-group:hover { color: var(--ink-2); }
   .monitor .m-body { overflow: visible; } }
 .servers { color: var(--ink-2); font-size: var(--fs-meta); }
 main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relative; overflow: hidden; }
-/* THE LIST HIDDEN (features/list/modes.js's setListHidden), the list or the rail: its column none, the panes the page's whole
+/* THE LIST HIDDEN (features/list/modes.ts's setListHidden), the list or the rail: its column none, the panes the page's whole
    width, a thin edge at the page's left (.list-edge); the pointer on it (list-peek), the list slides out over the panes,
    and back once the pointer has left it */
 :root.list-hidden:not(.list-full) .layout { grid-template-columns: 0 minmax(0, 1fr); }

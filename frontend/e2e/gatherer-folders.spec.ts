@@ -1,4 +1,4 @@
-// Folders of gatherers (gatherer_folders.py; features/list/gatherer-folders.js): none at first, the list as without them; one made
+// Folders of gatherers (gatherer_folders.py; features/list/gatherer-folders.ts): none at first, the list as without them; one made
 // as the server makes them (the list makes none: its folder button makes a group, groups-merge.spec.ts), a gatherer dragged into it and out onto the head, folders in folders, folded (nothing of it in
 // view), renamed and deleted -- no counts, no start buttons on their lines, no actor dropped in one; and
 // in the rail, the same folders, folded and opened there.

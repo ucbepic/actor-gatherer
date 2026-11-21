@@ -1,7 +1,8 @@
 # The dashboard on a standard stack: plan
 
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
-the views share, in `core/ui/`; Chat; the list; Details, Transcript, Messages, History and Terminal's frame). A1's build step, the server serving it and `publish.yml` building it come with A3, the
+the views share, in `core/ui/`; Chat; the list, all of it TypeScript; Details, Transcript, Messages, History and Terminal's
+frame). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
 
@@ -426,17 +427,17 @@ pattern the list and Chat follow:
   folders of groups, groups placed in another's folder, actors on their own, coordinator nodes, counts and the top
   bar's totals), `envelope.ts` (a message between actors in a line; its patterns checked against coordination.py's) --
   and `model.ts`'s `buildList(ctx, view)` turns the home (`ListCtx`: the home and what the page knows of it) and the
-  reader's choices and what is shown (`ListView`) into one tree of plain data (`rows.ts`). The old modules keep thin
-  wrappers by the old names (`list.js`'s `CTX`), so the rail, the monitor, the cards and Manage groups call them as
-  before. Vitest: `derive.test.ts`, `model.test.ts`.
+  reader's choices and what is shown (`ListView`) into one tree of plain data (`rows.ts`). `list.ts`'s `CTX` is the
+  home they read; `bound.ts` binds them to it under the names the old page's modules call. Vitest: `derive.test.ts`,
+  `model.test.ts`.
 - *Drawn by React:* `renderAgents()` builds the model and hands it to `mount.tsx`'s `drawList` (a Zustand store,
   `store.ts`, rendered at once with `flushSync`, as Chat's turn list is), then does what it did after drawing (the
   hover card, the pick bar, the tabs). `AgentList.tsx`, `Boxes.tsx` and `RowViews.tsx` draw every node by its key,
   so a row stays the same element from one draw to the next: in focus, hovered or dragged, it stays so. What a press
-  does, and what of a row the page still builds -- a gatherer's and a folder's start buttons and "⋯" menus, the
-  list's head, the form for a new actor, a branch, a harness's mark -- the list asks of the page (`host.ts`'s
-  `ListHost`, `list.js`'s `LIST_HOST`); those built parts go whole into the list's own elements (`useFilled`), so
-  the DOM, and every class the CSS and the browser specs read, is as before. A row's "+" is Radix's DropdownMenu.
+  does, and what of a row the page still builds -- what a gatherer's and a folder's "+" holds, the form for a new
+  actor, a branch, a harness's mark -- the list asks of its host (`host.ts`'s `ListHost`, `list-host.ts`'s
+  `LIST_HOST`); the built parts go whole into the list's own elements (`useFilled`), so the DOM, and every class the
+  CSS and the browser specs read, is as before. A row's "+" is Radix's DropdownMenu.
   Gone with the redraws: the name box carried through them (`nameMoving`, the caret put back), the press held till
   its click (`pressHeld`). The rows' slide into their new places stays (`listPlaces`, `slideList`, on the same nodes
   now); the drag kept from redraws (`listDrag.later`, `DRAG_LOST_MS`), the menus found again by `data-pop` and the
@@ -457,8 +458,8 @@ pattern the list and Chat follow:
   watched as before), the top bar's counts (`Totals.tsx`), the hover card (`Card.tsx`, `CardTask.tsx`,
   `CardFolder.tsx`, `CardParts.tsx`: the page still decides which card, where and when, and places it), and Manage
   groups with a move's question (`manage-model.ts`; `ManageGroups.tsx`, on Radix's Dialog, each still a `<dialog>`
-  with its classes, on a backdrop of its own, `.mg-dim`). `modes.js` and `group-moves.js` keep the state and what a
-  press does, handed to the views as hosts. Gone with the redraws: the drag kept from them (`listDrag.later`,
+  with its classes, on a backdrop of its own, `.mg-dim`). What a press does is handed to the views as hosts. Gone with
+  the redraws: the drag kept from them (`listDrag.later`,
   `DRAG_LOST_MS` -- the row dragged now says its dragend itself, by a listener of its own), the card kept off a
   resting pointer (`hover.still`), the card's name box carried through them (`cardMoving`) and Manage groups' (`manage.
   drawing`); a box a draw itself takes away is not the reader leaving it (`drawingNow`). A rail tile's bookmark and ×
@@ -468,6 +469,31 @@ pattern the list and Chat follow:
   press the page never hears as the page's own drop-downs are (`pressedAway`'s `PRESSED_AWAY`); an item that opens a box
   or the branch picker opens it from the same button, the menu closed (its second step, `openPop` by the button's
   `data-pop`). The card's "+ actor" and "+ ⋯", the new-tab page's and the panes' drop-downs are `openPop`'s still.
+- *The rest of the list in TypeScript:* what was left of it in the old page's JS -- list.js, group-moves.js, modes.js,
+  seen.js, gatherer-folders.js -- is gone, into modules of `features/list/` by what each does: the reader's choices,
+  the home's hiding, titles and bookmarks, the selection and the list's draw (`list.ts`, its host `list-host.ts`);
+  folders (`folders.ts`), folders of groups (`gatherer-folders.ts`), naming (`naming.ts`), the apps read
+  (`apps.ts`), tasks and what a press on an item does (`task-acts.ts`), dragging (`drag.ts`), moves between groups
+  (`group-moves.ts`) and Manage groups with the move's question (`manage.ts`), the list's shapes, its hiding and the
+  rail (`modes.ts`), the hover card (`hover-card.ts`), the monitor's feed (`monitor-feed.ts`), the rows' slide
+  (`slide.ts`), what the page has seen (`seen.ts`), the faces the old page's modules draw (`faces.ts`). What of it is
+  only logic is apart and tested: what a drag may do and what its drop does (`drag-rules.ts`), what a change of the
+  folders does to a tree and the names it refuses (`folder-edits.ts`), what a move between groups says first
+  (`move-plan.ts`), the looks and tasks a home brings (`seen-model.ts`), where the hover card goes (`card-place.ts`)
+  -- Vitest: `moves.test.ts`. The parts still drawn by hand are React's: the list's head (`Head.tsx`: the drop outside
+  every group, a new group, an actor on its own, the coordinator agent over everything), its own buttons over the list,
+  the rail and in the top bar (`ListButtons.tsx`), a folder of groups' buttons (`Menus.tsx`'s `GfActs`), and the bar
+  for the actors selected (`PickBar.tsx`, `pick-bar.tsx`) -- Vitest: `bars.test.tsx`. Its "Move to…" and a task card's
+  "+" are Radix's DropdownMenu as the list's other menus are (`Menus.tsx`'s `PageMenu`: closed by a press the page never
+  hears, the page resizing or its box scrolling; a card stays while its menu is open, `hover-card.ts`'s `cardLetGo`).
+  The head's "+" for an actor on its own still opens the panes' start box (`openPop`, `railNewBox`).
+  A feature's TypeScript may not import another feature's modules, nor the old page's plain JS: what the list takes of
+  them -- the panes and their tasks, the page's data and state, Chat's, the apps' -- comes through one link
+  (`link.ts`'s `ListPage`, typed member by member), each module's namespace handed over by `src/list-link.js` before any
+  module starts (page.js), so a value one of them changes later is read as it is then. The old page's modules import
+  the list as before, from `list.ts`, `seen.ts`, `modes.ts`, `group-moves.ts` and `gatherer-folders.ts`. The list's
+  modules load one another in a ring, so none reads another's value as it loads: what an object needs of another
+  module it reads when asked (a getter, or a host made at its first use).
 
 **A5, the actor's other views in React.** What the old page still drew by hand of an actor beside Chat, each moved as
 Chat was: a component scoped to the actor key the page hands it (taken from `state.selected` in one place, chat's
@@ -507,7 +533,7 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
   an actor shown again, where it was fetched afresh), the gatherer's records (fetched again after 10 s, every 2 s while
   one is made), a search's hits, an opened message's whole text. The types shown are Radix's DropdownMenu (checkbox
   items; a pick keeps it open), in place of a `details` closed by a click elsewhere; its button and menu restyled as the
-  summary and box were. history.js only registers the view (and keeps `enc`, which the list's modes.js imports); it is
+  summary and box were. history.js only registers the view (and keeps `enc`, which the list's monitor feed uses); it is
   off the long files' list. Not virtualized: the list keeps its rows' `content-visibility`, and the browser's find and
   the specs read every row. Vitest: `history.test.tsx`.
 - **Terminal**: xterm.js as it was, wrapped -- the terminal's session (`terminal/term.ts`: one xterm at a time, its node

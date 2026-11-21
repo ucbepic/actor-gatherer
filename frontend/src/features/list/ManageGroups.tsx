@@ -4,7 +4,7 @@
 // neither closes it. Manage groups (manage-model.ts's rows): each group, its folders and actors set in by depth, each
 // with its switch; rows dragged and dropped as the list's are, a change of group asked first. The question: what moves,
 // from which group to which, and who rebuilds its context; Cancel, and the button that does it. What each does is the
-// page's (features/list/group-moves.js's DIALOG_HOST).
+// page's (features/list/manage.ts's DIALOG_HOST).
 import * as D from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useRef, type CSSProperties, type DragEvent, type ReactNode } from "react";
 import { Html } from "../../core/ui/PageNode";
@@ -12,7 +12,7 @@ import { drops } from "./Boxes";
 import { titleOf } from "./groups";
 import type { ListHost, PageParts } from "./host";
 import type { MgActorRow, MgRow } from "./manage-model";
-import { Face } from "./Parts";
+import { Face, OutsideDrop } from "./Parts";
 import { drags } from "./RowViews";
 import { actorTitle } from "./tasks";
 import type { Actor, Folder, Gatherer, ListCtx } from "./types";
@@ -202,44 +202,13 @@ function Manage({
           Actors share context only within their group. Change a folder&apos;s or actor&apos;s group with its switch, or
           drag rows as in the list. Each change asks for confirmation.
         </p>
-        <OutsideDrop host={host} />
+        {host.snapshot || !host.ctx.home.merged ? null : <OutsideDrop can={host.outsideCan} drop={host.outsideDrop} />}
       </div>
       <div className="mg-tree">
         {rows.map((r) => (
           <Row key={r.key} r={r} naming={naming} host={host} />
         ))}
       </div>
-    </div>
-  );
-}
-
-/** The place to drop what is dragged outside every group, over the panel's top line: shown while such a drag goes on. */
-function OutsideDrop({ host }: { host: DialogsHost }) {
-  if (host.snapshot || !host.ctx.home.merged) return null;
-  return (
-    <div
-      className="outside-drop"
-      onDragEnter={(ev) => {
-        if (!host.outsideCan()) return;
-        ev.preventDefault();
-        ev.currentTarget.classList.add("drop-on");
-      }}
-      onDragOver={(ev) => {
-        if (!host.outsideCan()) return;
-        ev.preventDefault();
-        ev.dataTransfer.dropEffect = "move";
-      }}
-      onDragLeave={(ev) => {
-        if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) ev.currentTarget.classList.remove("drop-on");
-      }}
-      onDrop={(ev) => {
-        if (!host.outsideCan()) return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        host.outsideDrop();
-      }}
-    >
-      Outside every group: a group of its own
     </div>
   );
 }

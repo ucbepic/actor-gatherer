@@ -2,8 +2,8 @@ import { PANE, panes, state } from "../../core/page/state.js";
 import { ICONS, el, signature, strokeIcon } from "../../core/page/helpers.js";
 import { render } from "../page/data.js";
 import { connect } from "../settings/panel.js";
-import { closeShell, firstAgent, isHidden } from "../list/list.js";
-import { select } from "../list/modes.js";
+import { closeShell, firstAgent, isHidden } from "../list/list";
+import { select } from "../list/modes";
 import { closeHere, savePanes } from "../layout/panes.js";
 import { termFor, termListen, termWebgl } from "./terminal.js";
 

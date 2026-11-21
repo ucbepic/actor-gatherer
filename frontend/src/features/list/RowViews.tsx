@@ -101,7 +101,7 @@ function AddMenu({ host, g, k, title }: { host: ListHost; g: Gatherer; k: string
             onClick={stop}
             onContextMenu={stop}
             onDoubleClick={stop}
-            // Esc closes the menu, not the selection under it too (list.js's Esc)
+            // Esc closes the menu, not the selection under it too (list.ts's Esc)
             onEscapeKeyDown={stop}
           >
             <div className="hd">{`Add to ${menu.where}`}</div>

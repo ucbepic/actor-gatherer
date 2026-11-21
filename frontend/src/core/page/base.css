@@ -70,8 +70,8 @@ body { margin: 0; background: var(--page); color: var(--ink); font: var(--fs-bod
 .topbar .lb-full:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 /* how many of the shown groups' actors wait for the reader, stopped on an error, run, run in the background, finished
    unseen: each its mark as the list draws it (running: the logo's dots going round; in the background: green), and the
-   number; idle only when nothing else is (features/list/modes.js's drawTotals). The list hidden, the pointer on them slides it out
-   (features/list/modes.js): the bar's whole height, so going straight down from them is onto the list */
+   number; idle only when nothing else is (features/list/modes.ts's drawTotals). The list hidden, the pointer on them slides it out
+   (features/list/modes.ts): the bar's whole height, so going straight down from them is onto the list */
 .top-totals { flex: none; align-self: stretch; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; font-size: var(--fs-meta); color: var(--ink-2);
   font-variant-numeric: tabular-nums; }
 .top-totals:empty { display: none; }

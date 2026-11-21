@@ -310,3 +310,35 @@ export function AskClose({
     </div>
   );
 }
+
+/** The place to drop what is dragged outside every group -- over the list's head, and over Manage groups' top line --
+ * shown while such a drag goes on (body.drag-out; drag.ts's showOutside says what it does there): `can`, whether what is
+ * dragged may go there; `drop`, it dropped there. */
+export function OutsideDrop({ can, drop }: { can: () => boolean; drop: () => void }) {
+  return (
+    <div
+      className="outside-drop"
+      onDragEnter={(ev) => {
+        if (!can()) return;
+        ev.preventDefault();
+        ev.currentTarget.classList.add("drop-on");
+      }}
+      onDragOver={(ev) => {
+        if (!can()) return;
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "move";
+      }}
+      onDragLeave={(ev) => {
+        if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) ev.currentTarget.classList.remove("drop-on");
+      }}
+      onDrop={(ev) => {
+        if (!can()) return;
+        ev.preventDefault();
+        ev.stopPropagation(); // the list's head it is over: not dropped there too
+        drop();
+      }}
+    >
+      Outside every group: a group of its own
+    </div>
+  );
+}

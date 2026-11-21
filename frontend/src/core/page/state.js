@@ -19,7 +19,7 @@ let state = { home: null, selected: null, agent: null, paused: false, stream: nu
   chat: null,           // the history feed's messages: {key, items (stored, append-only), pending, last_row}
   adding: null,         // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
   renaming: null };     // the actor being named in the list: {g, c, value (as typed so far), was (its name before)}; a
-                        // task or an app: c its item, kind, auto (features/list/list.js's startItemRename); the gatherer: c null
+                        // task or an app: c its item, kind, auto (features/list/naming.ts's startItemRename); the gatherer: c null
 if (PANE) state.selected = [PANE_URL.get("gatherer") || "", PANE_URL.get("channel") || ""];
 // The actors open side by side (panes, below): this page's own view (`here`, its actor state.selected), the
 // first, and the others (`others`), each the page in a frame (the one in focus: the layout model's, panes.js's

@@ -1,7 +1,7 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import { harnessInfo } from "../../core/page/helpers.js";
 import { setAbout } from "../page/data.js";
-import { aimStart, renderAgents } from "../list/list.js";
+import { aimStart, renderAgents } from "../list/list";
 import {
   appClosed, openAppTab, startable, startCwd, startWithApp, workPlacer,
 } from "../layout/panes.js";

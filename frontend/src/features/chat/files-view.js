@@ -4,7 +4,7 @@ import {
 } from "../../core/page/helpers.js";
 import { earlierTurns, fitBox, loadChat, refresh, render, setLive } from "../page/data.js";
 import { $ } from "../settings/panel.js";
-import { MANAGER, crewFace, envelope } from "../list/list.js";
+import { MANAGER, crewFace, envelope } from "../list/list";
 import { DETAILS_TIP, dashboardCommand, setDetails } from "../page/main-view.js";
 import { chatToEnd, permissionVerb, permissionView } from "./chat.js";
 import { fullscreenFor, term } from "../terminal/terminal.js";

@@ -178,4 +178,27 @@ describe("the hover card", () => {
     fireEvent.click(box.querySelector(".c-acts .act.new")!);
     expect(calls(host).editIn).toHaveBeenCalledWith({ g: "g", id: null, parent: 1 });
   });
+
+  it("a task's: its + a menu of Radix's, what it adds; an item chosen runs, and the card is told it closed", () => {
+    const run = vi.fn();
+    const t = { id: 3, name: "Work" };
+    const tasked = { gatherers: [g], tasks: { g: { tasks: [t], tasked: { a1: 3 } } } };
+    const host = hostOf<CardHost>({
+      ctx: ctxOf(tasked),
+      ...parts,
+      adds: () => ({ key: "card-task-add:g/a1", title: "Add an agent to this task" }),
+      addMenu: () => ({ where: "Work", items: [{ mark: span("badge"), text: "Codex", run }] }),
+    });
+    drawCard(boxOf(), { what: { kind: "task", g, t }, edit: null }, host);
+    const add = box.querySelector<HTMLButtonElement>(".c-acts button.task-add")!;
+    expect(add.getAttribute("data-pop")).toBe("card-task-add:g/a1");
+    expect(add.getAttribute("aria-label")).toBe("Add to this task");
+    fireEvent.keyDown(add, { key: "Enter" });
+    const menu = document.querySelector(".row-menu[role=menu]")!;
+    expect(menu.getAttribute("aria-label")).toBe("Add to Work");
+    expect(add.getAttribute("aria-expanded")).toBe("true"); // (the card kept while it is: hover-card.ts's cardLetGo)
+    fireEvent.click(menu.querySelector("[role=menuitem]")!);
+    expect(run).toHaveBeenCalled();
+    expect(calls(host).addClosed).toHaveBeenCalled();
+  });
 });

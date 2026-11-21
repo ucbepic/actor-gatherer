@@ -10,6 +10,7 @@ import { Html } from "../../core/ui/PageNode";
 import type { ListHost, MenuInfo } from "./host";
 import { CrewButton } from "./Parts";
 import type { FolderNode } from "./rows";
+import { GF } from "./tree";
 import type { Folder, Gatherer } from "./types";
 
 /** The event the page sends when a press it never hears is made (a pane's frame, an app's panel). */
@@ -18,19 +19,22 @@ export const PRESSED_AWAY = "ag-pressed-away";
 const stop = (ev: { stopPropagation(): void }) => ev.stopPropagation();
 
 /** A button with a menu of the page's (`menu`, made as it opens): the page's own drop-down look (.br-menu.row-menu, its
- * heading, its items, its separators). `opening`: what a press does first, before the menu opens. */
-function PageMenu({
+ * heading, its items, its separators). `opening`: what a press does first, before the menu opens; `closed`, what its
+ * closing does after. */
+export function PageMenu({
   host,
   trigger,
   children,
   menu,
   opening,
+  closed,
 }: {
   host: Pick<ListHost, "icon">;
-  trigger: { className: string; "data-pop": string; title: string; "aria-label": string; disabled?: boolean };
+  trigger: { className: string; "data-pop": string; title: string; "aria-label"?: string; disabled?: boolean };
   children: ReactNode;
   menu: () => MenuInfo | null;
   opening?: () => void;
+  closed?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
@@ -65,6 +69,7 @@ function PageMenu({
           opening?.();
         }
         setOpen(next);
+        if (!next) closed?.();
       }}
     >
       <Menu.Trigger asChild>
@@ -86,7 +91,7 @@ function PageMenu({
             onClick={stop}
             onContextMenu={stop}
             onDoubleClick={stop}
-            // Esc closes the menu, not the selection under it too (list.js's Esc)
+            // Esc closes the menu, not the selection under it too (list.ts's Esc)
             onEscapeKeyDown={stop}
             // an item chosen: what it opened keeps the focus (a box's input), the button not given it back
             onCloseAutoFocus={(ev) => {
@@ -182,7 +187,7 @@ export function GathererActs({ host, g, title }: { host: ListHost; g: Gatherer; 
 }
 
 /** A small button on a folder's line, beside its start buttons. */
-function FolderAct({ cls, title, icon, run }: { cls: string; title: string; icon: Node; run: () => void }) {
+export function FolderAct({ cls, title, icon, run }: { cls: string; title: string; icon: Node; run: () => void }) {
   return (
     <button
       className={`act folder-act ${cls}`}
@@ -242,6 +247,35 @@ export function FolderActs({ host, n }: { host: ListHost; n: FolderNode }) {
         title={`Close ${f.name} and every actor in it`}
         icon={host.closeIcon()}
         run={() => host.pressClose(g, f)}
+      />
+    </>
+  );
+}
+
+/** A folder of gatherers' buttons, over its line's right while it is hovered or in focus: its coordinator agent's face
+ * (in the home's one database, none yet), a folder made in it, it renamed (F2), it deleted (what is in it moves up a
+ * level). */
+export function GfActs({ host, f, crew, merged }: { host: ListHost; f: Folder; crew: boolean; merged: boolean }) {
+  return (
+    <>
+      {merged && !crew ? <CrewButton host={host} g={null} node={`groups:${f.id}`} /> : null}
+      <FolderAct
+        cls="new"
+        title={`New folder in ${f.name}`}
+        icon={host.icon("folderNew", 14)}
+        run={() => host.startFolderEdit(GF, null, f.id)}
+      />
+      <FolderAct
+        cls="rename"
+        title={`Rename ${f.name} (F2)`}
+        icon={host.icon("pencil", 13)}
+        run={() => host.startFolderEdit(GF, f.id)}
+      />
+      <FolderAct
+        cls="delete"
+        title={`Delete ${f.name} · its contents move up a level`}
+        icon={host.icon("bin", 14)}
+        run={() => host.deleteFolder(GF, f.id)}
       />
     </>
   );

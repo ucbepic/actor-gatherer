@@ -1,7 +1,7 @@
 import { AGO_MS, PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import { refresh, render } from "./data.js";
 import { $, connect } from "../settings/panel.js";
-import { renderAgents } from "../list/list.js";
+import { renderAgents } from "../list/list";
 import {
   closeHerePane, focusPane, paneReady, restoreAppPanes, showActorsApp, startPlacing, watchTop,
 } from "../layout/panes.js";

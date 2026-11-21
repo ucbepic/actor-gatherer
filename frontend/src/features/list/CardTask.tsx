@@ -7,7 +7,8 @@ import { appItem, key, taskId } from "../../core/model/keys";
 import { Html } from "../../core/ui/PageNode";
 import { CardAct, EditBox, RowStatus, TabLine, type CardEdit, type CardHost, type Notice } from "./CardParts";
 import { titleOf } from "./groups";
-import { Face, RowButton } from "./Parts";
+import { PageMenu } from "./Menus";
+import { Face } from "./Parts";
 import { actorSave, closeButton } from "./RowViews";
 import { appKey, appNotices, closeHow, groupOf, LEAD_RANK, savedAs, statusOf } from "./status";
 import {
@@ -60,24 +61,25 @@ function TaskFaces({ host, g, t }: { host: CardHost; g: Gatherer; t: Task }) {
   );
 }
 
-/** "+" on a task's card: an agent or an app added to it, from its menu. */
+/** "+" on a task's card: an agent or an app added to it, from its menu (Radix's, as Menus.tsx's) -- the card kept
+ * while it is open, let go of once it closes and the pointer is off the card. */
 function AddAct({ host, g, k, label }: { host: CardHost; g: Gatherer; k: string; label: string }) {
   const add = host.adds(g, k, label);
   if (!add) return null;
   return (
-    <RowButton
-      className="task-add"
-      title={add.title}
-      aria-label="Add to this task"
-      data-pop={add.key}
-      aria-haspopup="menu"
-      aria-expanded="false"
-      run={(b) => host.openAdd(g, k, label, b)}
+    <PageMenu
+      host={host}
+      trigger={{ className: "task-add", "data-pop": add.key, title: add.title, "aria-label": "Add to this task" }}
+      menu={() => {
+        const m = host.addMenu(g, k);
+        return m && { head: `Add to ${m.where}`, items: m.items };
+      }}
+      closed={() => host.addClosed()}
     >
       <span className="task-add-in" aria-hidden="true">
         +<span className="t-lbl">{label}</span>
       </span>
-    </RowButton>
+    </PageMenu>
   );
 }
 

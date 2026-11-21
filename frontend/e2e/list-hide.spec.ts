@@ -1,4 +1,4 @@
-// THE LIST HIDDEN (features/list/modes.js's setListHidden): its button puts the list out of the way at once, the panes the
+// THE LIST HIDDEN (features/list/modes.ts's setListHidden): its button puts the list out of the way at once, the panes the
 // page's whole width, a thin edge at its left; the pointer on that edge, the list slides out over the panes, whole, and
 // stays while the pointer is on it -- still or moving -- and goes a moment after the pointer has left it. Kept in this
 // browser; the button again keeps it open. The top bar's counts (#top-totals) slide it out as the edge does.

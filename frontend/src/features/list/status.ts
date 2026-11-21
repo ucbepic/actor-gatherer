@@ -1,5 +1,5 @@
 // AN ITEM'S STATUS, as the list says it: an actor's (statusOf), worked out by the server from what was recorded of it
-// (data.py's status_of), what the page started (core/model/session.ts) and what the reader has seen of it (seen.js); an
+// (data.py's status_of), what the page started (core/model/session.ts) and what the reader has seen of it (seen.ts); an
 // app's from the notifications its app sent and the reader has not seen (appStatusOf). Each said as [its class, its
 // word]; an actor's then put in a GROUP of the list (groupOf), as the counts, a task's lead and the monitor's columns
 // rank them.

@@ -1,4 +1,4 @@
-// WHAT "+" DOES WITH AN APP (features/list/list.js's onTask; ag_dashboard/app_policy.py): as its manifest says, or as the
+// WHAT "+" DOES WITH AN APP (features/list/tasks.ts's onTask; ag_dashboard/app_policy.py): as its manifest says, or as the
 // user chose it on the Apps page -- "join", put in the task (tasks.spec.ts); "folder", opened at the actor's directory
 // and shown above the task, in no task, no agent attached (the Files app's); "no", not offered at all.
 import type { Page } from "@playwright/test";

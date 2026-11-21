@@ -1,4 +1,4 @@
-// Moves between groups (features/list/group-moves.js; groups.py): in the home's one database, an actor dragged onto another
+// Moves between groups (features/list/group-moves.ts; groups.py): in the home's one database, an actor dragged onto another
 // group asks first -- who moves, from which group to which -- and moves only once the reader says so, and a folder
 // dragged outside every group asks first, then is a group of its own, and an actor dragged there is on its own; an
 // app in a folder that moves goes with it, its pane opened again in its new group, unless it is its group's only one
@@ -245,7 +245,7 @@ test("in the home's one database, an actor dragged outside every group is on its
   await expect(dialog).toBeHidden();
 });
 
-// An actor on its own from its start (features/list/group-moves.js's aloneNew): the list head's "+" beside its folder button opens a
+// An actor on its own from its start (features/list/group-moves.ts's aloneNew): the list head's "+" beside its folder button opens a
 // box -- the directory the latest active actor works in, each harness that runs here (Codex too: its session is kept
 // under the dashboard's id from its start) -- and starts one on its own, run under the shown actor's group,
 // listed as its own row; with a database per gatherer there is none
@@ -305,7 +305,7 @@ test("with a database per gatherer, the list head has no + for an actor on its o
   await expect(page.locator(".aside-head button.alone-new")).toHaveCount(0);
 });
 
-// An actor on its own (features/list/group-moves.js's aloneShut): open, its row at the top with its ×; closed, it leaves the top for
+// An actor on its own (features/list/groups.ts's aloneShut): open, its row at the top with its ×; closed, it leaves the top for
 // a line at the list's end, "1 closed", folded till opened (kept in this browser) -- never "hidden" as a
 // group is; in the rail, that line only once its foot shows the closed ones
 test("an actor on its own, closed, goes from the top of the list into a closed line at its end", async ({ page }) => {

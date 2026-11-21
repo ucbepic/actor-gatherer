@@ -2,7 +2,7 @@ import { SNAPSHOT } from "../../core/page/state.js";
 import {
   ago, clock, compact, el, full, get, harnessBadge, harnessLogo, harnessName, itemType, selectedInfo, svgEl,
 } from "../../core/page/helpers.js";
-import { statusOf } from "../list/seen.js";
+import { statusOf } from "../list/seen";
 import { askingNote, backgroundNote, errorNote } from "./chat.js";
 import { callsNow } from "../page/main-view.js";
 import { columnsNode, contextCardNode, contextItemNode, sizeCardNode, typeChipsNode } from "../details/mount";

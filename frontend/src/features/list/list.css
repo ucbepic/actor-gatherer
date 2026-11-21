@@ -132,7 +132,7 @@ button:disabled { opacity: .5; cursor: default; }
 @media (hover: none) { .agent .save-btn { opacity: 1; } }
 .agent .save-btn.on { color: var(--s1); }
 .agent .save-btn:hover, .agent .save-btn:focus-visible { color: var(--s1); background: var(--surface); }
-/* FOLDERS (features/list/list.js): a folder's line -- a button with its caret, name and count, then its counts, its buttons
+/* FOLDERS (features/list/list.ts): a folder's line -- a button with its caret, name and count, then its counts, its buttons
    over them while hovered or in focus (as the gatherer row's rename and hide, nothing moving) -- and what is in it set
    in under it, a guide line down its left; a line an actor or a folder is dragged over, marked; what is dragged, faint */
 .folder-line { position: relative; display: flex; align-items: center; margin: 1px 8px; border-radius: 8px; min-height: 30px; }
@@ -199,17 +199,17 @@ button:disabled { opacity: .5; cursor: default; }
 :is(.folder-line, .gatherer-row).drop-on { background: color-mix(in srgb, var(--s1) 14%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--s1) 55%, transparent); }
 :is(.agent, .folder-line).dragging { opacity: .45; }
-/* FOLDERS OF GATHERERS (features/list/gatherer-folders.js): made from the list's head (.gf-new), a line as a gatherer's folder's;
+/* FOLDERS OF GATHERERS (features/list/gatherer-folders.ts): made from the list's head (.gf-new), a line as a gatherer's folder's;
    what is in one set in under it, its guide line under its caret (the line's margin + 4px padding + half the 10px
    caret), 14px a level, a gatherer's own as in the list's top. The head, a gatherer dragged over it: lit, as a line is */
 .aside-head .gf-new { display: inline-grid; place-items: center; width: var(--ib); height: var(--ib); padding: 0; margin-left: -4px; border: 0;
   border-radius: 7px; background: none; color: var(--muted); }
 .aside-head .gf-new:hover { color: var(--ink); background: var(--wash); }
 .aside-head .gf-new svg { display: block; }
-/* a new folder outside every group is a group (features/list/gatherer-folders.js's nameGroup): its line while ag makes it */
+/* a new folder outside every group is a group (features/list/gatherer-folders.ts's nameGroup): its line while ag makes it */
 .gf-line.making { padding: 0 8px 0 20px; color: var(--ink-2); }
 .gf-line.making .fill { margin-left: 8px; font-size: var(--fs-meta); color: var(--muted); }
-/* the head's "+" for an actor on its own (features/list/group-moves.js's aloneNew): "+" and an actor, as a group's "+ actor" */
+/* the head's "+" for an actor on its own (features/list/group-moves.ts's aloneNew): "+" and an actor, as a group's "+ actor" */
 /* as the folder button beside it: the page's icon button (core/page/base.css's --ib), bare, a wash under the pointer -- two marks
    wide, "+" and an agent */
 .aside-head .alone-new { display: inline-flex; align-items: center; justify-content: center; gap: 1px; height: var(--ib); padding: 0 6px;
@@ -249,7 +249,7 @@ button:disabled { opacity: .5; cursor: default; }
   font-size: var(--fs-meta); font-weight: 600; }
 .m-folder { display: flex; align-items: center; gap: 5px; font-size: var(--fs-meta); font-weight: 600; color: var(--ink-2); padding: 6px 4px 2px; }
 .m-folder svg { color: var(--muted); flex: none; }
-/* a TASK's row (features/list/list.js's taskRow): as an actor's, its actors' faces and their apps' marks at its right; and
+/* a TASK's row (features/list/RowViews.tsx's taskRow): as an actor's, its actors' faces and their apps' marks at its right; and
    "+" (an agent or an app added), on its row and an actor's, shown as their bookmark is (hovered, in focus, the one shown) */
 .agent.task > .a-main { grid-template-columns: 10px minmax(0, 1fr) auto; }
 .agent .meta .says { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -267,7 +267,7 @@ button:disabled { opacity: .5; cursor: default; }
 .agent:is(:hover, :has(> .a-main:focus-visible), [data-current="true"]) .task-add, .agent .task-add:is(:focus-visible, [aria-expanded="true"]) { opacity: 1; }
 @media (hover: none) { .agent .task-add { opacity: 1; } }
 .task-add:is(:hover, :focus-visible, [aria-expanded="true"]) { color: var(--s1); background: var(--surface); outline: none; }
-/* its card (features/list/modes.js's taskCard): its actors, each a row showing it and its own "take out" */
+/* its card (features/list/CardTask.tsx's taskCard): its actors, each a row showing it and its own "take out" */
 .actor-card .c-who .t-faces { margin-top: 0; }
 .actor-card .c-acts .task-add { height: 24px; min-width: 24px; border-radius: 6px; }
 .actor-card .c-task-row { display: flex; align-items: center; gap: 2px; }
@@ -286,7 +286,7 @@ button:disabled { opacity: .5; cursor: default; }
 .agent > .a-main { grid-template-columns: 10px minmax(0, 1fr) auto; }
 .t-app { width: 14px; height: 14px; border-radius: 4px; flex: none; display: block; }
 .t-app.none { display: grid; place-items: center; color: var(--muted); }
-/* a task in the rail (features/list/modes.js's railTask): its lead's face in the room of one avatar, and how many actors and apps
+/* a task in the rail (features/list/RailTiles.tsx's railTask): its lead's face in the room of one avatar, and how many actors and apps
    it holds on a badge at its top left (the status dot is at its bottom right, its apps' mark at its top right) */
 .rail .r-task .r-group { position: relative; width: 30px; height: 30px; border-radius: 50%; background: var(--wash); display: block; }
 .rail .r-task .r-group > .logo, .rail .r-task .r-group > .app-face { position: absolute; inset: 0; width: 30px; height: 30px; }
@@ -296,11 +296,11 @@ button:disabled { opacity: .5; cursor: default; }
   text-align: center; box-shadow: 0 0 0 2px var(--side); pointer-events: none; font-variant-numeric: tabular-nums; }
 /* no badge on it: the room its mask keeps for one (features/page/layout.css's .agent .avatar img) not cut out */
 .agent .a-face .avatar img { -webkit-mask-image: none; mask-image: none; }
-/* an app's marks in the rail (features/list/modes.js's railApps): small, at the avatar's top right corner, outside it */
+/* an app's marks in the rail (features/list/RailTiles.tsx's railApps): small, at the avatar's top right corner, outside it */
 .rail .r-apps { position: absolute; right: -9px; top: -3px; display: flex; flex-direction: column; gap: 1px; pointer-events: none; }
 .rail .r-apps .t-app { width: 13px; height: 13px; border-radius: 3px; }
 .actor-card .c-app-row .t-app { width: 18px; height: 18px; }
-/* several apps' marks (features/list/list.js's appStack): stacked over one another, as a task's faces are, each ringed */
+/* several apps' marks (features/list/RowViews.tsx's appStack): stacked over one another, as a task's faces are, each ringed */
 .t-apps { display: flex; align-items: center; flex: none; }
 .t-apps .t-app + .t-app { margin-left: -5px; }
 .t-faces .t-apps { margin-left: 4px; }
@@ -334,7 +334,7 @@ button:disabled { opacity: .5; cursor: default; }
 .rail .r-task .r-group > .app-face { border-radius: 5px; }
 .r-group > .app-face img { width: 72%; height: 72%; }
 /* an item's row, something dragged over it to be put in its task */
-/* into another group (features/list/group-moves.js): the reader is asked first */
+/* into another group (features/list/group-moves.ts): the reader is asked first */
 :is(.folder-line, .gatherer-row, .rail .r-fname, .rail .r-fhead, .rail .r-gname).drop-on.drop-across {
   background: color-mix(in srgb, var(--warning) 16%, transparent); outline: 1px dashed var(--warning); outline-offset: -1px; }
 dialog.mv-dialog { width: min(480px, calc(100vw - 32px)); }
@@ -344,7 +344,7 @@ dialog.mv-dialog { width: min(480px, calc(100vw - 32px)); }
 .outside-drop { display: none; position: absolute; inset: 3px 6px; z-index: 3; align-items: center; justify-content: center;
   border: 1px dashed var(--ring); border-radius: 8px; background: var(--side); color: var(--muted); font-size: var(--fs-meta); }
 body.drag-out .outside-drop { display: flex; }
-/* an actor on its own (features/list/group-moves.js): its row alone, among the groups */
+/* an actor on its own (features/list/group-moves.ts): its row alone, among the groups */
 .gatherer.alone { margin-top: 4px; }
 .rail .r-alone { padding-top: 4px; }
 /* the actors on their own that are closed: their lines at the list's end */
@@ -357,14 +357,14 @@ body.drag-out .outside-drop { display: flex; }
 .mv-dialog .row { display: flex; justify-content: flex-end; gap: 8px; }
 .agent.drop-on, .rail .r-actor.drop-on { background: color-mix(in srgb, var(--s1) 14%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--s1) 55%, transparent); }
-/* where a row's task is open (features/list/list.js's tabMark): its screen tab's number, for a screen reader only -- a boxed
+/* where a row's task is open (features/list/Parts.tsx's tabMark): its screen tab's number, for a screen reader only -- a boxed
    number by a face read as an unread count; the row's open bar shows it is open, its hover card which tab (.c-tab) */
 .agent .tab-no { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-/* A GROUP INSIDE ANOTHER GROUP'S FOLDER (features/list/group-moves.js): its row set in where it is, drawn as a folder's line is --
+/* A GROUP INSIDE ANOTHER GROUP'S FOLDER (features/list/group-moves.ts): its row set in where it is, drawn as a folder's line is --
    the list says nothing of groups (Manage groups does) */
 .gatherer.nested { margin: 0; }
 .gatherer.nested > .gatherer-row .gname { font-size: var(--fs-ui); font-weight: 600; }
-/* MANAGE GROUPS (features/list/group-moves.js): the list head's button, and its dialog -- each group, its folders and actors set in
+/* MANAGE GROUPS (features/list/group-moves.ts): the list head's button, and its dialog -- each group, its folders and actors set in
    by depth, each with its switch of two at the right */
 dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 760px); }
 /* it and the question a move asks first are Radix's dialogs (features/list/ManageGroups.tsx): over the whole page as a
@@ -423,5 +423,5 @@ button.mg-fold:hover { color: var(--ink); }
 .mg-switch .mg-opt.on { background: color-mix(in srgb, var(--s1) 16%, transparent); color: var(--ink); opacity: 1; cursor: default; }
 .mg-switch .mg-opt:disabled:not(.on) { opacity: .45; cursor: default; }
 .mg-switch .mg-opt:not(:disabled):hover { color: var(--ink); background: var(--wash); }
-/* the settings panel's Groups row: what Manage groups is for, its button (features/list/group-moves.js's manageEntry) */
+/* the settings panel's Groups row: what Manage groups is for, its button (features/list/manage.ts's manageEntry) */
 #groups-cfg .groups-say, #apps-cfg .apps-say { color: var(--muted); font-size: var(--fs-meta); }

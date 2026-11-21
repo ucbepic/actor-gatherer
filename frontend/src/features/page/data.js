@@ -3,8 +3,8 @@ import {
   avatarMode, clock, el, get, isShell, keepAvatarMode, key, parseKey, selectedInfo, signature,
 } from "../../core/page/helpers.js";
 import { keepingPlace } from "../settings/panel.js";
-import { statusOf, takeHome } from "../list/seen.js";
-import { firstAgent, isHidden, moveHidingToServer, renderAgents, staleNames } from "../list/list.js";
+import { statusOf, takeHome } from "../list/seen";
+import { firstAgent, isHidden, moveHidingToServer, renderAgents, staleNames } from "../list/list";
 import { drawWho, paneSig, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes.js";
 import { renderMain } from "./main-view.js";
 import { chatAtEnd, chatToEnd } from "../chat/chat.js";

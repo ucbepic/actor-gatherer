@@ -1,4 +1,4 @@
-// THE TOP BAR'S COUNTS OF A COORDINATOR AGENT (features/list/modes.js's drawTotals): counted by what it does -- waiting for the
+// THE TOP BAR'S COUNTS OF A COORDINATOR AGENT (features/list/modes.ts's drawTotals): counted by what it does -- waiting for the
 // reader, stopped on an error, at work, finished and not yet seen -- as any actor is, but not idle: every group has one,
 // at rest most of the time.
 import { expect, homeAs, test } from "./test";

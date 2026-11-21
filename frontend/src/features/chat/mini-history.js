@@ -4,7 +4,7 @@ import {
   strokeIcon,
 } from "../../core/page/helpers.js";
 import { keepingPlace } from "../settings/panel.js";
-import { statusOf } from "../list/seen.js";
+import { statusOf } from "../list/seen";
 import { renderMain } from "../page/main-view.js";
 import { str } from "../../core/model/items";
 import { firstLine, plural } from "../../core/format";

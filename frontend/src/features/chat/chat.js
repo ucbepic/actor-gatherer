@@ -4,7 +4,7 @@ import {
 } from "../../core/page/helpers.js";
 import { drafts, fitBox, keepDraft, setLive } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
-import { turnStatus } from "../list/seen.js";
+import { turnStatus } from "../list/seen";
 import { DETAILS_TIP, renderMain, setDetails } from "../page/main-view.js";
 import { permissionNode, summary } from "../transcript/calls";
 import { plural } from "../../core/format";

@@ -1,4 +1,4 @@
-// COORDINATOR AGENTS OVER FOLDERS (coordinators.py; features/layout/panes.js's crewButton and openCoordinator, features/list/list.js's
+// COORDINATOR AGENTS OVER FOLDERS (coordinators.py; features/layout/panes.js's crewButton and openCoordinator, features/list/list.ts's
 // crewRow): none until the reader starts one, over any folder -- a folder in a group, a group, a folder of groups, or
 // everything (the list's head) -- from its owl. One over a folder is listed at the top of its folder, its face on the
 // folder's line; one above groups, in a group of one of its own as the server lists it, at its node: the one over
