@@ -25,7 +25,7 @@ import { TurnBoundary } from "./Boundary";
 import { useChat } from "./context";
 import { followContent, followEnd, placed, unfollow } from "./follow";
 import { OpenedTurn } from "./Pending";
-import { drawn, drawnAbove, keepHeld, reachedTop } from "./pull";
+import { drawn, drawnAt, holdTurn, keepHeld, reachedTop } from "./pull";
 import { TURNS_SHOWN, useOnPage, useTurns } from "./store";
 import { Turn, type TurnPlace } from "./Turn";
 import type { ChatFeed, Turn as TurnData } from "./types";
@@ -113,7 +113,7 @@ export function Turns({ talkRef, interrupting }: { talkRef: RefObject<HTMLDivEle
 const TurnItem = memo(function TurnItem({ n }: { n: number }) {
   const { feed } = useChat();
   const { placeOf, first, setFirstDrawn } = useDrawing();
-  useLayoutEffect(() => drawnAbove(n), [n]); // a turn pulled in: the one the reader looked at kept where it was
+  useLayoutEffect(() => drawnAt(n), [n]); // a turn pulled in or picked: the one held put where it is to be (pull.ts)
   useLayoutEffect(() => {
     if (n === first) setFirstDrawn(n);
   }, [n, first, setFirstDrawn]);
@@ -130,7 +130,7 @@ const turnItem = (_: number, n: number) => <TurnItem n={n} />;
 /** Above the turns: how many earlier ones are not drawn -- said as the first turn is on the page, not a frame before. */
 function Top() {
   const { firstDrawn } = useDrawing();
-  useLayoutEffect(keepHeld); // the line changed as earlier turns came: the one the reader looked at kept where it was
+  useLayoutEffect(keepHeld); // the count gone as the first turn came: the turn held put back (pull.ts)
   return (
     <div className="fl-top">
       {firstDrawn ? (
@@ -192,13 +192,16 @@ function toEnd(talk: HTMLElement, list: VirtuosoHandle | null, last: number) {
   } else list.scrollToIndex({ index: "LAST", align: "end" });
 }
 
-/** Turn `n` put at the top: at once where it is drawn, else as Virtuoso reckons it. */
+/** Turn `n` put at the top: at once where it is drawn, else as Virtuoso reckons it -- and held there as it is drawn. */
 function toTurn(talk: HTMLElement, list: VirtuosoHandle | null, n: number, first: number) {
   const turn = talk.querySelector(`#fl-turn-${n}`);
   if (turn || !list) {
     if (turn) talk.scrollTop += turn.getBoundingClientRect().top - talk.getBoundingClientRect().top;
     placed(talk);
-  } else list.scrollToIndex({ index: n - first, align: "start", offset: TURN_GAP });
+  } else {
+    holdTurn(talk, n, 0);
+    list.scrollToIndex({ index: n - first, align: "start", offset: TURN_GAP });
+  }
 }
 
 /** The turn shown brought into view, once each time one is shown: the latest at its end, one picked at its top -- on the

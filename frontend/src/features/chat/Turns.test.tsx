@@ -3,6 +3,7 @@
 // folds a click made.
 import { act, fireEvent } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { sizesForTests } from "../../core/ui/lists";
 import { loadVendored } from "../../core/ui/testing";
 import { chatOf } from "./actors";
 import { useSide } from "./side/store";
@@ -394,6 +395,33 @@ describe("Turns", () => {
     const node = page.draw();
     expect(node.querySelector("#fl-turn-1 .fl-stopped")!.textContent).toBe("⎿Interrupted");
     expect(node.querySelector(".fl-foot > .fl-done")).not.toBeNull();
+  });
+});
+
+describe("a long conversation", () => {
+  it("lists every turn from the first drawn, and puts on the page only those around the view", () => {
+    const tall = sizesForTests.now;
+    sizesForTests.now = { viewportHeight: 400, itemHeight: 40 }; // the box 10 turns tall
+    try {
+      const { page } = testPage(turns(1000), { picked: 0 }); // the first turn picked: all from it on in the list
+      const node = page.draw();
+      const shown = ids(node);
+      expect(shown[0]).toBe("fl-turn-0");
+      expect(shown.length).toBeGreaterThan(10); // the box's and more around it
+      expect(shown.length).toBeLessThan(200);
+      expect(node.querySelector("#fl-turn-999")).toBeNull();
+      expect(node.querySelector(".fl-earlier")).toBeNull(); // none earlier: all are in the list
+      expect(node.querySelector("#fl-turn-0")!.className).toBe("fl-turn on folded"); // picked: its files shown
+    } finally {
+      sizesForTests.now = tall;
+    }
+  });
+
+  it("says how many earlier turns are not in the list, above the first", () => {
+    const { page } = testPage(turns(1000));
+    const node = page.draw();
+    expect(ids(node)).toEqual(["fl-turn-995", "fl-turn-996", "fl-turn-997", "fl-turn-998", "fl-turn-999"]);
+    expect(node.querySelector(".fl-top > .fl-earlier")!.textContent).toBe("995 earlier turns · scroll up for more");
   });
 });
 

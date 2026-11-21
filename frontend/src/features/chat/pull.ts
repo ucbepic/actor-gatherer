@@ -45,12 +45,20 @@ let topAt: number | null = null,
   pulled = 0,
   touchedAt: number | null = null;
 
-// The turn first drawn as earlier turns are pulled in, and where it was on the screen. react-virtuoso keeps it there by
-// the height it guesses those it puts before it have, and draws them a frame later at their own: as they are drawn
-// (Turns.tsx's TurnItem, in the draw that puts them on the page), it is put back where it was -- once, and only for a
-// moment after the pull, so a turn drawn above it later, as the reader scrolls on, does not move it.
-let held: { talk: HTMLElement; turn: HTMLElement; n: number; y: number; at: number } | null = null;
+// A turn held where the reader is to see it, as turns are drawn about it: the turn first drawn as earlier turns are pulled
+// in, where it was on the screen; a turn picked, at the top (Turns.tsx's useShown). react-virtuoso puts turns before the
+// first a frame after it has them, keeping the reader's place by the height it guesses they have, and a turn not on the
+// page where it reckons it is from the heights it knows; and the count of earlier turns above them goes once the first
+// turn is on the page. So as they are drawn -- the turn held, or one above it (Turns.tsx's TurnItem), and the count
+// (its Top) -- the turn is put back where it is to be: in that draw, and only for a moment after, so a turn drawn above
+// it later, as the reader scrolls on, does not move it.
+let held: { talk: HTMLElement; n: number; y: number; at: number } | null = null;
 const HELD_MS = 2000;
+
+/** Turn `n` held `y` from the top of `talk` until it, or a turn above it, is drawn. */
+export function holdTurn(talk: HTMLElement, n: number, y: number): void {
+  held = { talk, n, y, at: performance.now() };
+}
 
 const talkOf = (n: EventTarget | null) => (n instanceof Element ? n.closest<HTMLElement>("#main .fl-talk") : null);
 
@@ -71,24 +79,26 @@ export function pullEarlier(talk: HTMLElement | null, by: number): void {
   if (Date.now() - topAt < PULL_WAIT_MS || (pulled += by) < PULL_PX) return;
   pulled = 0;
   topAt = null;
-  const turn = talk.querySelector<HTMLElement>(`#fl-turn-${first}`);
-  held = turn ? { talk, turn, n: first, y: top(turn) - top(talk), at: performance.now() } : null;
+  const turn = talk.querySelector(`#fl-turn-${first}`);
+  if (turn) holdTurn(talk, first, top(turn) - top(talk));
   useTurns.getState().setFirst(Math.max(0, first - TURNS_MORE));
 }
 
-/** The turn held put back where it was, if one is. */
+/** The turn held put where it is to be, if one is and it is on the page. */
 export function keepHeld(): void {
   const h = held;
-  if (!h || performance.now() - h.at > HELD_MS || !h.turn.isConnected) return;
-  h.talk.scrollTop += top(h.turn) - top(h.talk) - h.y;
+  if (!h) return;
+  const turn = performance.now() - h.at < HELD_MS && h.talk.isConnected && h.talk.querySelector(`#fl-turn-${h.n}`);
+  if (!turn) return;
+  h.talk.scrollTop += top(turn) - top(h.talk) - h.y;
   placed(h.talk);
 }
 
-/** Turn `n` drawn: if above the turn held, that one put back where it was -- and let go of once this draw is over (the
- * turns drawn with it, and the line above them, put back too). */
-export function drawnAbove(n: number): void {
+/** Turn `n` drawn: if the turn held or one above it, the turn held put where it is to be -- and let go of once this draw
+ * is over (the turns drawn with it, and the count above them, put back too). */
+export function drawnAt(n: number): void {
   const h = held;
-  if (!h || n >= h.n) return;
+  if (!h || n > h.n) return;
   keepHeld();
   queueMicrotask(() => {
     if (held === h) held = null;

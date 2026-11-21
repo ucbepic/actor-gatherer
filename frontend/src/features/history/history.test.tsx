@@ -210,6 +210,41 @@ describe("the view, drawn by its mount", () => {
   });
 });
 
+describe("a long history", () => {
+  const long = (turns: number) =>
+    Array.from({ length: turns * 2 }, (_, i) =>
+      ev(i + 1, i % 2 ? "agent_message" : "user_message", i % 2 ? `answer ${i >> 1}` : `ask ${i >> 1}`),
+    );
+
+  it("lists every row, puts only those around the view on the page, and marks where the timeline begins", () => {
+    const tall = sizesForTests.now;
+    sizesForTests.now = { viewportHeight: 400, itemHeight: 40 }; // the list 10 rows tall
+    try {
+      const node = drawn(outline({ events: long(3000), more: true }));
+      const shown = rows(node);
+      expect(shown.length).toBeGreaterThan(10);
+      expect(shown.length).toBeLessThan(200);
+      expect(shown[0].className).toBe("h-row turn nested first");
+      expect(shown[1].className).toBe("h-row turn nested");
+      expect(node.querySelector(".h-row.last")).toBeNull(); // the last of 3,000: not on the page
+      // ⌘A selects every row listed, not those on the page
+      act(() => {
+        fireEvent.keyDown(document.body, { key: "a", metaKey: true });
+      });
+      expect(useHist.getState().sel.size).toBe(6000);
+    } finally {
+      sizesForTests.now = tall;
+    }
+  });
+
+  it("draws Load more under the last row while the outline is not all loaded", () => {
+    const node = drawn(outline({ more: true }));
+    const [first, last] = rows(node);
+    expect([first.classList.contains("first"), last.classList.contains("last")]).toEqual([true, true]);
+    expect(node.querySelector(".h-foot > .h-more")!.textContent).toBe("Load more");
+  });
+});
+
 describe("the outline", () => {
   it("loads all at first, a page at a time, then only what came after", async () => {
     const pages: Record<string, unknown> = {
