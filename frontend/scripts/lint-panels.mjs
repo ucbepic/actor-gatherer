@@ -6,7 +6,9 @@
 //   name declared on none of them is still caught;
 // - a module, and each module it imports (app_kit.fileedit's, for the Files and LaTeX apps; the panel's own, as Notes'
 //   are), is linted as one: no names but its own, what it imports, and the libraries' globals -- so a missing import is
-//   an undefined name -- and each import must name a module of the panels, and what that module exports.
+//   an undefined name -- and each import must name a module of the panels, and what that module exports. A library a
+//   panel bundles as an ES module (its vendor/ folder: Notes' ProseMirror, assets/src/notes) is followed for what it
+//   exports, but not linted, nor walked for imports of its own.
 import js from "@eslint/js";
 import { ESLint, Linter } from "eslint";
 import globals from "globals";
@@ -86,8 +88,9 @@ function pages() {
       else page.scripts.push(file);
     }
     // what the modules import, walked as it is found (a Set: each module once, those it adds after it)
+    const vendored = (file) => file.split("/").includes("vendor");
     for (const file of page.modules)
-      for (const spec of importsOf(file)) {
+      for (const spec of vendored(file) ? [] : importsOf(file)) {
         const got = imported(file, spec);
         if (got) page.modules.add(got);
       }

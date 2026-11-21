@@ -26,13 +26,17 @@ A page can hold pictures (pictures.js): an image pasted, dropped or picked from 
 Figma frame or board shown live from its link, with a snapshot the backend keeps of it -- shown when Figma can't show it,
 and what agents see of it. The words under either are its caption.
 
+A page's lines are edited in one ProseMirror view (editor.js; DESIGN.md says how): the page drawn from the notebook as
+its document (doc.js), and each change made in it the notebook's ops. ProseMirror itself is a bundle the panel imports
+(vendor/prosemirror.js, built by assets/src/notes).
+
 The panel is ES modules, this one its entry, loaded after the plain scripts its page loads first (DOMPurify, the
 panels' kit, app_kit's SDK), which they read as the globals those set. Each module is a part of the panel -- the
 notebook (model.js), sending its ops (send.js), undo, others' changes (others.js), the sidebar, the page (page.js), the
-caret, typing, the pop-ups, typos, the / menu (slash.js), [[ links (pagelinks.js), the gutter, lines picked, the title,
-pasting, tables, pictures, the actors and work items (actors.js), sending a line to one (sent.js), lines an agent wrote
-(source.js), a line's conversation (convo.js), the @ picker (picker.js), the Agents page, the Work page, links to the
-notes (links.js) -- and imports what it uses of the others. What more than one of them changes is in state.js, each
+lines' document and editor, the caret, typing, the pop-ups, typos, the / menu (slash.js), [[ links (pagelinks.js), the
+gutter, lines picked, the title, pasting, tables, pictures, the actors and work items (actors.js), sending a line to
+one (sent.js), lines an agent wrote (source.js), a line's conversation (convo.js), the @ picker (picker.js), the Agents
+page, the Work page, links to the notes (links.js) -- and imports what it uses of the others. What more than one of them changes is in state.js, each
 with its setter. Nothing runs as they load: start.js connects the panel, sets each module's listeners (its wire
 function) in order, and reads the notebook. */
 import { start } from "./start.js";

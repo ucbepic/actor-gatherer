@@ -1,16 +1,36 @@
 // Notes: [[ -- a link to a page.
 // "[[" typed opens a list of the pages, found by the words typed after it; one picked takes the "[[..." out and puts a
-// link to it there. A page not there yet can be made, inside this one, and linked.
+// link to it there. A page not there yet can be made, inside this one, and linked. In a line, the link is a node of
+// the editor's (doc.js's pagelink); in a table's cell (an editable element of its own), HTML.
 import { el, esc, rid, SVG } from "./helpers.js";
 import { current, pages, store } from "./state.js";
 import { drawLinks, isText, kidsOf, pageOfLink, ZW } from "./model.js";
 import { change } from "./send.js";
 import { opened } from "./sidebar.js";
-import { blockOf, openPage, page } from "./page.js";
+import { blockOf, box, openPage, page } from "./page.js";
 import { caretIn, pointAt } from "./caret.js";
 import { closePop, item, menu, place, popUp } from "./popups.js";
 import { retyped } from "./tables.js";
+import { TextSelection } from "./vendor/prosemirror.js";
+import { schema } from "./doc.js";
+import { boxAt, edit, here, view } from "./editor.js";
+import { menuWords } from "./slash.js";
 
+// "[[" typed in a line (`text`, just put in the line `b`): the pages, at the caret
+export function pageTyped(b, text) {
+  const h = here();
+  if (!text.endsWith("[") || b.type === "code" || !h || !h.empty || h.from < 2 || h.node.textBetween(h.from - 2, h.from, "") !== "[[") return;
+  const head = view.state.selection.head, rect = boxAt(head);
+  popUp(rect, () => {}, null, "page");
+  Object.assign(menu, { tx: box, line: true, from: head - 2, block: b.id, rect });
+  drawPages("");
+}
+export function pageFollow() {
+  const at = menuWords(2);
+  if (!at || at.lead !== "[[" || at.q.length > 80 || at.q.includes("]")) return closePop();
+  if (at.q !== menu.q) drawPages(at.q);
+}
+// ... in a table's cell
 export function pageInput(n, tx, b, ev) {
   if (menu && menu.kind === "page") {
     const c = caretIn(tx);
@@ -47,6 +67,7 @@ function drawPages(q) {
   if (name && !hits.some((p) => (p.title || "").trim().toLowerCase() === name.toLowerCase()))
     picks.push({ k: { glyph: SVG.plus, sm: true, label: `New page “${name}”`, note: here ? `Inside ${here.title || "Untitled"}` : "" }, run: () => pagePick(m, null, name) });
   menu.items = picks;
+  menu.q = q;
   menu.on = Math.min(menu.on || 0, Math.max(0, picks.length - 1));
   const pop = menu.el;
   pop.replaceChildren(el("div", { class: "hd", text: "Link to a page" }));
@@ -65,7 +86,7 @@ export function pageKey(ev) {
   const n = menu.items ? menu.items.length : 0;
   if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
     ev.preventDefault();
-    if (n) { menu.on = (menu.on + (ev.key === "ArrowDown" ? 1 : n - 1)) % n; drawPages(menu.tx.textContent.slice(menu.from + 2, caretIn(menu.tx).start)); }
+    if (n) { menu.on = (menu.on + (ev.key === "ArrowDown" ? 1 : n - 1)) % n; drawPages(menu.q || ""); }
     return true;
   }
   if ((ev.key === "Enter" || ev.key === "Tab") && n) { ev.preventDefault(); const run = menu.items[menu.on].run; closePop(); run(); return true; }
@@ -75,6 +96,12 @@ export function pageKey(ev) {
 // A page picked from the menu `m` (or `title`: one made, inside this page): the "[[..." typed swapped for a link to it.
 function pagePick(m, id, title = "") {
   closePop();
+  if (m && m.line) {
+    const h = here(), sel = view.state.selection;
+    if (!h || h.id !== m.block || !blockOf(m.block)) return;
+    const to = Math.max(sel.empty && sel.head > m.from ? sel.head : m.from + 2, m.from + 2);
+    return putLinkLine(m.block, m.from, to, id || subpage(title));
+  }
   if (!m || !m.tx || !m.tx.isConnected || !blockOf(m.tx.closest(".blk").dataset.id)) return;
   const c = caretIn(m.tx), to = Math.max(c && c.start > m.from ? c.start : m.from + 2, m.from + 2);
   putLink(m.tx, m.from, to, id || subpage(title));
@@ -86,7 +113,19 @@ export function subpage(title) {
   if (current) { opened.add(current); store.set("open", [...opened]); }
   return made.id;
 }
-// The line's text from `from` to `to` (caret positions) swapped for a link to the page `id`, the caret after it, and kept.
+// A line's words from `from` to `to` (places in the doc) swapped for a link to the page `id`, a space after it (unless
+// one is there already: the caret goes after it), typed as words are.
+export function putLinkLine(block, from, to, id) {
+  const st = view.state, $to = st.doc.resolve(to), parent = $to.parent;
+  if (!parent.inlineContent || parent.attrs.id !== block) return;
+  const link = schema.nodes.pagelink.create({ page: id, title: pages.get(id).title || "Untitled" });
+  const next = parent.textBetween($to.parentOffset, Math.min($to.parentOffset + 1, parent.content.size), "", "\ufffc");
+  const gap = !(next && /\s/.test(next));
+  const tr = st.tr.replaceWith(from, to, gap ? [link, schema.text(" ")] : [link]);
+  edit(tr.setSelection(TextSelection.create(tr.doc, from + (gap ? 2 : 1))).scrollIntoView());
+  view.focus();
+}
+// ... in a cell: its text from `from` to `to` (caret positions) swapped for a link to the page, the caret after it, and kept
 export function putLink(tx, from, to, id) {
   const n = tx.closest(".blk"), b = blockOf(n.dataset.id), name = pages.get(id).title || "Untitled";
   const r = document.createRange(), a = pointAt(tx, from), z = pointAt(tx, to);
@@ -111,8 +150,8 @@ export function putLink(tx, from, to, id) {
   sel.addRange(at);
   retyped(n, tx, b);
 }
-// Backspace (Delete: forward) with only the zero-width space put beside a link between the caret and it: the link taken
-// out whole, with the space -- not the space alone, which would leave the key seeming to do nothing.
+// Backspace (Delete: forward) in a cell with only the zero-width space put beside a link between the caret and it: the
+// link taken out whole, with the space -- not the space alone, which would leave the key seeming to do nothing.
 export function overLink(n, tx, b, fwd) {
   const s = getSelection();
   if (!s.rangeCount || !s.isCollapsed) return false;

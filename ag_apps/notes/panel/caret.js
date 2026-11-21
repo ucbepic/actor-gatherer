@@ -1,8 +1,10 @@
-// Notes: the caret in a line -- where it is (in characters), put there, and whether it is at the line's edge or
-// on its first or last row.
-import { clean, MEDIA, UNSENT } from "./helpers.js";
+// Notes: the caret. In a line it is the editor's (editor.js: caretTo puts it, here() says where it is); in the title
+// and in a table's cell -- each an editable element of its own -- where it is (in characters), put there, and whether
+// it is at the element's edge or on its first or last row.
+import { MEDIA, UNSENT } from "./helpers.js";
 import { blockOf, rowOf } from "./page.js";
 import { focusCell } from "./tables.js";
+import { caretTo, lineNode } from "./editor.js";
 
 export function caretIn(tx) {
   const s = getSelection();
@@ -54,26 +56,16 @@ export function onLine(tx, last) {                      // the caret on the firs
   const t = tx.getBoundingClientRect(), lh = parseFloat(getComputedStyle(tx).lineHeight) || 22;
   return last ? t.bottom - r.bottom < lh * 0.9 : r.top - t.top < lh * 0.9;
 }
-export function focusOnEdge(tx, last) {                 // the selection's moving end on the first (or last) row of the block
-  const s = getSelection();
-  if (!s.rangeCount || !s.focusNode) return true;
-  const r = document.createRange();
-  r.setStart(s.focusNode, s.focusOffset);
-  const at = r.getClientRects()[0] || r.getBoundingClientRect();
-  if (!at || (!at.top && !at.bottom)) return true;
-  const t = tx.getBoundingClientRect(), lh = parseFloat(getComputedStyle(tx).lineHeight) || 22;
-  return last ? t.bottom - at.bottom < lh * 0.9 : at.top - t.top < lh * 0.9;
-}
+// The caret put in a block: a line's words at their start, end, or a place in them as plain text (a number); a table's
+// first or last cell; a divider, the Agents or Work table, focused itself.
 export function focusBlock(id, where = "end") {
   const n = rowOf(id), t = n && blockOf(id);
   if (!n) return;
   if (t && t.type === "table") return focusCell(t, where === "start" ? 0 : t.rows.length - 1, 0, where === "start" ? "start" : "end");
-  const tx = n.querySelector(".tx");
-  if (!tx) return n.querySelector(".hr, .agt, .fig").focus();
-  tx.focus();
-  const len = tx.textContent.length;
-  setCaret(tx, where === "end" ? len : where === "start" ? 0 : Math.min(where, len));
+  if (caretTo(id, where)) return;
+  const f = n.querySelector(".hr, .agt, .fig");
+  if (f) f.focus();
 }
-export const empty = (tx) => tx.textContent.replace(/\u200b/g, "") === "" && !tx.querySelector("br, a");
-export const textOf = (n, b) => (b.type === "code" ? n.querySelector(".tx").textContent : clean(n.querySelector(".tx").innerHTML));
+export const empty = (tx) => tx.textContent.replace(/\u200b/g, "") === "" && !tx.querySelector("br, a");   // (a cell)
+export const blank = (id) => { const node = lineNode(id); return !!node && node.content.size === 0; };       // (a line)
 export const editable = (b) => !UNSENT.includes(b.type) || MEDIA.includes(b.type);   // (a picture's caption: typed in)

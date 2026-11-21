@@ -6,7 +6,7 @@
 import type { FrameLocator, Page } from "@playwright/test";
 import { expect, test } from "./test";
 import { open } from "./home";
-import { binPage, call, newPage, openNotes } from "./notes-home";
+import { binPage, call, caretIn, newPage, openNotes } from "./notes-home";
 import { GATHERER } from "./home";
 
 const FIGMA = "https://www.figma.com/design/Xk2abcdEF9/Paper-figures?node-id=12-34";
@@ -74,7 +74,7 @@ test("a picture pasted is kept and shown, captioned and sized, read by agents, a
   await expect(pic).toHaveCount(1);
   await expect.poll(() => pic.evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBe(240);
   await expect.poll(() => types(panel)).toEqual(["text", "image", "text"]);
-  await expect(panel.locator("#blocks > .blk").nth(2).locator(".tx")).toBeFocused();
+  await expect.poll(() => caretIn(panel.locator("#blocks > .blk").nth(2).locator(".tx"))).toBe(true);
 
   // its caption: typed under it; Enter, a line below it
   await caption_(panel);
@@ -117,7 +117,7 @@ test("⌘Z takes back a picture's width, its caption, and the picture pasted", a
   await expect.poll(() => types(panel)).toEqual(["text", "image", "text"]);
   await caption_(panel);
   const caption = panel.locator(".blk[data-type=image] .tx.cap");
-  await expect(caption).toBeFocused(); // typed only once there: a slow page took it into another line before
+  await expect.poll(() => caretIn(caption)).toBe(true); // typed only once there: a slow page took it into another line before
   await page.keyboard.type("A plot");
   await expect(caption).toHaveText("A plot");
   const fig = panel.locator(".blk[data-type=image] .pic");

@@ -150,7 +150,7 @@ export function sentPart(n, b, ro) {
   const here = groups.filter(({ g }) => tailOf(g).id === b.id), on = here.filter(({ v }) => !v.dropped);
   const sending = outgoing.has(b.id) && !quiet.has(b.id), none = !onIt(b).length;
   if (!(on.length || sending || (none && !quiet.has(b.id) && (isWork(b) || here.length || (b.thread && b.thread.length))))) { if (part) part.remove(); return; }
-  if (!part) { part = el("div", { class: "sent" }); n.append(part); }
+  if (!part) { part = el("div", { class: "sent", contenteditable: "false" }); n.append(part); }
   const items = on.map(({ v, g }) => {
     const a = actorOf(v.to), s = groupStands(g), asks = !!askedAll(a, g);
     const latest = [...threadOf(g)].reverse().find((l) => l.by !== "user");

@@ -5,7 +5,7 @@
 import type { FrameLocator, Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, GATHERER, open } from "./home";
-import { binPage, newPage, openNotes } from "./notes-home";
+import { binPage, caretIn, newPage, openNotes } from "./notes-home";
 
 const row = (panel: FrameLocator, text: string) =>
   panel.locator("#blocks > .blk", { has: panel.locator(".tx", { hasText: new RegExp(`^${text}\\s*$`) }) });
@@ -112,7 +112,7 @@ test("a line marked as a work item is tracked until it is ticked, and goes when 
   await row(panel, "Intro").locator(".tx").click();
   await page.keyboard.press("End");
   await page.keyboard.press("ArrowDown");
-  await expect(row(panel, "After").locator(".tx")).toBeFocused();
+  await expect.poll(() => caretIn(row(panel, "After").locator(".tx"))).toBe(true);
 
   // shown again, struck, Done; unticked: open again
   await panel.locator("#done-btn").click();

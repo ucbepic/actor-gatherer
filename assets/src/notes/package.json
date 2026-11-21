@@ -1,0 +1,19 @@
+{
+  "name": "ag-notes-editor",
+  "private": true,
+  "description": "The Notes app's panel (ag_apps/notes/panel/): ProseMirror, bundled into ag_apps/notes/panel/vendor/prosemirror.js by build.mjs",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-model": "1.25.12",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-transform": "1.12.5",
+    "prosemirror-view": "1.42.9"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
