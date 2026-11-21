@@ -13,6 +13,7 @@ import { change, flushTyped } from "./send.js";
 import { drawSide } from "./sidebar.js";
 import { blockOf, box, drawPage, page } from "./page.js";
 import { caretIn, focusBlock, setCaret } from "./caret.js";
+import { caretAt, caretBefore } from "./editor.js";
 import { holdKeys, picked, pickRange, unpick } from "./picked.js";
 import { title } from "./title.js";
 import { cellEl, cellKey, TABLE_OPS, tableBack } from "./tables.js";
@@ -43,10 +44,8 @@ export function standing(p, ids) {
   return m;
 }
 function caretNow() {                                    // where the reader is typing: a line (or "@title"), and where in it
-  const a = document.activeElement, tx = a === title ? title : a && box.contains(a) && a.closest(".tx");
-  if (!tx) return null;
-  const c = caretIn(tx);
-  return { id: tx === title ? "@title" : tx.closest(".blk").dataset.id, at: c ? c.start : null };
+  if (document.activeElement === title) { const c = caretIn(title); return { id: "@title", at: c ? c.start : null }; }
+  return caretBefore() || caretAt();                     // (a change the editor made: where the caret was before it)
 }
 function record(h, step) {
   h.done.push(step);
@@ -138,8 +137,8 @@ export function undoStep(again = false) {
     say(again ? "Can't redo: those lines have changed" : "Can't undo: those lines have changed", true);
     return;
   }
-  const a = document.activeElement;                      // drawn afresh: no line kept back as being typed in
-  if (a && (a === title || box.contains(a))) box.focus({ preventScroll: true });
+  const a = document.activeElement;                      // drawn afresh: no title or cell kept back as being typed in
+  if (a && (a === title || (box.contains(a) && a !== box))) box.focus({ preventScroll: true });
   replaying = true;
   try { change(copied(again ? step.fwd : step.back)); } finally { replaying = false; }
   (again ? h.done : h.undone).push(step);

@@ -7,13 +7,13 @@
 // can't open, is for Figma's embed to say.
 import { $, clean, el, esc, FIGMA_KIND, MEDIA, now, plainOf, rid, SPECIAL, SVG } from "./helpers.js";
 import { ag, current } from "./state.js";
-import { withLinks } from "./model.js";
 import { change, forget } from "./send.js";
 import { blockOf, box, drawPage, page, rowOf, shown } from "./page.js";
-import { edge, empty, focusBlock, onLine } from "./caret.js";
+import { blank, focusBlock } from "./caret.js";
 import { addAfter } from "./typing.js";
 import { closePop, item, menu, popUp } from "./popups.js";
 import { say, when } from "./actors.js";
+import { view } from "./editor.js";
 
 export const FIGMA_URL = /^https:\/\/(?:www\.)?figma\.com\/(design|file|board|proto|slides|deck)\/([A-Za-z0-9]{6,64})(?:\/([^/?#\s]*))?[^\s<>"']*$/;
 const SNAP_EVERY = 600;
@@ -137,17 +137,16 @@ function snapSoon(b, force = false, tell = false) {
     }).catch(() => {});
 }
 
-// -- keys in a caption: Enter a line below, Backspace (or ↑) at its start the picture
-export function captionKey(ev, p, i, n, tx) {
+// -- keys in a caption (`h`: where the caret is in it, editor.js's here()): Enter a line below, Backspace (or ↑) at its
+// start the picture
+export function captionKey(ev, p, i, h) {
   const b = p.blocks[i], k = ev.key;
-  if (k === "Enter" && !ev.shiftKey) { ev.preventDefault(); addAfter(b, "text"); return true; }
-  if ((k === "Backspace" && edge(tx, false)) || (k === "ArrowUp" && onLine(tx, false)) || (k === "ArrowLeft" && edge(tx, false))) {
-    ev.preventDefault();
+  if (k === "Enter" && !ev.shiftKey) { addAfter(b, "text"); return true; }
+  if ((k === "Backspace" && h.start) || (k === "ArrowUp" && view.endOfTextblock("up")) || (k === "ArrowLeft" && h.start)) {
     focusFig(b.id);
     return true;
   }
-  if ((k === "Delete" && edge(tx, true)) || k === "Tab") { ev.preventDefault(); return true; }
-  return false;
+  return (k === "Delete" && h.end) || k === "Tab";
 }
 
 // -- pictures added: kept by the backend, then put on the page as blocks -- into the empty line they came from, or
@@ -171,8 +170,7 @@ export async function putPictures(files, at) {
 function putMedia(made, at, into = null) {
   const p = page();
   if (!p || p.deleted || !made.length) return;
-  const tx = at && rowOf(at.id) && rowOf(at.id).querySelector(".tx");
-  if (into === null) into = !!(at && at.type === "text" && tx && empty(tx));
+  if (into === null) into = !!(at && at.type === "text" && blank(at.id));
   const i = at ? p.blocks.findIndex((x) => x.id === at.id) : -1, ops = [];
   let after = at ? at.id : "", next = p.blocks[i + 1];
   made.forEach((m, j) => {
@@ -214,8 +212,9 @@ function makeFigma(b, url, into) {
   const at = blockOf(b.id);
   if (at) putMedia([{ type: "figma", url, title: figmaTitle(url), text: "", checked: false, indent: 0 }], at, into);
 }
-export function figmaChoice(b, tx, url) {
-  const m = popUp(tx.getBoundingClientRect(), (pop) => pop.append(el("div", { class: "hd", text: "Paste as" }),
+const lineRect = (b) => { const n = rowOf(b.id), tx = n && n.querySelector(":scope > .tx"); return (tx || box).getBoundingClientRect(); };
+export function figmaChoice(b, url) {
+  const m = popUp(lineRect(b), (pop) => pop.append(el("div", { class: "hd", text: "Paste as" }),
     item({ glyph: FIGMA_KIND.glyph, label: "Live frame", note: figmaTitle(url) || "From Figma" }, () => makeFigma(b, url, true)),
     item({ glyph: "↗", label: "Link" }, () => linkIt(b, url))), null, "figma");
   m.on = 0;
@@ -235,25 +234,24 @@ export function figmaKey(ev) {
   return false;
 }
 function linkIt(b, url) {
-  const x = blockOf(b.id), tx = rowOf(b.id) && rowOf(b.id).querySelector(".tx");
-  if (!x || !tx) return;
+  const x = blockOf(b.id);
+  if (!x) return;
   const h = clean(`<a href="${url.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}">${esc(url)}</a>`);
   forget(x.id);
-  x.text = h;
-  tx.innerHTML = withLinks(h);
   change([{ op: "block.put", page: current, block: { id: x.id, text: h } }]);
+  drawPage();
   focusBlock(x.id, "end");
 }
-export function figmaBox(b, tx) {
-  const m = popUp(tx.getBoundingClientRect(), (pop) => {
+export function figmaBox(b) {
+  const m = popUp(lineRect(b), (pop) => {
     const input = el("input", { class: "fg-input", type: "url", placeholder: "Paste a link to a frame or board", "aria-label": "Figma link", autocomplete: "off" });
     const bad = el("div", { class: "fg-bad", hidden: true });
     const go = () => {
       const url = input.value.trim();
       if (!FIGMA_URL.test(url)) { bad.textContent = "Not a Figma file link (figma.com/design/…, /board/… or /proto/…)"; bad.hidden = false; return; }
       closePop();
-      const at = blockOf(b.id), t = rowOf(b.id) && rowOf(b.id).querySelector(".tx");
-      if (at) makeFigma(at, url, !!(t && empty(t) && at.type === "text"));
+      const at = blockOf(b.id);
+      if (at) makeFigma(at, url, blank(at.id) && at.type === "text");
     };
     input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); go(); } });
     pop.append(el("div", { class: "hd", text: "Figma" }),

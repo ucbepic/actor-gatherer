@@ -7,10 +7,15 @@
 // puts lines after them, Tab and ⇧Tab indent them, ⌘D duplicates them, ⌘↵ ticks their to-dos, ⌘⇧↑↓ moves them, ↵ goes
 // back to typing; their grip drags them all, and its menu (or the bar over them) turns them into a type, or sends them
 // to an agent as one message. A click anywhere else, or Esc, puts them down.
+// In the editor (editor.js) they are its selection, a LinesSelection (doc.js): while they are, the view isn't editable --
+// no caret, no text selected -- and the keys and the clipboard are the page's, here.
 import { $, clean, el, esc, INDENTED, KINDS, MAX_INDENT, now, plainOf, rid, SPECIAL, SVG, TYPES,
   UNSENT } from "./helpers.js";
 import { convo, current, eatMouse, pages, sayTimer, setConvo, setEatMouse, setSayTimer } from "./state.js";
 import { pageOfLink } from "./model.js";
+import { Selection, TextSelection } from "./vendor/prosemirror.js";
+import { blockAt, LinesSelection } from "./doc.js";
+import { edit, here, refreshView, view } from "./editor.js";
 import { change, flushTyped, forget, pump } from "./send.js";
 import { historyOf, undoStep } from "./undo.js";
 import { blockOf, box, drawPage, openPage, page, rowOf, shown } from "./page.js";
@@ -25,45 +30,51 @@ import { figmaTitle } from "./pictures.js";
 import { isWork, markWork } from "./actors.js";
 import { openPicker } from "./picker.js";
 
-export const picked = new Set();                         // the lines picked: a run of the page's, `anchor` to `head`
-let anchor = null, head = null;
+export const picked = new Set();                         // the lines picked: a run of the page's, `anchor` to `head` (the
+let anchor = null, head = null;                          // editor's selection's, as drawPicked last drew it)
+let pending = null;                                      // {a, z}: lines picked by a drag going on, the editor's once it ends
 let undo = null;                                         // {pid, step}: lines just deleted, the toast's Undo
 const order = () => { const p = shown(); return p ? p.blocks.map((b) => b.id) : []; };   // (the lines shown: none folded away)
 const pickedBlocks = () => { const p = page(); return p ? p.blocks.filter((b) => picked.has(b.id)) : []; };
 export function pickRange(a, z) {
   unpickCells();
-  const ids = order(), i = ids.indexOf(a), j = ids.indexOf(z);
-  if (i < 0 || j < 0) return unpick();
-  picked.clear();
-  for (const id of ids.slice(Math.min(i, j), Math.max(i, j) + 1)) picked.add(id);
-  anchor = a;
-  head = z;
-  drawPicked();
+  if (sweep || band) {                                   // (the browser's own selection left alone while the mouse drags)
+    pending = order().includes(a) && order().includes(z) ? { a, z } : null;
+    return drawPicked();
+  }
+  const sel = view && LinesSelection.create(view.state.doc, a, z);
+  if (!sel) return unpick();
+  edit(view.state.tr.setSelection(sel), "select");
   const r = rowOf(z);
   if (r && !drag && !band && !sweep) r.scrollIntoView({ block: "nearest" });
 }
 export function pickAll() { const ids = order(); if (ids.length) pickRange(ids[0], ids[ids.length - 1]); }
+// the lines put down: the caret (should the keys come back to the page) at the end of the last of them
 export function unpick() {
-  if (!picked.size) return;
-  picked.clear();
-  anchor = head = null;
-  drawPicked();
+  if (pending) { pending = null; return drawPicked(); }
+  const sel = view && view.state.selection;
+  if (!(sel instanceof LinesSelection)) return;
+  const doc = view.state.doc, at = blockAt(doc, sel.head), end = at ? at.pos + at.node.nodeSize - (at.node.inlineContent ? 1 : 0) : 0;
+  edit(view.state.tr.setSelection(at && at.node.inlineContent ? TextSelection.create(doc, end) : Selection.near(doc.resolve(end))), "select");
 }
-// the page's keys, not a line's: no caret, no text selected
+// the page's keys, not a line's: no caret, no text selected (the editor not editable: lines or cells picked)
 export function holdKeys() {
   flushTyped();
   pump();
   const s = getSelection();
   if (s.rangeCount) s.removeAllRanges();
+  refreshView();
   if (document.activeElement !== box) box.focus({ preventScroll: true });
 }
-// the rows marked as picked (some gone, by another's change: forgotten), and the bar over a run of several
+// the rows marked as picked, as the editor's selection has them now, and the bar over a run of several
 export function drawPicked() {
-  const ids = order().filter((id) => picked.has(id));
+  const sel = view && view.state.selection, lines = sel instanceof LinesSelection, all = order();
+  const run = pending ? all.slice(Math.min(all.indexOf(pending.a), all.indexOf(pending.z)), Math.max(all.indexOf(pending.a), all.indexOf(pending.z)) + 1) : null;
+  const ids = run || (lines ? sel.ids : []);
   picked.clear();
   for (const id of ids) picked.add(id);
-  if (ids.length && !picked.has(anchor)) anchor = ids[0];
-  if (ids.length && !picked.has(head)) head = ids[ids.length - 1];
+  anchor = pending ? pending.a : lines ? sel.anchorId : null;
+  head = pending ? pending.z : lines ? sel.headId : null;
   for (const n of box.children) n.classList.toggle("picked", picked.has(n.dataset.id));
   box.classList.toggle("picking", ids.length > 0);
   box.classList.toggle("grp", ids.length > 1);
@@ -245,7 +256,8 @@ export function mdLines(bs) {
 }
 
 // -- the keys, the clipboard, and clicks, while lines are picked
-export const inField = (t) => !!(t && t.closest && t.closest(".tx, input, textarea, [contenteditable='true'], [contenteditable='plaintext-only'], .pop, .convo"));
+// (the lines' editor counts while it is editable: no lines or cells picked; a divider or picture focused in it, not)
+export const inField = (t) => !!(t && t.closest && (t.isContentEditable || t.closest(".tx, input, textarea, .pop, .convo")));
 const theirs = () => picked.size > 0 && !inField(document.activeElement);
 
 // -- the drags that pick: a sweep from a line's words, a box from beside the lines
@@ -261,37 +273,35 @@ function edgeScroll(y) {
   else if (y > r.bottom - 30) sc.scrollTop += 12;
 }
 function endPick(ev) {
+  const got = pending;                                   // the lines the drag picked: the editor's selection now
+  pending = null;
   if (sweep) {
     const s = sweep;
     sweep = null;
     document.body.classList.remove("sweeping");
-    if (s.on && picked.size) holdKeys();
+    if (s.on && got) { pickRange(got.a, got.z); holdKeys(); }
   }
   if (band) {
     const b = band;
     band = null;
     $("band").hidden = true;
     document.body.classList.remove("banding");
-    if (b.on) { if (picked.size) holdKeys(); }
+    if (b.on) { if (got) { pickRange(got.a, got.z); holdKeys(); } }
     else if (b.below && ev.type === "pointerup") belowClick();
   }
+  if (got && !picked.size) drawPicked();
 }
-// Words selected from one line into another, however the browser came to select them (its own Shift+↓ out of a line,
+// Words selected from one line into another, however the browser came to select them (its own Shift+→ out of a line,
 // a drag from beside the lines): those lines picked, whole -- words across lines can't be cut, typed over or indented.
-// Looked at once the mouse is let go, not while it drags.
+// Looked at as the editor's selection changes (editor.js), and once the mouse is let go -- not while it drags.
 let held = false;
-function lineOf(node, offset) {
-  if (node === box) return box.children[Math.min(offset, box.children.length - 1)] || null;
-  const e = node && (node.nodeType === 1 ? node : node.parentElement), r = e && e.closest(".blk");
-  return r && r.parentElement === box ? r : null;
-}
-function crossPick() {
-  if (held || sweep || band) return;
-  const s = getSelection();
-  if (!s.rangeCount || s.isCollapsed) return;
-  const a = lineOf(s.anchorNode, s.anchorOffset), z = lineOf(s.focusNode, s.focusOffset);
-  if (!a || !z || a === z) return;
-  pickRange(a.dataset.id, z.dataset.id);
+export function crossPick() {
+  if (held || sweep || band || !view) return;
+  const sel = view.state.selection, doc = view.state.doc;
+  if (!(sel instanceof TextSelection) || sel.empty) return;
+  const a = blockAt(doc, sel.anchor), z = blockAt(doc, sel.head);
+  if (!a || !z || a.node.attrs.id === z.node.attrs.id) return;
+  pickRange(a.node.attrs.id, z.node.attrs.id);
   holdKeys();
 }
 
@@ -357,8 +367,9 @@ export function wirePicked() {
     if (ev.target === sc && ev.clientX >= sc.getBoundingClientRect().left + sc.clientWidth) return;   // its scrollbar
     const n = ev.target.closest(".blk");
     if (ev.shiftKey && n && box.contains(n) && !ev.target.closest("button, .chk, a")) {
-      const f = document.activeElement, fn = f && box.contains(f) && f !== box ? f.closest(".blk") : null;
-      const from = picked.size ? anchor : fn ? fn.dataset.id : null;
+      const f = document.activeElement, h = f === box && view.editable && here();   // (the line the caret is in, or one focused)
+      const fn = f && box.contains(f) && f !== box ? f.closest(".blk") : null;
+      const from = picked.size ? anchor : h ? h.id : fn ? fn.dataset.id : null;
       if (from && (picked.size || from !== n.dataset.id)) {   // (Shift+click in the line typed in: its text, as ever)
         setEatMouse(true);
         pickRange(from, n.dataset.id);
@@ -406,7 +417,6 @@ export function wirePicked() {
   document.addEventListener("pointercancel", endPick);
   // -- words selected from one line into another: those lines picked (crossPick), once the mouse is let go
   document.addEventListener("pointerdown", () => { held = true; }, true);
-  document.addEventListener("selectionchange", crossPick);
   document.addEventListener("pointerup", () => { held = false; crossPick(); });
   document.addEventListener("pointercancel", () => { held = false; });
   window.addEventListener("blur", () => { held = false; });

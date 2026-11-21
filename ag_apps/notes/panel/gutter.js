@@ -5,7 +5,7 @@ import { ag, current } from "./state.js";
 import { change, forget } from "./send.js";
 import { blockOf, box, drawPage, page, shown } from "./page.js";
 import { focusBlock } from "./caret.js";
-import { addAfter, retype, tick } from "./typing.js";
+import { addAfter, retype, tick, typeIn } from "./typing.js";
 import { item, popUp } from "./popups.js";
 import { followPage } from "./pagelinks.js";
 import { copyOf, holdKeys, linesMenu, picked } from "./picked.js";
@@ -92,7 +92,7 @@ export function wireGutter() {
       const b = blockOf(add.closest(".blk").dataset.id);
       if (!b || page().deleted) return;
       addAfter(b, "text");
-      document.execCommand("insertText", false, "/");      // the / menu, opened as typing "/" opens it
+      typeIn("/");                                         // the / menu, opened as typing "/" opens it
       return;
     }
     const chk = ev.target.closest(".chk");

@@ -18,10 +18,11 @@ export function below(id) {                            // a page's subpages, the
 }
 // A line's links to pages (href "page:<id>", notebook.py's), drawn as the page is now: its icon and title, struck while it
 // is in the trash or gone, and kept whole (not typed into: a click opens the page). What is saved of one is its href and
-// the title (clean() drops the rest).
+// the title (clean() drops the rest). In a line, each is a node of the editor's (editor.js's pageLink); in a table's
+// cell or a conversation, HTML drawn here.
 const PAGE_HREF = /^page:([a-z0-9]{6,24})$/;
 export const pageOfLink = (a) => { const m = PAGE_HREF.exec(a.getAttribute("href") || ""); return m ? m[1] : null; };
-// Beside a link at a line's start or end, a zero-width space: a place for the caret, which Chrome has none for there
+// Beside a link at a cell's start or end, a zero-width space: a place for the caret, which Chrome has none for there
 // (never saved: clean() drops it).
 export const ZW = "\u200b";
 export function withLinks(h) {
@@ -37,18 +38,20 @@ function padLink(a) {
   if (!isText(a.nextSibling)) a.after(ZW);
   if (!isText(a.previousSibling)) a.before(ZW);
 }
-export function drawLinks(root) {                      // (a line being typed in too: the caret is never in a link)
-  for (const a of root.querySelectorAll("a")) {
-    const id = pageOfLink(a);
-    if (!id) continue;
-    const p = pages.get(id), cls = `pg${!p ? " gone" : p.deleted ? " binned" : ""}`;
-    const tip = !p ? "That page was deleted" : p.deleted ? "Open page (in the trash)" : "Open page";
-    if (a.className !== cls) a.className = cls;
-    if (a.getAttribute("contenteditable") !== "false") a.setAttribute("contenteditable", "false");
-    if (p && a.textContent !== (p.title || "Untitled")) a.textContent = p.title || "Untitled";
-    if (a.dataset.icon !== (p && p.icon ? p.icon : "")) a.dataset.icon = p && p.icon ? p.icon : "";
-    if (a.title !== tip) a.title = tip;
-  }
+export function drawLinks(root) {                      // (a cell being typed in too: the caret is never in a link)
+  for (const a of root.querySelectorAll("a")) drawLink(a);
+}
+export function drawLink(a) {
+  const id = pageOfLink(a);
+  if (!id) return;
+  const p = pages.get(id), cls = `pg${!p ? " gone" : p.deleted ? " binned" : ""}`;
+  const tip = !p ? "That page was deleted" : p.deleted ? "Open page (in the trash)" : "Open page";
+  if (a.className !== cls) a.className = cls;
+  if (a.getAttribute("contenteditable") !== "false") a.setAttribute("contenteditable", "false");
+  const words = p ? p.title || "Untitled" : a.dataset.was;   // (gone: the words it was linked with, a line's link keeps them)
+  if (words != null && a.textContent !== words) a.textContent = words;
+  if (a.dataset.icon !== (p && p.icon ? p.icon : "")) a.dataset.icon = p && p.icon ? p.icon : "";
+  if (a.title !== tip) a.title = tip;
 }
 // whether a page has a link to one of those pages (renamed, binned, ...: the links drawn again)
 export const linksTo = (p, ids) => !!p && ids.size > 0 && p.blocks.some((b) => b.text && b.text.includes('href="page:')
