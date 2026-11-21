@@ -1,14 +1,18 @@
 import { PANE, PANE_URL, state } from "../../core/page/state.js";
-import { ICONS, agoEl, el, itemType, key, selectedInfo, shownTypes, signature } from "../../core/page/helpers.js";
-import { drawn, loadChat, loadChatHistory, loadTranscript, render } from "../page/data.js";
+import { ICONS, selectedInfo } from "../../core/page/helpers.js";
+import { drawn, loadChat, render } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
 import { paneUrl } from "../layout/panes.js";
 import { renderMain } from "../page/main-view.js";
-import { backgroundNote, chatToEnd, columns, contextItem, tally, typeChips } from "./chat.js";
-import { blockCache, notesSwitch, showNotes, transcriptBlocks } from "../transcript/transcript.js";
-import { hist } from "../history/history.js";
+import { backgroundNote, chatToEnd } from "./chat.js";
+import { chatActor } from "./files-view.js";
+import { viewOpened } from "../history/store";
 import { chatMin } from "../layout/top.js";
 import * as prefs from "../../core/prefs";
+import { drawMessages, typeChipsNode } from "../details/mount";
+import { eventsOf, loadEvents } from "../details/events";
+import { drawTranscript, notesSwitchNode } from "../transcript/mount";
+import { loadTranscript, txFeedOf } from "../transcript/data";
 
 // ------------------------------------------------------------------ chat views
 // How the chat shows an actor's history: one VIEW of several, the reader's choice (kept in this
@@ -56,7 +60,7 @@ import * as prefs from "../../core/prefs";
 //
 // `ctx`: {actor (its key), info (the actor), session (its row: status, cwd, ...), data: {items, pending (what the model
 // answered that no call has stored yet: row_id null), earlier (older items not loaded)}, running,
-// queued, held (why the session cannot be messaged here -- another process has it open -- or ""), writable
+// queued, noneYet (what a view says while there is nothing yet), held (why the session cannot be messaged here -- another process has it open -- or ""), writable
 // (whether it can be messaged from here at all),
 // loadEarlier(), rerender(), api (agDashboard: el, markdown, the page's other helpers)}, and for
 // a composer: input(attrs), the text box to build it around (Enter sends, Shift+Enter a new line, what
@@ -77,7 +81,7 @@ const chatView = () => {
   return offeredTo(v, info) ? v : CHAT_VIEWS.get("files");
 };
 async function setChatView(id) {
-  if (id === "history" && chatView().id !== "history") hist.askedFor = hist.group = hist.stay = null;   // opened again: built again
+  if (id === "history" && chatView().id !== "history") viewOpened();   // opened again: built again
                                                      // if due, and at its tasks if it has them
   state.chatViewId = id;
   if (PANE) { paneUrl(); PANE.viewed(window, id); }  // a frame's: kept with its pane, not as every page's
@@ -95,60 +99,47 @@ function addChatView(view) {
 }
 // What a view can draw from: each loads its data for the selected session, and says what it has.
 const CHAT_FEEDS = {
+  // the actor's events, a row each (features/details/events.ts)
   history: {
-    load: loadChatHistory,
-    data: () => state.chat && state.selected && state.chat.key === key(...state.selected)
-      ? { items: state.chat.items, pending: state.chat.pending, earlier: false } : null,
+    load: () => loadEvents(chatActor()),
+    data: () => { const f = eventsOf(chatActor()); return f ? { items: f.items, pending: f.pending, earlier: false } : null; },
   },
+  // each event's parts, as the Transcript draws them (features/transcript/data.ts)
   transcript: {
-    load: () => loadTranscript(),
-    loadEarlier: () => loadTranscript(true),
-    data: () => state.tx && state.selected && state.tx.key === key(...state.selected)
-      ? { items: state.tx.items, pending: state.tx.pending, earlier: state.tx.earlier } : null,
+    load: () => loadTranscript(chatActor()),
+    loadEarlier: () => loadTranscript(chatActor(), true),
+    data: () => { const f = txFeedOf(chatActor()); return f ? { items: f.items, pending: f.pending, earlier: f.earlier } : null; },
   },
   none: { load: async () => {}, data: () => ({ items: [], pending: [], earlier: false }) },
 };
 const chatFeed = (view = chatView()) => (chatMin() ? CHAT_FEEDS.files : CHAT_FEEDS[view.feed]) || CHAT_FEEDS.history;
-const txBlocks = blockCache(), msgRows = blockCache();
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   state.chatViewId = (PANE && PANE_URL.get("view")) || prefs.text(CHAT_VIEW_KEY) || "files";
-  // "agent": what ag recorded of the actor's calls -- each read (items), and the context the chart has picked
-  // (state.context) -- loaded with the actor already.
+  // "agent": what ag recorded of the actor's calls -- each read (items) -- loaded with the actor already.
   CHAT_FEEDS.agent = {
     load: async () => {},
     data: () => state.agent && state.agent.reads ? { items: state.agent.reads, pending: [], earlier: false } : null,
   };
 
-  // The views that come with the page.
+  // The views that come with the page: each draws its frame itself, React's (`mount`), with what waits for the turn to
+  // end and that there is nothing yet in it.
   addChatView({
     id: "messages", name: "Messages", feed: "history", frame: "ctx", icon: ICONS.list, more: true, readOnly: true,
-    description: "The session's events, one row each, filtered by type.",
-    tools: () => typeChips(null),
-    render: ({ data }) => {
-      const items = [...data.items, ...data.pending].map((i) => ({ ...i, group: "Recent history" }));
-      const listed = items.filter((it) => shownTypes.has(itemType(it)[0]));
-      return [columns(), el("div", { class: "run" }, el("strong", { text: "Messages" }),
-        el("span", { text: tally(items.length, listed.length, items.reduce((n, i) => n + i.tokens, 0), listed.reduce((n, i) => n + i.tokens, 0), "message") })),
-        ...(msgRows.begin(signature(state.selected)), listed.map((it) => it.row_id === null || it.row_id === undefined ? contextItem(it)
-          : msgRows.get(it.row_id, `${it.tokens}:${it.clipped}:${it.text.length}`, () => contextItem(it))))];
-    },
+    description: "The session's events, one row each, filtered by type.", queued: false, greets: true,
+    tools: () => typeChipsNode(null),
+    render: () => [],
+    mount: ({ actor, data, queued, noneYet }) => drawMessages({ key: actor, items: data.items, pending: data.pending,
+      queued, noneYet }, "Messages"),
   });
   addChatView({
     id: "transcript", name: "Transcript", feed: "transcript", frame: "term", icon: ICONS.page, more: true, readOnly: true,
-    description: "The conversation as its harness's terminal shows it.",
-    tools: () => notesSwitch(),
-    render: ({ info, data, running, loadEarlier }) => {
-      state.txCwd = info.cwd || "";
-      txBlocks.begin(signature([state.selected, showNotes, state.txCwd]));
-      return [
-        data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
-        ...transcriptBlocks([...data.items, ...data.pending], running, txBlocks),
-        running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }),
-          ...(info.failing ? ["Retrying…", agoEl("last try", info.failing.at)] : ["Working…", agoEl("last activity", info.last)])) : null,
-        backgroundNote(info, true),
-      ].filter(Boolean);
-    },
+    description: "The conversation as its harness's terminal shows it.", queued: false, greets: true,
+    tools: () => notesSwitchNode(),
+    render: () => [],
+    mount: ({ actor, info, data, running, queued, noneYet, loadEarlier }) => drawTranscript({ key: actor, items: data.items,
+      pending: data.pending, earlier: !!data.earlier, running, failing: info.failing || null, last: info.last ?? null,
+      cwd: info.cwd || "", background: backgroundNote(info, true), queued, noneYet, loadEarlier }, "Transcript"),
   });
 }
 

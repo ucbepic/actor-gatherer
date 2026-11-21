@@ -1,7 +1,7 @@
 # The dashboard on a standard stack: plan
 
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
-the views share, in `core/ui/`; Chat's turn list, in `features/chat/`). A1's build step, the server serving it and `publish.yml` building it come with A3, the
+the views share, in `core/ui/`; Chat; the list; Details, Transcript, Messages, History and Terminal's frame). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
 
@@ -443,9 +443,72 @@ pattern the list and Chat follow:
   card kept off a resting pointer (`hover.still`) stay for the rail, the cards and the menus, still drawn by hand.
   Vitest: `AgentList.test.tsx` (the list drawn by its mount, with a host standing in for the page).
 - *Left as it was:* a row is a `<button class="agent">` whose own buttons (bookmark, ×, "+") are `span[role=button]`
-  inside it -- the specs locate them inside `button.agent`, so moving them out waits for specs that allow it. The rail
-  and the monitor (`modes.js`) and Manage groups (`group-moves.js`) are the old page's still, reading the same
-  derivations.
+  inside it -- the specs locate them inside `button.agent`, so moving them out waits for specs that allow it.
+- *The list's other shapes, then:* each a view-model from the same derivations and view, drawn by React into its box at
+  once (`modes-mount.tsx`), by its keys -- the rail (`rail-model.ts`, `rail-rows.ts`; `Rail.tsx`, `RailTiles.tsx`),
+  the monitor (`monitor-model.ts`; `Monitor.tsx`: a card drawn again only when its signature changes, the cards in view
+  watched as before), the top bar's counts (`Totals.tsx`), the hover card (`Card.tsx`, `CardTask.tsx`,
+  `CardFolder.tsx`, `CardParts.tsx`: the page still decides which card, where and when, and places it), and Manage
+  groups with a move's question (`manage-model.ts`; `ManageGroups.tsx`, on Radix's Dialog, each still a `<dialog>`
+  with its classes, on a backdrop of its own, `.mg-dim`). `modes.js` and `group-moves.js` keep the state and what a
+  press does, handed to the views as hosts. Gone with the redraws: the drag kept from them (`listDrag.later`,
+  `DRAG_LOST_MS` -- the row dragged now says its dragend itself, by a listener of its own), the card kept off a
+  resting pointer (`hover.still`), the card's name box carried through them (`cardMoving`) and Manage groups' (`manage.
+  drawing`); a box a draw itself takes away is not the reader leaving it (`drawingNow`). A rail tile's bookmark and ×
+  are kept from draw to draw like the tile, so none fades in under a resting pointer; they show on hover or keyboard
+  focus (`:focus-visible`), not on any focus, so one pressed doesn't stay shown once the pointer leaves. A gatherer's and a folder's "+" and "⋯" are Radix's
+  DropdownMenu (`Menus.tsx`; the page says what each holds: `startMenu`, `gathererMore`, `folderMore`), closed by a
+  press the page never hears as the page's own drop-downs are (`pressedAway`'s `PRESSED_AWAY`); an item that opens a box
+  or the branch picker opens it from the same button, the menu closed (its second step, `openPop` by the button's
+  `data-pop`). The card's "+ actor" and "+ ⋯", the new-tab page's and the panes' drop-downs are `openPop`'s still.
+
+**A5, the actor's other views in React.** What the old page still drew by hand of an actor beside Chat, each moved as
+Chat was: a component scoped to the actor key the page hands it (taken from `state.selected` in one place, chat's
+`chatActor`), its state in a store, what it fetches through TanStack Query, the same DOM, classes, roles and labels.
+- **Details** (`features/details/`): the panel (`Details.tsx`), its context and size cards (`Context.tsx`), how a context
+  or all calls divide (`Decomposition.tsx`) and the size chart (`Charts.tsx`), what they show worked out apart
+  (`model.ts`). The panel's `aside` is its React root, the same node from draw to draw (`mount.tsx`'s `drawDetails`, from
+  main-view.js's `detailsPanel`). The read picked on the chart is the actor's (`store.ts`'s `usePicked`, let go of when
+  another actor is shown: data.js's `takeAgent`); a read's context is a query by gatherer and read, fetched before the page
+  draws it (`loadContext`) and before a pick shows it (`pickRead`). The chart measures its box as it is put on the page and
+  as it is resized (a ResizeObserver), where it was drawn again only on the window's resize. The types the lists show (the
+  chips) are a store in `core/model/items.ts`, with the items' types and groups the old page took from helpers.js and
+  state.js; a harness's facts the views read are `core/model/harness.ts`. Gone: chat.js's cards, main-view.js's panel and
+  facts, `details/charts.js`, the page's `state.readId`, `state.context`, `drawCharts`. The reader's own views keep
+  `agDashboard.contextItem`, `.columns`, `.typeChips`, `.contextCard` and `.sizeCard`: the same components, each drawn in a
+  node of its own (`core/ui/node.tsx`'s `nodeOf`, its root, so its clicks reach React). Vitest: `model.test.ts`,
+  `Details.test.tsx`.
+- **Messages and Transcript** draw their frames themselves (a view's `mount`, as Chat's): `core/ui/frame.tsx`'s
+  `viewFrame`, one `#chat-list` node per view, its React root, drawn at once as the page draws, so its `keepingPlace()`
+  keeps the frame's scroll and follows its end as before; each lists what waits for the turn to end and says there is
+  nothing yet itself (chatCard hands it `noneYet`). Messages (`details/Messages.tsx`) lists the context card's rows; the
+  Transcript (`features/transcript/`) is its blocks worked out apart (`blocks.ts`: the stretches of calls, "+N more",
+  thinking, notes) and drawn by key (`TranscriptView.tsx`), a call by its shape (`calls.tsx`: `summary`, the folded
+  output, a change's lines -- and the permission card's call, `permissionNode`, which chat.js's permissionView now is,
+  its paths no longer shown from whichever actor's directory the Transcript last drew). Their feeds are stores by actor,
+  their loaders moved from data.js: `details/events.ts` (`/api/history`, the feed the reader's own views draw from by
+  default) and `transcript/data.ts` (`/api/transcript`, a page at a time); the page still draws them at each change of
+  the feed (mainSignature). The notes switch is a store (`useNotes`), as the type chips are. Gone: transcript.js,
+  `state.chat`, `state.tx`, `state.txCwd`. The reader's own views keep `agDashboard.transcriptBlocks`, `.foldedOutput`
+  and `.notesSwitch`, as nodes. Vitest: `transcript.test.tsx`, `details/messages.test.tsx`.
+- **History** (`features/history/`): the view (`HistoryView.tsx`: the bar, the list, each row drawn by its key and
+  drawn again only when what it shows changed), the panel at the right (`Side.tsx`, a record's saving in `Save.tsx`), the
+  tree, its rows and what a selection holds worked out apart (`tree.ts`), selecting by press, drag, shift and ⌘ and the
+  keys (`select.ts`: while a drag goes on only the selection changes), its own state in a store (`store.ts`: grouped,
+  opened, searched, selected -- started over for another gatherer's rows -- the panel, a record being saved). What it
+  fetches is TanStack Query's (`data.ts`): the outline by actor (loaded a page at a time, then what came after; kept for
+  an actor shown again, where it was fetched afresh), the gatherer's records (fetched again after 10 s, every 2 s while
+  one is made), a search's hits, an opened message's whole text. The types shown are Radix's DropdownMenu (checkbox
+  items; a pick keeps it open), in place of a `details` closed by a click elsewhere; its button and menu restyled as the
+  summary and box were. history.js only registers the view (and keeps `enc`, which the list's modes.js imports); it is
+  off the long files' list. Not virtualized: the list keeps its rows' `content-visibility`, and the browser's find and
+  the specs read every row. Vitest: `history.test.tsx`.
+- **Terminal**: xterm.js as it was, wrapped -- the terminal's session (`terminal/term.ts`: one xterm at a time, its node
+  kept across draws, its stream, what is typed sent in order; TypeScript now, what it asks of the page handed to it,
+  `setTermHost`) and the view's frame React's (`mount.tsx`'s `drawTerminal`: xterm's node first in it, never React's,
+  the cover after it, `TerminalView.tsx`). terminal.js registers the view and hands on `term`, `termFor`, `termListen`,
+  `termWebgl` and `fullscreenFor` to the old modules that use them (the shell's pane, the list, the panes, sending).
+  Vitest: `terminal.test.tsx`.
 
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the

@@ -4,8 +4,9 @@
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { plural } from "../../core/format";
 import type { ListHost } from "./host";
-import { CountChips, CrewButton, FoldMark, FolderBox, NameBox, TallyChips, useFilled } from "./Parts";
+import { AskClose, CountChips, CrewButton, FoldMark, FolderBox, NameBox, TallyChips, useFilled } from "./Parts";
 import type { FoldNode, FolderNode, GathererNode, GfFolderNode, Node } from "./rows";
+import { FolderActs, GathererActs } from "./Menus";
 import { ActorRowView, AppRowView, ShellRowView, TaskRowView } from "./RowViews";
 import { GF } from "./tree";
 import type { Folder, Gatherer } from "./types";
@@ -18,7 +19,12 @@ const stop = (ev: MouseEvent) => ev.stopPropagation();
 
 /** What a gatherer's row, a folder's line or the list's head does with what is dragged over it: put in folder `id` of
  * `g` (null: its top); held over it a moment, `open` opens it. */
-export const drops = (host: ListHost, g: Gatherer, id: number | null, open: () => void) =>
+export const drops = (
+  host: Pick<ListHost, "snapshot" | "dropEnter" | "dropOver" | "dropLeave" | "drop">,
+  g: Gatherer,
+  id: number | null,
+  open: () => void,
+) =>
   host.snapshot
     ? {}
     : {
@@ -107,7 +113,6 @@ function NewForm({ host, at }: { host: ListHost; at: string }) {
  * open, what is in it set in under it. Its row dragged: put in a folder of gatherers, or another group. */
 function GathererBox({ host, n }: { host: ListHost; n: GathererNode }) {
   const g = n.g;
-  const acts = useFilled<HTMLSpanElement>(() => host.gathererActs(g, n.title));
   const toggle = () => host.toggleGatherer(g.name);
   const drag = n.draggable
     ? {
@@ -139,7 +144,9 @@ function GathererBox({ host, n }: { host: ListHost; n: GathererNode }) {
         {host.snapshot ? null : <CrewButton host={host} g={g} node={`group:${g.name}`} />}
         <span className="fill" onClick={toggle}>
           <CountChips c={n.counts} />
-          <span className="g-acts" ref={acts} onClick={stop} />
+          <span className="g-acts" onClick={stop}>
+            <GathererActs host={host} g={g} title={n.title} />
+          </span>
         </span>
       </div>
       {n.adding ? <NewForm host={host} at={host.formAt()} /> : null}
@@ -185,7 +192,6 @@ function FolderRows({ host, n }: { host: ListHost; n: FolderNode }) {
 function FolderLine({ host, n }: { host: ListHost; n: FolderNode }) {
   const { g, f, closed, held } = n,
     t = n.tally;
-  const acts = useFilled<HTMLSpanElement>(() => host.folderActs(n));
   const toggle = () => host.toggleFolder(g.name, f.id);
   const says = closed
     ? `${f.name}: closed, ${plural(held, "actor")} in it`
@@ -223,54 +229,29 @@ function FolderLine({ host, n }: { host: ListHost; n: FolderNode }) {
         ) : (
           <TallyChips t={t} />
         )}
-        {host.snapshot ? null : <span className="f-acts" ref={acts} onClick={stop} />}
+        {host.snapshot ? null : (
+          <span className="f-acts" onClick={stop}>
+            <FolderActs host={host} n={n} />
+          </span>
+        )}
       </span>
     </div>
   );
 }
 
-/** A folder's × asking first, under its line: what closing it would close, end, take off -- "Close folder", or Cancel
- * (Esc). */
+/** A folder's × asking first, under its line (Parts.tsx's AskClose). */
 function CloseAsk({ host, g, f }: { host: ListHost; g: Gatherer; f: Folder }) {
   const { said, where } = host.closeAsk(g, f);
-  const button = (which: string, cls: string, text: string, run: () => void) => (
-    <button
-      type="button"
-      className={`pb ${cls}`}
-      data-ask={which}
-      onClick={(ev) => {
-        ev.stopPropagation();
-        run();
-      }}
-      onFocus={() => host.askFocus(which)}
-    >
-      {text}
-    </button>
-  );
   return (
-    <div
-      className="f-ask"
-      role="alertdialog"
-      aria-label={`Close ${f.name}?`}
-      data-key={`${g.name}/folder:${f.id}/ask`}
-      onClick={stop}
-      onKeyDown={(ev) => {
-        if (ev.key === "Escape") {
-          ev.preventDefault();
-          ev.stopPropagation();
-          host.closeAskCancel();
-        }
-      }}
-    >
-      <p>
-        <b>{`Close ${f.name}?`}</b>
-        {` This ${said}. The folder moves to ${where}'s closed line.`}
-      </p>
-      <div className="f-ask-btns">
-        {button("go", "go", "Close folder", () => host.closeFolderGo(g, f))}
-        {button("cancel", "", "Cancel", () => host.closeAskCancel())}
-      </div>
-    </div>
+    <AskClose
+      g={g}
+      f={f}
+      said={said}
+      where={where}
+      go={() => host.closeFolderGo(g, f)}
+      cancel={() => host.closeAskCancel()}
+      focus={(which) => host.askFocus(which)}
+    />
   );
 }
 

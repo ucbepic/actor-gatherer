@@ -1,6 +1,6 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
-  avatarMode, clock, el, get, isShell, keepAvatarMode, key, selectedInfo, signature,
+  avatarMode, clock, el, get, isShell, keepAvatarMode, key, parseKey, selectedInfo, signature,
 } from "../../core/page/helpers.js";
 import { keepingPlace } from "../settings/panel.js";
 import { statusOf, takeHome } from "../list/seen.js";
@@ -9,13 +9,18 @@ import { drawWho, paneSig, restorePanes, setAutoShown, showActorsApp, startTabs,
 import { renderMain } from "./main-view.js";
 import { chatAtEnd, chatToEnd } from "../chat/chat.js";
 import { chatFeed, chatView } from "../chat/views.js";
-import { opened } from "../chat/files-view.js";
+import { chatActor, opened } from "../chat/files-view.js";
 import { canMinimize, chatMin, topShown } from "../layout/top.js";
 import { useTurns } from "../chat/store";
 import { drafts, keepDraft } from "../chat/drafts";
 import { ownBox } from "../chat/Composer";
 import { useSettings } from "../settings/store";
 import * as prefs from "../../core/prefs";
+import { counted } from "../details/model";
+import { loadContext, pickedFor, shownRead, usePicked } from "../details/store";
+import { detailsShown } from "../details/mount";
+import { useEvents } from "../details/events";
+import { txSignature, useTxFeed } from "../transcript/data";
 
 // ------------------------------------------------------------------ data
 let hidingMoved = false;
@@ -47,97 +52,24 @@ async function loadAgent() {
   if (!state.selected || state.selected[0] !== g || state.selected[1] !== c) return;   // another picked meanwhile: not it
   await takeAgent(got);
 }
-// The selected agent, fetched or pushed: its calls' counts, and the context of the call shown.
+// The selected agent, fetched or pushed: its calls' counts, and the context of the call Details shows (the latest's,
+// unless one is picked: features/details/store.ts), fetched before the page draws it.
 async function takeAgent(agent) {
   state.agent = agent; state.agentVersion = (state.agentVersion || 0) + 1;
   const reads = (state.agent && state.agent.reads) || [];
-  for (const r of reads)                             // ag's count of all a call sent, as it counted it then (else as stored now:
-    r.counted_tokens = r.recorded_tokens ?? (r.sent_tokens === null || r.sent_tokens === undefined ? null   // its messages,
-      : r.sent_tokens + (r.preamble_tokens || 0));                                                          // the preamble where recorded)
-  if (!reads.length) { state.readId = null; state.context = null; return; }
-  const followLatest = state.readId === null || state.followLatest;
-  const want = followLatest ? reads[reads.length - 1].read_id : state.readId;
-  state.readId = want;
-  state.followLatest = followLatest;
-  await loadContext(want);
+  counted(reads);                                    // ag's count of all each call sent
+  const actor = chatActor();
+  if (!actor) return;
+  detailsShown(actor);
+  if (reads.length) await loadContext(parseKey(actor).group, shownRead(agent, pickedFor(usePicked.getState(), actor)));
 }
-// The transcript feed's events: the newest TRANSCRIPT_ITEMS at first, then each time only those
-// after the last one kept, so an event is never listed twice; the pending ones replaced each time.
-// One load at a time: a stream message and the reader's own action can ask at once.
-let txLoading = Promise.resolve();
-function loadTranscript(earlier = false) {
-  txLoading = txLoading.then(() => loadTranscriptNow(earlier), () => loadTranscriptNow(earlier));
-  return txLoading;
-}
-async function loadTranscriptNow(earlier) {
-  if (!state.selected || SNAPSHOT) return;
-  const [g, c] = state.selected, k = key(g, c);
-  const url = (q) => `/api/transcript?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}${q}`;
-  const take = (got) => {
-    const stored = got.items.filter((i) => i.row_id !== null);
-    if (got.newest) state.tx.pending = got.items.filter((i) => i.row_id === null);
-    return stored;
-  };
-  if (!state.tx || state.tx.key !== k) {
-    const got = await get(url(""));
-    if (got.error) { state.tx = null; return; }
-    state.tx = { key: k, items: [], pending: [], first_row: null, last_row: 0, earlier: got.earlier };
-    state.tx.items = take(got);
-  } else if (earlier) {
-    if (!state.tx.first_row) return;
-    const got = await get(url(`&before=${state.tx.first_row}`));
-    if (got.error || state.tx.key !== k) return;
-    state.tx.items = [...got.items.filter((i) => i.row_id !== null && i.row_id < state.tx.first_row), ...state.tx.items];
-    state.tx.earlier = got.earlier;
-  } else {
-    for (;;) {                                       // all that came since, a page at a time
-      const got = await get(url(`&after=${state.tx.last_row}`));
-      if (got.error || state.tx.key !== k) return;
-      const stored = take(got).filter((i) => i.row_id > state.tx.last_row);
-      state.tx.items.push(...stored);
-      if (stored.length) state.tx.last_row = stored[stored.length - 1].row_id;
-      if (got.newest || !stored.length) break;
-    }
-  }
-  const items = state.tx.items;
-  if (items.length) { state.tx.first_row = items[0].row_id; state.tx.last_row = Math.max(state.tx.last_row, items[items.length - 1].row_id); }
-}
-const txSignature = () => chatView().feed === "transcript" && state.tx
-  ? [state.tx.key, state.tx.items.length, state.tx.last_row, state.tx.first_row, signature(state.tx.pending)] : null;
-// The history feed's messages, append-only: the stored ones since the last loaded, then what is pending.
-// One load at a time (a stream message and the reader's own action can ask at once), and only rows
-// past the last one kept are added: a message is never listed twice.
-let chatLoading = Promise.resolve();
-function loadChatHistory() {
-  chatLoading = chatLoading.then(loadChatHistoryNow, loadChatHistoryNow);
-  return chatLoading;
-}
+// What the main view draws from, of the transcript's feed (features/transcript/data.ts): while the view shown draws it.
+const txSignatureNow = () => chatView().feed === "transcript" ? txSignature(useTxFeed.getState().feed) : null;
 // What the chat shows, loaded: the feed its view draws from (chat views, below), for the selected actor --
 // any actor: one that cannot be messaged here is shown all the same, without the message box.
 async function loadChat() {
   if (!state.selected || SNAPSHOT || isShell(state.selected[1])) return;
   try { await chatFeed().load(); } catch (err) { /* no database yet: the gatherer is made on the first call */ }
-}
-async function loadChatHistoryNow() {
-  if (!state.selected) return;
-  const [g, c] = state.selected, k = key(g, c);
-  if (!state.chat || state.chat.key !== k) state.chat = { key: k, items: [], pending: [], last_row: 0 };
-  let got;
-  try { got = await get(`/api/history?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}&from=${state.chat.last_row + 1}`); }
-  catch (err) { return; }                           // no database yet: the gatherer is made on the first call
-  if (!got || got.error || state.chat.key !== k) return;
-  const stored = got.items.filter((i) => i.row_id !== undefined && i.row_id !== null && i.row_id > state.chat.last_row);
-  state.chat.items.push(...stored);
-  if (stored.length) state.chat.last_row = stored[stored.length - 1].row_id;
-  state.chat.pending = got.items.filter((i) => i.row_id === undefined || i.row_id === null);
-}
-async function loadContext(readId) {
-  const [g] = state.selected;
-  if (state.context && state.context.read_id === readId && state.context.gatherer === g) return;   // unchanged
-  const got = SNAPSHOT ? SNAPSHOT.contexts && SNAPSHOT.contexts[key(g, readId)]
-    : await get(`/api/context?gatherer=${encodeURIComponent(g)}&read_id=${readId}`);
-  if (state.readId !== readId || !state.selected || state.selected[0] !== g) return;   // another wanted since: a load
-  state.context = got ? { ...got, gatherer: g } : null;                                  // that came late is not it
 }
 // What was last drawn, so an update that brings nothing new draws nothing: no flash, and an open
 // table, a scrolled list or a tooltip stays as it is.
@@ -145,7 +77,7 @@ const drawn = { agents: null, main: null, who: null };
 // What the list draws from: kept as `drawn.agents` by renderAgents whoever calls it -- a home, or the reader's own
 // action, which draws at once -- so a home that only confirms that action draws nothing anew (a row drawn again under
 // the pointer as the reader presses it to drag starts no drag). Not the clock: its "ago" texts count where they are, as
-// every `data-ago` does (features/history/history.js's ticker), and a redraw for them alone would take the keyboard's
+// every `data-ago` does (core/ui/clocks.ts), and a redraw for them alone would take the keyboard's
 // place in the list away every 30 s -- only what the time decides, the groups hidden for being inactive (`staleNames`).
 const listSignature = () => signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.titles,
   state.home.saved, state.home.folders, state.home.gatherer_folders, state.home.places, state.home.tasks, state.home.seen, state.home.harnesses, state.home.shells, state.home.branches,
@@ -229,13 +161,13 @@ function render(userAction = false) {
 // it waits on, why it stopped, what runs in the background (which, not how lately): a turn's end may change only that (its
 // answer's end comes after its last words, which the actor's data already had), and its "Working…" would stay.
 const mainSignature = () => {
-  const info = selectedInfo();
-  return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
+  const info = selectedInfo(), events = useEvents.getState().feed;
+  return signature([state.selected, state.agentVersion, info && info.session,
     info && [info.chattable, info.holder],
     info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id),
       info.taken_back],
     info && info.avatar_hello,
-    state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
+    events && [events.key, events.last_row, events.pending], txSignatureNow(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
     state.details, topShown(), chatMin(), canMinimize()]);
 };
@@ -331,7 +263,7 @@ export function start() {
 }
 
 export {
-  drafts, drawn, earlierTurns, fitBox, keepDraft, listSignature, loadAgent, loadChat, loadChatHistory, loadContext,
-  loadHome, loadTranscript, mainSignature, redrawList, refresh, render, setAbout, setAvatarMode, setEarlierTurns,
+  drafts, drawn, earlierTurns, fitBox, keepDraft, listSignature, loadAgent, loadChat,
+  loadHome, mainSignature, redrawList, refresh, render, setAbout, setAvatarMode, setEarlierTurns,
   setLive, setTheme, takeAgent,
 };

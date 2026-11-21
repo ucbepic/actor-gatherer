@@ -5,12 +5,10 @@ import { renderAgents } from "../list/list.js";
 import {
   closeHerePane, focusPane, paneReady, restoreAppPanes, showActorsApp, startPlacing, watchTop,
 } from "../layout/panes.js";
-import { drawCharts } from "../chat/chat.js";
 import { topChanged } from "../layout/top.js";
 import { loadOwnViews } from "../chat/own-views.js";
 import * as appHost from "../apps/host";
 
-let resizeTimer = null;
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   // ------------------------------------------------------------------ start
@@ -24,7 +22,6 @@ export function start() {
     if (state.paused) render();
   });
   if (SNAPSHOT) document.getElementById("pause").style.display = "none";
-  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => document.getElementById("size-chart") && state.agent && state.agent.reads && drawCharts(), 150); });
   $("pane-close").addEventListener("click", () => (PANE ? PANE.close(window) : closeHerePane()));
   if (SNAPSHOT) $("pane-close").hidden = true;            // (a page kept as it was: nothing else placed to show)
   if (PANE) document.addEventListener("pointerdown", () => PANE.focus(window), true);

@@ -1,25 +1,18 @@
-import { PANE, panes, state } from "../../core/page/state.js";
-import {
-  SHOWN_KEY, ago, compact, el, full, harnessName, hasChat, isShell, runnableNames, selectedInfo, shownTypes, usd,
-} from "../../core/page/helpers.js";
+import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { el, isShell, parseKey, selectedInfo } from "../../core/page/helpers.js";
 import { drawn, mainSignature } from "./data.js";
 import { keepingPlace } from "../settings/panel.js";
-import {
-  buildsCard, chatCard, contextCard, drawCharts, llmCard, moreViews, sizeCard, tile, usageCard,
-} from "../chat/chat.js";
-import { chatView } from "../chat/views.js";
+import { chatCard } from "../chat/chat.js";
+import { CHAT_VIEWS, chatView, setChatView } from "../chat/views.js";
 import { shellCard } from "../terminal/shell.js";
-import { interrupt } from "../chat/files-view.js";
+import { chatActor, interrupt } from "../chat/files-view.js";
 import { chatMin, fitMini, shellMini, topMount } from "../layout/top.js";
 import { focusedPane } from "../layout/panes.js";
 import { useSettings } from "../settings/store";
-import * as prefs from "../../core/prefs";
+import { useShown } from "../../core/model/items";
+import { drawDetails } from "../details/mount";
+import { useNotes } from "../transcript/TranscriptView";
 
-function toggleType(type) {
-  if (shownTypes.has(type)) shownTypes.delete(type); else shownTypes.add(type);
-  prefs.keep(SHOWN_KEY, [...shownTypes]);
-  keepingPlace(renderMain);
-}
 // ------------------------------------------------------------------ the selected agent
 // The main view is the actor's conversation (chatCard): all of it, with the message box under it where
 // the actor can be messaged here. What it is, what ag saw and did for it -- its calls, its context, the Gatherer's work --
@@ -43,7 +36,6 @@ function renderMain() {
   for (const k of kids) for (const d of k.querySelectorAll("details[id]")) if (open.has(d.id)) d.open = true;
   patch(main, kids);
   fitMini();
-  if (document.getElementById("size-chart") && state.agent && state.agent.reads) drawCharts();
 }
 // Put `kids` in `parent`, keeping each node already there that is the same as its new one: the browser
 // lays out again only what changed (a long transcript takes it a third of a second), and a kept node
@@ -103,67 +95,29 @@ function escapeShown() {
     && !!info && interrupt(info);
 }
 const DETAILS_TIP = "Details";
-// All of it in one panel, one part under another: the history's other views and the actor's facts, then its calls
-// (Actor), what the model was sent (Context: what `/context` in the message box opens, dashboardCommand), and what ag
-// did for it (Gatherer).
+// All of it in one panel, one part under another (features/details/: React's, the same node from draw to draw): the
+// history's other views and the actor's facts, then its calls (Actor), what the model was sent (Context: what `/context`
+// in the message box opens, dashboardCommand), and what ag did for it (Gatherer). For the actor this page shows (the key
+// files-view.js's chatActor makes of it): the actor as the home has it, and what ag recorded of its calls.
+const DETAILS_HOST = Object.freeze({ showView: (id) => { setDetails(false); setChatView(id); } });
 function detailsPanel(info) {
-  const a = state.agent;
-  // no × of its own: the pane head's Details button (pressed while it is open) closes it, as Esc does -- one close per pane
-  const head = el("div", { class: "drawer-head" }, el("h2", { text: "Details" }));
-  const body = el("div", { class: "drawer-body", "data-keep": "details" }, ...[moreViews(), facts(info)].filter(Boolean));
-  const part = (id, name, what, kids) => el("section", { class: "drawer-part", id: `details-${id}`, "aria-label": name },
-    el("h4", {}, name, el("span", { text: what })), ...kids);
-  if (!a || a.error || !a.reads) body.append(el("div", { class: "empty", text: (a && a.error) || (info.session
-    ? "No calls yet. Send the agent a message." : "No data for this actor.") }));
-  else body.append(part("actor", "Actor", "calls and tokens sent", actorDetails(a)),
-    part("context", "Context", "what the model was sent", contextDetails(a)),
-    part("gatherer", "Gatherer", "ag's builds and model calls", gathererDetails(a)));
-  return el("aside", { class: "drawer", role: "complementary", "aria-label": "Details" }, head, body);
+  const views = [...CHAT_VIEWS.values()].filter((v) => v.more)
+    .map(({ id, name, description, icon }) => ({ id, name, description, icon }));
+  return drawDetails({ key: chatActor(), info, agent: state.agent, home: state.home, snapshot: !!SNAPSHOT, views,
+    current: chatView().id, now: Date.now() / 1000 }, DETAILS_HOST);
 }
-// The actor's own facts: where it runs, as what, and how the dashboard can reach it.
-function facts(info) {
-  const s = info.session;
-  const rows = [
-    ["Harness", harnessName(info.harness || (state.agent && state.agent.harness))],
-    ["Gatherer", state.selected[0]], ["Channel", state.selected[1]], ["Directory", info.cwd || (s && s.cwd)],
-    ["Process", info.pid ? `PID ${info.pid}` : null],
-    ["Chat", !hasChat(info) ? `Only ${runnableNames("and")} sessions with a directory can be messaged here`
-      : s && s.terminal ? "Open in the dashboard's terminal"
-      : s ? `Run by the dashboard · permissions ${s.permission_mode}`
-      : "Started elsewhere · a message resumes it here with auto permissions"],
-  ].filter(([, v]) => v);
-  return el("dl", { class: "facts" }, ...rows.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })]));
-}
-function actorDetails(a) {                           // what the agent saw and did
-  const reads = a.reads, last = reads[reads.length - 1] || {};
-  return [
-    el("div", { class: "tiles" },
-      tile("Context now", compact(last.real_tokens ?? last.counted_tokens),
-        last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.counted_tokens)}` : "ag's count"),
-      tile("Harness limit", compact(last.limit_tokens), last.limit_tokens ? "where the harness compacts" : "none stated"),
-      tile("Tasks", full(a.tasks.length), "segmented by ag"),
-      tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : "")),
-    usageCard(),
-  ];
-}
-function contextDetails(a) {                         // what the model was sent, beside the chat
-  return [contextCard(), sizeCard(a.reads, a.reads.some((r) => typeof r.real_tokens === "number"))];
-}
-function gathererDetails(a) {                        // what ag did for the agent
-  const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
-  const llm = a.llm.total;
-  return [
-    el("div", { class: "tiles" },
-      tile("Rebuilds", full(a.rebuilds), "reads on a new build"),
-      tile("Builds", full(builds.length), failed ? `${failed} failed` : "none failed"),
-      tile("New-task checks", full(a.checks.length), `${a.checks.filter((x) => x.new_task).length} found a new task`),
-      tile("ag's model calls", full(llm.calls), `${usd(llm.cost)}${llm.unpriced ? ` + ${llm.unpriced} unpriced` : ""}`)),
-    buildsCard(builds),
-    llmCard(a),
-  ];
-}
+// What the context's and size cards are drawn for, as nodes (the reader's own views: agDashboard's contextCard, sizeCard):
+// the actor this page shows, and what ag recorded of its calls.
+const callsNow = () => {
+  const actor = chatActor();
+  return { actor, gatherer: parseKey(actor).group, agent: state.agent, snapshot: !!SNAPSHOT };
+};
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
+  // the types the lists show, picked (features/details/'s chips): this page's own views of them, and the reader's, drawn
+  // again -- React's draw themselves
+  useShown.subscribe((now, was) => { if (now.types !== was.types) keepingPlace(renderMain); });
+  useNotes.subscribe((now, was) => { if (now.on !== was.on) keepingPlace(renderMain); });   // the Transcript's notes shown
   // Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn (interrupt), as in its
   // terminal (and dismisses what the agent asks, as there). So does it from anywhere else on the page that nothing else
   // takes it (escapeShown), for the actor of the pane in focus (another pane's: its agPane.escape) -- else an Esc after a
@@ -188,4 +142,4 @@ export function start() {
   });
 }
 
-export { DETAILS_TIP, dashboardCommand, escapeShown, patch, renderMain, setDetails, toggleType };
+export { DETAILS_TIP, callsNow, dashboardCommand, escapeShown, patch, renderMain, setDetails };

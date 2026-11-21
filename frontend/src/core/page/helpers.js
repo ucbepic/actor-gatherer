@@ -1,10 +1,16 @@
-import { GROUP_ORDER, NOT_COUNTED, PREAMBLE, SNAPSHOT, state } from "./state.js";
+import { SNAPSHOT, state } from "./state.js";
 import { tildePath } from "./code.js";
 import { isShell, key, parse as parseKey, taskId, taskNumber } from "../model/keys";
 import { closable as closableIn, sessionStatus } from "../model/session";
 import { escapeHtml } from "../ui/html";
 import { ago, axisTime, clock, compact, full, lasting, span, usd } from "../format";
-import * as prefs from "../prefs";
+// the items' types and groups (core/model/items.ts): the page's other modules import them from here
+import {
+  GATHERER, HISTORY, INLINE, OTHER_TYPE, PREAMBLE_TYPE, TYPES, color, itemType,
+} from "../model/items";
+import {
+  canChat, harnessLabel, harnessOf, runnableNames as runnableNamesIn, runsHere as runsHereIn,
+} from "../model/harness";
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -24,37 +30,10 @@ const svgEl = (tag, attrs = {}) => {
 // " (… <what> Ns ago)", counting: the time `t` (the server's seconds) set every second (core/ui/clocks.ts, by
 // `data-ago`); hidden from screen readers, so a status line holding it is not read out again each second.
 const agoEl = (what, t) => el("span", { "aria-hidden": "true" }, ` (${what} `, el("span", { "data-ago": t || "", text: ago(t) }), ")");
-// The agent's own events by type, as the context card colors and filters them; fixed order, fixed colors.
-const TYPES = [["user_message", "User", "var(--s7)"], ["agent_message", "Assistant", "var(--s1)"],
-  ["tool_call", "Tool call", "var(--t-call)"], ["tool_output", "Tool output", "var(--t-output)"],
-  ["agent_reasoning", "Reasoning", "var(--s5)"], ["system", "System / developer", "var(--s8)"],
-  ["gatherer", "Gatherer messages", "var(--t-gatherer)"]];
-// the harness's preamble is filtered like a type, though it is not among the messages
-const PREAMBLE_TYPE = ["preamble", PREAMBLE, "var(--s8)"];
-const OTHER_TYPE = ["other", "Other", "var(--muted)"];
-// ag's own messages placed among the history -- shown in it, where ag put them
-const INLINE = new Set(["File-change notices", "Other agents' requests", "Stream messages"]);
-// what the Gatherer wrote (its sections, and its messages among the history) is one type; the harness's
-// own system/developer messages (its `context` events: instructions, environment notes) another
-const GATHERER = new Set(["ag's sections", ...INLINE]);
-const OUTSIDE = new Set(["environment_update", "context_stream"]);   // events from outside the conversation
-const itemType = (it) => GATHERER.has(it.group) || OUTSIDE.has(it.name) ? typeOf("gatherer")
-  : it.name === "context" ? typeOf("system") : typeOf(it.name);
-const typeOf = (name) => TYPES.find((t) => t[0] === name) || OTHER_TYPE;
-const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
-const SHOWN_KEY = "ag-dashboard-shown-types-4";   // -4: system/developer messages and the preamble hidden by default
-const shownTypes = (() => {                       // the reader's choice, kept in this browser; by default the
-                                                  // conversation: user and assistant messages, and the Gatherer's
-  { const v = prefs.list(SHOWN_KEY); if (v) return new Set(v); }
-  return new Set(["user_message", "agent_message", "gatherer"]);
-})();
-const GROUP_COLORS = { [PREAMBLE]: "var(--s8)", [NOT_COUNTED]: "var(--axis)", "Gatherer guide": "var(--t-gatherer)" };
-// a group GROUP_ORDER does not name (or its first, index 0) takes --s6: there is no --s-1
-const color = (group) => GROUP_COLORS[group] || `var(--s${GROUP_ORDER.indexOf(group) > 0 ? GROUP_ORDER.indexOf(group) : 6})`;
 // Each harness as harness_kit describes it (data.py's `harness_info`), by its name: the page names none itself. A
 // session that names none is the home's `harness_default`'s.
-const harnessInfo = (h) => ((state.home && state.home.harness_info) || {})[h] || null;
-const harnessName = (h) => (harnessInfo(h) || {}).label || "Unknown harness";
+const harnessInfo = (h) => harnessOf(state.home, h);
+const harnessName = (h) => harnessLabel(state.home, h);
 // Each harness's mark (harness_kit/marks/<name>.svg): its logo, white, on its colour, in a 24x24 circle -- as a badge
 // at the corner of an actor's avatar, on what starts one, and alone for an actor with no avatar. One harness_kit has
 // no mark for: a grey circle with "?".
@@ -434,13 +413,11 @@ const closable = (a) => closableIn(a, !!SNAPSHOT);   // (core/model/session.ts)
 // Whether an actor can be messaged here: a session the page started, or any session of a harness the dashboard runs
 // (harness_kit's, that says how to start it: `runs`) with a directory to resume it in. Its message box works while no
 // other process has it open (data.py's `chattable`).
-const runsHere = (h) => !!(harnessInfo(h) || {}).runs;
-const hasChat = (a) => !!a && (!!a.session || (runsHere(a.harness) && !!a.cwd));
+// (core/model/harness.ts)
+const runsHere = (h) => runsHereIn(state.home, h);
+const hasChat = (a) => canChat(state.home, a);
 // The harnesses the dashboard runs, by their names for a person: "Claude Code, Codex or Antigravity".
-function runnableNames(join) {
-  const names = Object.keys((state.home && state.home.harness_info) || {}).filter(runsHere).map(harnessName);
-  return names.length > 1 ? `${names.slice(0, -1).join(", ")} ${join} ${names[names.length - 1]}` : names[0] || "no harness";
-}
+const runnableNames = (join) => runnableNamesIn(state.home, join);
 // A shell: the user's own shell in a terminal, opened from a gatherer's row (sessions.py's `shell`) and listed under it --
 // no actor, but shown as one is, in a pane, by its id in a channel's place ("shell:…", which no channel is).
 const shellOf = (c) => (isShell(c) && state.home && (state.home.shells || []).find((s) => s.id === c)) || null;
@@ -472,10 +449,10 @@ const BESIDE_KEY = MAC ? "⌘" : "Ctrl";
 // its words less the block's tags): src/core/ui/html.ts and md.ts (ag_dashboard/DESIGN.md, A5), imported from there.
 
 export {
-  BESIDE_KEY, GATHERER, HISTORY, HUE_INK, HUE_MAIN, ICONS, INLINE, MAC, OTHER_TYPE, PREAMBLE_TYPE, SHOWN_KEY, TYPES,
+  BESIDE_KEY, GATHERER, HISTORY, HUE_INK, HUE_MAIN, ICONS, INLINE, MAC, OTHER_TYPE, PREAMBLE_TYPE, TYPES,
   ago, agoEl, atRest, atWork, avatarMode, axisTime, bareAvatar, buddy, clock, closable, closeIcon, color, compact,
   doneCheck, el, foldMark, full, gathererNamed, get, greeting, harnessBadge, harnessInfo, harnessLogo, harnessName, hasChat, hideIcon,
   hueInk, isShell, itemType, keepAvatarMode, key, lasting, post, restDelay, runnableNames, runsHere, saveIcon,
-  parseKey, selectedInfo, sessionStatus, shellOf, shellPath, shownTypes, signature, span, statusEl, strokeIcon, svgEl,
+  parseKey, selectedInfo, sessionStatus, shellOf, shellPath, signature, span, statusEl, strokeIcon, svgEl,
   taskId, taskNumber, usd,
 };

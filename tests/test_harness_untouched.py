@@ -38,13 +38,13 @@ ALLOWED = {
     ("history.py", '"""\n\nFrom it, write an AGENTS.md: the standing instructions coding agents (Claude Code, Codex'):
         "what the Gatherer's model is asked for: who reads an AGENTS.md",
     ("history.py", '"claude"'): "a History record's kind (a CLAUDE.md, made before AGENTS.md), not a harness",
-    (PAGE_SCRIPT, '"claude"'): "the same",
     ("frontend/src/features/settings/AgSettings.tsx", '"claude-code/'): "the Gatherer model's providers: a model, not a session's harness",
     ("frontend/src/features/settings/AgSettings.tsx", '"codex/'): "the same",
     ("frontend/src/features/settings/AgSettings.tsx", '"No model set'): "the same, in its note",
     ("frontend/src/features/settings/AgSettings.tsx", "'[cli] gatherer: where `ag claude`"): "ag's own command, as config.toml's [cli] gatherer says it",
-    (PAGE_SCRIPT, "claude"): "the same (HIST_KINDS.claude)",
-    (PAGE_SCRIPT, '"CLAUDE.md"'): "the same: its file's name",
+    ("frontend/src/features/history/Save.tsx", '"claude"'): "a History record's kind (a CLAUDE.md, made before AGENTS.md), not a harness",
+    ("frontend/src/features/history/Side.tsx", "claude"): "the same (KINDS.claude)",
+    ("frontend/src/features/history/Side.tsx", '"CLAUDE.md"'): "the same: its name and its file's",
 }
 
 
