@@ -860,6 +860,10 @@ sent. Now each batch a panel sends is named (`<panel>.<n>`) and the backend take
 doc), so as the page goes it sends, in one request kept alive past the page (`leaving`), the batch it was sending and
 everything behind it, in order: whichever of that and the batch's own request comes first applies it, and the rest only
 after it. A batch tried again after no answer keeps its name, so it is never applied twice either.
+A page's lines (2026-11-21) are edited in one ProseMirror view, not a contenteditable each: one selection across
+lines, no browser undo reaching from one line into another. The notebook and its ops are as they were: the doc is
+drawn from the notebook, and each change made in it is the notebook's ops (`ag_apps/notes/DESIGN.md` says how, and why
+undo stays the panel's own). ProseMirror is a committed ES module bundle the panel imports (`assets/src/notes`).
 
 **Notes and the actors** (2026-11-08): the user works with the gatherer's actors from the notebook.
 - **Sending a line:** `@` typed in a block (or its Assign / Ask button) picks an actor, the gatherer agent, or a new
