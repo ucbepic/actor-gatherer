@@ -36,7 +36,7 @@ dashboard to the tools most web front ends and Python APIs are built with now, i
 | Styling | 2,200 lines in one `<style>`, theme as CSS variables | **CSS Modules**, one per component; the theme's CSS variables kept | Keeps today's CSS and look, scoped to its component. |
 | Menus, popovers, dialogs, tooltips | Hand-written (`popMenu`, `placePop`, `openPop`) | **Radix UI** primitives, unstyled | Keyboard use, focus and placement handled; styled with our CSS. |
 | Long lists (chat, transcript) | `content-visibility`, its own "pull earlier" | **react-virtuoso** | Lists that follow new items at the bottom and load earlier ones at the top. |
-| Splits and resizing | `widthGrip`, `topGrip`, the panes' own layout | **react-resizable-panels** now; **dockview** later, for dragging panels | Standard split panes; layouts saved as data. |
+| Splits and resizing | `widthGrip`, `topGrip`, the panes' own layout | **Our own**: a tree of splits as data (`tree.ts`), the reader's moves on it (`arrange.ts`), each panel placed at its spot (`place.ts`) | Not react-resizable-panels (or dockview): a split there is a nesting of elements, so a split made or undone moves panels in the page -- and an app's panel is an iframe, which a move loads again (a Browser's page, an editor's state lost). Here a panel stays where it is in the page and only its box changes. |
 | Panes | The page again in an iframe per pane | Components in one page, one stream | Iframes stay only for outside content: DocWriter's page, the preview, the Browser's screen. |
 | Terminal, editor | xterm.js; CodeMirror 6 with Yjs | The same, each in a component | Already the standard libraries. |
 | Markdown, code | marked + DOMPurify; our own highlighter (486 lines) | marked + DOMPurify kept; **Shiki** for highlighting, optional later | |
@@ -70,8 +70,8 @@ frontend/                  the dashboard's front end: Vite, TypeScript, React
       store/               Zustand slices: home, actors, layout, prefs
       ui/                  shared components: Avatar, Badge, Icon, Menu, Popover, Dialog, Markdown, Code
       format.ts            times, counts, sizes
-    layout/                the shell: the list's column, the Editor above the panes, the panes, Details;
-                           react-resizable-panels; the `layout` slice is the arrangement as data
+    layout/                the shell: the list's column, the panels of the work area placed from a tree of splits
+                           (tree.ts, arrange.ts, place.ts), Details; the `layout` slice is the arrangement as data
     features/
       list/                AgentList, Rail, Monitor, naming, seen
       panes/               Pane, PaneHead, new-actor menus, branches
@@ -546,7 +546,8 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
   panes, Details, the chat minimized. It replaces today's separate browser keys, which are read once and dropped.
-- react-resizable-panels draws the splits.
+- The splits are our own (`tree.ts`, `arrange.ts`, `place.ts`), not react-resizable-panels: its splits nest the panels
+  in the page, so changing one moves them, and an app's panel, an iframe, would load again (see "The stack").
 - Panes become components in one page, sharing one stream.
 - `page.js` has no module left to start, and goes with the bridge.
 
