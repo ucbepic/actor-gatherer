@@ -1,39 +1,37 @@
-// Notes: typing in a line -- its words kept as they change, markdown at its start, Enter, Backspace, Delete, Tab,
-// the arrows and the ⌘ keys; a line turned into another type; inline marks.
+// Notes: typing in a line -- the editor's keys (lineKey) and characters typed (textIn), before ProseMirror's own: markdown
+// at a line's start, Enter, Backspace, Delete, Tab, the arrows and the ⌘ keys; a line turned into another type; inline
+// marks. The words themselves are the editor's (editor.js keeps them as they change). Keys in a table's cell are
+// tables.js's, and on a divider, a picture or the Agents or Work table (each focused itself), dividerKey's.
 import { $, clean, el, esc, INDENTED, LISTS, MAX_INDENT, MEDIA, now, plainOf, rid } from "./helpers.js";
 import { current } from "./state.js";
-import { withLinks } from "./model.js";
-import { change, dirty, forget, sendTyped, typed } from "./send.js";
+import { TextSelection, toggleMark } from "./vendor/prosemirror.js";
+import { LinesSelection, schema } from "./doc.js";
+import { change, dirty, forget, sendTyped } from "./send.js";
 import { undoStep } from "./undo.js";
-import { blockOf, box, drawPage, rowOf, shown } from "./page.js";
-import { caretIn, edge, empty, focusBlock, focusOnEdge, onLine, pointAt, setCaret, textOf } from "./caret.js";
+import { blockOf, box, drawPage, shown } from "./page.js";
+import { focusBlock, setCaret } from "./caret.js";
 import { closePop, menu, popUp } from "./popups.js";
-import { slashInput, slashKey } from "./slash.js";
-import { overLink, pageInput, pageKey } from "./pagelinks.js";
+import { slashKey, slashTyped } from "./slash.js";
+import { pageKey, pageTyped } from "./pagelinks.js";
 import { holdKeys, pickAll, pickRange } from "./picked.js";
 import { canType, cellInput, cellKey, cellKeys, cellOf, retyped } from "./tables.js";
 import { captionKey, figmaKey, focusFig } from "./pictures.js";
 import { isWork } from "./actors.js";
-import { atInput, atKey } from "./picker.js";
+import { atKey, atTyped } from "./picker.js";
+import { boxAt, edit, here, readCaret, view, wordsOf } from "./editor.js";
 
 // Markdown at the start of a block, as it is typed: "# " a heading, "- " a list, "[] " a to-do, "> " a quote, "```" code,
 // "---" a divider.
 const SHORT = [[/^#\s$/, "h1"], [/^##\s$/, "h2"], [/^###\s$/, "h3"], [/^[-*+]\s$/, "bullet"], [/^1[.)]\s$/, "number"],
   [/^\[\s?\]\s$/, "todo"], [/^\[x\]\s$/i, "todo", true], [/^>\s$/, "quote"]];
-function shortcut(n, tx, b, ev) {
-  if (ev.inputType !== "insertText" || !["text", "bullet"].includes(b.type)) return false;
-  const c = caretIn(tx);
-  if (!c || !c.collapsed) return false;
-  const before = tx.textContent.slice(0, c.start);
+function shortcut(b, at, text) {                         // (`text` typed at `at`, not yet in the line)
+  if (!["text", "bullet"].includes(b.type) || at.from !== at.to) return false;
+  const { node } = at, before = node.textBetween(0, at.from, "") + text, whole = before + node.textBetween(at.to, node.content.size, "");
   let to = null, checked = false;
-  if (ev.data === " ") { const hit = SHORT.find(([rx]) => rx.test(before)); if (hit) { to = hit[1]; checked = !!hit[2]; } }
-  else if (ev.data === "`" && before === "```") to = "code";
-  else if (ev.data === "-" && tx.textContent === "---") to = "divider";
+  if (text === " ") { const hit = SHORT.find(([rx]) => rx.test(before)); if (hit) { to = hit[1]; checked = !!hit[2]; } }
+  else if (text === "`" && before === "```") to = "code";
+  else if (text === "-" && whole === "---") to = "divider";
   if (!to || (b.type === "bullet" && to !== "todo")) return false;
-  const r = document.createRange(), a = pointAt(tx, 0), z = pointAt(tx, before.length);
-  r.setStart(a.node, a.offset);
-  r.setEnd(z.node, z.offset);
-  r.deleteContents();
   if (to === "divider") {
     forget(b.id);
     const next = { id: rid(), type: "text", text: "", checked: false, indent: 0 };
@@ -43,11 +41,32 @@ function shortcut(n, tx, b, ev) {
     focusBlock(next.id, 0);
     return true;
   }
-  if (to === "code") tx.textContent = plainOf(clean(tx.innerHTML));
-  retype(b, to, { checked, text: to === "code" ? tx.textContent : clean(tx.innerHTML) });
+  // what follows the markdown stays: plain, into code
+  retype(b, to, { checked, text: to === "code" ? node.textBetween(at.to, node.content.size, "") : wordsOf(node, at.to) });
   focusBlock(b.id, 0);
   return true;
 }
+// Characters typed in a line (ProseMirror's handleTextInput: never while composing): markdown at its start, else typed
+// as ProseMirror types them, then the / menu, @ and [[ opened or followed. Over lines picked, nothing.
+export function textIn(from, to, text, deflt) {
+  const st = view.state;                                // (over lines picked, or outside a line's words: nothing)
+  if (st.selection instanceof LinesSelection) return true;
+  const $from = st.doc.resolve(from), $to = st.doc.resolve(to);
+  if ($from.depth !== 1 || !$from.sameParent($to)) return true;
+  const node = $from.parent, b = blockOf(node.attrs.id);
+  if (!b) return false;
+  if (shortcut(b, { node, from: $from.parentOffset, to: $to.parentOffset }, text)) return true;
+  view.dispatch(deflt());
+  if (!MEDIA.includes(b.type)) { slashTyped(b, text); atTyped(b, text); }   // (a caption: words and links to pages, no / or @)
+  pageTyped(b, text);
+  return true;
+}
+/** Words typed into the line the caret is in, as typing them does (the gutter's + types "/"). */
+export function typeIn(text) {
+  const { from, to } = view.state.selection;
+  textIn(from, to, text, () => view.state.tr.insertText(text, from, to));
+}
+
 // A block made another type: its text kept (plain, into code; out of code, as text), its indent where it may have one.
 export function retypeOp(b, type, extra = {}) {
   const was = b.type;
@@ -60,16 +79,12 @@ export function retypeOp(b, type, extra = {}) {
   const put = { id: b.id, type, text, indent: INDENTED.includes(type) ? b.indent || 0 : 0, checked: type === "todo" ? !!(extra.checked ?? b.checked) : false };
   return { op: "block.put", page: current, block: put };
 }
-export function retype(b, type, extra = {}) {
-  const was = b.type, op = retypeOp(b, type, extra), text = op.block.text;
-  change([op]);
-  const tx = rowOf(b.id) && rowOf(b.id).querySelector(".tx");
-  if (tx && (type === "code" || was === "code") && document.activeElement === tx) {
-    if (type === "code") tx.textContent = text; else tx.innerHTML = withLinks(clean(text));
-  }
+export function retype(b, type, extra = {}) {             // (the caret stays in it: editor.js finds it by its line)
+  change([retypeOp(b, type, extra)]);
   drawPage();
 }
 
+// a divider, a picture or the Agents or Work table, focused (not typed in): Esc picks it, ⌫ deletes it, ↑↓ go on
 function dividerKey(ev, n) {
   const p = shown(), i = p.blocks.findIndex((b) => b.id === n.dataset.id);
   if (ev.key === "Escape") { ev.preventDefault(); pickRange(n.dataset.id, n.dataset.id); return holdKeys(); }
@@ -92,30 +107,23 @@ function dividerKey(ev, n) {
   }
 }
 // Enter: an empty list item leaves the list (or comes out a level); at the start of a block, an empty one goes above
-// it; else the block is split at the caret, its rest a new block below -- a list's next item, or text.
-function enter(p, i, n, tx) {
-  const b = p.blocks[i];
-  if ([...LISTS, "quote"].includes(b.type) && empty(tx)) {
+// it; else the block is split at the caret (what is selected taken out), its rest a new block below -- a list's next
+// item, or text.
+function enter(p, i, h) {
+  const b = p.blocks[i], blank = h.node.content.size === 0;
+  if ([...LISTS, "quote"].includes(b.type) && blank) {
     if (b.indent > 0 && b.type !== "quote") return indent(b, -1);
     return retype(b, "text");
   }
   const kind = LISTS.includes(b.type) ? b.type : "text";
   const ind = INDENTED.includes(b.type) ? b.indent || 0 : 0;
-  if (edge(tx, false) && !empty(tx)) {
+  if (h.start && !blank) {
     const above = { id: rid(), type: kind, text: "", checked: false, indent: ind };
     change([{ op: "block.put", page: p.id, block: above, after: i ? p.blocks[i - 1].id : "" }]);
     drawPage();
     return;
   }
-  const s = getSelection(), r = s.getRangeAt(0);
-  r.deleteContents();
-  const tail = document.createRange();
-  tail.setStart(r.startContainer, r.startOffset);
-  tail.setEnd(tx, tx.childNodes.length);
-  const hold = document.createElement("div");
-  hold.append(tail.extractContents());
-  const rest = clean(hold.innerHTML), left = clean(tx.innerHTML);
-  if (tx.innerHTML !== withLinks(left)) tx.innerHTML = withLinks(left);
+  const left = wordsOf(h.node, 0, h.from), rest = wordsOf(h.node, h.to);
   const next = { id: rid(), type: kind, text: rest, checked: false, indent: ind };
   forget(b.id);
   change([{ op: "block.put", page: p.id, block: { id: b.id, text: left } }, { op: "block.put", page: p.id, block: next, after: b.id }]);
@@ -123,15 +131,15 @@ function enter(p, i, n, tx) {
   focusBlock(next.id, "start");
 }
 // Backspace at a block's start: a heading, list item or the like made text; text set in, out a level; else joined to
-// the block above (a divider above, removed).
-function backspace(p, i, n, tx) {
+// the block above (a divider above, removed; a picture above, focused; a table or the Agents or Work table, left).
+function backspace(p, i, h) {
   const b = p.blocks[i];
   if (b.type !== "text") return retype(b, "text");
   if (b.indent > 0) return indent(b, -1);
   if (!i) return;
   const prev = p.blocks[i - 1];
   if (MEDIA.includes(prev.type)) {                       // a picture above: never joined; an empty line goes
-    if (empty(tx)) { forget(b.id); change([{ op: "block.delete", page: p.id, block: b.id }]); drawPage(); }
+    if (!h.node.content.size) { forget(b.id); change([{ op: "block.delete", page: p.id, block: b.id }]); drawPage(); }
     return focusFig(prev.id);
   }
   if (prev.type === "divider") {
@@ -139,35 +147,33 @@ function backspace(p, i, n, tx) {
     drawPage();
     return focusBlock(b.id, "start");
   }
+  if (!canType(prev) || prev.type === "table") return;
   const at = prev.type === "code" ? prev.text.length : plainOf(prev.text).length;
-  const joined = prev.type === "code" ? prev.text + tx.textContent : clean(prev.text + clean(tx.innerHTML));
+  const joined = prev.type === "code" ? prev.text + plainOf(b.text) : clean(prev.text + clean(b.text));
   forget(b.id);
   forget(prev.id);
   change([{ op: "block.put", page: p.id, block: { id: prev.id, text: joined } }, { op: "block.delete", page: p.id, block: b.id }]);
   drawPage();
-  const ptx = rowOf(prev.id) && rowOf(prev.id).querySelector(".tx");
-  if (ptx) { ptx.focus(); setCaret(ptx, at); }
+  focusBlock(prev.id, at);
 }
-function joinNext(p, i, n, tx) {
+function joinNext(p, i) {
   const b = p.blocks[i], next = p.blocks[i + 1];
   if (MEDIA.includes(next.type)) return focusFig(next.id);
   if (next.type === "divider") { change([{ op: "block.delete", page: p.id, block: next.id }]); drawPage(); return; }
-  const at = tx.textContent.length;
-  const joined = b.type === "code" ? tx.textContent + plainOf(next.text) : clean(clean(tx.innerHTML) + (next.type === "code" ? esc(next.text) : next.text));
+  if (!canType(next) || next.type === "table") return;
+  const at = b.type === "code" ? b.text.length : plainOf(b.text).length;
+  const joined = b.type === "code" ? b.text + plainOf(next.text) : clean(clean(b.text) + (next.type === "code" ? esc(next.text) : next.text));
   forget(b.id);
   forget(next.id);
-  if (b.type === "code") tx.textContent = joined; else tx.innerHTML = withLinks(joined);
   change([{ op: "block.put", page: p.id, block: { id: b.id, text: joined } }, { op: "block.delete", page: p.id, block: next.id }]);
   drawPage();
-  setCaret(tx, at);
+  focusBlock(b.id, at);
 }
-function indent(b, by) {
+function indent(b, by) {                                // (the caret stays where it is: the line is changed in place)
   const to = Math.max(0, Math.min(MAX_INDENT, (b.indent || 0) + by));
   if (to === (b.indent || 0)) return;
-  const tx = rowOf(b.id) && rowOf(b.id).querySelector(".tx"), at = tx && caretIn(tx);
   change([{ op: "block.put", page: current, block: { id: b.id, indent: to } }]);
   drawPage();
-  if (tx && at) { tx.focus(); setCaret(tx, at.start, at.end); }
 }
 export function tick(b) {                               // (a to-do work item: done as it is ticked, open again as it is not)
   change([{ op: "block.put", page: current, block: { id: b.id, checked: !b.checked, ...(isWork(b) ? { ended: b.checked ? "" : "done", ended_at: now() } : {}) } }]);
@@ -180,18 +186,59 @@ export function addAfter(b, type) {
   focusBlock(next.id, 0);
   return next;
 }
-function shift(p, i, by) {
+function shift(p, i, by) {                              // (the caret goes with it: editor.js finds it by its line)
   const j = i + by;
   if (j < 0 || j >= p.blocks.length) return;
-  const b = p.blocks[i], tx = rowOf(b.id).querySelector(".tx"), at = tx && caretIn(tx);
-  const rest = p.blocks.filter((x) => x.id !== b.id);
+  const b = p.blocks[i], rest = p.blocks.filter((x) => x.id !== b.id);
   const after = by < 0 ? (j ? rest[j - 1].id : "") : rest[i].id;
   change([{ op: "block.move", page: p.id, block: b.id, after }]);
   drawPage();
-  if (tx) { tx.focus(); if (at) setCaret(tx, at.start, at.end); }
 }
 
-// inline marks: bold, italic, underline, struck (the browser's), code and links (here)
+// -- inline marks in a line: bold, italic, underline, struck, code (each toggled), and links
+const markLine = (name) => toggleMark(schema.marks[name])(view.state, (tr) => edit(tr));
+// the link around a place in a line: its href and its extent, or null
+function linkAt(state, pos) {
+  const $p = state.doc.resolve(pos), L = schema.marks.link;
+  const m = ($p.nodeAfter && L.isInSet($p.nodeAfter.marks)) || ($p.nodeBefore && L.isInSet($p.nodeBefore.marks));
+  if (!m) return null;
+  const runs = [];
+  let from = null;
+  $p.parent.forEach((c, off) => {
+    const a = $p.start() + off;
+    if (m.isInSet(c.marks)) { if (from === null) from = a; runs.push([from, a + c.nodeSize]); }
+    else from = null;
+  });
+  const r = runs.filter(([a, z]) => pos >= a && pos <= z).pop();
+  return r ? { href: m.attrs.href, from: r[0], to: r[1] } : null;
+}
+function linkLine() {
+  const st = view.state, { from, to, empty } = st.selection, near = linkAt(st, from), L = schema.marks.link;
+  popUp(boxAt(from), (pop) => {
+    const input = el("input", { type: "url", placeholder: "Paste a link", value: near ? near.href : "" });
+    const done = (url) => {
+      closePop();
+      view.focus();
+      const size = view.state.doc.content.size, a = Math.min(from, size), z = Math.min(to, size), tr = view.state.tr;
+      if (!url) tr.removeMark(near ? near.from : a, near ? near.to : z, L);
+      else {
+        const href = /^(https?:|mailto:)/i.test(url) ? url : `https://${url}`;
+        if (empty && !near) tr.insertText(url, a).addMark(a, a + url.length, L.create({ href }));
+        else if (empty) tr.removeMark(near.from, near.to, L).addMark(near.from, near.to, L.create({ href }));
+        else tr.addMark(a, z, L.create({ href }));
+      }
+      edit(tr);
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); done(input.value.trim()); }
+      else if (e.key === "Escape") { e.preventDefault(); closePop(); view.focus(); }
+    });
+    pop.append(el("div", { class: "row" }, input, el("button", { type: "button", text: near ? "Remove" : "Link",
+      onclick: () => done(near ? "" : input.value.trim()) })));
+    setTimeout(() => input.focus(), 0);
+  });
+}
+// ... and in a table's cell (an editable element of its own): the browser's, and code and links here
 export function format(ev, n, command) {
   ev.preventDefault();
   document.execCommand(command, false);
@@ -245,110 +292,101 @@ export function linkBox(n, tx) {
   });
 }
 
+// A key in a line (ProseMirror's handleKeyDown, before its own: true, taken). Lines folded away are passed over.
+export function lineKey(ev) {
+  if (ev.isComposing) return false;
+  readCaret();
+  const h = here(), p = shown(), i = h && p ? p.blocks.findIndex((b) => b.id === h.id) : -1;
+  if (!h) return ev.key === "Enter";                     // (the caret in no line: the browser's Enter would make one)
+  if (i < 0 || p.deleted) return false;
+  const b = p.blocks[i];
+  if (menu && menu.kind === "slash" && slashKey(ev)) return true;
+  if (menu && menu.kind === "at" && atKey(ev)) return true;
+  if (menu && menu.kind === "page" && pageKey(ev)) return true;
+  if (menu && menu.kind === "figma" && figmaKey(ev)) return true;
+  const mod = ev.metaKey || ev.ctrlKey, k = ev.key, size = h.node.content.size;
+  if (MEDIA.includes(b.type) && !mod && captionKey(ev, p, i, h)) return true;
+  if (k === "Escape" && !mod && !ev.shiftKey) { pickRange(b.id, b.id); holdKeys(); return true; }   // the line picked
+  if (ev.shiftKey && !mod && !ev.altKey && (k === "ArrowUp" || k === "ArrowDown") && h.same) {
+    const up = k === "ArrowUp";
+    if (!(up ? h.from : size - h.to)) {                 // its words selected to that end already: the lines from here
+      const to = p.blocks[i + (up ? -1 : 1)];
+      pickRange(b.id, to ? to.id : b.id);
+      holdKeys();
+      return true;
+    }
+    if (view.endOfTextblock(up ? "up" : "down")) {      // on its first (last) row: to that end of the line -- not, as the
+      const { anchor } = view.state.selection;          // browser would, out of it into the next line's words
+      edit(view.state.tr.setSelection(TextSelection.create(view.state.doc, anchor, h.pos + 1 + (up ? 0 : size))), "select");
+      return true;
+    }
+  }
+  if (mod && !ev.altKey) {
+    const low = k.toLowerCase();
+    if (low === "z") { undoStep(ev.shiftKey); return true; }   // the page's undo, not the browser's
+    if (!ev.shiftKey && low === "a") {                  // ⌘A: the line's words, then (all of them selected) every line
+      if (h.same && h.from === 0 && h.to === size) { pickAll(); holdKeys(); return true; }
+      edit(view.state.tr.setSelection(TextSelection.create(view.state.doc, h.pos + 1, h.pos + 1 + size)), "select");
+      return true;
+    }
+    if (b.type !== "code" && !ev.shiftKey && ["b", "i", "u", "e"].includes(low)) { markLine(low === "e" ? "code" : low); return true; }
+    if (b.type !== "code" && ev.shiftKey && (low === "s" || low === "x")) { markLine("s"); return true; }
+    if (b.type !== "code" && !ev.shiftKey && low === "k") { linkLine(); return true; }
+    if (ev.shiftKey && (k === "ArrowUp" || k === "ArrowDown")) { shift(p, i, k === "ArrowUp" ? -1 : 1); return true; }
+    if (k === "Enter") {
+      if (b.type === "todo") tick(b);
+      else addAfter(b, "text");
+      return true;
+    }
+    return false;
+  }
+  if (k === "Enter" && !ev.shiftKey) {
+    if (b.type === "code") edit(view.state.tr.insertText("\n"));   // a new line of code
+    else if (h.same) enter(p, i, h);
+    return true;
+  }
+  if (k === "Enter") {                                   // ⇧↵: a new line in the line (in code: a line below it)
+    if (b.type === "code") addAfter(b, "text");
+    else edit(view.state.tr.replaceSelectionWith(schema.nodes.hard_break.create()).scrollIntoView());
+    return true;
+  }
+  if (k === "Backspace" && h.start) { backspace(p, i, h); return true; }
+  if (k === "Delete" && h.end && i + 1 < p.blocks.length) { joinNext(p, i); return true; }
+  if (k === "Tab") {
+    if (b.type === "code" && !ev.shiftKey) edit(view.state.tr.insertText("\t"));
+    else if (INDENTED.includes(b.type)) indent(b, ev.shiftKey ? -1 : 1);
+    return true;
+  }
+  if ((k === "ArrowUp" && view.endOfTextblock("up")) || (k === "ArrowLeft" && h.start)) {
+    const prev = p.blocks.slice(0, i).reverse().find(canType);
+    if (prev) focusBlock(prev.id, "end");
+    else { $("title").focus(); setCaret($("title"), $("title").textContent.length); }
+    return true;
+  }
+  if ((k === "ArrowDown" && view.endOfTextblock("down")) || (k === "ArrowRight" && h.end)) {
+    const next = p.blocks.slice(i + 1).find(canType);
+    if (next) { focusBlock(next.id, "start"); return true; }
+  }
+  return false;
+}
+
 export function wireTyping() {
+  // a table's cells: typed in as elements of their own (tables.js); a divider, a picture, an Agents or Work table:
+  // focused themselves. A line's keys and words are the editor's (lineKey, textIn).
   box.addEventListener("input", (ev) => {
     const cell = ev.target.closest && ev.target.closest(".tbl .cell");
-    if (cell) return cellInput(cell, ev);
-    const tx = ev.target.closest && ev.target.closest(".tx");
-    if (!tx) return;
-    const n = tx.closest(".blk"), b = blockOf(n.dataset.id);
-    if (!b) return;
-    if (tx.innerHTML === "<br>") tx.innerHTML = "";
-    if (shortcut(n, tx, b, ev)) return;
-    b.text = textOf(n, b);
-    typed(current, b.id, b.text);
-    if (MEDIA.includes(b.type)) return pageInput(n, tx, b, ev);   // a caption: words and links to pages, no / or @
-    slashInput(n, tx, b, ev);
-    atInput(n, tx, b, ev);
-    pageInput(n, tx, b, ev);
+    if (cell) cellInput(cell, ev);
   });
   box.addEventListener("focusout", (ev) => {
-    const n = ev.target.closest && ev.target.closest(".blk"), at = ev.target.classList && ev.target.classList.contains("cell") && cellOf(ev.target);
+    const at = ev.target.classList && ev.target.classList.contains("cell") && cellOf(ev.target);
     if (at && dirty.has(cellKey(at.b.id, at.row, at.col))) sendTyped(cellKey(at.b.id, at.row, at.col));
-    if (n && dirty.has(n.dataset.id)) sendTyped(n.dataset.id);
-    if (menu && (menu.kind === "slash" || menu.kind === "at" || menu.kind === "page") && ev.target === menu.tx
-      && !(ev.relatedTarget && menu.el.contains(ev.relatedTarget))) closePop();   // (into the picker's box: kept)
+    if (menu && menu.kind === "page" && menu.tx === ev.target && !(ev.relatedTarget && menu.el.contains(ev.relatedTarget))) closePop();
   });
   box.addEventListener("keydown", (ev) => {
-    if (ev.isComposing) return;
+    if (ev.isComposing || ev.target === box) return;
     const cell = ev.target.closest && ev.target.closest(".tbl .cell");
     if (cell) return cellKeys(ev, cell);
     const hr = ev.target.closest && ev.target.closest(".hr, .agt, .fig");
     if (hr && ev.target === hr) return dividerKey(ev, hr.closest(".blk"));
-    const tx = ev.target.closest && ev.target.closest(".tx");
-    if (!tx) return;
-    const n = tx.closest(".blk"), p = shown(), i = p ? p.blocks.findIndex((b) => b.id === n.dataset.id) : -1;   // (lines folded away: passed over)
-    if (i < 0 || p.deleted) return;
-    const b = p.blocks[i];
-    if (menu && menu.kind === "slash" && slashKey(ev)) return;
-    if (menu && menu.kind === "at" && atKey(ev)) return;
-    if (menu && menu.kind === "page" && pageKey(ev)) return;
-    if (menu && menu.kind === "figma" && figmaKey(ev)) return;
-    const mod = ev.metaKey || ev.ctrlKey, k = ev.key;
-    if (MEDIA.includes(b.type) && !mod && captionKey(ev, p, i, n, tx)) return;
-    if (k === "Escape" && !mod && !ev.shiftKey) { ev.preventDefault(); pickRange(b.id, b.id); return holdKeys(); }   // the line picked
-    if (ev.shiftKey && !mod && !ev.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
-      const c = caretIn(tx), up = k === "ArrowUp", t = tx.textContent;   // its text selected to an end already: the lines
-      if (c && !(up ? t.slice(0, c.start) : t.slice(c.end)).replace(/\u200b/g, "")) {   // from here
-        ev.preventDefault();
-        const to = p.blocks[i + (up ? -1 : 1)];
-        pickRange(b.id, to ? to.id : b.id);
-        return holdKeys();
-      }
-      if (c && focusOnEdge(tx, !up)) {                     // on its first (last) row: to that end of the line -- not, as the
-        ev.preventDefault();                               // browser would, out of it into the next line's words
-        const z = pointAt(tx, up ? 0 : t.length);
-        getSelection().extend(z.node, z.offset);
-        return;
-      }
-    }
-    if (mod && !ev.altKey) {
-      const low = k.toLowerCase();
-      if (low === "z") { ev.preventDefault(); return undoStep(ev.shiftKey); }   // the page's undo, not the browser's
-      if (!ev.shiftKey && low === "a") {                    // ⌘A: the line's text, then (all of it selected) every line
-        const c = caretIn(tx);
-        if (c && c.start === 0 && c.end === tx.textContent.length) { ev.preventDefault(); pickAll(); return holdKeys(); }
-        return;
-      }
-      if (b.type !== "code" && !ev.shiftKey && low === "b") return format(ev, n, "bold");
-      if (b.type !== "code" && !ev.shiftKey && low === "i") return format(ev, n, "italic");
-      if (b.type !== "code" && !ev.shiftKey && low === "u") return format(ev, n, "underline");
-      if (b.type !== "code" && ev.shiftKey && (low === "s" || low === "x")) return format(ev, n, "strikeThrough");
-      if (b.type !== "code" && !ev.shiftKey && low === "e") { ev.preventDefault(); return codeMark(n, tx); }
-      if (b.type !== "code" && !ev.shiftKey && low === "k") { ev.preventDefault(); return linkBox(n, tx); }
-      if (ev.shiftKey && (k === "ArrowUp" || k === "ArrowDown")) { ev.preventDefault(); return shift(p, i, k === "ArrowUp" ? -1 : 1); }
-      if (k === "Enter") {
-        ev.preventDefault();
-        if (b.type === "todo") return tick(b);
-        return addAfter(b, "text");
-      }
-      return;
-    }
-    if (k === "Enter" && !ev.shiftKey) {
-      if (b.type === "code") return;                      // a new line of code
-      ev.preventDefault();
-      return enter(p, i, n, tx);
-    }
-    if (k === "Enter" && ev.shiftKey && b.type === "code") { ev.preventDefault(); return addAfter(b, "text"); }
-    if ((k === "Backspace" || k === "Delete") && !ev.altKey && overLink(n, tx, b, k === "Delete")) return ev.preventDefault();
-    if (k === "Backspace" && edge(tx, false)) { ev.preventDefault(); return backspace(p, i, n, tx); }
-    if (k === "Delete" && edge(tx, true) && i + 1 < p.blocks.length) { ev.preventDefault(); return joinNext(p, i, n, tx); }
-    if (k === "Tab") {
-      ev.preventDefault();
-      if (b.type === "code" && !ev.shiftKey) document.execCommand("insertText", false, "\t");
-      else if (INDENTED.includes(b.type)) indent(b, ev.shiftKey ? -1 : 1);
-      return;
-    }
-    if ((k === "ArrowUp" && onLine(tx, false)) || (k === "ArrowLeft" && edge(tx, false))) {
-      const prev = p.blocks.slice(0, i).reverse().find(canType);
-      ev.preventDefault();
-      if (prev) focusBlock(prev.id, "end");
-      else { $("title").focus(); setCaret($("title"), $("title").textContent.length); }
-      return;
-    }
-    if ((k === "ArrowDown" && onLine(tx, true)) || (k === "ArrowRight" && edge(tx, true))) {
-      const next = p.blocks.slice(i + 1).find(canType);
-      if (next) { ev.preventDefault(); focusBlock(next.id, "start"); }
-    }
   });
 }

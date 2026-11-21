@@ -9,18 +9,21 @@
 // Shift+clicked, or ⇧+arrows past a cell's edge) are picked: copied as rows of tab-separated cells, as a spreadsheet
 // has them, cut or emptied together. Cells copied from a spreadsheet, or a table from a web page, pasted into a line
 // make a table, and pasted into a cell fill the cells from there, rows and columns added as needed.
+// In the page's editor (editor.js) a table is a block with nothing typed in it: its cells, each an editable element of
+// its own, are drawn and typed in here, unseen by the editor -- which isn't editable while cells are picked.
 import { $, clean, el, esc, plainOf, rid, SVG } from "./helpers.js";
 import { current, known, pages, setEatMouse } from "./state.js";
 import { drawLinks, placeAt, withLinks } from "./model.js";
-import { change, dirty, forget, saved, sendTyped, typed } from "./send.js";
+import { change, dirty, forget, saved, sendTyped } from "./send.js";
 import { copied, inRun, replaying, standing, undoStep } from "./undo.js";
 import { blockOf, box, drawPage, page, rowOf, shown } from "./page.js";
-import { caretIn, edge, editable, empty, focusBlock, onLine, setCaret, textOf } from "./caret.js";
+import { caretIn, edge, editable, focusBlock, onLine, setCaret } from "./caret.js";
 import { addAfter, codeMark, format, linkBox } from "./typing.js";
 import { item, menu, popUp } from "./popups.js";
 import { overLink, pageInput, pageKey } from "./pagelinks.js";
 import { CLIP, clipBlocks, clipped, holdKeys, inField, mdInline, pickRange } from "./picked.js";
 import { say } from "./actors.js";
+import { refreshView } from "./editor.js";
 
 export const TABLE_OPS = ["cell.put", "row.put", "row.move", "row.delete", "col.put", "col.move", "col.delete"];
 const AUTO_MIN = 96;                                     // px: a column with no width of its own, at the least
@@ -205,11 +208,9 @@ function cellTyped(pid, bid, row, col, text, was) {
   dirty.set(key, { page: pid, text, cell: { block: bid, row, col }, timer: setTimeout(() => sendTyped(key), 450) });
   saved("saving");
 }
-// the words in a cell or a line changed other than by typing (a link put in or taken out, code marked): kept
-export function retyped(n, tx, b) {
-  if (tx.classList.contains("cell")) return cellInput(tx, { inputType: "" });
-  b.text = textOf(n, b);
-  typed(current, b.id, b.text);
+// the words in a cell changed other than by typing (a link put in or taken out, code marked): kept
+export function retyped(n, tx) {
+  if (tx.classList.contains("cell")) cellInput(tx, { inputType: "" });
 }
 export function focusCell(b, ri, ci, where = "end") {
   const r = b.rows[ri], c = b.cols[ci], cell = r && c && cellEl(b.id, r.id, c.id);
@@ -332,10 +333,10 @@ function colMenu(b, id, rect) {
         () => tableDo([{ op: "col.delete", page: current, block: b.id, col: id }]))] : []));
   });
 }
-// a line made a table from the / menu: in its place if it is empty, else after it; a line to type in after it
-export function putTable(b, tx) {
+// a line made a table from the / menu: in its place if it is empty (`into`), else after it; a line to type in after it
+export function putTable(b, into) {
   forget(b.id);
-  const p = page(), t = newTable(), into = empty(tx), at = into ? b.id : t.id;
+  const p = page(), t = newTable(), at = into ? b.id : t.id;
   const ops = into ? [{ op: "block.put", page: current, block: { ...t, id: b.id } }]
     : [{ op: "block.put", page: current, block: { id: b.id, text: b.text } }, { op: "block.put", page: current, block: t, after: b.id }];
   const next = p.blocks[p.blocks.indexOf(b) + 1];
@@ -373,11 +374,13 @@ let cpick = null, csweep = null;                         // cpick: {id (the tabl
 const inCellPick = (id, i, j) => !!cpick && cpick.id === id && i >= Math.min(cpick.r0, cpick.r1) && i <= Math.max(cpick.r0, cpick.r1)
   && j >= Math.min(cpick.c0, cpick.c1) && j <= Math.max(cpick.c0, cpick.c1);
 function pickCells(b, r0, c0, r1, c1) {
-  const keep = (v, top) => Math.max(0, Math.min(top, v));
+  const keep = (v, top) => Math.max(0, Math.min(top, v)), was = !!cpick;
   cpick = { id: b.id, r0: keep(r0, b.rows.length - 1), c0: keep(c0, b.cols.length - 1), r1: keep(r1, b.rows.length - 1), c1: keep(c1, b.cols.length - 1) };
   drawCellPick();
+  if (!was) refreshView();
 }
-export function unpickCells() { if (cpick) { cpick = null; drawCellPick(); } }
+export function unpickCells() { if (cpick) { cpick = null; drawCellPick(); refreshView(); } }
+export const cellsPicked = () => !!cpick;
 function drawCellPick() {
   for (const c of box.querySelectorAll(".tbl .cp")) c.classList.remove("cp");
   for (const w of box.querySelectorAll(".tbl.cell-picking")) w.classList.remove("cell-picking");
