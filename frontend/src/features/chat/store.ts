@@ -1,10 +1,10 @@
 // The Chat view's own state, kept across the page's draws and across views: which latest replies a click folded, which
 // turns show all their earlier messages, the turns before the latest a click showed or folded against the setting, the
 // first turn drawn, and the turn last brought into view; the file picked in the turn's files, and the folders folded in
-// their tree. One actor's at a time: they start over when the page's files feed does (`files`, the old page's
-// state.files, made anew for each actor picked), as they did when they were kept in it. A change here draws the view
-// again (Chat.tsx reads it), nothing else of the page.
-import { create } from "zustand";
+// their tree. Each actor's its own (`foldsOf`: every pane on the page shows its own actor's Chat): they start over when
+// the pane's files feed does (`files`, made anew each time the pane is given the actor), as they did when they were kept
+// in it. A change here draws that actor's Chat again (ChatMain.tsx reads it), nothing else of the page.
+import { create, createStore, useStore, type StoreApi } from "zustand";
 
 /** The latest turns drawn at first; and how many more each pull up past the top draws. */
 export const TURNS_SHOWN = 5,
@@ -56,50 +56,66 @@ const fresh = (): Folds => ({
   dirs: new Set(),
 });
 
-export const useTurns = create<TurnsState>()((set, get) => ({
-  ...fresh(),
-  files: null,
-  shown: null,
-  forFiles: (files) => {
-    if (get().files !== files) set({ ...fresh(), files });
-  },
-  fold: (id, open) =>
-    set((st) => {
-      const closed = new Set(st.closed);
-      if (open) closed.delete(id);
-      else closed.add(id);
-      return { closed };
-    }),
-  toggleOpened: (n) =>
-    set((st) => {
-      const opened = new Set(st.opened);
-      if (opened.has(n)) opened.delete(n);
-      else opened.add(n);
-      return { opened };
-    }),
-  flip: (n, whole, atFirst) =>
-    set((st) => {
-      const flips = new Map(st.flips);
-      if (!whole === atFirst) flips.delete(n);
-      else flips.set(n, !whole);
-      return { flips };
-    }),
-  clearFlips: () => set({ flips: new Map() }),
-  setFirst: (first) => set({ first }),
-  setShown: (shown) => set({ shown }),
-  pick: (sel) => set({ sel }),
-  foldDir: (path) =>
-    set((st) => {
-      const dirs = new Set(st.dirs);
-      if (dirs.has(path)) dirs.delete(path);
-      else dirs.add(path);
-      return { dirs };
-    }),
-}));
+const makeFolds = () =>
+  createStore<TurnsState>()((set, get) => ({
+    ...fresh(),
+    files: null,
+    shown: null,
+    forFiles: (files) => {
+      if (get().files !== files) set({ ...fresh(), files });
+    },
+    fold: (id, open) =>
+      set((st) => {
+        const closed = new Set(st.closed);
+        if (open) closed.delete(id);
+        else closed.add(id);
+        return { closed };
+      }),
+    toggleOpened: (n) =>
+      set((st) => {
+        const opened = new Set(st.opened);
+        if (opened.has(n)) opened.delete(n);
+        else opened.add(n);
+        return { opened };
+      }),
+    flip: (n, whole, atFirst) =>
+      set((st) => {
+        const flips = new Map(st.flips);
+        if (!whole === atFirst) flips.delete(n);
+        else flips.set(n, !whole);
+        return { flips };
+      }),
+    clearFlips: () => set({ flips: new Map() }),
+    setFirst: (first) => set({ first }),
+    setShown: (shown) => set({ shown }),
+    pick: (sel) => set({ sel }),
+    foldDir: (path) =>
+      set((st) => {
+        const dirs = new Set(st.dirs);
+        if (dirs.has(path)) dirs.delete(path);
+        else dirs.add(path);
+        return { dirs };
+      }),
+  }));
 
-/** The actor whose frame the page draws now (mount.tsx): the others kept drawn stay as they were until shown again --
- * the turn list's state here is one actor's at a time. */
-export const useOnPage = create<{ key: string | null }>()(() => ({ key: null }));
+const folds = new Map<string, StoreApi<TurnsState>>();
+/** Actor `key`'s Chat state (made the first time it is asked for). */
+export function foldsOf(key: string): StoreApi<TurnsState> {
+  let s = folds.get(key);
+  if (!s) folds.set(key, (s = makeFolds()));
+  return s;
+}
+/** Actor `key`'s Chat state, drawn again as it changes. */
+export const useFoldsOf = (key: string): TurnsState => useStore(foldsOf(key));
+/** The setting "Chat's earlier turns" picked again: every actor's turns as it has them. */
+export function clearFlips(): void {
+  for (const s of folds.values()) s.getState().clearFlips();
+}
+
+/** The actors whose frames are on the page now (mount.tsx): each pane's that shows Chat. One kept drawn off the page
+ * stays as it was until shown again. */
+export const useOnPage = create<{ keys: ReadonlySet<string> }>()(() => ({ keys: new Set<string>() }));
+export const onPage = (key: string): boolean => useOnPage.getState().keys.has(key);
 
 /** When this page first drew each turn opening (Pending.tsx's `seeing`), by the actor and its send: it grows in from then,
  * and the turn stored in its place goes on growing from there. */

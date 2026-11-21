@@ -6,7 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { loadVendored } from "../../core/ui/testing";
 import { chatOf } from "./actors";
 import { useSide } from "./side/store";
-import { useTurns } from "./store";
+import { clearFlips, foldsOf } from "./store";
 import { ACTOR, AT, chatView, now, testPage, turn, withTurns } from "./testing";
 
 const NOW = AT + 3600;
@@ -90,7 +90,7 @@ describe("Turns", () => {
     expect(node.querySelector("#fl-m-1-0")).not.toBeNull();
     page.draw(withTurns(turns(6)));
     expect(node.querySelector("#fl-turn-1")!.className).toBe("fl-turn shown");
-    useTurns.getState().clearFlips();
+    clearFlips();
     page.draw();
     expect(node.querySelector("#fl-turn-1")!.className).toBe("fl-turn folded");
     // under "Whole", every turn shown; a click folds one
@@ -127,7 +127,7 @@ describe("Turns", () => {
       main().open = false;
       fireEvent(main(), new Event("toggle"));
     });
-    expect(useTurns.getState().closed.has("fl-m-1-0")).toBe(true);
+    expect(foldsOf(page.feed.key).getState().closed.has("fl-m-1-0")).toBe(true);
     page.draw(withTurns(turns(2)));
     expect(main().open).toBe(false);
     expect(main().hasAttribute("open")).toBe(false);
@@ -335,7 +335,7 @@ describe("Turns", () => {
     );
     expect(opened.querySelector(".fl-working")).toBeNull();
     act(() => opened.querySelector<HTMLButtonElement>(".to-term")!.click());
-    expect(host.calls).toContainEqual(["setChatView", "terminal"]);
+    expect(host.calls).toContainEqual(["setChatView", "terminal", page.feed.info.channel]);
   });
 
   it("stacks what was written mid-turn on the turn's message", () => {
@@ -357,7 +357,11 @@ describe("Turns", () => {
     expect(host.calls).toContainEqual(["foldSide", page.feed.key, false]);
     expect(host.calls).toContainEqual(["setFilesTurn", page.feed.key, 0]);
     // the latest, its files shown: folded again
-    act(() => useSide.setState({ folded: false, narrow: false }));
+    act(() =>
+      useSide.setState((s) => ({
+        panels: { ...s.panels, [page.feed.key]: { folded: false, narrow: false, narrowOpen: false } },
+      })),
+    );
     page.draw();
     const btn = node.querySelector<HTMLElement>("#fl-turn-2 .fl-side-btn")!;
     expect(btn.getAttribute("aria-pressed")).toBe("true");

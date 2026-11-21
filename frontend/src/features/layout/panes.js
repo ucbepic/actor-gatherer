@@ -1,15 +1,15 @@
-import { MAX_PANES, PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { MAX_PANES, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
   HUE_MAIN, ICONS, MAC, el, gathererNamed, get, harnessBadge, harnessInfo, harnessLogo, harnessName, isShell, key,
-  parseKey, post, runnableNames, runsHere, selectedInfo, shellOf, shellPath, signature, strokeIcon, taskId,
+  parseKey, post, runnableNames, runsHere, shellOf, shellPath, signature, strokeIcon, taskId,
   taskNumber,
 } from "../../core/page/helpers.js";
-import { drawn, loadHome, setAbout, setAvatarMode, setEarlierTurns, setLive, setTheme } from "../page/data.js";
-import { connect, streamTake } from "../settings/panel.js";
+import { loadAgent, loadChat, loadHome, setAbout, setLive } from "../page/data.js";
+import { connect } from "../settings/panel.js";
 import { markSeen, statusOf } from "../list/seen.js";
 import {
   APP_ITEM, MANAGER, actorOf, actorTitle, actorsWithin, aimStart, appInfo, appItem, appMarkOf, appShown, appStatusOf,
-  appTaskOf, appsKnown, collapsed, crewAt, crewFace, crewHidden, crewHideKey, crewPlace, endRename, fileStarted,
+  appTaskOf, appsKnown, collapsed, crewAt, crewFace, crewHidden, crewHideKey, crewPlace, fileStarted,
   gathererApps, groupCrew, isAppItem, isCoordinator, listDrag, openTask, readApps, renderAgents, retask, savedAs,
   selectApp, setCrewHidden, shellFolder, shellLogo, showItemsTask, startIn, taskActors, taskApps, taskById, taskLead,
   taskMembers, taskName, taskOf, titleOf, within,
@@ -17,14 +17,16 @@ import {
 import { GF, gfOf } from "../list/gatherer-folders.js";
 import { ALONE_NEW, everyActor } from "../list/group-moves.js";
 import { cardRelease, listMode, select, setListMode } from "../list/modes.js";
-import { drawNewTab, keptHarness, keptStart, tabKey } from "./new-tab.js";
-import { escapeShown } from "../page/main-view.js";
+import { drawNewTab, keptHarness, keptStart } from "./new-tab.js";
+import { drawPane } from "../page/main-view.js";
 import { askKey, askWhere } from "../chat/chat.js";
 import { tildePath } from "../../core/page/code.js";
 import { firstLine, plural } from "../../core/format";
 import { CHAT_VIEWS, CHAT_VIEW_KEY, chatView, setChatView } from "../chat/views.js";
-import { term } from "../terminal/terminal.js";
+import { termOf } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
+import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
+import { herePane, newPane } from "./pane";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
 import { shadow } from "./shadow";
@@ -38,21 +40,20 @@ import * as prefs from "../../core/prefs";
 // Actors side by side. A click in the list shows its actor in the pane in focus; Ctrl+click (⌘+click on a
 // Mac, where Ctrl+click is a right click) opens it in a new pane at that one's right, up to MAX_PANES. An actor
 // open in a pane already is not opened twice: its pane is focused. A click in a pane focuses it; its × closes
-// it; the bar between two resizes them (a double click: all even). The first pane is this page's own view
-// (state.selected, panes.here); each other is this page again in a frame (PANE), showing one actor in its own
-// view, its controls in its pane's head, its updates handed to it from this page's one stream (connect). Kept
-// in this browser while there is more than one; with one, the page is as it always was.
+// it; the bar between two resizes them (a double click: all even). The first pane is this page's own (state.selected,
+// panes.here); each other is a pane of this page too (features/layout/pane.ts, features/page/pane-view.js's record),
+// showing its own actor in its own view, its controls in its head, drawn from the page's one stream and store (connect:
+// each pane's actor on it). Kept in this browser while there is more than one; with one, the page is as it always was.
 function isAt(sel, g, c) { return !!sel && sel[0] === g && sel[1] === c; }
-function allPanes() { return [panes.here, ...panes.others]; }
+const allPanes = everyPane;
 const actorPanes = () => panes.others;           // every pane is an actor's: apps' panels are in the top row (below)
 // The actors open in this page's panes, this page's own first; the one in the pane in focus.
-function openActors() { return PANE ? [] : [...(state.selected ? [state.selected] : []), ...actorPanes().map((p) => [p.g, p.c])]; }
+function openActors() { return [...(state.selected ? [state.selected] : []), ...actorPanes().map((p) => [p.g, p.c])]; }
 function focusedActor() {
   const p = focusedPane();
   return p === panes.here || !panes.others.includes(p) ? state.selected : [p.g, p.c];
 }
 function paneSig() { return [state.selected, panes.others.map((p) => [p.g, p.c]), allPanes().indexOf(focusedPane()), appSelected()]; }
-function paneOf(win) { return panes.others.find((p) => p.frame.contentWindow === win) || null; }
 // A row of the list clicked: shown in the pane in focus, or (Ctrl/⌘) beside it -- where its task is open, first (viaTabs).
 // An actor that is a task of its own (features/layout/panes.js's TASKS), with ⌘/Ctrl: it and its apps beside (openTaskBeside); one in a
 // task with others, it alone beside.
@@ -118,7 +119,7 @@ function rememberTask(key) {
   const shut = isShut() && its(...state.selected) ? state.selected[1] : null;
   const actors = openActors().filter(([pg, c]) => its(pg, c) && c !== shut).map(([, c]) => c);
   const views = {};                                  // each of its actors' panes: the view it shows
-  if (state.selected && its(...state.selected)) views[state.selected[1]] = chatView().id;
+  if (state.selected && its(...state.selected)) views[state.selected[1]] = chatView(panes.here).id;
   for (const p of actorPanes()) if (its(p.g, p.c) && p.view) views[p.c] = p.view;
   const apps = panes.apps.filter((p) => !p.held && p.g === g && appPaneTask(p) === key).map((p) => ({ app: p.app.name, id: p.instance.id }));
   const chosen = appSelected(), focusApp = chosen && apps.some((a) => a.id === chosen) ? chosen : null;   // an app selected in it
@@ -144,7 +145,7 @@ function forgetActor(key, c) {
 // one not closed (its lead first). The same task: nothing to do -- but, never laid out in this page, laid out now, adding
 // to what is open.
 function enterTask(g, c) {
-  if (PANE || SNAPSHOT) return null;
+  if (SNAPSHOT) return null;
   const to = taskKey(g, c), sel = focusedActor();
   const from = appsOnlyKey() || (sel && taskKey(sel[0], sel[1])) || (state.selected && taskKey(...state.selected));
   if (to) taskNow = to;
@@ -173,7 +174,7 @@ let taskAppsOpening = Promise.resolve();            // the apps' panels the task
 // actors' panes closed (terminals kept) and the rest out of sight (setAppsOnly), the apps' panels of other tasks closed,
 // its own opened above -- as it was left, else all of them (openTaskApps)
 function enterAppTask(g, k) {
-  if (PANE || SNAPSHOT) return;
+  if (SNAPSHOT) return;
   const sel = focusedActor(), from = appsOnlyKey() || (sel && taskKey(sel[0], sel[1]));
   if (from === k) return;
   shadow.tell("apps", model.open, k);                 // (the layout model beside the page: shadow.ts)
@@ -226,7 +227,7 @@ async function openTaskBeside(g, key, first) {
 // An actor opened beside a task of apps alone (⌘+click): this page's own pane, out of sight while apps alone show (its
 // actor not shown, though selected), in sight again with `c` in it -- the apps kept, beside
 async function outOfAppsOnly(g, c) {
-  if (!appsOnlyKey() || !c || PANE) return;
+  if (!appsOnlyKey() || !c) return;
   if (isAt(awayOf(), g, c)) backInSight();
   setAppsOnly(null);
   focusPane(panes.here);
@@ -307,13 +308,13 @@ async function showIn(g, c, view = null, wait = true) {
   const p = there || focusedPane();
   if (p !== panes.here) {
     focusPane(p);
-    if (!there) { retarget(p, g, c); p.view = view || p.view; savePanes(); connect(); renderAgents(); p.call("select", g, c, view); }
-    else if (view) p.call("view", view);
+    if (!there) { retarget(p, g, c); p.view = view || p.view; savePanes(); connect(); renderAgents(); paneGiven(p); }
+    else if (view) setChatView(p, view);
     return null;
   }
   focusPane(panes.here);
   let loading = null;
-  if (there) { if (view) loading = setChatView(view); }
+  if (there) { if (view) loading = setChatView(panes.here, view); }
   else { if (view) setViewHere(view); loading = select(g, c); }
   if (!loading) return null;
   if (wait) { await loading; return null; }
@@ -321,36 +322,45 @@ async function showIn(g, c, view = null, wait = true) {
   return { loading };
 }
 function setViewHere(id) {
-  state.chatViewId = id;
+  panes.here.view = id;
   prefs.setText(CHAT_VIEW_KEY, id);
 }
 function openBeside(g, c, view = null) {
-  if (PANE || SNAPSHOT || !state.selected) return show(g, c, view);
+  if (SNAPSHOT || !state.selected) return show(g, c, view);
   const there = actorPanes().find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
   if (there) return focusPane(there);
   if (allPanes().length >= MAX_PANES) return paneNote(`At most ${MAX_PANES} actors fit side by side. Close one to open another.`);
   const bk = taskKey(g, c);
   if (bk) shadow.tell("beside", model.open, bk, true);
   const from = focusedPane(), at = from === panes.here ? 0 : panes.others.indexOf(from) + 1;
-  shadow.update(model.wantPane, { g, c, view: view || (from === panes.here ? chatView().id : from.view), size: 1 }, at);
+  shadow.update(model.wantPane, { g, c, view: view || from.view, size: 1 }, at);
   renderPanes();
   focusPane(actorPanes().find((p) => isAt([p.g, p.c], g, c)));
 }
-// A pane of its own for an actor, its frame put at `at` among the others. Nothing else on the page is moved:
-// a frame moved is a frame loaded again.
+// A pane of its own for an actor (features/layout/pane.ts), put at `at` among the others, and drawn: its actor's calls
+// and view loaded from the page's own (its stream: connect). Nothing else on the page is moved: an app's frame moved is
+// a frame loaded again.
 function addPane(g, c, view, at, size = 1) {
-  const p = { g, c, view: view || null, size, ready: false };
-  const q = new URLSearchParams({ pane: "1", gatherer: g, channel: c, ...(view ? { view } : {}) });
-  p.frame = el("iframe", { src: `/?${q}`, title: isShell(c) ? `Terminal in ${g}` : `Actor ${c} of ${g}` });
-  p.node = el("section", { class: "pane" }, p.frame);
-  p.call = (what, ...args) => {                      // what the frame's page does when asked (agPane, its paneReady)
-    let api = null;
-    try { api = p.ready && p.frame.contentWindow && p.frame.contentWindow.agPane; } catch (e) { /* gone */ }
-    return api && api[what] ? api[what](...args) : undefined;
-  };
+  const p = makePane(newPane(), false, { g, c, view, size });
+  p.close.addEventListener("click", () => { workClosed(p.node); closePane(p); });
+  p.node.addEventListener("pointerdown", () => focusPane(p), true);
+  p.top.draggable = true;                            // dragged by its head (MOVE_FROM)
+  watchTop(p.head, p);
   document.getElementById("panes").insertBefore(p.node, panes.others[at] ? panes.others[at].node : null);
   panes.others.splice(at, 0, p);
+  paneGiven(p);
   return p;
+}
+// Pane `p` given its actor (opened, or another actor shown in it): what it shows of the last let go of, its view drawn
+// at once ("Loading…" till what it shows has come), then its actor's calls and view loaded and drawn.
+async function paneGiven(p) {
+  Object.assign(p, { agent: null, agentVersion: (p.agentVersion || 0) + 1, files: null, chatSend: async () => false });
+  p.drawn.who = null;
+  drawPane(p);
+  drawWho(p);
+  const at = [p.g, p.c];
+  await Promise.all([loadAgent(p).catch(() => { p.agent = null; }), loadChat(p)]);
+  if (panes.others.includes(p) && isAt(at, p.g, p.c)) drawPane(p, true);
 }
 // the layout model told task `k` is closed here once none of its panels is left (shadow.ts)
 function shadowGone(k) {
@@ -361,7 +371,7 @@ function shadowGone(k) {
 // (its frame loaded), each open one no longer wanted gone. (This page's own pane is state.selected's.)
 const wantedPanes = () => ((shadow.layout.panes || {}).others || []);
 function renderPanes() {
-  if (PANE || SNAPSHOT) return;
+  if (SNAPSHOT) return;
   const want = wantedPanes();
   let changed = false;
   for (const p of [...panes.others]) if (!want.some((o) => isAt([o.g, o.c], p.g, p.c))) { dropPane(p); changed = true; }
@@ -379,6 +389,7 @@ function dropPane(p, gone = true) {
   if (gone) queueMicrotask(() => shadowGone(state.home ? taskKey(p.g, p.c) : null));
   panes.others.splice(i, 1);
   p.node.remove();
+  if (p.watch) p.watch.disconnect();
   topRow(p, null);
   if (focusedPane() === p) focusPane(panes.others[i - 1] || panes.here);
 }
@@ -426,7 +437,6 @@ function focusPane(p) {
   if (had) markSelected();
   if (same) { if (had && state.home) renderAgents(); return; }
   for (const q of allPanes()) q.node.classList.toggle("focused", q === p);
-  for (const q of panes.others) q.call("focused", q === p);
   savePanes();
   appsSelected();
   if (state.home) renderAgents();
@@ -459,7 +469,6 @@ function markSelected() {
   const sel = appSelected();
   for (const q of panes.apps) q.node.classList.toggle("focused", !!sel && q.instance.id === sel);
   for (const q of allPanes()) q.node.classList.toggle("focused", !sel && q === focusedPane());
-  for (const q of panes.others) q.call("focused", !sel && q === focusedPane());
 }
 // an app's panel gone (closed, held out of sight, its app closed): no longer selected, the focused actor's pane marked again
 function unselectApp(id) {
@@ -482,7 +491,7 @@ function selectedTask() {
   const f = focusedActor();
   return f && !(focusedPane() === panes.here && isAway()) ? taskKey(f[0], f[1]) : null;   // (this page's own out of sight: none)
 }
-// A press this page never hears -- in a pane's frame (agPanes.focus), an app's panel (its `pressed`), a native page of
+// A press this page never hears -- in an app's panel (its `pressed`), a native page of
 // the ag app (agApp.onPressed), the focus gone into a frame: what floats over the page and closes on a press elsewhere
 // (Settings, a row's drop-down, the branch drop-down, History's types) closed, as such a press on the page closes it.
 function pressedAway() {
@@ -500,7 +509,7 @@ function layout() {
   document.getElementById("panes").classList.toggle("split", split);
   for (const p of allPanes()) { p.node.style.flexGrow = split ? String(p.size) : ""; p.node.classList.toggle("focused", p === focusedPane() && !appSelected()); }
   placeWork();
-  drawn.who = null; drawWho();
+  for (const p of allPanes()) { p.drawn.who = null; drawWho(p); }
 }
 // ------------------------------------------------------------------ the work area placed
 // The panels shown, as the work area arranges them (features/layout/work.ts): each task shown a block of its own, side by
@@ -550,7 +559,7 @@ function placeWork() {
 // placed again only if what it shows changed since (an actor shown in this page's own pane, one put in a task): each draw
 function placeIfShown() { if (workPlacer && shownSig() !== placedFor) placeWork(); }
 function startPlacing() {
-  if (PANE || SNAPSHOT || workPlacer) return;
+  if (SNAPSHOT || workPlacer) return;
   const work = document.querySelector(".work");
   workPlacer = workLayout(work, { shown: shownPanels, narrow: () => NARROW.matches,
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
@@ -606,7 +615,7 @@ async function viaTabs(k, ev, item = null) {
 // opened on by itself (the first actor; with one pane, the page keeps none) -- once
 let tabsStarted = false;
 async function startTabs() {
-  if (tabsStarted || !workPlacer || !state.home || PANE || SNAPSHOT) return;
+  if (tabsStarted || !workPlacer || !state.home || SNAPSHOT) return;
   tabsStarted = true;
   if (await workPlacer.tabs.start()) autoShown = null;
 }
@@ -682,7 +691,7 @@ async function closeTaskHere(k) {
 // others: its pane closed, as its pane's × does (closeHerePane: this page's own), and left out of its task as kept for
 // another tab (forgetActor); an app of one: its panel closed with it (features/list/list.js's closeApp).
 async function closedInTabs(k, item = null) {
-  if (!workPlacer || !k || PANE || SNAPSHOT) return;
+  if (!workPlacer || !k || SNAPSHOT) return;
   const { group: g, id } = parseKey(k);
   if (item === null || id === item) return workPlacer.tabs.closed(k, () => closeTaskHere(k));
   if (isAppItem(item)) return;
@@ -812,10 +821,10 @@ function taskLeadOf(k) {
   const a = taskLead(gg, taskNumber(id));
   return a && a.channel ? a.channel : null;
 }
-// a pane minimized now, or shown whole again: drawn so -- this page's own, or a frame's (told)
-function paneMinimized(node, on) {
-  if (node === panes.here.node) minRedraw();
-  else { const p = actorPanes().find((q) => q.node === node); if (p) p.call("minimized", on); }
+// a pane minimized now, or shown whole again: drawn so
+function paneMinimized(node) {
+  const p = allPanes().find((q) => q.node === node);
+  if (p) minRedraw(p);
 }
 // a panel closed by the reader (its ×): out of its task's tab shown, if the task has tabs
 function workClosed(node) { if (workPlacer && node) workPlacer.closed(node); }
@@ -886,11 +895,10 @@ function openDropped(k) {
   if (taskNumber(id) !== null) openTask(g, taskNumber(id), null, { metaKey: true });
   else if (!isAppItem(id)) openTaskBeside(g, k, id);
 }
-// A panel's head dragged -- this page's own pane's, its Chat bar's grip (the head put there); in a frame, the page
-// around it told -- picks it up (none from a press on a button in it, nor one with nowhere to go); let go, it is put
-// down. Right-clicked: what it can be moved to, as a menu. An app's panel has no head: its row in the list, right-clicked,
-// opens that menu for it (appPanelMenu).
-const MOVE_FROM = "#pane-here > .pane-top, .fl-grip, .lay-strip";
+// A panel's head dragged -- an actor's pane's, its Chat bar's grip (the head put there) -- picks it up (none from a press
+// on a button in it, nor one with nowhere to go); let go, it is put down. Right-clicked: what it can be moved to, as a
+// menu. An app's panel has no head: its row in the list, right-clicked, opens that menu for it (appPanelMenu).
+const MOVE_FROM = "#panes > .pane > .pane-top, .pane .fl-grip, .lay-strip";
 let movePress = null;                                // what the last press was on: a drag starting from a button is none
 function moveStart(node) { return !!workPlacer && !!node && workPlacer.startMove(node); }
 function moveEnd() { if (workPlacer) workPlacer.endMove(); }
@@ -939,52 +947,52 @@ function panelName(node) {
   const app = panes.apps.find((p) => p.node === node);
   const short = (t) => (t.length > 48 ? `${t.slice(0, 47)}…` : t);
   if (app) return short(app.instance.name || app.instance.title || app.app.label);
-  const q = actorPanes().find((p) => p.node === node), at = node === panes.here.node ? state.selected : q ? [q.g, q.c] : null;
+  const q = allPanes().find((p) => p.node === node), at = q && q.c ? [q.g, q.c] : null;
   if (!at) return "this pane";
   if (isShell(at[1])) return "the terminal";
   const a = appActor(at[0], at[1]);
   return short(a ? (a.name && a.name.text) || firstLine(a.last_user_message || "", 60) || at[1] : at[1]);
 }
 // The panes' top row -- each pane's head -- as tall as the tallest of them, so the rule under it runs straight
-// across: each says how tall it is by itself (`tops`: this page's head's, each frame's), and all are given the
-// tallest (--top-h). Not where the page is a phone's, its
-// panes one under the other. A frame tells the page around it, and is told. A head put in its Chat view's bar (the
-// Editor open: barActs) is hidden, of no height.
+// across: each says how tall it is by itself (`tops`: each pane's head's), and all are given the tallest (--top-h). Not
+// where the page is a phone's, its panes one under the other. A head put in its Chat view's bar (the Editor open:
+// barActs) is hidden, of no height.
 const tops = new Map(), NARROW = matchMedia("(max-width: 760px)");
 function topRow(who, height) {
   if (height === null) tops.delete(who); else tops.set(who, height);
-  if (PANE) return PANE.top(window, height);
   const tallest = NARROW.matches ? 0 : Math.ceil(Math.max(0, ...tops.values())) + 1;   // and the rule under it
   if (tallest === panes.top) return;
   panes.top = tallest;
   setTopRow(tallest);
-  for (const p of panes.others) p.call("top", tallest);
 }
 const setTopRow = (h) => document.documentElement.style.setProperty("--top-h", `${h}px`);
+// pane `who`'s head `node` (this page's own: "here") watched for its height
 function watchTop(node, who) {
-  new ResizeObserver(() => topRow(who, node.getBoundingClientRect().height)).observe(node);
+  const watch = new ResizeObserver(() => { if (node.isConnected) topRow(who, node.getBoundingClientRect().height); });
+  watch.observe(node);
+  if (who && typeof who === "object") who.watch = watch;
 }
-// The pane's head: whose it is, as the list has the actor -- its avatar, its name or what it was last asked.
-function drawWho() {
-  if (!PANE && !panes.others.length) return;
-  const sh = state.selected && isShell(state.selected[1]) ? shellOf(state.selected[1]) : null;
+// A pane's head (every pane's, `p` given: that one's): whose it is, as the list has the actor -- its avatar, its name or
+// what it was last asked. This page's own, alone, has none.
+function drawWho(p) {
+  if (!p) { for (const q of allPanes()) drawWho(q); return; }
+  if (p === panes.here && !panes.others.length) return;
+  const sh = p.c && isShell(p.c) ? shellOf(p.c) : null;
   if (sh) {
-    const sig = signature([state.selected, sh, state.home.home_dir]);
-    if (sig === drawn.who) return;
-    drawn.who = sig;
-    const who = document.getElementById("pane-who");
-    who.replaceChildren(shellLogo(), el("span", { class: "tx", text: shellPath(sh) }));
-    who.title = `Terminal · ${sh.gatherer}\n${sh.cwd}`;
+    const sig = signature([p.g, p.c, sh, state.home.home_dir]);
+    if (sig === p.drawn.who) return;
+    p.drawn.who = sig;
+    p.who.replaceChildren(shellLogo(), el("span", { class: "tx", text: shellPath(sh) }));
+    p.who.title = `Terminal · ${sh.gatherer}\n${sh.cwd}`;
     return;
   }
-  const info = selectedInfo();
-  const sig = signature([state.selected, info && [info.avatar, info.harness, info.last_user_message, info.name && info.name.text]]);
-  if (sig === drawn.who) return;
-  drawn.who = sig;
-  const who = document.getElementById("pane-who");
+  const info = paneInfo(p);
+  const sig = signature([p.g, p.c, info && [info.avatar, info.harness, info.last_user_message, info.name && info.name.text]]);
+  if (sig === p.drawn.who) return;
+  p.drawn.who = sig;
   const named = info && info.name && info.name.text;
-  who.replaceChildren(...(info ? [actorLogo(info), el("span", { class: "tx", text: named || info.last_user_message || info.channel })] : []));
-  who.title = info ? [named, info.last_user_message, `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}`]
+  p.who.replaceChildren(...(info ? [actorLogo(info), el("span", { class: "tx", text: named || info.last_user_message || info.channel })] : []));
+  p.who.title = info ? [named, info.last_user_message, `${harnessName(info.harness)} · ${p.g} · ${info.channel}`]
     .filter(Boolean).join("\n") : "";
 }
 // A line over the panes for a moment: why nothing opened.
@@ -995,7 +1003,7 @@ function paneNote(text) {
   setTimeout(() => n.remove(), 3500);
 }
 function savePanes() {
-  if (PANE || SNAPSHOT) return;
+  if (SNAPSHOT) return;
   shadow.update(model.panesNoted, state.selected, panes.here.size, panes.others.indexOf(focusedPane()), (o) => {
     const p = panes.others.find((q) => isAt([q.g, q.c], o.g, o.c));   // (which panes beside: the layout model's, model.ts)
     return p ? { view: p.view || undefined, size: p.size } : null;
@@ -1005,7 +1013,7 @@ function savePanes() {
 // The panes kept, opened again once the home is known: those whose actors are still in it.
 function restorePanes() {
   panes.checked = true;
-  if (PANE || SNAPSHOT) return;
+  if (SNAPSHOT) return;
   const kept = shadow.now().panes;                  // (the layout model's: model.ts)
   if (!kept || !Array.isArray(kept.others) || !kept.others.length) return;   // none beside: the tab's tasks say (tabs.ts's
                                                      // start), its own pane closed staying so
@@ -1019,14 +1027,6 @@ function restorePanes() {
   renderPanes();
   focusPane(panes.others[kept.focus] || panes.here);
   layout();
-}
-// What this page's stream says for the frames: the home for each, an actor for its pane's; kept, for a frame not
-// ready yet (or one shown a new actor).
-function panesTake(name, data) {
-  let to = null;
-  if (name === "home") panes.home = data;
-  else { const got = JSON.parse(data); to = [got.gatherer, got.channel]; panes.actors.set(key(...to), data); }
-  for (const p of actorPanes()) if (!to || isAt(to, p.g, p.c)) p.call("take", name, data);
 }
 // ------------------------------------------------------------------ apps' panels
 // An app's panel (app_kit/DESIGN.md) is in the top row (where it goes, the work area's arrangement: placeWork), above the
@@ -1119,13 +1119,13 @@ function appShowActor(g, c) {
   const a = appActor(g, c);
   return a ? show(g, a.channel, CHAT_VIEWS.has("files") ? "files" : null) : null;
 }
-// The message box of the actor `c` of gatherer `g`, focused, if it is shown here (the pane in focus's): its keys taken
-// back from a native page first, in the desktop app.
+// The message box of the actor `c` of gatherer `g`, focused, if a pane shows it: its keys taken back from a native page
+// first, in the desktop app.
 function appFocusAgent(g, c) {
-  const a = appActor(g, c);
-  if (!a || !isAt(state.selected, g, a.channel)) return;
+  const a = appActor(g, c), p = a && allPanes().find((q) => isAt([q.g, q.c], g, a.channel));
+  if (!p) return;
   window.agApp?.focusDashboard?.();
-  document.getElementById("composer-text")?.focus();
+  paneBox(p)?.focus();
 }
 function addAppPane(app, instance, size = 1, held = false) {
   const p = { app, instance, g: instance.gatherer, size, held };
@@ -1188,7 +1188,7 @@ const instCache = new Map(), fetching = new Set();
 const wanted = (id) => (shadow.layout.apps || []).some((w) => w.instance === id);
 const entryTask = (w) => (state.home ? taskKey(w.g, appItem(w.instance)) : null);   // (the home not come: none known)
 function renderApps() {
-  if (PANE || SNAPSHOT) return;
+  if (SNAPSHOT) return;
   let changed = false;
   for (const p of [...panes.apps]) if (!p.held && !wanted(p.instance.id)) { dropAppPanel(p); changed = true; }
   for (const w of shadow.layout.apps || []) {
@@ -1277,7 +1277,7 @@ function appNeeded(p) {
 }
 let appsWorking = "";
 async function appsAtWork() {
-  if (PANE || SNAPSHOT || !state.home) return;
+  if (SNAPSHOT || !state.home) return;
   for (const p of panes.apps) { p.panel.agentsChanged(); p.panel.actorsChanged(); }
   const working = [];
   for (const g of state.home.gatherers) for (const a of g.agents) if (agentAtWork(a)) working.push([g.name, a.channel]);
@@ -1300,7 +1300,7 @@ async function appsAtWork() {
   }
 }
 function saveAppPanes() {
-  if (PANE || SNAPSHOT) return;
+  if (SNAPSHOT) return;
   for (const p of panes.apps) if (!p.held && wanted(p.instance.id))   // their widths (the panels: the model's already)
     shadow.update(model.wantApp, { app: p.app.name, instance: p.instance.id, g: p.instance.gatherer, size: p.size });
   shadow.persist();
@@ -1324,7 +1324,7 @@ async function showAttached(p) {
 // menu put it with agents.
 async function openApp(g, name, folder) {
   const app = appHost.named(name);
-  if (!app || PANE || SNAPSHOT) return null;
+  if (!app || SNAPSHOT) return null;
   let instance;
   try { instance = await appHost.open(name, g, folder || null); }
   catch (e) { paneNote(`${app.label}: ${e.message}`); return null; }
@@ -1338,7 +1338,7 @@ async function openApp(g, name, folder) {
 // tab of its own
 async function openAppTab(gname, name, folder) {
   const app = appHost.named(name);
-  if (!app || PANE || SNAPSHOT) return;
+  if (!app || SNAPSHOT) return;
   let inst;
   try { inst = await appHost.open(name, gname, folder || null); }
   catch (e) { paneNote(`${app.label}: ${e.message}`); return; }
@@ -1383,7 +1383,7 @@ async function appIntent(kind, data, g) {
 // An actor an app started, selected: its app's panel in the top row -- shown, if held out of sight -- as a DocWriter's
 // actor showed DocWriter when it was its view. Any other actor: nothing opened.
 async function showActorsApp(g, c) {
-  if (PANE || SNAPSHOT) return;
+  if (SNAPSHOT) return;
   const k = taskKey(g, c);
   if (k && (tasksLaidOut.has(k) || taskLayout(k))) return;   // its task laid out, or remembered: its layout decides (enterTask)
   const gg = gathererNamed(g);
@@ -1408,7 +1408,7 @@ function appsSelected() {
 // The apps' panels kept, opened again once the apps are known: those whose instance is still open; the actors below
 // as the panes kept them (restorePanes), not opened again for them.
 async function restoreAppPanes() {
-  if (PANE || SNAPSHOT) return;
+  if (SNAPSHOT) return;
   renderApps();                                      // the model's (model.ts), as kept
   topLayout();
 }
@@ -1432,21 +1432,21 @@ const webLink = (href) => {
 const plainClick = (ev) => !ev || (!ev.button && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey);
 const appLink = (href) => isAppHref(href);
 const fileLink = (href) => !!filePath(href);   // a file's path (openFileLink)
-// Whether the page takes a click on a link to `href` shown with this page's actor (a frame's: the page around it does).
-// A link to something in an app (ag://, openAppLink), or to a file -- file://, or a path in what an agent wrote (`path`:
-// one Chat drew from its words, core/ui/md.ts's data-path; not one of the dashboard's own, as /api/image?…):
-// openFileLink -- always, whatever key is held: never the browser's to open (a path, as a page of this dashboard's).
-function linkClicked(href, ev, path = false) {
+// Whether the page takes a click on a link to `href` shown with the actor of pane `p` (the one clicked in; this page's
+// own, by default). A link to something in an app (ag://, openAppLink), or to a file -- file://, or a path in what an
+// agent wrote (`path`: one Chat drew from its words, core/ui/md.ts's data-path; not one of the dashboard's own, as
+// /api/image?…): openFileLink -- always, whatever key is held: never the browser's to open (a path, as a page of this
+// dashboard's).
+function linkClicked(href, ev, path = false, p = null) {
+  const pane = p || paneAt(ev && ev.target) || panes.here, sel = pane.c ? [pane.g, pane.c] : [];
   if (appLink(href) || (fileLink(href) && (path || /^file:/i.test(String(href).trim())))) {
     if (ev && ev.button) return true;               // another button: nothing opened (nor by the browser)
-    if (PANE) return !!(PANE.openLink && PANE.openLink(window, String(href).trim()));
-    const sel = state.selected || [];
     openLink(sel[0] || ((state.home && state.home.gatherers[0]) || {}).name, sel[1] || null, String(href).trim());
     return true;
   }
   const url = webLink(href);
-  if (!url || !plainClick(ev) || SNAPSHOT || !state.selected) return false;
-  return PANE ? !!(PANE.openLink && PANE.openLink(window, url)) : openLink(state.selected[0], state.selected[1], url);
+  if (!url || !plainClick(ev) || SNAPSHOT || !sel.length) return false;
+  return openLink(sel[0], sel[1], url);
 }
 // `url` opened for actor `c` of `gname`, if a Browser can be given it: false, nothing done (a link to something in an
 // app: opened there, openAppLink; a file's path: in an app that shows files, openFileLink)
@@ -1456,7 +1456,7 @@ function openLink(gname, c, url) {
   const g = gathererNamed(gname);
   const a = g && !isShell(c) ? actorOf(g, c) : null;
   const app = appHost.named(LINK_APP);
-  if (PANE || !a || !app || isCoordinator(a)) return false;
+  if (!a || !app || isCoordinator(a)) return false;
   const k = key(gname, a.channel);
   const next = (linkOpening.get(k) || Promise.resolve()).then(() => linkInBrowser(g, a, app, url))
     .catch((e) => paneNote(`${app.label}: ${e.message}`));
@@ -1505,7 +1505,7 @@ async function openAppLink(gname, c, href, from = {}) {
   const m = matchPath(app.links, h.path);
   if (!m) throw new Error(`${app.label}: no such place to open (${h.path || "nothing"})`);
   const g = gathererNamed(gname);
-  if (!g || PANE || SNAPSHOT) return;
+  if (!g || SNAPSHOT) return;
   const a = c && !isShell(c) ? actorOf(g, c) : null;
   const here = a ? taskKey(gname, a.channel) : from.item ? taskKey(gname, from.item) : selectedTask();
   const shown = (id) => panes.apps.find((q) => !q.held && q.instance.id === id);
@@ -1561,7 +1561,7 @@ async function openFileLink(gname, c, href, from = {}) {
   const f = filePath(href);
   if (!f) throw new Error(`Not a file's path: ${href}`);
   const g = gathererNamed(gname);
-  if (!g || PANE || SNAPSHOT) return;
+  if (!g || SNAPSHOT) return;
   const a = c && !isShell(c) ? actorOf(g, c) : null;
   let path = f.path;
   if (!path.startsWith("/")) {
@@ -1578,30 +1578,6 @@ async function openFileLink(gname, c, href, from = {}) {
     app = takers.find((x) => had.some((i) => i.app === x.name)) || app;
   }
   await openAppLink(gname, c, fileHref(app.name, path, f.line), from);
-}
-// In a frame: its URL says what it shows -- its actor and view -- so that loaded again it shows them still.
-function paneUrl() {
-  const [g, c] = state.selected || [];
-  try { history.replaceState(null, "", "/?" + new URLSearchParams({ pane: "1", gatherer: g || "", channel: c || "", view: state.chatViewId })); }
-  catch (e) { /* stays as it was */ }
-}
-// In a frame: what the page around it can ask of it, and its word that it is up.
-function paneReady() {
-  window.agPane = Object.freeze({
-    take: (name, data) => streamTake(name, data),
-    select: (g, c, view) => { if (view) state.chatViewId = view; select(g, c); },
-    view: (id) => setChatView(id),
-    theme: (pick) => setTheme(pick, false),
-    avatar: (pick) => setAvatarMode(pick, false),
-    earlier: (pick) => setEarlierTurns(pick, false),
-    focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
-    top: (h) => setTopRow(h),
-    toprow: () => minRedraw(),                       // a panel opened, or the last closed, above the panes: its head, in the bar or not
-    minimized: () => minRedraw(),                    // the chat minimized under the top row, or shown again (setChatMin)
-    escape: () => escapeShown(),                     // an Esc on the page outside the frame, this pane in focus
-  });
-  PANE.ready(window, state.selected);
-  watchTop(document.getElementById("pane-head"), "here");
 }
 // A gatherer's start buttons, one for each harness a new session can run on here (the server's `harnesses`:
 // in ag's config.toml, and installed): a click starts one, on the harness's default model, in the directory of
@@ -1623,7 +1599,7 @@ const appStart = (v) => { const [name, ...h] = v.slice(APP_START.length).split("
 // harness here can give an agent its tools (`tooled`). startingApps: those that open with one, which the list's form
 // for a new actor also offers on each harness.
 const byLabel = (x, y) => x.label.localeCompare(y.label);
-const openableApps = () => (PANE || SNAPSHOT ? [] : appHost.found()).filter((a) => !a.failed).sort(byLabel);
+const openableApps = () => (SNAPSHOT ? [] : appHost.found()).filter((a) => !a.failed).sort(byLabel);
 const withAgentChosen = (a) => !!(a.agent && a.agent.offered && a.opens_with_agent !== false);
 const opensWithAgent = (a, tooled) => withAgentChosen(a) && tooled.length > 0;
 const startingApps = () => openableApps().filter(withAgentChosen);
@@ -1662,7 +1638,7 @@ async function openCoordinator(g, node = g ? `group:${g.name}` : "all") {
     if (g) state.adding = { gatherer: g.name, cwd: startCwd(g), harness: null, error: e.message };
     else alert(e.message);
   } finally { state.starting = null; renderAgents(); }
-  const box = focusedPane() !== panes.here ? null : document.getElementById("composer-text");
+  const box = paneBox(focusedPane());
   if (box) box.focus();
 }
 // A node's coordinator agent, its face on the node's row (a group's just after its name): a click shows it (started if
@@ -1977,7 +1953,7 @@ async function startSession(gatherer, cwd, harness, join = null, alone = false) 
     if (join && state.selected && !appsOnlyKey()) await openBeside(s.gatherer, s.session_id, "files");
     else { await viaTabs(taskKey(s.gatherer, s.session_id), {}); await show(s.gatherer, s.session_id, "files"); }   // a tab of its own
   } finally { state.starting = null; renderAgents(); }
-  const box = focusedPane() !== panes.here ? null : document.getElementById("composer-text");
+  const box = paneBox(focusedPane());
   if (box) box.focus();
   return s;
 }
@@ -2006,7 +1982,8 @@ async function startShell(gatherer, cwd) {
   state.starting = { gatherer, harness: SHELL_START };
   renderAgents();
   try {
-    const size = term.opened && term.host && term.host.isConnected ? { cols: term.xterm.cols, rows: term.xterm.rows } : {};
+    const shown = focusedPane(), t = shown && shown.c ? termOf(shown.c) : null;   // the terminal the pane in focus draws
+    const size = t && t.opened && t.host.isConnected ? { cols: t.xterm.cols, rows: t.xterm.rows } : {};
     const folder = shellFolder(gatherer);            // opened in the folder aimed at, listed there
     const s = await post("/api/shells", { gatherer, cwd, ...size, ...(folder !== null ? { folder } : {}) });
     keptStart(gatherer, false, folder);
@@ -2206,7 +2183,7 @@ async function startBranch(gatherer, project, harness, approve) {
     await viaTabs(taskKey(s.gatherer, s.session_id), {});   // a tab of its own
     await show(s.gatherer, s.session_id, "files");
   } finally { state.starting = null; renderAgents(); }
-  const box = focusedPane() !== panes.here ? null : document.getElementById("composer-text");
+  const box = paneBox(focusedPane());
   if (box) box.focus();
 }
 function newForm() {
@@ -2248,14 +2225,14 @@ function newForm() {
 }
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
-  panes.here = { node: document.getElementById("pane-here"), size: 1 };
+  panes.here = makePane(herePane(), true, { view: prefs.text(CHAT_VIEW_KEY) || "files" });
   shadow.update(model.focusOn, null, true);          // (focus: this page's own pane)
-  if (!PANE && !SNAPSHOT) window.addEventListener("blur", () => setTimeout(() => {   // the focus gone into an app's frame
+  if (!SNAPSHOT) window.addEventListener("blur", () => setTimeout(() => {   // the focus gone into an app's frame
     if (document.activeElement && document.activeElement.localName === "iframe") pressedAway();   // (any frame's: one of a page no panel runs)
     const p = panes.apps.find((q) => q.frame === document.activeElement);
     if (p && appSelected() !== p.instance.id) selectAppPane(p);
   }, 0));
-  if (!PANE && !SNAPSHOT) { try { if (window.agApp && window.agApp.onPressed) window.agApp.onPressed(pressedAway); } catch (e) { /* not the app */ } }
+  if (!SNAPSHOT) { try { if (window.agApp && window.agApp.onPressed) window.agApp.onPressed(pressedAway); } catch (e) { /* not the app */ } }
   // ⌃Tab (⌃⇧Tab: back) in the ag app -- a browser keeps those keys for its own tabs: the next screen tab shown
   if (!SNAPSHOT) document.addEventListener("keydown", (ev) => {
     if (!ev.ctrlKey || ev.metaKey || ev.altKey || ev.key !== "Tab") return;
@@ -2263,73 +2240,38 @@ export function start() {
     try { app = !!window.top.agApp; } catch (e) { /* not ours */ }
     if (!app) return;
     ev.preventDefault();
-    if (PANE) PANE.tab(window, ev.shiftKey ? -1 : 1); else if (workPlacer) workPlacer.tabs.step(ev.shiftKey ? -1 : 1);
+    if (workPlacer) workPlacer.tabs.step(ev.shiftKey ? -1 : 1);
   }, true);
   if (!SNAPSHOT) {
     const head = document.querySelector("#pane-here > .pane-top");
     if (head) head.draggable = true;
     const from = (ev) => (ev.target.closest ? ev.target.closest(MOVE_FROM) : null);
-    const panel = (f) => (f.matches(".lay-strip") ? f : f.closest("#pane-here"));   // a task's strip: the task
+    const panel = (f) => (f.matches(".lay-strip") ? f : f.closest("#panes > .pane"));   // a task's strip: the task
     const busy = () => !!(movePress && movePress.closest && movePress.closest("button, input, textarea, select, a, [contenteditable]"));
     document.addEventListener("pointerdown", (ev) => { movePress = ev.target; }, true);
     document.addEventListener("dragstart", (ev) => {
       const f = from(ev);
       if (!f) return;
-      if (busy() || !(PANE ? PANE.move(window, true) : moveStart(panel(f)))) { ev.preventDefault(); return; }
+      if (busy() || !moveStart(panel(f))) { ev.preventDefault(); return; }
       ev.dataTransfer.effectAllowed = "move";
       ev.dataTransfer.setData("application/x-ag-panel", "1");
     });
-    document.addEventListener("dragend", (ev) => { if (from(ev)) { if (PANE) PANE.move(window, false); else moveEnd(); } });
+    document.addEventListener("dragend", (ev) => { if (from(ev)) moveEnd(); });
     document.addEventListener("contextmenu", (ev) => {
       const f = from(ev);
       if (!f || (ev.target.closest && ev.target.closest("input, textarea, [contenteditable]"))) return;
-      if (PANE ? PANE.menu(window, ev.clientX, ev.clientY) : moveMenu(panel(f), ev.clientX, ev.clientY)) ev.preventDefault();
+      if (moveMenu(panel(f), ev.clientX, ev.clientY)) ev.preventDefault();
     });
   }
-  if (!PANE) NARROW.addEventListener("change", () => { panes.top = null; topRow("here", tops.get("here") || 0); });
+  NARROW.addEventListener("change", () => { panes.top = null; topRow("here", tops.get("here") || 0); });
   panes.apps = [];
   if (!SNAPSHOT) document.addEventListener("click", (ev) => {
     const a = ev.target instanceof Element ? ev.target.closest("a[href]") : null;
-    if (!a || a.hasAttribute("download") || ev.defaultPrevented || !a.closest("#pane-here")) return;
+    if (!a || a.hasAttribute("download") || ev.defaultPrevented || !a.closest("#panes > .pane")) return;
     if (!linkClicked(a.getAttribute("href"), ev, a.hasAttribute("data-path"))) return;
     ev.preventDefault();
     ev.stopPropagation();                              // a link's click: not also its message's
   }, true);
-  // What a frame's page asks of this one (its PANE).
-  if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
-    get stream() { return state.stream; },
-    get home() { return panes.home; },                 // the home as last sent (JSON): a pane's to start from (loadHome)
-    ready(win, sel) {                                  // its page is up: given what the stream has said so far
-      const p = paneOf(win);
-      if (!p) return;
-      p.ready = true;
-      p.call("focused", focusedPane() === p);
-      if (panes.top) p.call("top", panes.top);
-      if (!isAt(sel, p.g, p.c)) return p.call("select", p.g, p.c, p.view);   // shown another actor while it loaded
-      if (panes.home) p.call("take", "home", panes.home);
-      const a = panes.actors.get(key(p.g, p.c));
-      if (a) p.call("take", "actor", a);
-    },
-    shows(win, sel) {                                  // its actor, chosen or renamed (a codex thread, from before)
-      const p = paneOf(win);
-      if (!p || !p.ready || !sel) return;              // not up yet: its pane's actor is the one it is given (ready)
-      if (!isAt(sel, p.g, p.c)) { retarget(p, sel[0], sel[1]); savePanes(); connect(); renderAgents(); return; }
-      const a = panes.actors.get(key(p.g, p.c));
-      if (a) p.call("take", "actor", a);
-    },
-    viewed(win, id) { const p = paneOf(win); if (p) { p.view = id; savePanes(); } },
-    top(win, height) { const p = paneOf(win); if (p) topRow(p, height); },
-    focus(win) { if (state.renaming) endRename(true); pressedAway(); const p = paneOf(win); if (p) focusPane(p); },   // a press in its frame
-    close(win) { const p = paneOf(win); if (p) { workClosed(p.node); closePane(p); } },
-    openLink(win, url) { const p = paneOf(win); return !!p && openLink(p.g, p.c, url); },   // a link clicked in it (linkClicked)
-    move(win, on) { const p = paneOf(win); if (!on) { moveEnd(); return true; } return !!p && moveStart(p.node); },   // its head dragged
-    tab(win, by) { if (workPlacer) workPlacer.tabs.step(by); },   // ⌃Tab in it (the ag app): the next screen tab
-    tabKey(win, what) { tabKey(what); },               // the new-tab or close key in it (features/layout/new-tab.js)
-    menu(win, x, y) {                                  // its head right-clicked, at (x, y) in its frame
-      const p = paneOf(win), r = p && p.frame.getBoundingClientRect();
-      return !!p && moveMenu(p.node, r.left + p.frame.clientLeft + x, r.top + p.frame.clientTop + y);
-    },
-  });
 }
 
 export {
@@ -2337,7 +2279,7 @@ export {
   appsOnlyLeft, appsSelected, branchChip, byLabel, closeAppPane, closeHere, closeHerePane, closePane, closePop,
   closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, focusedPane, folderPicks, holdAppPane, isAt,
   isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, opensWithAgent, paneNote,
-  paneOf, paneReady, paneSig, paneUrl, panesTake, pick, pickBeside, placeIfShown, placeWork, popButton, popMenu,
+  paneSig, pick, pickBeside, placeIfShown, placeWork, popButton, popMenu,
   cardStart, cardStartPress, railNewBox, rekeyTask, retarget, rememberTask, restoreAppPanes, restorePanes, rowPop, saveAppPanes,
   savePanes, selectAppPane, selectedTask, setAutoShown, show, showActorsApp, shownPanels, startMenu, startCwd, closePops,
   startPlacing, startSession, startShell, startTabs, startWithApp, startable, swapAppPane, taskAppsOpening, taskKey,

@@ -1,8 +1,8 @@
 // A minimized pane's HISTORY (src/features/chat/mini-history.js): right of its message box, the user's last message and what
 // the actor said last; hovered, the whole conversation in a card over what is above the pane -- each turn's message, its
 // commands with its messages among them in the order they came (files.py's reply `after`), its reply; an earlier turn
-// folded to its count of commands, fetched when opened. A pane in a frame, only as tall as its strip, has its card drawn
-// in the page around it. A message in the card clicked: the chat shown again at that turn. Its turn over, the actor's
+// folded to its count of commands, fetched when opened. A pane beside the page's own has its card drawn over the page,
+// not in the pane, only as tall as its strip. A message in the card clicked: the chat shown again at that turn. Its turn over, the actor's
 // avatar on its line, and under the card's last turn, is Chat's done avatar: a green check at its corner.
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./test";
@@ -12,8 +12,8 @@ import { addNotepad, taskHome, taskRow } from "./task-home";
 const box = async (l: Locator) => (await l.boundingBox())!;
 const notes = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]");
 const other = (page: Page) => page.locator("#panes > .pane").nth(1);
-const minimize = (where: Page | ReturnType<Page["frameLocator"]>) =>
-  where.locator("button[aria-label='Minimize the chat']:visible").first();
+const here = (page: Page) => page.locator("#pane-here");
+const minimize = (pane: Locator) => pane.locator("button[aria-label='Minimize the chat']:visible").first();
 // what the card shows after the user's last message, each child as "<its class> <its first words>"
 const afterLast = (card: Locator) =>
   card.locator(".mh-body").evaluate((b) => {
@@ -30,7 +30,7 @@ test("a minimized pane shows its last message and reply; hovered, the whole conv
   await codex.click();
   await addNotepad(page, codex);
   await expect(notes(page)).toHaveCount(1);
-  await minimize(page).click();
+  await minimize(here(page)).click();
   const strip = page.locator("#main > .chat.mini");
   const lines = strip.locator(".mini-hist .mh-row");
   await expect(lines).toHaveCount(2);
@@ -83,7 +83,7 @@ test("a minimized pane's card, opened again for the same line, keeps its place: 
   await codex.click();
   await addNotepad(page, codex);
   await expect(notes(page)).toHaveCount(1);
-  await minimize(page).click();
+  await minimize(here(page)).click();
   const line = page.locator("#main > .chat.mini .mini-hist .mh-row").nth(1);
   await expect(line).toContainText("done");
   await page.mouse.move(700, 300);
@@ -101,7 +101,7 @@ test("a minimized pane's card, opened again for the same line, keeps its place: 
   expect(await left()).toBeLessThan(8); // still at its end, not at its top
 });
 
-test("a pane in a frame, minimized: its card over the page around it; an earlier turn opened, its commands fetched", async ({
+test("a pane beside the page's own, minimized: its card over the page; an earlier turn opened, its commands fetched", async ({
   page,
 }) => {
   await taskHome(page, true); // Codex and Claude, one task, side by side
@@ -110,9 +110,9 @@ test("a pane in a frame, minimized: its card over the page around it; an earlier
   await expect(other(page)).toHaveCount(1);
   await addNotepad(page, taskRow(page));
   await expect(notes(page)).toHaveCount(1);
-  const frame = other(page).frameLocator("iframe");
+  const frame = other(page);
   await minimize(frame).click(); // Claude's
-  const lines = frame.locator("#main > .chat.mini .mini-hist .mh-row");
+  const lines = frame.locator("main > .chat.mini .mini-hist .mh-row");
   await expect(lines).toHaveCount(2);
   await expect(lines.nth(0)).toContainText("/probe-greet Bob");
   await expect(lines.nth(1)).toContainText("Ahoy, Bob!");
@@ -120,7 +120,7 @@ test("a pane in a frame, minimized: its card over the page around it; an earlier
   await lines.nth(1).hover();
   const card = page.locator(".mh-card");
   await expect(card).toBeVisible();
-  await expect(frame.locator(".mh-card")).toHaveCount(0); // not in its frame, no taller than its strip
+  await expect(frame.locator(".mh-card")).toHaveCount(0); // not in its pane, no taller than its strip
   await expect(card.locator(".mh-sep")).toHaveCount(15);
   expect(await afterLast(card)).toEqual(["mh-cmd Load skill pro", "mh-reply Ahoy, Bob!", "mh-now "]);
   await expect(lines.nth(1).locator(".ic.at-rest > .mk.ok")).toHaveCount(1);
@@ -140,7 +140,7 @@ test("a pane in a frame, minimized: its card over the page around it; an earlier
 });
 
 // The line between a minimized pane's message box and its last lines, dragged: the box's share of the room the two take,
-// kept in this browser for every minimized pane -- a pane in a frame told too -- and double-clicked, as it was.
+// kept in this browser for every minimized pane -- the pane beside too -- and double-clicked, as it was.
 test("a minimized pane's line between its box and its last lines, dragged: the room shared so, kept; double-clicked, as it was", async ({
   page,
 }) => {
@@ -150,10 +150,10 @@ test("a minimized pane's line between its box and its last lines, dragged: the r
   await expect(other(page)).toHaveCount(1);
   await addNotepad(page, taskRow(page));
   await expect(notes(page)).toHaveCount(1);
-  const frame = other(page).frameLocator("iframe");
-  await minimize(page).click(); // this page's own pane (Codex), and the one beside it in a frame (Claude) with it
+  const frame = other(page);
+  await minimize(here(page)).click(); // this page's own pane (Codex), and the one beside it (Claude) with it
   const strip = page.locator("#main > .chat.mini"),
-    fstrip = frame.locator("#main > .chat.mini");
+    fstrip = frame.locator("main > .chat.mini");
   const widths = async (s: Locator) => [
     (await box(s.locator(":scope > .composer"))).width,
     (await box(s.locator(":scope > .mini-hist"))).width,
@@ -177,7 +177,7 @@ test("a minimized pane's line between its box and its last lines, dragged: the r
   expect(Math.abs(b1 + h1 - (b0 + h0))).toBeLessThan(2);
   const kept = Number(await page.evaluate(() => localStorage.getItem("ag-dashboard-mini-split")));
   expect(kept).toBeCloseTo(b1 / (b1 + h1), 2);
-  // the pane in a frame: told, the same share
+  // the pane beside: the same share
   await expect
     .poll(async () => {
       const [b, h] = await widths(fstrip);
@@ -209,7 +209,7 @@ test("a minimized pane's line between its box and its last lines, dragged: the r
   await page.reload();
   await expect(strip.locator(":scope > .mini-hist")).toBeVisible();
   expect(Math.abs((await widths(strip))[1] - 140)).toBeLessThan(2);
-  // double-clicked: as it was, here and in the frame
+  // double-clicked: as it was, here and in the pane beside
   await strip.locator(":scope > .mini-grip").dblclick();
   const [b2, h2] = await widths(strip);
   expect(b2 / (b2 + h2)).toBeCloseTo(0.4, 1);
@@ -220,22 +220,22 @@ test("a minimized pane's line between its box and its last lines, dragged: the r
       return Math.round((b / (b + h)) * 100);
     })
     .toBe(Math.round((fb0 / (fb0 + fh0)) * 100));
-  // dragged in the frame, out of it and up over the Notepad's frame, let go there: the drag over in both pages, kept
-  const fg = await box(frame.locator("#main > .chat.mini > .mini-grip")),
+  // dragged in the pane beside, out of it and up over the Notepad's frame, let go there: the drag over, kept
+  const fg = await box(frame.locator("main > .chat.mini > .mini-grip")),
     fp = await box(other(page));
   await page.mouse.move(fg.x + fg.width / 2, fg.y + fg.height / 2);
   await page.mouse.down();
   await page.mouse.move(fg.x + fg.width / 2 + 40, fg.y + fg.height / 2, { steps: 3 });
-  await expect(frame.locator("html")).toHaveAttribute("data-mini-drag", "here");
-  await expect(page.locator("html")).toHaveAttribute("data-mini-drag", "frame");
-  await expect(strip.locator(":scope > .mini-x")).toHaveCSS("cursor", "col-resize"); // the page around it too
+  await expect(frame).toHaveAttribute("data-mini-drag", "here");
+  await expect(page.locator("html")).toHaveAttribute("data-mini-drag");
+  await expect(strip.locator(":scope > .mini-x")).toHaveCSS("cursor", "col-resize"); // the page's own pane too
   const after = (l: Locator) => l.evaluate((n) => getComputedStyle(n, "::after").width);
-  expect(await after(frame.locator("#main > .chat.mini > .mini-grip"))).toBe("3px"); // its line drawn as dragged...
+  expect(await after(frame.locator("main > .chat.mini > .mini-grip"))).toBe("3px"); // its line drawn as dragged...
   expect(await after(strip.locator(":scope > .mini-grip"))).toBe("1px"); // ...not the page's own
   await page.mouse.move(fp.x - 150, fg.y + fg.height / 2, { steps: 4 });
   await page.mouse.move(fp.x - 200, fg.y - 120, { steps: 4 }); // over the Notepad
   await page.mouse.up();
-  await expect(frame.locator("html")).not.toHaveAttribute("data-mini-drag");
+  await expect(frame).not.toHaveAttribute("data-mini-drag");
   await expect(page.locator("html")).not.toHaveAttribute("data-mini-drag");
   await expect(fstrip.locator(":scope > .composer")).toHaveJSProperty("offsetWidth", 150); // as far left as it goes
   await expect.poll(() => page.evaluate(() => localStorage.getItem("ag-dashboard-mini-split"))).not.toBeNull();

@@ -1,11 +1,10 @@
-import { PANE, PANE_URL, state } from "../../core/page/state.js";
-import { ICONS, selectedInfo } from "../../core/page/helpers.js";
-import { drawn, loadChat, render } from "../page/data.js";
-import { keepingPlace } from "../settings/panel.js";
-import { paneUrl } from "../layout/panes.js";
-import { renderMain } from "../page/main-view.js";
+import { state } from "../../core/page/state.js";
+import { ICONS } from "../../core/page/helpers.js";
+import { loadChat, render } from "../page/data.js";
+import { savePanes } from "../layout/panes.js";
+import { drawPane } from "../page/main-view.js";
 import { backgroundNote, chatToEnd } from "./chat.js";
-import { chatActor } from "./files-view.js";
+import { allPanes, paneInfo, paneKey } from "../page/pane-view.js";
 import { viewOpened } from "../history/store";
 import { chatMin } from "../layout/top.js";
 import * as prefs from "../../core/prefs";
@@ -73,53 +72,56 @@ const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
 // A view with `when(info)` is offered only to the actors it says. An app's actor (features/apps/app-actors.js) is shown as any
 // actor is: its app's panel is above the panes.
 const offeredTo = (v, info) => !!v && (!v.when || !!v.when(info));
-// The views offered to the selected actor, those for it alone (`when`) first.
-const offeredViews = () => [...CHAT_VIEWS.values()].filter((v) => offeredTo(v, selectedInfo()))
+// The views offered to pane `p`'s actor, those for it alone (`when`) first.
+const offeredViews = (p) => [...CHAT_VIEWS.values()].filter((v) => offeredTo(v, paneInfo(p)))
   .sort((a, b) => (b.when ? 1 : 0) - (a.when ? 1 : 0));
-const chatView = () => {
-  const info = selectedInfo(), v = CHAT_VIEWS.get(state.chatViewId);
-  return offeredTo(v, info) ? v : CHAT_VIEWS.get("files");
+// The view pane `p` shows: the one picked for it, if its actor is offered it; else Chat.
+const chatView = (p) => {
+  const v = CHAT_VIEWS.get(p.view);
+  return offeredTo(v, paneInfo(p)) ? v : CHAT_VIEWS.get("files");
 };
-async function setChatView(id) {
-  if (id === "history" && chatView().id !== "history") viewOpened();   // opened again: built again
+// Pane `p` showing view `id`: this page's own kept as the page's choice (every page opens on it), a pane beside it with
+// the pane (the layout's).
+async function setChatView(p, id) {
+  if (id === "history" && chatView(p).id !== "history") viewOpened();   // opened again: built again
                                                      // if due, and at its tasks if it has them
-  state.chatViewId = id;
-  if (PANE) { paneUrl(); PANE.viewed(window, id); }  // a frame's: kept with its pane, not as every page's
-  else prefs.setText(CHAT_VIEW_KEY, id);
-  await loadChat();
-  keepingPlace(renderMain);
-  chatToEnd();
+  p.view = id;
+  if (p.here) prefs.setText(CHAT_VIEW_KEY, id);
+  else savePanes();
+  await loadChat(p);
+  drawPane(p);
+  chatToEnd(p);
 }
 function addChatView(view) {
   if (!view || typeof view.id !== "string" || typeof view.render !== "function")
     throw new Error("a chat view needs an id and a render(ctx)");
   if (!CHAT_FEEDS[view.feed || "history"]) throw new Error(`no feed ${view.feed}: one of ${Object.keys(CHAT_FEEDS).join(", ")}`);
   CHAT_VIEWS.set(view.id, { name: view.id, feed: "history", background: view.feed !== "none" && view.frame !== "term", ...view });
-  if (state.home) { drawn.main = null; loadChat().then(() => render()); }
+  if (state.home) for (const p of allPanes()) { p.drawn.main = null; loadChat(p).then(() => render()); }
 }
-// What a view can draw from: each loads its data for the selected session, and says what it has.
+// What a view can draw from: each loads its data for the session of the pane given, and says what it has.
 const CHAT_FEEDS = {
   // the actor's events, a row each (features/details/events.ts)
   history: {
-    load: () => loadEvents(chatActor()),
-    data: () => { const f = eventsOf(chatActor()); return f ? { items: f.items, pending: f.pending, earlier: false } : null; },
+    load: (p) => loadEvents(paneKey(p)),
+    data: (p) => { const f = eventsOf(paneKey(p)); return f ? { items: f.items, pending: f.pending, earlier: false } : null; },
   },
   // each event's parts, as the Transcript draws them (features/transcript/data.ts)
   transcript: {
-    load: () => loadTranscript(chatActor()),
-    loadEarlier: () => loadTranscript(chatActor(), true),
-    data: () => { const f = txFeedOf(chatActor()); return f ? { items: f.items, pending: f.pending, earlier: f.earlier } : null; },
+    load: (p) => loadTranscript(paneKey(p)),
+    loadEarlier: (p) => loadTranscript(paneKey(p), true),
+    data: (p) => { const f = txFeedOf(paneKey(p)); return f ? { items: f.items, pending: f.pending, earlier: f.earlier } : null; },
   },
   none: { load: async () => {}, data: () => ({ items: [], pending: [], earlier: false }) },
 };
-const chatFeed = (view = chatView()) => (chatMin() ? CHAT_FEEDS.files : CHAT_FEEDS[view.feed]) || CHAT_FEEDS.history;
+// The feed pane `p`'s view draws from (minimized: Chat's files, for its lines)
+const chatFeed = (p, view = chatView(p)) => (chatMin(p) ? CHAT_FEEDS.files : CHAT_FEEDS[view.feed]) || CHAT_FEEDS.history;
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
-  state.chatViewId = (PANE && PANE_URL.get("view")) || prefs.text(CHAT_VIEW_KEY) || "files";
   // "agent": what ag recorded of the actor's calls -- each read (items) -- loaded with the actor already.
   CHAT_FEEDS.agent = {
     load: async () => {},
-    data: () => state.agent && state.agent.reads ? { items: state.agent.reads, pending: [], earlier: false } : null,
+    data: (p) => p.agent && p.agent.reads ? { items: p.agent.reads, pending: [], earlier: false } : null,
   };
 
   // The views that come with the page: each draws its frame itself, React's (`mount`), with what waits for the turn to

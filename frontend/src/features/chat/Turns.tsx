@@ -5,19 +5,19 @@
 // turn has its first answer; never by the actor's status, nor by a message sent and not yet stored, so a turn is not
 // folded and shown again as the next starts. Then the turn a message opened that is not stored yet. What each shows of
 // its state -- at work, done, stopped -- is the server's view's (view.ts), one moment's for all of them.
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, type RefObject } from "react";
 import { plural } from "../../core/format";
 import { TurnBoundary } from "./Boundary";
 import { useChat } from "./context";
 import { placed } from "./follow";
 import { OpenedTurn } from "./Pending";
 import { drawn } from "./pull";
-import { TURNS_SHOWN, useOnPage, useTurns } from "./store";
+import { TURNS_SHOWN, foldsOf, onPage } from "./store";
 import { Turn, type TurnPlace } from "./Turn";
 import type { Turn as TurnData } from "./types";
 import { currentOf, nowWords, openingOf, pickedOf, turnsOf } from "./view";
 
-export function Turns({ interrupting }: { interrupting: boolean }) {
+export function Turns({ talk: box, interrupting }: { talk?: RefObject<HTMLDivElement | null>; interrupting: boolean }) {
   const { feed, folds } = useChat();
   const turns = turnsOf(feed),
     last = turns.length - 1,
@@ -45,16 +45,17 @@ export function Turns({ interrupting }: { interrupting: boolean }) {
   const picked = pickedOf(feed, turns);
   // the turn shown brought into view, once each time one is shown: the latest at its end, one picked at its top
   useLayoutEffect(() => {
-    const at = `${feed.key}:${picked}`;
-    const mine = () => useOnPage.getState().key === feed.key; // its frame the one on the page
-    if (useTurns.getState().shown === at || !mine()) return;
+    const at = `${feed.key}:${picked}`,
+      folds = foldsOf(feed.key);
+    const mine = () => onPage(feed.key); // its frame on the page
+    if (folds.getState().shown === at || !mine()) return;
     requestAnimationFrame(() => {
-      if (useTurns.getState().shown === at || !mine()) return; // already (keepTurn: kept where the reader had it)
-      const cur = document.querySelector<HTMLElement>(".fl-talk .fl-turn.on");
+      if (folds.getState().shown === at || !mine()) return; // already (keepTurn: kept where the reader had it)
+      const cur = box?.current?.querySelector<HTMLElement>(":scope > .fl-turn.on");
       if (!cur || !cur.parentElement) return;
-      useTurns.getState().setShown(at);
+      folds.getState().setShown(at);
       const talk = cur.parentElement; // .fl-talk: its offset parent
-      talk.scrollTop = (drawn.feed ?? feed).picked === null ? talk.scrollHeight : cur.offsetTop;
+      talk.scrollTop = (drawn.get(feed.key) ?? feed).picked === null ? talk.scrollHeight : cur.offsetTop;
       placed(talk);
     });
   });

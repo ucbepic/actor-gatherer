@@ -98,7 +98,7 @@ test("a pane's head dragged in its frame: the pane moved over the page around it
   const panes = page.locator("#panes > .pane");
   await expect(panes).toHaveCount(2);
   const other = panes.nth(1);
-  const head = await box(other.frameLocator("iframe").locator("#pane-who"));
+  const head = await box(other.locator(".pane-who"));
   const here = await box(page.locator("#pane-here"));
   await drag(page, { x: head.x + 30, y: head.y + head.height / 2 }, { x: here.x + here.width / 2, y: here.y + 40 }); // its top
   await expect
@@ -122,7 +122,7 @@ test("a task opened beside another is a block of its own: its panels together, n
   expect(o.y).toBe(top); // the whole height
   expect(o.height).toBeCloseTo(h.y + h.height - top, 0);
   // Codex's grip right-clicked (its head in its Chat bar, an app shown): no other panel of its task shown, nowhere to go
-  const grip = await box(other.frameLocator("iframe").locator(".fl-grip"));
+  const grip = await box(other.locator(".fl-grip"));
   await page.mouse.click(grip.x + grip.width / 2, grip.y + grip.height / 2, { button: "right" });
   await expect(page.locator(".row-menu[aria-label='Move this panel']")).toHaveCount(0);
 });

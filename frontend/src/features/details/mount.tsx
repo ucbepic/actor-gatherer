@@ -14,16 +14,26 @@ import { DetailsPanel } from "./Details";
 import { Messages, type MsgFrame } from "./Messages";
 import type { DetailsFeed, DetailsHost, Item, Read } from "./types";
 
-let panel: { node: HTMLElement; root: Root } | null = null;
+const panels = new Map<string, { node: HTMLElement; root: Root }>();
 
-/** The panel, drawn now for `feed.key`: its node, for the page to put where it goes. Another actor's is drawn afresh. */
+/** The panel, drawn now for `feed.key` (each pane's its own: one for each actor shown): its node, for the page to put
+ * where it goes. Those of actors no longer shown let go of, but the newest few. */
 export function drawDetails(feed: DetailsFeed, host: DetailsHost): HTMLElement {
-  if (!panel) {
+  let panel = panels.get(feed.key);
+  if (panel) panels.delete(feed.key);
+  else {
     const node = document.createElement("aside");
     node.className = "drawer";
     node.setAttribute("role", "complementary");
     node.setAttribute("aria-label", "Details");
     panel = { node, root: createRoot(node) };
+  }
+  panels.set(feed.key, panel);
+  for (const [k, p] of panels) {
+    if (panels.size <= 4) break;
+    if (k === feed.key || p.node.isConnected) continue;
+    p.root.unmount();
+    panels.delete(k);
   }
   const { node, root } = panel;
   flushSync(() => root.render(<DetailsPanel key={feed.key} feed={feed} host={host} />));
@@ -32,10 +42,10 @@ export function drawDetails(feed: DetailsFeed, host: DetailsHost): HTMLElement {
 
 /** The Messages view's frame for `f.key` (core/ui/frame.tsx), drawn now: its node, for the page to put where it goes. */
 export const drawMessages = (f: MsgFrame, name: string): HTMLDivElement =>
-  viewFrame("messages", "ctx", name, <Messages key={f.key} f={f} />);
+  viewFrame("messages", "ctx", name, <Messages key={f.key} f={f} />, f.key);
 
-/** The actor shown now (the page's): the read picked on its size chart kept, another actor's let go of. */
-export const detailsShown = (key: string): void => usePicked.getState().shown(key);
+/** The actors the panes show now: the reads picked on their size charts kept, the others' let go of. */
+export const detailsShown = (keys: string[]): void => usePicked.getState().shown(keys);
 
 // The parts, as nodes (agDashboard's contextItem, columns, typeChips, contextCard and sizeCard).
 const attrs = (a: Record<string, string>) => {

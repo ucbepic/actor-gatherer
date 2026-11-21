@@ -1,7 +1,8 @@
 // A session's terminal in the page: its interactive process, run by the dashboard in a pseudo-terminal (sessions.py's
-// `terminal`), drawn by xterm.js (vendored: index.html's <!--VENDOR-->, `window.Terminal`) -- one at a time, its node kept
-// across the page's draws (moved, never made again), so what it shows, its scroll and its focus stay. What the process
-// prints comes on a stream of its own; what is typed goes to it in order. A shell's pane (shell.js) draws the same.
+// `terminal`), drawn by xterm.js (vendored: index.html's <!--VENDOR-->, `window.Terminal`) -- one for each session a pane
+// shows (each pane its own), its node kept across the page's draws (moved, never made again), so what it shows, its
+// scroll and its focus stay; let go of once no pane shows its session (termsKept). What the process prints comes on a
+// stream of its own; what is typed goes to it in order. A shell's pane (shell.js) draws the same.
 import { post } from "../../core/api/client";
 import { stream, type Stream } from "../../core/api/stream";
 import type { Home } from "../../core/api/types";
@@ -40,15 +41,16 @@ export interface TermActor {
   session?: { session_id?: string; terminal?: unknown; harness?: string | null } | null;
 }
 
-/** What the terminal asks of the page: the actor shown, its group, its data loaded again, a link clicked in it, a shell
- * that ended. */
+/** What a terminal asks of the page: the actor of session `sid` as a pane shows it, its group, the page's data loaded
+ * again, a link clicked in it, a shell that ended; and the session the page's own pane shows (`term`, below). */
 export interface TermHost {
-  info(): TermActor | null;
-  gatherer(): string | null;
+  info(sid: string): TermActor | null;
+  gatherer(sid: string): string | null;
   home(): Home | null;
   refresh(): unknown;
-  linkClicked(uri: string, ev: MouseEvent): boolean;
+  linkClicked(uri: string, ev: MouseEvent, sid: string): boolean;
   shellGone(sid: string): unknown;
+  here(): string | null;
 }
 let host: TermHost | null = null;
 export const setTermHost = (h: TermHost) => {
@@ -124,12 +126,12 @@ const BARE_MOVE = /\x1b\[<(\d+);\d+;\d+M/g;
 const dropBareMoves = (d: string) =>
   d.includes("\x1b[<") ? d.replace(BARE_MOVE, (m, b) => (+b & 32 && (+b & 3) === 3 ? "" : m)) : d;
 
-/** The terminal shown: whose (`sid`), its xterm and node, its stream, how it went. */
+/** A session's terminal: whose (`sid`), its xterm and node, its stream, how it went. */
 export interface Term {
-  sid: string | null;
-  xterm: XTerm | null;
-  fit: Fit | null;
-  host: (HTMLElement & { agFocus?: () => void }) | null;
+  sid: string;
+  xterm: XTerm;
+  fit: Fit;
+  host: HTMLElement & { agFocus?: () => void };
   es: Stream | null;
   opened: boolean;
   exited: number | null;
@@ -139,25 +141,47 @@ export interface Term {
   tried: boolean;
 }
 
-export const term: Term = {
-  sid: null,
-  xterm: null,
-  fit: null,
-  host: null,
-  es: null,
-  opened: false,
-  exited: null,
-  unsent: "",
-  sending: false,
-  error: "",
-  tried: false,
+const terms = new Map<string, Term>();
+
+/** The terminal of `sid`, if one is kept. */
+export const termOf = (sid: string): Term | null => terms.get(sid) ?? null;
+
+/** For the list's following of a codex session renamed to its thread (features/list/seen.js): the terminal of the
+ * session the page's own pane shows -- given the new id, its stream let go of, to be listened to again under it. */
+export const term = {
+  get sid(): string | null {
+    const sid = host?.here() ?? null;
+    return sid && terms.has(sid) ? sid : null;
+  },
+  set sid(to: string | null) {
+    const from = host?.here() ?? null,
+      t = from ? terms.get(from) : undefined;
+    if (!t || !to || to === from) return;
+    terms.delete(from!);
+    t.es?.close();
+    t.es = null;
+    t.sid = to;
+    terms.set(to, t);
+  },
+  get es(): Stream | null {
+    const sid = host?.here() ?? null;
+    return (sid && terms.get(sid)?.es) || null;
+  },
+  set es(es: Stream | null) {
+    const t = this.sid ? terms.get(this.sid) : undefined;
+    if (t && !es) {
+      t.es?.close();
+      t.es = null;
+    }
+  },
 };
 
 // A link in the terminal clicked (one a program marks as a link): in a Browser of the actor's task, as a link in a message
 // (the page's linkClicked); else as xterm would, the address asked about first.
-const LINKS = {
+const linksOf = (t: () => Term | undefined) => ({
   activate(ev: MouseEvent, uri: string) {
-    if (host?.linkClicked(uri, ev)) return;
+    const sid = t()?.sid;
+    if (sid && host?.linkClicked(uri, ev, sid)) return;
     if (!confirm(`Do you want to navigate to ${uri}?\n\nWARNING: This link could potentially be dangerous`)) return;
     const w = window.open();
     if (w) {
@@ -169,38 +193,50 @@ const LINKS = {
       w.location.href = uri;
     }
   },
-};
+});
 
-/** The terminal of `sid`: the one kept, or a new one in place of another's. */
+/** The terminal of `sid`: the one kept, or a new one. */
 export function termFor(sid: string): Term {
-  if (term.sid === sid && term.xterm) return term;
-  termDrop();
+  const kept = terms.get(sid);
+  if (kept) return kept;
+  const made: { t?: Term } = {};
   const xterm = new window.Terminal!({
     cursorBlink: true,
     fontSize: 13,
     scrollback: 5000,
     allowProposedApi: false,
-    linkHandler: LINKS,
+    linkHandler: linksOf(() => made.t),
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     theme: xtermTheme(),
   });
   const fit = new window.FitAddon!.FitAddon();
   xterm.loadAddon(fit);
-  const node: Term["host"] = Object.assign(document.createElement("div"), {
-    className: "xterm-host",
-    id: "xterm-host",
-  });
+  const node: Term["host"] = Object.assign(document.createElement("div"), { className: "xterm-host" });
   node.dataset.refocus = "1";
   node.agFocus = () => xterm.focus();
-  Object.assign(term, { sid, xterm, fit, host: node, opened: false, exited: null, error: "", tried: false });
+  const me: Term = {
+    sid,
+    xterm,
+    fit,
+    host: node,
+    es: null,
+    opened: false,
+    exited: null,
+    unsent: "",
+    sending: false,
+    error: "",
+    tried: false,
+  };
+  made.t = me;
+  terms.set(sid, me);
   // to the session by its id now, not the one it opened under: a session renamed since is typed to under its new one
   xterm.onData((d) => {
     d = dropBareMoves(d);
-    if (d && term.xterm === xterm) termType(term.sid!, d);
+    if (d && terms.get(me.sid) === me) termType(me, d);
   });
   xterm.onResize(({ cols, rows }) => {
-    if (term.xterm === xterm && termRunning(term.sid!))
-      post("/api/terminal/resize", { session_id: term.sid, cols, rows }).catch(() => {});
+    if (terms.get(me.sid) === me && termRunning(me.sid))
+      post("/api/terminal/resize", { session_id: me.sid, cols, rows }).catch(() => {});
   });
   new ResizeObserver(() => {
     if (!node.isConnected || !node.clientWidth) return;
@@ -210,8 +246,23 @@ export function termFor(sid: string): Term {
       /* not shown yet */
     }
   }).observe(node);
-  return term;
+  return me;
 }
+
+/** The terminals of sessions `sids` kept (those the panes show), every other let go of: its stream closed, its xterm
+ * gone. */
+export function termsKept(sids: Iterable<string>): void {
+  const keep = new Set(sids);
+  for (const [sid, t] of [...terms]) {
+    if (keep.has(sid)) continue;
+    terms.delete(sid);
+    t.es?.close();
+    t.xterm.dispose();
+  }
+}
+
+/** Every terminal kept: its colours, as the page's theme changes. */
+export const eachTerm = (): Term[] => [...terms.values()];
 
 /** Drawn with WebGL where the browser has it: far faster than the DOM when the whole screen is redrawn, as full screen
  * does on every scroll. Without it, or once its context is lost, the DOM draws. */
@@ -220,85 +271,70 @@ export function termWebgl(t: Term): void {
   try {
     const gl = new window.WebglAddon.WebglAddon();
     gl.onContextLoss(() => gl.dispose());
-    t.xterm!.loadAddon(gl);
+    t.xterm.loadAddon(gl);
   } catch {
     /* no WebGL here: the DOM draws */
   }
 }
 
-function termDrop() {
-  term.es?.close();
-  term.xterm?.dispose();
-  Object.assign(term, {
-    sid: null,
-    xterm: null,
-    fit: null,
-    host: null,
-    es: null,
-    opened: false,
-    exited: null,
-    unsent: "",
-    tried: false,
-  });
-}
-
 const termRunning = (sid: string): boolean => {
-  if (isShell(sid)) return term.sid === sid && term.exited === null;
-  const info = host?.info();
+  if (isShell(sid)) return terms.get(sid)?.exited === null;
+  const info = host?.info(sid);
   return !!(info && info.channel === sid && info.session && info.session.terminal);
 };
 
 /** What is typed, to the process, in order: one request at a time (two at once could arrive swapped), and what is typed
  * while one is on its way goes together in the next -- fast typing is a few requests, not a queue. */
-function termType(sid: string, data: string) {
-  if (!termRunning(sid)) return;
-  term.unsent += data;
-  if (!term.sending) void termSend();
+function termType(t: Term, data: string) {
+  if (!termRunning(t.sid)) return;
+  t.unsent += data;
+  if (!t.sending) void termSend(t);
 }
 
-async function termSend() {
-  term.sending = true;
-  while (term.unsent && term.sid) {
-    // each batch to the terminal shown when it goes
-    const data = term.unsent,
-      sid = term.sid;
-    term.unsent = "";
+async function termSend(t: Term) {
+  t.sending = true;
+  while (t.unsent && terms.get(t.sid) === t) {
+    // each batch to the session's id when it goes
+    const data = t.unsent,
+      sid = t.sid;
+    t.unsent = "";
     try {
       await post("/api/terminal/input", { session_id: sid, data });
     } catch {
       /* the terminal is gone: its end shows */
     }
   }
-  term.sending = false;
+  t.sending = false;
 }
 
 /** What the process prints: everything kept at first (a page that comes back sees the screen), then as it comes. */
 export function termListen(sid: string): void {
-  if (term.es || window.AG_SNAPSHOT) return;
+  const t = terms.get(sid);
+  if (!t || t.es || window.AG_SNAPSHOT) return;
   const es = stream(`/api/terminal?session_id=${encodeURIComponent(sid)}`);
-  term.es = es;
-  if (term.opened)
+  t.es = es;
+  if (t.opened)
     // one opened elsewhere (a message sent): at the size drawn here
-    post("/api/terminal/resize", { session_id: sid, cols: term.xterm!.cols, rows: term.xterm!.rows }).catch(() => {});
-  const mine = () => term.es === es && term.sid === sid;
+    post("/api/terminal/resize", { session_id: sid, cols: t.xterm.cols, rows: t.xterm.rows }).catch(() => {});
+  const mine = () => t.es === es && t.sid === sid;
   es.addEventListener("out", (ev) => {
     if (!mine()) return;
     const got = JSON.parse((ev as MessageEvent).data);
-    if (got.reset) term.xterm!.reset();
-    term.xterm!.write(Uint8Array.from(atob(got.data), (c) => c.charCodeAt(0)));
+    if (got.reset) t.xterm.reset();
+    t.xterm.write(Uint8Array.from(atob(got.data), (c) => c.charCodeAt(0)));
   });
   const ended = (ev: Event) => {
     if (!mine()) return;
     es.close();
-    term.es = null;
+    t.es = null;
     if (isShell(sid)) {
-      term.exited = ev.type === "exit" ? JSON.parse((ev as MessageEvent).data).code : -1;
+      t.exited = ev.type === "exit" ? JSON.parse((ev as MessageEvent).data).code : -1;
       return host?.shellGone(sid);
     }
     if (ev.type === "exit") {
-      term.exited = JSON.parse((ev as MessageEvent).data).code;
-      term.xterm!.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n");
-    } else if (term.exited === null) term.exited = -1; // gone before it was listened to: ended all the same
+      t.exited = JSON.parse((ev as MessageEvent).data).code;
+      t.xterm.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n");
+    } else if (t.exited === null) t.exited = -1; // gone before it was listened to: ended all the same
     host?.refresh();
   };
   es.addEventListener("exit", ended);
@@ -308,7 +344,7 @@ export function termListen(sid: string): void {
 /** The session's terminal opened, at the size its node was just fitted to. */
 export async function termOpen(info: TermActor): Promise<void> {
   const t = termFor(info.channel),
-    xterm = t.xterm!;
+    xterm = t.xterm;
   t.tried = true;
   const dims = t.fit?.proposeDimensions() || { cols: 120, rows: 32 };
   t.error = "";
@@ -317,7 +353,7 @@ export async function termOpen(info: TermActor): Promise<void> {
     await post("/api/terminal", {
       ...(info.session
         ? { session_id: info.session.session_id }
-        : { gatherer: host?.gatherer(), channel: info.channel }),
+        : { gatherer: host?.gatherer(info.channel), channel: info.channel }),
       cols: dims.cols,
       rows: dims.rows,
       fullscreen: fullscreenFor(host?.home() ?? null, info),
@@ -325,7 +361,7 @@ export async function termOpen(info: TermActor): Promise<void> {
     xterm.reset();
     // listened to at once, not once the list says it runs: one that ends straight away (its harness refusing to start)
     // shows what it printed and its end, with "Open again", rather than "Opening the terminal…" for good
-    if (term.xterm === xterm) termListen(info.channel);
+    if (terms.get(info.channel) === t) termListen(info.channel);
   } catch (err) {
     t.error = (err as Error).message;
   }
@@ -339,14 +375,14 @@ export async function termOpen(info: TermActor): Promise<void> {
 /** Once its node is on the page (after the page's draw): opened there the first time, then fitted to it. */
 export function termPlaced(t: Term, then?: () => void): void {
   requestAnimationFrame(() => {
-    if (!t.host?.isConnected) return;
+    if (!t.host.isConnected) return;
     if (!t.opened) {
-      t.xterm!.open(t.host);
+      t.xterm.open(t.host);
       t.opened = true;
       termWebgl(t);
     }
     try {
-      t.fit!.fit();
+      t.fit.fit();
     } catch {
       /* not shown */
     }

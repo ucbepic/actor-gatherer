@@ -12,7 +12,7 @@ import { useChat } from "./context";
 import { Pending, seenKey, useGrowing, waiting } from "./Pending";
 import { keepTurn } from "./pull";
 import { drawn, LastCall, Reply } from "./Reply";
-import { useTurns } from "./store";
+import { foldsOf } from "./store";
 import type { Reply as ReplyData, Stopped, Turn as TurnData } from "./types";
 import { pickedOf, turnsOf } from "./view";
 import { Done, Finished, Status, StoppedLine, Working } from "./Working";
@@ -65,10 +65,10 @@ export function Turn({ t, place }: { t: TurnData; place: TurnPlace }) {
   const whole = folds.flips.has(t.n) ? folds.flips.get(t.n)! : atFirst;
   const folded = useChat().sideFolded;
   const showing = on && !folded;
-  const flip = () => keepTurn(t.n, () => useTurns.getState().flip(t.n, whole, atFirst));
+  const flip = () => keepTurn(feed.key, t.n, () => foldsOf(feed.key).getState().flip(t.n, whole, atFirst));
   // its files and commands at the left (the turn picked; folded away when they already show)
   const side = () =>
-    keepTurn(t.n, () => {
+    keepTurn(feed.key, t.n, () => {
       if (showing) return host.foldSide(feed.key, true);
       if (folded) host.foldSide(feed.key, false);
       if (!on) return host.setFilesTurn(feed.key, t.n);
@@ -163,7 +163,7 @@ export function Turn({ t, place }: { t: TurnData; place: TurnPlace }) {
                     className="fl-more"
                     aria-expanded={hidden ? "false" : "true"}
                     title={hidden ? "Show all earlier messages" : "Fold earlier messages"}
-                    onClick={() => useTurns.getState().toggleOpened(t.n)}
+                    onClick={() => foldsOf(feed.key).getState().toggleOpened(t.n)}
                   >
                     <span className="sg" aria-hidden="true">
                       {hidden ? "+" : "−"}

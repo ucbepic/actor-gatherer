@@ -1,10 +1,10 @@
-import { PANE, panes, state } from "../../core/page/state.js";
+import { panes, state } from "../../core/page/state.js";
 import { ICONS, el, signature, strokeIcon } from "../../core/page/helpers.js";
 import { render } from "../page/data.js";
 import { connect } from "../settings/panel.js";
 import { closeShell, firstAgent, isHidden } from "../list/list.js";
 import { select } from "../list/modes.js";
-import { closeHere, savePanes } from "../layout/panes.js";
+import { closeHere, closePane, savePanes } from "../layout/panes.js";
 import { termFor, termListen, termWebgl } from "./terminal.js";
 
 // ------------------------------------------------------------------ a shell
@@ -13,12 +13,12 @@ import { termFor, termListen, termWebgl } from "./terminal.js";
 // Not the pane's own ×, split, which closes the pane alone, the shell running on under its gatherer. Its button opened it
 // (startShell), so here it is only listened to. Once it ends -- exited, or terminated -- its pane closes, as a terminal's
 // window does (shownGone).
-function shellCard(id) {
+function shellCard(p, id) {
   const end = el("button", { type: "button", class: "terminate", "data-shell": id, "aria-label": "Terminate shell",
     title: "End the shell and everything running in it",
     onclick: async (ev) => { const b = ev.currentTarget; b.disabled = true; await closeShell({ id }); b.disabled = false; } },
     strokeIcon(ICONS.power, 14), "Terminate");
-  const controls = document.getElementById("controls");      // kept as it is while the same: no flash under the pointer
+  const controls = p.controls;                       // kept as it is while the same: no flash under the pointer
   if (!(controls.children.length === 1 && controls.firstElementChild.isEqualNode(end))) controls.replaceChildren(end);
   const t = termFor(id);
   termListen(id);
@@ -31,12 +31,11 @@ function shellCard(id) {
   frame.kids = [t.host];                             // put in by patch(): the same node each draw
   return el("section", { class: "chat", "aria-label": "Terminal", "data-morph": "", "data-for": signature([id]) }, frame);
 }
-// The shell this page shows ended, or the actor it shows discarded (discardSession): its pane closed -- in a frame, by
-// the page around it; this page's own, the next pane's actor moved into it, or with none, its gatherer's actor shown
-// (firstAgent), else the first gatherer's.
+// The shell a pane shows ended, or the actor it shows discarded (discardSession): its pane closed -- this page's own, the
+// next pane's actor moved into it, or with none, its gatherer's actor shown (firstAgent), else the first gatherer's.
 function shownGone(sid) {
+  for (const p of [...panes.others]) if (p.c === sid) closePane(p);
   if (!state.selected || state.selected[1] !== sid) return;
-  if (PANE) return PANE.close(window);
   if (panes.others.length) return closeHere();
   const shown = state.home ? state.home.gatherers.filter((g) => g.agents.length && !isHidden(g)) : [];
   const g = shown.find((x) => x.name === state.selected[0]) || shown[0];

@@ -24,7 +24,7 @@ function Kept({ page }: { page: HistPage }) {
 /** The view's frame for `page.actor`, drawn now: its node, for the page to put where it goes. */
 export function drawHistory(page: HistPage, name: string): HTMLDivElement {
   showing(page.actor, parse(page.actor).group);
-  return viewFrame("history", "hist", name, <Kept key={page.actor} page={page} />);
+  return viewFrame("history", "hist", name, <Kept key={page.actor} page={page} />, page.actor);
 }
 
 /** What the page's draws compare of the actor's outline, to draw again when it changes (the reader's own views). */

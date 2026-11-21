@@ -67,7 +67,7 @@ test("Settings closes on a press in another actor's pane", async ({ page }) => {
   await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
   const codex = page.locator("#panes > .pane").nth(1);
   await expect(codex).toHaveCount(1);
-  const chat = codex.frameLocator("iframe").locator("#main");
+  const chat = codex.locator("main");
   await expect(chat).toBeVisible();
   await page.locator("#about-btn").click();
   await expect(page.locator("#about")).toBeVisible();

@@ -19,28 +19,28 @@ import { drawn as pulled } from "./pull";
 import { Paths } from "./side/CallView";
 import { FileView } from "./side/FileView";
 import { cmdCounts, gitOnly, shownFiles, Side, SideBar, type Task } from "./side/Side";
-import { NARROW_SIDE, sideFolded, useSide, type SideState } from "./side/store";
-import { useOnPage, useTurns } from "./store";
+import { NARROW_SIDE, sideFolded, useSideOf, useSide, type SideOf } from "./side/store";
+import { foldsOf, useFoldsOf, useOnPage } from "./store";
 import { Talk } from "./Talk";
 import type { ChatFeed, FilesData } from "./types";
 import { AT_WORK, currentOf, turnsOf } from "./view";
 
 /** The pane this frame is in, as wide as the panel's room: less the Details panel when it is open beside the
  * conversation (chat.css's .drawer: 55%, at most 760px, in a pane over 930px; narrower, it lies over it). */
-function useNarrow(frame: Element, details: boolean, onPage: boolean) {
+function useNarrow(key: string, frame: Element, details: boolean, onPage: boolean) {
   useLayoutEffect(() => {
     if (!onPage) return;
     const pane = frame.closest(".pane");
     const measure = () => {
       const w = pane?.clientWidth || innerWidth;
-      useSide.getState().setNarrow((details && w > 930 ? w - Math.min(w * 0.55, 760) : w) < NARROW_SIDE);
+      useSide.getState().setNarrow(key, (details && w > 930 ? w - Math.min(w * 0.55, 760) : w) < NARROW_SIDE);
     };
     measure();
     if (!pane || typeof ResizeObserver === "undefined") return;
     const watch = new ResizeObserver(measure);
     watch.observe(pane);
     return () => watch.disconnect();
-  }, [frame, details, onPage]);
+  }, [key, frame, details, onPage]);
 }
 
 /** The files of the turn shown, as kept (files.ts): those of its key once they come; the page's until then. */
@@ -77,20 +77,20 @@ function useInterrupting(actor: string, at: number | null): boolean {
 
 export function ChatMain({ frame }: { frame: HTMLElement }) {
   const { feed: drawn, host } = useChat();
-  const onPage = useOnPage((s) => s.key === drawn.key);
+  const onPage = useOnPage((s) => s.keys.has(drawn.key));
   // the stream's view as it comes, and what Chat keeps of the actor (what was sent from here, the turn picked, the Esc
   // sent), as they change -- not only as the page last drew them
   const taken = useChatData((s) => s.views.get(drawn.key));
   const own = useActorChat(drawn.key);
   const view = taken && taken.view !== drawn.view ? taken.view : drawn.view;
   const feed = feedOf({ ...drawn, view }, own, useInterrupting(drawn.key, own.interrupting));
-  const folds = useTurns();
-  const side = useSide();
+  const folds = useFoldsOf(drawn.key);
+  const side = useSideOf(drawn.key);
   const d = useFiles(feed);
-  useNarrow(frame, feed.details, onPage);
-  // what the page shows now, for the pulls and the turn kept in place as it is picked (pull.ts)
+  useNarrow(drawn.key, frame, feed.details, onPage);
+  // what its pane shows now, for the pulls and the turn kept in place as it is picked (pull.ts)
   useLayoutEffect(() => {
-    if (onPage) pulled.feed = { ...feed, data: d ?? feed.data };
+    if (onPage) pulled.set(feed.key, { ...feed, data: d ?? feed.data });
   });
   // the Esc sent is over once the turn it was sent for is (opening, at work or asking: an Esc stops it)
   const cur = currentOf(feed);
@@ -114,7 +114,7 @@ interface FrameProps {
   onPage: boolean;
   frame: HTMLElement;
   chat: Chat;
-  side: SideState;
+  side: SideOf;
   d: FilesData | null;
   interrupting: boolean;
 }
@@ -171,7 +171,7 @@ function FrameView({ chat, side, d, interrupting }: FrameProps) {
   );
 }
 
-function Grid({ chat, side, d, children }: { chat: Chat; side: SideState; d: FilesData; children: ReactNode }) {
+function Grid({ chat, side, d, children }: { chat: Chat; side: SideOf; d: FilesData; children: ReactNode }) {
   const { feed, host, folds } = chat;
   const { hiddenKinds, showTmp, showGit } = side;
   const cwd = (feed.info.cwd || "").replace(/\/$/, ""),
@@ -184,7 +184,7 @@ function Grid({ chat, side, d, children }: { chat: Chat; side: SideState; d: Fil
         ? "~" + p.slice(home.length)
         : p;
   const background = (feed.info.background || []) as Task[];
-  const pick = (p: string | null) => useTurns.getState().pick(p);
+  const pick = (p: string | null) => foldsOf(feed.key).getState().pick(p);
   const panel = chat.sideFolded ? (
     <SideBar
       files={shownFiles(d.files, hiddenKinds, showTmp, showGit).files}
@@ -193,7 +193,7 @@ function Grid({ chat, side, d, children }: { chat: Chat; side: SideState; d: Fil
       hiddenKinds={hiddenKinds}
       icons={host.icons}
       foldSide={(f) => host.foldSide(feed.key, f)}
-      acts={host.barActs()}
+      acts={host.barActs(feed.key)}
     />
   ) : (
     <Side
@@ -210,7 +210,7 @@ function Grid({ chat, side, d, children }: { chat: Chat; side: SideState; d: Fil
       harnesses={feed.home?.harness_info || {}}
       icons={host.icons}
       pick={pick}
-      fold={(p) => useTurns.getState().foldDir(p)}
+      fold={(p) => foldsOf(feed.key).getState().foldDir(p)}
       foldSide={(f) => host.foldSide(feed.key, f)}
     />
   );

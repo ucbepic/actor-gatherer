@@ -37,7 +37,7 @@ export function Talk({ ref, interrupting }: { ref: RefObject<HTMLDivElement | nu
       data-keep={turns ? "files-talk" : undefined}
       data-follow={turns ? "1" : undefined}
     >
-      {turns ? <Turns interrupting={interrupting} /> : <FirstTurns interrupting={interrupting} />}
+      {turns ? <Turns talk={ref} interrupting={interrupting} /> : <FirstTurns interrupting={interrupting} />}
     </div>
   );
 }

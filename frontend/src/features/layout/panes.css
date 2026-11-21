@@ -1,6 +1,7 @@
 /* Panes: the actors open side by side (Ctrl/Cmd+click in the list), each with its head -- the actor, its
    controls, a close -- the one in focus a shade darker; bars between them to drag (features/layout/place.css). The
-   first is this page's own view; the others are the page again in a frame, each its own actor's (PANE) */
+   first is this page's own (#pane-here); the others are panes of the page too (features/layout/pane.ts), each its own
+   actor's */
 .panes { display: flex; min-width: 0; min-height: 0; position: relative; }
 /* the column right of the list: the Editor (when open) above the panes */
 .work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -12,7 +13,6 @@
 .panes.resizing iframe { pointer-events: none; }
 .pane { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; container: pane / inline-size; }
 .pane > main { flex: 1 1 auto; }
-.pane > iframe { flex: 1 1 auto; display: block; width: 100%; min-height: 0; border: 0; background: var(--surface); }
 /* A pane's top: its head, in the page's top row, as tall as the row (--top-h: the tallest of the page's name and
    the heads), so the rule under the row runs straight across. Alone, the head is one line: the actor's controls,
    at the right, as a header's, and its × (features/layout/panes.js's closeHerePane: the pane out of sight, what else is shown taking
@@ -23,40 +23,34 @@
   border-bottom: 1px solid var(--ring); }
 .pane-head { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px 8px 4px 16px; }
 .pane-who { display: none; }
-:is(.panes.split, :root.pane-mode .panes) .pane-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto;
+.panes.split .pane-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto;
   grid-template-areas: "who views details close" "tools tools tools tools"; column-gap: 6px; padding: 4px 6px 4px 12px; }
-:is(.panes.split, :root.pane-mode .panes) :is(.pane-who, .pane-close) { display: flex; }
-:is(.panes.split, :root.pane-mode .panes) .controls { display: contents; }
+.panes.split :is(.pane-who, .pane-close) { display: flex; }
+.panes.split .controls { display: contents; }
 .pane-who { grid-area: who; } .pane-close { grid-area: close; }
 .pane-head .views { grid-area: views; flex-wrap: wrap; } .pane-head .side-btns { grid-area: details; }
-:is(.panes.split, :root.pane-mode .panes) .chat-tools { grid-area: tools; justify-content: flex-end; margin-top: 6px; }
+.panes.split .chat-tools { grid-area: tools; justify-content: flex-end; margin-top: 6px; }
 /* a narrow pane's head stays one line -- its name cut short, the view switch icons alone (features/chat/chat.css) -- so the
    conversation keeps the room; only the view's own tools go under it */
 @container pane (max-width: 460px) {
-  :is(.panes.split, :root.pane-mode .panes) .chat-tools { justify-content: flex-start; } }
-.pane.focused > .pane-top, :root.pane-focused .pane-top { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
+  .panes.split .chat-tools { justify-content: flex-start; } }
+.pane.focused > .pane-top { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
 .pane-who { align-items: center; gap: 8px; min-width: 0; min-height: 28px; align-self: stretch; font-size: var(--fs-ui);
   line-height: 1.35; color: var(--ink-2); }
-.pane.focused .pane-who, :root.pane-focused .pane-who { color: var(--ink); font-weight: 600; }
+.pane.focused .pane-who { color: var(--ink); font-weight: 600; }
 .pane-who .logo, .pane-who .avatar img { width: 20px; height: 20px; display: block; flex: none; }
 .pane-who .badge, .pane-who .dw-badge { display: none; }
 .pane-who .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-:is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
+.panes.split .views button { padding: 3px 8px; }
 .pane-close { flex: none; border: 0; background: none; width: var(--ib); height: var(--ib); padding: 0; border-radius: 7px; align-items: center;
   justify-content: center; color: var(--muted); }
 .pane-close:hover { color: var(--ink); background: var(--wash); }
 .pane-close[hidden] { display: none; }
 /* a phone's width, the pane alone: nothing else placed to show in its place -- its × (the head's, its Chat bar's, its
    minimized box's) not offered */
-@media (max-width: 760px) { :root:not(.pane-mode) .panes:not(.split) :is(.pane-close, .fl-act.close, .mini-x) { display: none; } }
-/* in a frame, the page is one pane: no header or list of its own, and never the phone's page-long layout, however narrow */
-:root.pane-mode .side { display: none; }
-:root.pane-mode body { height: 100vh; display: flex; }
-:root.pane-mode .layout { display: grid; grid-template-columns: minmax(0, 1fr); }
-:root.pane-mode :is(.panes, .work) { display: flex; }
-:root.pane-mode main { overflow: hidden; }
-:root.pane-mode .chat .chat-frame { flex: 1; height: auto; }
-:root.pane-mode .drawer { position: absolute; inset: 0 0 0 auto; width: min(100%, 600px); box-shadow: -8px 0 24px rgba(0,0,0,.10); z-index: 3; }
+@media (max-width: 760px) { .panes:not(.split) :is(.pane-close, .fl-act.close, .mini-x) { display: none; } }
+/* a pane beside the page's own: its Details over its view, from its right */
+.panes > .pane:not(#pane-here) .drawer { position: absolute; inset: 0 0 0 auto; width: min(100%, 600px); box-shadow: -8px 0 24px rgba(0,0,0,.10); z-index: 3; }
 .empty { color: var(--muted); padding: 40px; text-align: center; }
 .title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .title h2 { margin: 0; font-size: 18px; font-weight: 600; }
@@ -85,7 +79,7 @@
 @media (max-width: 760px) { body { height: auto; display: block; } .layout { display: block; } .side { border-right: 0; } .side-grip { display: none; }
   #agents { max-height: 40vh; border-bottom: 1px solid var(--ring); }
   main { overflow: visible; }
-  .panes, .work { display: block; } .panes.split .pane:not(.focused) { display: none; } .pane > iframe { height: 85vh; }
+  .panes, .work { display: block; } .panes.split .pane:not(.focused) { display: none; }
   .top-row { height: 70vh; } }
 table { width: 100%; border-collapse: collapse; font-size: var(--fs-meta); }
 th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }

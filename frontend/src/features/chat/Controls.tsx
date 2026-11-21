@@ -112,15 +112,17 @@ export function Controls(p: ControlsProps) {
   );
 }
 
-let head: { node: HTMLDivElement; root: Root } | null = null;
+const heads = new WeakMap<HTMLElement, { node: HTMLDivElement; root: Root }>();
 
-/** The controls drawn now as `props` say, in their box in `controls` (the pane's head): put back there if the page put
- * something else in its place (a shell's controls) since. */
+/** The controls drawn now as `props` say, in their box in `controls` (a pane's head: each its own): put back there if
+ * the page put something else in its place (a shell's controls) since. */
 export function drawControls(controls: HTMLElement, props: ControlsProps): void {
+  let head = heads.get(controls);
   if (!head) {
     const node = document.createElement("div");
     node.style.display = "contents";
     head = { node, root: createRoot(node) };
+    heads.set(controls, head);
   }
   const { node, root } = head;
   if (controls.firstChild !== node || controls.childNodes.length !== 1) controls.replaceChildren(node);

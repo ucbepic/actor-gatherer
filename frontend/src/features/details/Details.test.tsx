@@ -55,7 +55,7 @@ const feed = (over: Partial<DetailsFeed> = {}): DetailsFeed => ({
 
 function drawn(f: DetailsFeed = feed(), showView = vi.fn()) {
   queryClient.setQueryData(contextKey("demo", 2), context(2, "the latest"));
-  detailsShown(f.key);
+  detailsShown([f.key]);
   const node = drawDetails(f, { showView });
   document.body.append(node);
   return { node, showView };
@@ -64,7 +64,7 @@ function drawn(f: DetailsFeed = feed(), showView = vi.fn()) {
 afterEach(() => {
   document.body.replaceChildren();
   queryClient.clear();
-  usePicked.setState({ key: null, readId: null });
+  usePicked.setState({ picks: {} });
   useShown.setState({ types: new Set(["user_message", "agent_message", "gatherer"]) });
   vi.unstubAllGlobals();
 });
@@ -141,10 +141,10 @@ describe("the Details panel", () => {
       fireEvent.click(node.querySelector(".card-title button")!);
     });
     await waitFor(() => expect(node.querySelector("#details-context h3")!.textContent).toBe("Context right now"));
-    // another actor shown: the pick let go of
+    // another actor shown in its place: the pick let go of
     usePicked.getState().pick(ACTOR, 1);
-    detailsShown(key("demo", "c2"));
-    expect(usePicked.getState()).toMatchObject({ key: key("demo", "c2"), readId: null });
+    detailsShown([key("demo", "c2")]);
+    expect(usePicked.getState().picks).toEqual({});
   });
 });
 

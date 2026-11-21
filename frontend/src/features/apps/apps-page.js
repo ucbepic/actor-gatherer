@@ -1,4 +1,4 @@
-import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state.js";
 import { harnessInfo } from "../../core/page/helpers.js";
 import { setAbout } from "../page/data.js";
 import { aimStart, renderAgents } from "../list/list.js";
@@ -16,7 +16,7 @@ import * as appHost from "./host";
 // in a tab of its own, as from a group's menu), and -- the apps installed having changed -- them read again: the panels
 // of those gone closed, the list drawn again (an uninstalled app's rows go with it: appOf finds no app for them).
 function openAppsPage() {
-  if (PANE || SNAPSHOT || !workPlacer) return;
+  if (SNAPSHOT || !workPlacer) return;
   setAbout(false);
   void workPlacer.tabs.openPage("apps");
 }
@@ -47,7 +47,7 @@ async function appsChanged() {
 }
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
-  if (!SNAPSHOT && !PANE) {
+  if (!SNAPSHOT) {
     document.getElementById("apps-cfg").hidden = false;
     document.getElementById("manage-apps").addEventListener("click", openAppsPage);
   }

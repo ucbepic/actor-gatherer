@@ -1,5 +1,5 @@
 // Details' own state, and the data it fetches. Which call's context it shows: the latest's, followed as calls come,
-// unless one was picked on the size chart -- the actor's shown, kept until another actor is (`shown`). A call's context,
+// unless one was picked on the size chart -- each actor's, kept while a pane shows it (`shown`). A call's context,
 // fetched from /api/context (data.py's `context`; a snapshot's inside it) and kept by its gatherer and read (TanStack
 // Query): what a call sent never changes, so it is fetched once.
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
@@ -10,30 +10,31 @@ import { key } from "../../core/model/keys";
 import type { Agent, Context } from "./types";
 
 interface Picked {
-  /** the actor shown: the pick is its */
-  key: string | null;
-  /** the read picked on the size chart; null: the latest */
-  readId: number | null;
-  /** the actor shown now: its pick kept, another's let go of */
-  shown(key: string): void;
+  /** the read picked on each actor's size chart, by its key (none: the latest) */
+  picks: Readonly<Record<string, number>>;
+  /** the actors the panes show now: their picks kept, the others' let go of */
+  shown(keys: string[]): void;
   /** a read picked (null: back to the latest) */
   pick(key: string, readId: number | null): void;
 }
 
 export const usePicked = create<Picked>()((set, get) => ({
-  key: null,
-  readId: null,
-  shown(k) {
-    if (get().key !== k) set({ key: k, readId: null });
+  picks: {},
+  shown(keys) {
+    const was = get().picks,
+      picks = Object.fromEntries(Object.entries(was).filter(([k]) => keys.includes(k)));
+    if (Object.keys(picks).length !== Object.keys(was).length) set({ picks });
   },
   pick(k, readId) {
-    set({ key: k, readId });
+    const picks = { ...get().picks };
+    if (readId === null) delete picks[k];
+    else picks[k] = readId;
+    set({ picks });
   },
 }));
 
 /** The read picked for the actor `k`; null: the latest. */
-export const pickedFor = (s: Pick<Picked, "key" | "readId">, k: string): number | null =>
-  s.key === k ? s.readId : null;
+export const pickedFor = (s: Pick<Picked, "picks">, k: string): number | null => s.picks[k] ?? null;
 
 /** The read whose context is shown for the actor: the one picked, else the latest; null before any. */
 export function shownRead(agent: Agent | null, picked: number | null): number | null {

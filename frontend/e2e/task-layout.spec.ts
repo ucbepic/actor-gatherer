@@ -41,11 +41,11 @@ test("a task opened again shows each of its actors in the view it showed, as wid
   const row = taskRow(page);
   const panes = page.locator("#panes > .pane");
   const pressed = (n: number) =>
-    (n ? panes.nth(n).frameLocator("iframe") : page).locator("#controls .views button[aria-pressed=true]");
+    (n ? panes.nth(n).locator(".controls") : page.locator("#controls")).locator(".views button[aria-pressed=true]");
   await page.locator("#agents").hover({ position: { x: 5, y: 5 } });
   await row.click(); // at first: both, side by side, as wide
   await expect(panes).toHaveCount(2);
-  await panes.nth(1).frameLocator("iframe").locator("#controls").getByRole("button", { name: "Terminal" }).click();
+  await panes.nth(1).locator(".controls").getByRole("button", { name: "Terminal" }).click();
   await expect(pressed(1)).toHaveAttribute("aria-label", "Terminal");
   await expect(pressed(0)).toHaveAttribute("aria-label", "Chat");
   const bar = (await page.locator(".lay-bar[data-dir=row]").boundingBox())!;

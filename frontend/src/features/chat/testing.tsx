@@ -120,13 +120,15 @@ let actors = 0;
 /** What a test says Chat keeps of the actor itself (actors.ts), as the page's feed said it: kept there for the actor. */
 type Own = Partial<Pick<ChatFeed, "mine" | "picked" | "interrupting" | "canInterrupt">>;
 
-/** The page around the turn list, drawing it as the old page does: from `feed`, into #main, its node kept there -- what
+/** The page around the turn list, drawing it as the old page does: from `feed`, into a pane's #main, its node kept there -- what
  * Chat keeps of the actor itself (what was sent from here, the turn picked, the Esc sent) put in its store as a page's
  * send, pick or Esc would. `canInterrupt`: the actor's session a terminal of the dashboard's, an Esc typed into it. */
 export function testPage(turns: Turn[], over: PageFeedOver = {}) {
   const main =
     document.getElementById("main") ??
-    document.body.appendChild(Object.assign(document.createElement("div"), { id: "main" }));
+    document.body
+      .appendChild(Object.assign(document.createElement("section"), { className: "pane" }))
+      .appendChild(Object.assign(document.createElement("main"), { id: "main" }));
   const own = (o: Own) => {
     if (o.mine) change(page.feed.key, () => ({ sends: o.mine!.map((m) => ({ ...m, ran: false })) }));
     if (o.picked !== undefined) change(page.feed.key, () => ({ picked: o.picked! }));
