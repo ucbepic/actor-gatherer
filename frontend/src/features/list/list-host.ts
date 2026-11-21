@@ -2,8 +2,9 @@
 // list's own modules' -- and what of a row the page still builds (a gatherer's and a folder's start menu, a harness's
 // mark, an actor's branch, the form for a new actor), the panes' module's.
 import { ago } from "../../core/format";
-import { addInfo, addItems } from "./task-acts";
 import {
+  addInfo,
+  addItems,
   closeActor,
   closeApp,
   closeSession,
@@ -12,8 +13,8 @@ import {
   discardSession,
   openTask,
   saveTask,
+  selectApp,
 } from "./task-acts";
-import { selectApp } from "./task-acts";
 import { cardHide, HOVERS } from "./hover-card";
 import * as drag from "./drag";
 import { appFace, appMarkOf, avatarSrc } from "./faces";

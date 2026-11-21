@@ -3,9 +3,8 @@
 // import (ag_dashboard/DESIGN.md's Rules). src/list-link.js hands them over as the page starts (linkList), each a module's
 // namespace, so a value one of them changes later (the work area, the actor being dragged's task) is read as it is now;
 // what the list reads of each is typed here, and nothing else. It shrinks as those modules move.
-import type { AnyEvent } from "./host";
-import type { MenuInfo } from "./host";
-import type { Actor, AppItem, AppManifest, Folder, Gatherer, ListHome, Shell, Tasks } from "./types";
+import type { AnyEvent, StartMenu } from "./host";
+import type { Actor, AppItem, AppManifest, Folder, Gatherer, ListHome, Shell } from "./types";
 
 /** An actor's place: its gatherer and channel. */
 export type At = [string, string];
@@ -139,7 +138,7 @@ export interface PanesPart {
   showAppPanel(app: AppManifest, inst: unknown): AppPane;
   shownPanels(): { key: string }[];
   startCwd(g: Gatherer | { agents: Actor[] }): string;
-  startMenu(g: Gatherer, f: Folder | null): import("./host").StartMenu;
+  startMenu(g: Gatherer, f: Folder | null): StartMenu;
   startSession(
     gname: string,
     cwd: string,
@@ -270,8 +269,3 @@ export const S = (): PageState => L.page.state;
 export const home = (): PageHome => L.page.state.home!;
 export const snap = (): boolean => !!L.page.SNAPSHOT;
 export const inPane = (): boolean => !!L.page.PANE;
-
-/** A menu of the page's (Menus.tsx's), re-exported for the modules that make one. */
-export type { MenuInfo };
-/** A task's record of a gatherer, as the home and the server's answers have it. */
-export type { Tasks };
