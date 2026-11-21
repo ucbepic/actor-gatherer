@@ -105,7 +105,7 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .dotc.err { background: var(--term-err); } .dotc.stop { background: var(--axis); }
 .dotc.run { background: var(--term-run); animation: mh-pulse 1s ease-in-out infinite; }
 @keyframes mh-pulse { 50% { opacity: .35; } }
-/* the card: in the page around a pane's frame, over everything there (the hover cards' level), and over a native page
+/* the card: over the page, over everything there (the hover cards' level), and over a native page
    (class floats: features/apps/native.ts) */
 .mh-card { position: fixed; z-index: var(--z-card); display: flex; flex-direction: column; background: var(--surface); color: var(--ink);
   border: 1px solid var(--ring); border-radius: 12px; overflow: hidden; font-size: var(--fs-ui); line-height: 1.45;

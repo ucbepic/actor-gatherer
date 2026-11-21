@@ -2,7 +2,7 @@
 // none of the drag, and a Browser's native page is pictured in its place (apps/native.ts) -- the panel dragged marked,
 // and, over another panel of its task, where it would go: a side of it (the two then side by side, or one over the
 // other) or all of it (the two swapped). Dropped there, it goes there. The drag is the browser's own (drag and drop), so
-// one started in a pane's frame (its head is its page's) goes on over this page; whatever starts it ends it.
+// it goes on over the apps' frames; whatever starts it ends it.
 import { zoneAt, zoneRect, type Zone } from "./arrange";
 import type { Rect } from "./tree";
 

@@ -133,7 +133,7 @@ function fitBox(box) {
 }
 // What was typed in an actor's message box and not sent, by actor (key()), kept in this browser tab: its box, drawn
 // again once the reader comes back from another actor or view, or reloads, starts with it (ctx.input). Read and
-// written whole each time, as the panes' frames share it.
+// written whole each time.
 const TYPING_MS = 300;                               // an update that comes while the reader types waits this long after a key
 function render(userAction = false) {
   if (!state.home) return;

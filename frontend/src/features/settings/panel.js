@@ -124,7 +124,7 @@ function loadedSoon(work) {
 }
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
-  window.agLegacy = Object.freeze({ setAbout, snapshot: !!SNAPSHOT, pane: false });
+  window.agLegacy = Object.freeze({ setAbout, snapshot: !!SNAPSHOT });
 }
 
 export { $, connect, keepingPlace, streamTake };

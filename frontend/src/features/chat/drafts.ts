@@ -1,6 +1,6 @@
 // What was typed in an actor's message box and not sent, by actor (its key), kept in this browser tab (sessionStorage):
 // its box, drawn again once the reader comes back from another actor or view, or reloads, starts with it. Read and
-// written whole each time, as the panes' frames share it; and in a store, so a box drawn by React shows it as it changes
+// written whole each time; and in a store, so a box drawn by React shows it as it changes
 // (Composer.tsx) -- typed there, put back after a send that failed, taken out as sent, put in by an Esc's take-back.
 import { create } from "zustand";
 

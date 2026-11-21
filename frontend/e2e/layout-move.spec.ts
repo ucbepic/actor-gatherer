@@ -91,7 +91,7 @@ test("a panel moved from its menu: along a side of its task, or in another's pla
   await expect.poll(async () => (await box(notes)).x < (await box(here)).x).toBe(true);
 });
 
-test("a pane's head dragged in its frame: the pane moved over the page around it", async ({ page }) => {
+test("a pane's head dragged: the pane moved over the page", async ({ page }) => {
   await taskHome(page, true); // the two actors one task: side by side
   await open(page);
   await page.locator("#agents button.agent.task").click();
@@ -104,7 +104,7 @@ test("a pane's head dragged in its frame: the pane moved over the page around it
   await expect
     .poll(async () => {
       const [a, b] = [await box(page.locator("#pane-here")), await box(other)];
-      return b.y + b.height <= a.y + 1 && Math.abs(a.x - b.x) < 1; // the frame's pane above, as wide
+      return b.y + b.height <= a.y + 1 && Math.abs(a.x - b.x) < 1; // the pane beside now above, as wide
     })
     .toBe(true);
 });
