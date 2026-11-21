@@ -34,6 +34,7 @@ import { work as workLayout } from "./work";
 import * as appHost from "../apps/host";
 import { FILE_FORM, fileHref, filePath, isAppHref, joinPath, matchPath, parseHref } from "../apps/links";
 import { PRESSED_AWAY } from "../list/Menus";
+import { popShown, showPop, startPops } from "./Pops";
 import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ panes
@@ -1769,7 +1770,7 @@ function railNewBox(g, hs, harness = hs[0], cwd = "", error = "", alone = false)
       await startSession(g.name, at, h, null, alone);
       if (rowPop.el === box) closePop();
     } catch (e) {
-      if (box.isConnected) { err.textContent = e.message; placePop(); } else setLive(`Not started: ${e.message}`);
+      if (box.isConnected) err.textContent = e.message; else setLive(`Not started: ${e.message}`);
     } finally { for (const b of buttons) b.disabled = false; }
   };
   const title = alone ? "New actor on its own" : `New actor in ${titleOf(g)}`;
@@ -1788,91 +1789,47 @@ function openMoreMenu(g, hs, button, key = `more:${g.name}`, place = titleOf(g))
   const dir = startCwd(g) && tildePath(startCwd(g), state.home.home_dir);
   openPop(key, button, popMenu(`New in ${place}`, moreStarts(g, hs, dir, key), dir, dir));
 }
-// A drop-down's box: its heading, then an item for each choice -- its mark, what it is, and a note under it.
-// `sub`: a second line under its heading, muted (where a new actor would work)
-function popMenu(head, items, title, sub) {
-  return el("div", { class: "br-menu row-menu", role: "menu", "aria-label": head },
-    el("div", { class: "hd", ...(title ? { title } : {}) }, head, sub ? el("span", { class: "sub", text: sub }) : null),
-    ...items.map((it) => it.sep ? el("div", { class: "sep", role: "separator" }) : el("button", { type: "button", role: "menuitem", ...(it.depth ? { style: `padding-left: ${10 + it.depth * 14}px` } : {}), onclick: (ev) => {
-      ev.stopPropagation();
-      const button = popButton();
-      closePop();
-      it.run(button);
-    } }, it.mark || strokeIcon(it.icon, 16), el("span", { class: "nm", text: it.text }), it.note ? el("span", { class: "at", text: it.note }) : null)));
+// A drop-down's choices (features/layout/Pops.tsx's menu): its heading, then an item for each choice -- its mark, what it
+// is, and a note under it. `sub`: a second line under its heading, muted (where a new actor would work); `cls`, a class
+// of its own (the new-tab page's: one that scrolls).
+function popMenu(head, items, title, sub, cls) {
+  return { menu: { head, items, title, sub, cls } };
 }
-// A gatherer row's pop-up ("+ actor"'s drop-down, "+ more"'s, the DocWriter box one of those opens): outside the list,
-// fixed under the button it hangs from -- `key`, that button's data-pop, so found again after the list is drawn again --
-// so it may reach past the list's edge without the list scrolling, and the list's redraws leave it be. Closed by its
-// button pressed again, a press elsewhere, Esc, the page resizing, or the page or a box holding its button scrolling.
-const rowPop = { key: "", el: null, off: null };
+// A drop-down or a box of the page's ("+ actor"'s drop-down, "+ more"'s, the DocWriter box one of those opens, a panel's
+// moves, the new-tab page's): hung from a button -- `key`, that button's data-pop, so found again after the list is drawn
+// again -- outside the list, so it may reach past the list's edge without the list scrolling, and the list's redraws leave
+// it be: Radix's (features/layout/Pops.tsx), which closes it by its button pressed again, a press elsewhere, Esc, the page
+// resizing, or the page or a box holding its button scrolling. `rowPop`: what is open -- its button's key, and its node
+// (a box's; a menu's, its content).
+const rowPop = { key: "", el: null };
 const popButton = () => rowPop.key && document.querySelector(`[data-pop="${CSS.escape(rowPop.key)}"]`) || null;
-function closePop() {
-  if (!rowPop.el) return;
-  const button = popButton();
-  rowPop.el.remove();
-  rowPop.off();
-  Object.assign(rowPop, { key: "", el: null, off: null });
+// the one open, closed: its button told, the card it hung from let go of (unless the pointer is on it); an Esc's, the
+// focus back on its button
+function popClosed(pop, how = "away") {
+  if (rowPop.key !== pop.key) return;
+  const button = popButton() || pop.anchor;
+  Object.assign(rowPop, { key: "", el: null });
   if (button) button.setAttribute("aria-expanded", "false");
-  cardRelease();                                     // a card it hung from: let go, unless the pointer is on it
+  cardRelease();
+  if (how === "esc" && button && button.isConnected) button.focus();
 }
-function placePop() {
-  const box = rowPop.el, button = popButton();
-  if (!box || !button) return;
-  const r = button.getBoundingClientRect(), h = box.offsetHeight;
-  const rail = button.closest("#rail"), side = rail && rail.getBoundingClientRect();
-  if (side && side.height > side.width) {           // from the rail down the page's side: beside it, level with its button
-    box.style.left = `${Math.round(side.right + 6)}px`;
-    box.style.top = `${Math.round(Math.max(8, Math.min(r.top, window.innerHeight - h - 8)))}px`;
-    return;
-  }
-  const below = r.bottom + 4 + h <= window.innerHeight - 8 || r.top - 4 - h < 8;   // above it only where there is room above
-  box.style.top = `${Math.round(below ? r.bottom + 4 : r.top - 4 - h)}px`;
-  box.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)))}px`;
+function closePop() {
+  const pop = popShown();
+  if (!pop) return;
+  showPop(null);
+  popClosed(pop);
 }
-function openPop(key, button, box) {
-  const again = rowPop.key === key && box.getAttribute("role") === "menu";
+// `what`: a menu (popMenu), or a box -- the page's node, a form to fill in. The same menu's button pressed again: closed.
+function openPop(key, button, what) {
+  const again = rowPop.key === key && !!what.menu;
   closePop();
   brMenuClose();
   if (again) return;
-  const away = (ev) => {
-    const b = ev.target.closest && ev.target.closest("[data-pop]");
-    if (!box.contains(ev.target) && !(b && b.dataset.pop === key)) closePop();
-  };
-  const keys = (ev) => {
-    if (ev.key === "Escape") {
-      ev.preventDefault(); ev.stopPropagation();
-      const b = popButton();
-      closePop();
-      if (b) b.focus();
-    } else if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && box.contains(document.activeElement) && box.getAttribute("role") === "menu") {
-      ev.preventDefault();
-      const items = [...box.querySelectorAll("[role=menuitem]")], at = items.indexOf(document.activeElement);
-      items[(at + (ev.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
-    }
-  };
-  // the page, or a box holding its button, scrolled: it no longer hangs where it should. Another box scrolling by itself
-  // (a Chat's history kept at its end as its pane is resized) leaves it be.
-  const scrolled = (ev) => {
-    const b = popButton() || button;
-    if (!box.contains(ev.target) && ev.target.contains && ev.target.contains(b)) closePop();
-  };
-  document.addEventListener("pointerdown", away, true);
-  document.addEventListener("keydown", keys, true);
-  window.addEventListener("resize", closePop);
-  window.addEventListener("scroll", scrolled, true);
-  Object.assign(rowPop, { key, el: box, off: () => {
-    document.removeEventListener("pointerdown", away, true);
-    document.removeEventListener("keydown", keys, true);
-    window.removeEventListener("resize", closePop);
-    window.removeEventListener("scroll", scrolled, true);
-  } });
-  document.body.append(box);
+  const pop = what.menu ? { key, anchor: button, menu: what.menu } : { key, anchor: button, box: what };
+  Object.assign(rowPop, { key, el: what.menu ? null : what });
   button.setAttribute("aria-expanded", "true");
-  placePop();
-  const first = box.querySelector("input, [role=menuitem]");
-  if (!first) return;
-  first.focus({ preventScroll: true });
-  if (first.select) { first.setSelectionRange(first.value.length, first.value.length); first.scrollLeft = first.scrollWidth; }   // a folder's end
+  showPop(pop);
+  if (what.menu) rowPop.el = document.querySelector(".br-menu.row-menu[role=menu]") || {};
 }
 // The folders a gatherer's actors work in, newest first, under a box's folder `input` (its `dir` to start with): another
 // a click away. null: none other than `dir`.
@@ -1919,7 +1876,7 @@ async function appGo(g, harness, box, app) {
     await startWithApp(g.name, cwd, app.name, harness);
     if (rowPop.el === box) closePop();
   } catch (e) {
-    if (box.isConnected) { err.textContent = e.message; placePop(); } else setLive(`Not started: ${e.message}`);
+    if (box.isConnected) err.textContent = e.message; else setLive(`Not started: ${e.message}`);
   } finally { for (const b of go) b.disabled = false; }
 }
 async function addSession(g, harness) {
@@ -2226,6 +2183,7 @@ function newForm() {
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   panes.here = makePane(herePane(), true, { view: prefs.text(CHAT_VIEW_KEY) || "files" });
+  startPops({ icon: (icon, size) => strokeIcon(ICONS[icon] || icon, size), closed: popClosed });   // (an icon: its path)
   shadow.update(model.focusOn, null, true);          // (focus: this page's own pane)
   if (!SNAPSHOT) window.addEventListener("blur", () => setTimeout(() => {   // the focus gone into an app's frame
     if (document.activeElement && document.activeElement.localName === "iframe") pressedAway();   // (any frame's: one of a page no panel runs)

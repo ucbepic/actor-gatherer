@@ -151,7 +151,7 @@ function ntLine(p) {
   ];
 }
 // a drop-down of the page's: scrolling, if long (many groups and folders)
-function ntMenu(head, items) { const m = popMenu(head, items); m.classList.add("nt-menu"); return m; }
+function ntMenu(head, items) { return popMenu(head, items, null, null, "nt-menu"); }
 // "In"'s drop-down: each group, its open folders under it, then on its own (when an actor can start so)
 function ntPlaces(p) {
   const at = (q) => JSON.stringify(q) === JSON.stringify(p) ? "chosen" : "";
