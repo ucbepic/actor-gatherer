@@ -106,7 +106,6 @@ svg { display: block; flex: none; }
 .blocks [contenteditable="false"] { white-space: normal; }
 .blocks .tx, .blocks .cell { white-space: pre-wrap; }
 .ProseMirror-hideselection *::selection { background: transparent; }
-.ProseMirror-hideselection *::-moz-selection { background: transparent; }
 .ProseMirror-hideselection { caret-color: transparent; }
 .blocks [draggable][contenteditable="false"] { user-select: text; }
 img.ProseMirror-separator { display: inline !important; border: none !important; margin: 0 !important; }
