@@ -21,6 +21,8 @@ export interface Home {
 export interface HarnessInfo {
   /** Its name, as the page says it. */
   label?: string;
+  /** The dashboard runs it: it can start and resume its sessions. */
+  runs?: boolean;
   /** Where it keeps its memory of a directory (a pattern its folders end with): the files' tree marks it. */
   memory_folder?: string;
   /** A block its model writes in a reply that its terminal draws apart (codex's proposed plan): core/ui/md.ts. */
