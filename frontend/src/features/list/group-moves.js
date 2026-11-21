@@ -1,22 +1,21 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { ICONS, el, foldMark, gathererNamed, post, strokeIcon } from "../../core/page/helpers.js";
+import { ICONS, el, gathererNamed, post, strokeIcon } from "../../core/page/helpers.js";
 import { loadHome, setAbout, setLive } from "../page/data.js";
 import { connect } from "../settings/panel.js";
 import {
-  APP_ITEM, COLLAPSED_KEY, CTX, FOLDER_CHARS, actorOf, actorTitle, actorsWithin, appFolder, appInfo, appItem, byName,
-  collapsed, dragFolder, dragRow, dropOn, endDrag, foldOpen, folderById, folderOf, gathererApps, groupCrew, groupOf,
-  inPane, isAppItem, isCoordinator, isCrewHome, isHidden, kidFolders, listDrag, nameFolder, plainFace, readApps,
-  renderAgents, showFolder, startDrag, titleOf, toggleFold, withTasks, within,
+  APP_ITEM, COLLAPSED_KEY, CTX, LIST_HOST, actorOf, actorTitle, actorsWithin, appFolder, appInfo, appItem, collapsed,
+  endDrag, folderById, folderOf, gathererApps, groupCrew, groupOf, isAppItem, isCoordinator, listDrag, nameFolder,
+  readApps, renderAgents, showFolder, startDrag, titleOf, withTasks, within,
 } from "./list.js";
 import * as LG from "./groups";
-import { ALONE_KEY } from "./model";
+import { buildManage } from "./manage-model";
+import { drawListDialogs, drawingNow } from "./modes-mount";
 import { GF, GFS, nameGroup } from "./gatherer-folders.js";
-import { railActor, railAppsIn, railRowsOf, railShow, select } from "./modes.js";
+import { select } from "./modes.js";
 import {
   actorPanes, closeAppPane, closePop, noHarness, openPop, railNewBox, retarget, rowPop, savePanes, startCwd, startable,
   swapAppPane,
 } from "../layout/panes.js";
-import { plural } from "../../core/format";
 import { appRole } from "../apps/app-actors.js";
 import * as appHost from "../apps/host";
 import * as prefs from "../../core/prefs";
@@ -32,7 +31,7 @@ import * as prefs from "../../core/prefs";
 // so a group's only one of its app (Notes, Slack, Paper news) goes too when its own agent does -- into a group with one
 // of its own, it closes, and its agent works with that one -- and otherwise stays with its group, a drag that would
 // take it staying in its group, as every drag did before.
-const moveAsk = { dialog: null, busy: false };
+const moveAsk = { open: false, label: "", busy: false, shown: null };
 const WORKING = new Set(["Running", "Waiting for you", "Background"]);     // groupOf's: working now
 
 // Whether what is dragged (listDrag) may go into group `g` from another -- a group, not the list's head (GFS) --
@@ -215,17 +214,15 @@ async function askMerge(name, g, id, back = false, ask = true) {
   const go = mvGo(shown, "Merging…", "Not merged", merge, name);
   mvDraw({ ...shown, go });
 }
-// The dialog, made once, opened
+// The dialog opened (features/list/ManageGroups.tsx's Move)
 function mvOpen(label) {
-  if (!moveAsk.dialog) {
-    moveAsk.dialog = el("dialog", { class: "br-dialog mv-dialog" });
-    moveAsk.dialog.addEventListener("click", (ev) => { if (ev.target === moveAsk.dialog && !moveAsk.busy) moveAsk.dialog.close(); });
-    moveAsk.dialog.addEventListener("cancel", (ev) => { if (moveAsk.busy) ev.preventDefault(); });
-    document.body.append(moveAsk.dialog);
-  }
-  moveAsk.dialog.setAttribute("aria-label", label);
-  moveAsk.busy = false;
-  if (!moveAsk.dialog.open) moveAsk.dialog.showModal();
+  Object.assign(moveAsk, { open: true, label, busy: false, shown: null });
+  drawDialogs();
+}
+function mvClose() {
+  if (moveAsk.busy) return;
+  Object.assign(moveAsk, { open: false, shown: null });
+  drawDialogs();
 }
 // What its button does: `act()` (-> {to, actors, said}), the dialog busy meanwhile; then the home read again, the panes
 // that show an actor moved following it (from group `from`)
@@ -240,7 +237,7 @@ function mvGo(shown, doing, failed, act, from) {
       return;
     }
     moveAsk.busy = false;
-    moveAsk.dialog.close();
+    mvClose();
     await loadHome();
     await followMoved(from, got.to, got.actors, got.apps || [], got.joined || {});
     renderAgents();
@@ -258,21 +255,12 @@ async function mvNow(act, failed, from) {
   renderAgents();
   setLive(got.said);
 }
-// The dialog drawn: its title, `lines`, the actors `names`, `note`, then Cancel and `goLabel` (`go`; none: not yet)
+// The dialog drawn: its title, `lines`, the actors `names`, `note`, then Cancel and `goLabel` (`go`; none: not yet) --
+// its button in focus, once there is one to press
 function mvDraw({ title, lines = [], names = null, note = "", go = null, goLabel = "" }) {
-  const box = moveAsk.dialog, busy = moveAsk.busy ? { disabled: "" } : {};
-  const form = el("form", { class: "newform", method: "dialog" },
-    el("div", { class: "br-title" }, el("h3", { text: title }),
-      el("button", { type: "button", class: "x", "aria-label": "Close", ...busy, onclick: () => box.close() }, strokeIcon(ICONS.x, 16))),
-    ...lines.map((t) => el("p", { class: "mv-line", text: t })),
-    names,
-    note ? el("p", { class: "mv-note", role: "status", text: note }) : null,
-    el("div", { class: "row" }, el("button", { type: "button", ...busy, onclick: () => box.close() }, "Cancel"),
-      go ? el("button", { type: "submit", class: "primary", ...busy }, goLabel) : null));
-  form.addEventListener("submit", (ev) => { ev.preventDefault(); if (go && !moveAsk.busy) go(); });
-  box.replaceChildren(form);
-  const submit = box.querySelector("button[type=submit]");
-  if (submit && !moveAsk.busy) submit.focus();
+  if (!moveAsk.open) return;
+  moveAsk.shown = { title, lines, names, note, go, goLabel };
+  drawDialogs();
 }
 // What the dialog says of a move (`plan`) from group `from` into `g`: the page's own counts, as the list has them
 function moveLines(from, g, plan) {
@@ -303,8 +291,7 @@ function moveNames(from, channels) {
   const moving = from.agents.filter((a) => channels.includes(a.channel));
   if (moving.length < 2) return null;
   const shown = moving.slice(0, 6);
-  return el("ul", { class: "mv-names" }, ...shown.map((a) => el("li", { text: actorTitle(a) })),
-    moving.length > shown.length ? el("li", { class: "more", text: `and ${moving.length - shown.length} more` }) : null);
+  return { shown: shown.map(actorTitle), more: moving.length - shown.length };
 }
 // After a move: a pane showing an actor that moved shows it in its new group, and an app's that moved (`apps`, their
 // ids) is opened again there -- its panel was opened for its old group -- and one closed for the new group's own one
@@ -360,15 +347,18 @@ function outsideDrop() {
     if (!canOutside()) return;
     ev.preventDefault();
     ev.stopPropagation();                            // the list's head it is over: not dropped there too
-    const d = listDrag;
-    d.later = false;
-    endDrag();
-    if (d.gs) placeGroup(d.gs[0], "", null);        // nothing anyone shares changes: no question
-    else if (d.folder !== null) askSplit(d);
-    else if (isAloneName(d.g)) placeGroup(d.g, "", null);
-    else askAlone(d);
+    outsideDropped();
   });
   return n;
+}
+// What is dragged dropped there (the list's, or Manage groups': features/list/ManageGroups.tsx's OutsideDrop)
+function outsideDropped() {
+  const d = listDrag;
+  endDrag();
+  if (d.gs) placeGroup(d.gs[0], "", null);          // nothing anyone shares changes: no question
+  else if (d.folder !== null) askSplit(d);
+  else if (isAloneName(d.g)) placeGroup(d.g, "", null);
+  else askAlone(d);
 }
 
 // ---- an actor on its own from its start (groups.py's `start_alone`): the list head's "+" beside its folder button. Its box
@@ -403,38 +393,7 @@ function aloneNew() {
 // ---- an actor on its own: a group of one (groups.py's `alone`, `self:<channel>`), listed as its row alone (no head: its
 // title says what it is);
 // it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).
-const ALONE_SAYS = "On its own · shares context with no other actor. Drag it into a group to bring it back.";
 const aloneActor = LG.aloneActor;
-function railAlone(g) {
-  const a = aloneActor(g);
-  return el("section", { class: "r-gatherer r-alone", "aria-label": "On its own", title: ALONE_SAYS },
-    ...(a ? railRowsOf(g, a) : []), ...railAppsIn(g, null));
-}
-// Once closed (groupOf's Closed; saved too, Saved), an actor on its own leaves the top of the list, as a group's closed
-// actors go into its closed line: every such one is in a line at the list's end -- "▸ N closed", and "▸ N saved" --
-// opened again from there as any closed actor is (a message starts it, and it is back at the top). Open or not kept in
-// this browser (foldOpen, by ALONE_KEY); folded, those open in a pane in view under it (features/list/model.ts draws
-// them in the list). Never hidden as a group is (isHidden): closed, it is in its line. The rail likewise
-// (railAloneShut), its lines shown as its foot says for its boxes' saved and closed lines (railShow), "▸ N closed" (the
-// rest in its title: the rail is narrow).
-const aloneShut = (g) => LG.aloneShut(CTX, g);
-// [Saved | Closed, those of `gs` (each aloneShut) in it, the latest first], each with any
-const aloneFolds = (gs) => LG.aloneFolds(CTX, gs);
-const aloneSays = (name, n) => `${n} ${name.toLowerCase()}`;
-const aloneInPane = (list) => list.filter((g) => inPane(g, aloneActor(g)));
-function railAloneShut(gs) {
-  const out = [];
-  for (const [name, list] of aloneFolds(gs)) {
-    const what = name.toLowerCase(), unfolded = foldOpen[name].has(ALONE_KEY);
-    const peek = () => aloneInPane(list).map((g) => railActor(g, aloneActor(g)));
-    if (!railShow[what]) { out.push(...peek()); continue; }   // its line not shown: those open in a pane, in view
-    out.push(el("button", { class: "r-fold", type: "button", "aria-expanded": unfolded ? "true" : "false",
-      title: `${aloneSays(name, list.length)}: ${unfolded ? "hide" : "show"} ${list.length === 1 ? "it" : "them"}`,   // its words: too wide here
-      onclick: () => toggleFold(name, ALONE_KEY) }, foldMark(unfolded), ` ${list.length} ${what}`));
-    out.push(...(unfolded ? list.flatMap((g) => railRowsOf(g, aloneActor(g))) : peek()));
-  }
-  return out.length ? [el("section", { class: "r-gatherer r-alone shut", "aria-label": "Closed, on their own" }, ...out)] : [];
-}
 // One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own, with its task's apps and
 // its own window if it is an app's agent (withOwn) -- dropped in the list (`d.ask` false), at once
 function askAlone(d, here = false) {
@@ -474,8 +433,6 @@ const isAloneName = LG.isAloneName;
 const placeOf = (name) => LG.placeOf(CTX, name);
 const insideOf = (name, outer) => LG.insideOf(CTX, name, outer);
 const nestedIn = (g) => LG.nestedIn(CTX, g);
-// the groups drawn in folder `id` of group `gname` (null: its top): groups, by their titles, then actors on their own
-const placedIn = (gname, id) => LG.placedIn(CTX, gname, id);
 // the group `gname` open, and its folder `id` with the folders it is in
 function openWhere(gname, id) {
   if (collapsed.delete(gname)) {
@@ -504,48 +461,30 @@ function askJoin(x) {
 // An actor of group `g` on its own, staying in its folder
 const askAloneHere = (g, a) => askAlone({ g: g.name, cs: [a.channel] }, true);
 
-// ---- MANAGE GROUPS: who shares context with whom, at a glance, and the switches (the Notes design's section 4) -- each
-// row that starts a group of its own (a group, an actor on its own: `defines`) on a highlighted background: a
-// dialog from the settings panel (manageEntry) -- each group, at its place, its folders and open actors under it (closed
-// ones counted), a folder's switch "<the group it is in> | Own group", an actor's "<the group it is in> | On its own" -- the
-// group by its name, the folder that starts it (mgIn). A switch asks
-// first, as in the list (askOwn, askAbove, askAloneHere, askJoin), then the dialog is drawn again from the new home
-// (renderAgents calls drawManage while it is open). The CLI's `ag groups` has the same. A group's or folder's row folds
-// what is under it (mgFolded, kept in this browser). Rows are dragged and dropped as the list's are, by its own
-// dragRow, dragFolder and dropOn -- the same rules, but asked first (listDrag's `ask`; in the list, done at once) -- and
-// its "Outside every group" area is over the panel's top line while one is dragged. New folders are made here too: at
-// the top (a group of its own) from its head, in a group or a folder from its row's button, named in a box in place
-// (manage.naming). Opened from the settings panel (manageEntry), in the home's one database only.
-const manage = { dialog: null, naming: null, drawing: false };
+// ---- MANAGE GROUPS: who shares context with whom, at a glance, and the switches (the Notes design's section 4): a
+// dialog from the settings panel (manageEntry), drawn by features/list/ManageGroups.tsx from manage-model.ts's rows --
+// each group at its place, its folders and open actors under it, each with its switch. A switch asks first, as in the
+// list (askOwn, askAbove, askAloneHere, askJoin), then the dialog is drawn again from the new home (renderAgents calls
+// drawManage while it is open). The CLI's `ag groups` has the same. A group's or folder's row folds what is under it
+// (mgFolded, kept in this browser). Rows are dragged and dropped as the list's are -- the same rules, but asked first
+// (listDrag's `ask`; in the list, done at once) -- and its "Outside every group" area is over the panel's top line while
+// one is dragged. New folders are made here too: at the top (a group of its own) from its head, in a group or a folder
+// from its row's button, named in a box in place (manage.naming). In the home's one database only.
+const manage = { open: false, naming: null };
+let namings = 0;
 // the settings panel's entry: shown in the home's one database only; a click there closes the panel, opens this
 function manageEntry() {
   const n = document.getElementById("groups-cfg");
   if (n) n.hidden = SNAPSHOT || !state.home.merged;
 }
 function openManage() {
-  if (!manage.dialog) {
-    manage.dialog = el("dialog", { class: "br-dialog mg-dialog", "aria-label": "Manage groups" });
-    manage.dialog.addEventListener("click", (ev) => { if (ev.target === manage.dialog) manage.dialog.close(); });
-    manage.dialog.addEventListener("cancel", (ev) => {   // Esc while a new folder is named: that box closed, not the panel
-      if (manage.naming) { ev.preventDefault(); mgEndNaming(false); }
-    });
-    manage.dialog.addEventListener("close", () => { manage.naming = null; });
-    document.body.append(manage.dialog);
-  }
+  manage.open = true;
   drawManage();
-  if (!manage.dialog.open) manage.dialog.showModal();
 }
-// a switch of its options (two, or one: a group at the top, or an actor on its own there, has no group around it to
-// take): `now` the one pressed; the other asks (`ask`), or, `why`, it can't be had and says why. An option is its text,
-// or [text, what it means on hover]
-function mgSwitch(label, options, now, ask, why = "") {
-  const pick = ([text, tip], on) => el("button", { type: "button", class: "mg-opt" + (on ? " on" : ""), "aria-pressed": on ? "true" : "false",
-    ...(on || why ? { disabled: "" } : {}), ...(why && !on ? { title: why } : tip ? { title: tip } : {}), onclick: () => { if (!on) ask(); } }, text);
-  return el("span", { class: "mg-switch", role: "group", "aria-label": label },
-    ...options.map((o, i) => pick(Array.isArray(o) ? o : [o, ""], now === i)));
+function closeManage() {
+  Object.assign(manage, { open: false, naming: null });
+  drawManage();
 }
-// the option of taking group `g`, the one a row sits in: by its name, the folder that starts it
-const mgIn = (g) => [titleOf(g), `Shares context with ${titleOf(g)}'s actors`];
 // What the panel has folded: "g:<group>", "f:<group>:<folder id>", "alone" (those on their own at the top)
 const MG_FOLDED_KEY = "ag-dashboard-manage-groups-folded";
 const mgFolded = new Set(prefs.list(MG_FOLDED_KEY) || []);
@@ -557,33 +496,13 @@ function mgToggle(key, open) {
   prefs.keep(MG_FOLDED_KEY, [...mgFolded]);
   drawManage();
 }
-// a row's name, its caret first -- turned down while open, folding what is under it, and its name so too -- or, nothing
-// under it, the caret's room, so names line up
-function mgName(key, name, has, ...rest) {
-  const open = !mgFolded.has(key);
-  const caret = has ? el("button", { type: "button", class: "mg-fold", "aria-expanded": open ? "true" : "false",
-    "aria-label": `${open ? "Fold" : "Open"} ${name}`, onclick: (ev) => { ev.stopPropagation(); mgToggle(key); } },
-    el("span", { class: "caret", "aria-hidden": "true", text: "▶" })) : el("span", { class: "mg-fold", "aria-hidden": "true" });
-  return el("span", { class: "mg-name" + (has ? " foldable" : ""), ...(has ? { onclick: () => mgToggle(key) } : {}) }, caret, ...rest);
-}
 // A new folder named in place: in folder `parent` of group `g` (g null: at the top, a group of its own by the default
-// rule), the row it is in opened (`key`), its box drawn first under it
+// rule), the row it is in opened (`key`), its box drawn first under it; Enter makes it, Esc or an empty box leaves it, a
+// click elsewhere makes it as typed -- as the list's own box does (nameFolder, nameGroup)
 function mgStartNaming(g, parent, key) {
-  manage.naming = { g: g ? g.name : null, parent, value: "" };
+  manage.naming = { g: g ? g.name : null, parent, value: "", n: ++namings };
   if (key) mgFolded.delete(key);
   drawManage();
-}
-// its row: the box, what is typed kept across the panel's redraws; Enter makes it, Esc (the dialog's `cancel`) or an
-// empty box leaves it, a click elsewhere makes it as typed -- as the list's own box does (nameFolder, nameGroup)
-function mgNamingRow(depth) {
-  const n = manage.naming;
-  const input = el("input", { class: "mg-input", type: "text", maxlength: String(FOLDER_CHARS), "aria-label": "New folder's name",
-    placeholder: n.g === null ? "Folder name (a new group)" : "Folder name" });
-  input.value = n.value;
-  input.addEventListener("input", () => { n.value = input.value; });
-  input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); mgEndNaming(true); } });
-  input.addEventListener("blur", () => { if (!manage.drawing && manage.naming === n && document.hasFocus()) mgEndNaming(true); });
-  return el("div", { class: "mg-row naming", style: `--depth: ${depth}` }, mgName("", "", false, strokeIcon(ICONS.folder, 14), input));
 }
 function mgEndNaming(keep) {
   const n = manage.naming;
@@ -592,86 +511,31 @@ function mgEndNaming(keep) {
   if (keep && n.value.trim()) { if (n.g === null) nameGroup(null, n.value); else nameFolder(n.g, null, n.parent, n.value); }
   drawManage();
 }
-const mgNamingIn = (gname, parent) => !!manage.naming && manage.naming.g === gname && manage.naming.parent === parent;
-// a row's button making a folder in it (folder `id` of group `g`; null: its top), seen while the row is hovered
-const mgAdd = (g, id, name, key) => el("button", { type: "button", class: "mg-add", title: `New folder in ${name}`,
-  "aria-label": `New folder in ${name}`, onclick: (ev) => { ev.stopPropagation(); mgStartNaming(g, id, key); } }, strokeIcon(ICONS.folderNew, 14));
-function mgActor(g, a, depth) {
-  const lone = g.alone, inTask = !lone && withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1;
-  const around = lone ? nestedIn(g) : g;   // the group it sits in: none for one on its own at the list's top
-  const why = isCoordinator(a) ? "The coordinator agent stays with its group" : inTask ? "In a task with other actors. Tasks move as a whole." : "";
-  return dragRow(el("div", { class: "mg-row actor" + (lone ? " defines" : ""), "data-key": `${g.name}/${a.channel}`,
-    style: `--depth: ${depth}`,   // on its own: a group of one
-    ...(lone ? { title: `On its own · shares context with no other actor${around ? "" : ". Drag it into a folder to join that folder's group."}` } : {}) },
-    mgName("", "", false, plainFace(a), el("span", { text: actorTitle(a) || a.channel.slice(0, 8) })),
-    mgSwitch(`${actorTitle(a)}: its group`, around ? [mgIn(around), "On its own"] : ["On its own"], lone && around ? 1 : 0,
-      () => (lone ? askJoin(g) : askAloneHere(g, a)), why)), g, a);
+// An actor of group `g` in a task with other actors: its switch can't be had (tasks move as a whole)
+const inTaskWithOthers = (g, a) => withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1;
+// what Manage groups and the move's question call of the page (features/list/ManageGroups.tsx's DialogsHost)
+let dialogHost = null;
+const DIALOG_HOST = () => dialogHost ??= { ...LIST_HOST, ctx: CTX, close: closeManage, toggle: mgToggle,
+  startNaming: mgStartNaming, endNaming: mgEndNaming, namingTyped: (v) => { if (manage.naming) manage.naming.value = v; },
+  namingBlur: () => { if (!drawingNow() && manage.naming && document.hasFocus()) mgEndNaming(true); },
+  askOwn: (g, f) => askOwn(g, f), askAbove, askJoin, askAloneHere,
+  dragGroup: (ev, g) => startDrag(ev, GFS, { gs: [g.name] }), outsideCan: canOutside, outsideDrop: outsideDropped,
+  moveClose: mvClose };
+// Manage groups and the move's question drawn as they are now: the groups as the home has them (renderAgents calls this)
+function drawDialogs() {
+  drawListDialogs({
+    manage: manage.open ? { rows: buildManage(CTX, { folded: mgFolded, naming: manage.naming, inTask: inTaskWithOthers }),
+      naming: manage.naming && { n: manage.naming.n, value: manage.naming.value } } : null,
+    move: moveAsk.open ? { label: moveAsk.label, busy: moveAsk.busy,
+      ...(moveAsk.shown || { title: "", lines: [], names: null, note: "", go: null, goLabel: "" }) } : null,
+  }, DIALOG_HOST());
 }
-// group `g`'s folder `id` (null: its top), at `depth`: its folders, each with its switch and what is in it; the groups and
-// actors on their own put there; its open actors (the closed counted)
-function mgBox(g, id, depth) {
-  const out = mgNamingIn(g.name, id) ? [mgNamingRow(depth)] : [];
-  for (const f of kidFolders(g.name, id)) {
-    const key = `f:${g.name}:${f.id}`, kids = mgBox(g, f.id, depth + 1);
-    const row = el("div", { class: "mg-row folder", "data-key": `${g.name}/folder:${f.id}`, style: `--depth: ${depth}` },
-      mgName(key, f.name, kids.length > 0, strokeIcon(ICONS.folder, 14), el("span", { text: f.name })),
-      mgAdd(g, f.id, f.name, key), mgSwitch(`${f.name}: its group`, [mgIn(g), "Own group"], 0, () => askOwn(g, f)));
-    out.push(dropOn(dragFolder(row, g, f), g, f.id, () => mgToggle(key, true)));   // held over: opened
-    if (!mgFolded.has(key)) out.push(...kids);
-  }
-  for (const x of placedIn(g.name, id)) out.push(...(x.alone ? x.agents.map((a) => mgActor(x, a, depth)) : mgGroup(x, depth)));
-  const mine = g.agents.filter((a) => folderOf(g.name, a) === id && !isCoordinator(a));
-  const shut = mine.filter((a) => ["Saved", "Closed"].includes(groupOf(g, a)));
-  out.push(...mine.filter((a) => !shut.includes(a)).map((a) => mgActor(g, a, depth)));
-  if (shut.length) out.push(el("div", { class: "mg-row shut", style: `--depth: ${depth}`, text: `${plural(shut.length, "closed actor")} here too` }));
-  return out;
-}
-// a group: its line, a folder's as the list has it -- placed in a folder, its switch; at the top, its own group, the only
-// option -- then what is in it
-function mgGroup(g, depth) {
-  const outer = nestedIn(g), n = g.agents.filter((a) => !isCoordinator(a)).length, key = `g:${g.name}`, kids = mgBox(g, null, depth + 1);
-  const row = el("div", { class: "mg-row group defines", "data-key": g.name, style: `--depth: ${depth}`,   // a group starts here
-    title: `${titleOf(g)} is its own group. Its actors share context with each other${outer ? `, not with ${titleOf(outer)}'s` : ""}.` },
-    mgName(key, titleOf(g), kids.length > 0, strokeIcon(ICONS.folder, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
-    mgAdd(g, null, titleOf(g), key), outer ? mgSwitch(`${titleOf(g)}: its group`, [mgIn(outer), "Own group"], 1, () => askAbove(g))
-      : mgSwitch(`${titleOf(g)}: its group`, ["Own group"], 0, () => {}));
-  if (!SNAPSHOT) {                                   // dragged as the list's group row is: into a folder of another group
-    row.draggable = true;
-    row.addEventListener("dragstart", (ev) => startDrag(ev, GFS, { gs: [g.name] }));
-    row.addEventListener("dragend", endDrag);
-  }
-  return [dropOn(row, g, null, () => mgToggle(key, true)), ...(mgFolded.has(key) ? [] : kids)];
-}
-function drawManage() {
-  if (!manage.dialog) return;
-  const shown = state.home.gatherers.filter((g) => !isHidden(g) && !isCrewHome(g) && !placeOf(g.name));
-  const lone = shown.filter((g) => g.alone), scrolled = (manage.dialog.querySelector(".mg-tree") || {}).scrollTop || 0;
-  const loneRows = lone.flatMap((x) => x.agents.map((a) => mgActor(x, a, 1)));
-  manage.drawing = true;                             // its box taken out: not a blur that names the folder
-  manage.dialog.replaceChildren(el("div", { class: "newform mg-form" },
-    el("div", { class: "br-title" }, el("h3", { text: "Manage groups" }),
-      el("button", { type: "button", class: "mg-new", title: "New folder at the top (a new group)",
-        onclick: () => mgStartNaming(null, null, null) }, strokeIcon(ICONS.folderNew, 14), "New folder"),
-      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => manage.dialog.close() }, strokeIcon(ICONS.x, 16))),
-    el("div", { class: "mg-top" },
-      el("p", { class: "mg-say", text: "Actors share context only within their group. Change a folder's or actor's group with its "
-        + "switch, or drag rows as in the list. Each change asks for confirmation." }), outsideDrop()),
-    el("div", { class: "mg-tree" }, ...(mgNamingIn(null, null) ? [mgNamingRow(0)] : []), ...shown.filter((g) => !g.alone).sort((x, y) => byName(titleOf(x), titleOf(y))).flatMap((g) => mgGroup(g, 0)),
-      ...(lone.length ? [el("div", { class: "mg-row group", style: "--depth: 0" }, mgName("alone", "those on their own", true, strokeIcon(ICONS.alone, 14),
-        el("b", { text: "On their own" })))] : []),
-      ...(mgFolded.has("alone") ? [] : loneRows))));
-  manage.drawing = false;
-  const tree = manage.dialog.querySelector(".mg-tree");
-  if (tree) tree.scrollTop = scrolled;               // where it was, drawn again
-  const box = manage.dialog.querySelector(".mg-input");
-  if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }   // a new folder's name, typed on
-}
+const drawManage = drawDialogs;
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   document.getElementById("manage-groups")?.addEventListener("click", () => { setAbout(false); openManage(); });
 }
 export {
-  ALONE_NEW, ALONE_SAYS, aloneNew, aloneShut, aloneUnder, askMerge, askMove, canCross, canMerge, drawManage,
-  everyActor, isAloneName, manage, manageEntry, nestedIn, outsideDrop, placeGroup, placeOf, placedIn, railAlone,
-  railAloneShut, showOutside,
+  ALONE_NEW, aloneNew, aloneUnder, askMerge, askMove, canCross, canMerge, drawManage, everyActor, isAloneName, manage,
+  manageEntry, outsideDrop, placeGroup, placeOf, showOutside,
 };

@@ -42,6 +42,25 @@ export interface Actor {
   chattable?: boolean;
   background?: { kind?: string; label?: string; id?: string }[];
   recap?: { text?: string; at?: number } | null;
+  /** what it waits on the reader for: a permission, a dialog of its terminal, a plan, questions */
+  asking?: Asking | null;
+  /** its model's calls failing, retried */
+  failing?: { error?: string; attempts: number; at?: number } | null;
+  /** how its last turn stopped */
+  stopped?: { text?: string; at?: number } | null;
+  real_tokens?: number | null;
+  sent_tokens?: number | null;
+}
+
+/** What an actor waits on the reader for (data.py's `asking`), as the monitor says it. */
+export interface Asking {
+  kind?: string;
+  menu?: unknown;
+  title?: string;
+  said?: string;
+  tool?: string;
+  questions?: { question?: string }[];
+  at?: number;
 }
 
 /** An app instance's notifications, as the home has them (data.py's `app_notices`). */

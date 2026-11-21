@@ -3,11 +3,11 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { plural } from "../../core/format";
 import { Html } from "../../core/ui/PageNode";
-import type { ListHost } from "./host";
+import type { ListHost, PageParts } from "./host";
 import type { Counts } from "./groups";
 import type { TabAt } from "./rows";
 import type { Tally } from "./tree";
-import type { Actor, Gatherer } from "./types";
+import type { Actor, Folder, Gatherer } from "./types";
 
 /** An element of the list's whose contents the page builds (`make`, afresh at each draw -- or, `deps` given, only when
  * they change), as it built them: put in it whole, in place of what was. */
@@ -62,8 +62,8 @@ export function CountChips({ c }: { c: Counts }) {
     </>
   );
 }
-/** A folder's: the same, and how many are idle. */
-export function TallyChips({ t }: { t: Tally }) {
+/** A folder's: the same, and (on its line in the list) how many are idle. */
+export function TallyChips({ t, idle = true }: { t: Tally; idle?: boolean }) {
   const of = plural(t.open, "actor");
   return (
     <>
@@ -71,7 +71,7 @@ export function TallyChips({ t }: { t: Tally }) {
       <Chip k={t.error} cls=" error" of={of} what="stopped on an error" />
       <Told n={t.notified} />
       <Chip k={t.running} cls="" of={of} what="running" />
-      <Chip k={t.idle} cls=" idle" of={of} what="idle" />
+      {idle ? <Chip k={t.idle} cls=" idle" of={of} what="idle" /> : null}
     </>
   );
 }
@@ -207,6 +207,9 @@ export function RowButton({
   title?: string;
   "aria-label"?: string;
   "aria-pressed"?: "true" | "false";
+  "data-pop"?: string;
+  "aria-haspopup"?: "menu";
+  "aria-expanded"?: "true" | "false";
 }) {
   return (
     <span
@@ -244,13 +247,84 @@ export function TabMark({ at }: { at: TabAt | null }) {
 
 /** An actor's face alone, no harness's badge: its avatar, else its harness's mark -- with a check on it, selected with
  * another (`check`: a click on it leaves it out). */
-export function Face({ host, a, check }: { host: ListHost; a: Actor; check?: ReactNode }) {
+export function Face({
+  host,
+  a,
+  check,
+}: {
+  host: Pick<PageParts, "avatarSrc" | "harnessLogo">;
+  a: Actor;
+  check?: ReactNode;
+}) {
   const src = host.avatarSrc(a.avatar);
-  if (!src) return <Html node={host.harnessLogo(a.harness)} />;
+  if (!src) return <Html node={host.harnessLogo(a.harness)} extra={check} />;
   return (
     <span className="logo avatar">
       <img src={src} alt="" draggable="false" />
       {check}
     </span>
+  );
+}
+
+/** A folder's × asking first, under its line or in its card: what closing it would close, end, take off -- "Close
+ * folder", or Cancel (Esc). `focus`: its button now in focus; `out`, the focus gone from it. */
+export function AskClose({
+  g,
+  f,
+  said,
+  where,
+  go,
+  cancel,
+  focus,
+  out,
+}: {
+  g: Gatherer;
+  f: Folder;
+  said: string;
+  where: string;
+  go: () => void;
+  cancel: () => void;
+  focus: (which: string) => void;
+  out?: (ev: FocusEvent) => void;
+}) {
+  const button = (which: string, cls: string, text: string, run: () => void) => (
+    <button
+      type="button"
+      className={`pb ${cls}`}
+      data-ask={which}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        run();
+      }}
+      onFocus={() => focus(which)}
+    >
+      {text}
+    </button>
+  );
+  return (
+    <div
+      className="f-ask"
+      role="alertdialog"
+      aria-label={`Close ${f.name}?`}
+      data-key={`${g.name}/folder:${f.id}/ask`}
+      onClick={(ev) => ev.stopPropagation()}
+      onKeyDown={(ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cancel();
+        }
+      }}
+      onBlur={out ? (ev) => out(ev.nativeEvent) : undefined}
+    >
+      <p>
+        <b>{`Close ${f.name}?`}</b>
+        {` This ${said}. The folder moves to ${where}'s closed line.`}
+      </p>
+      <div className="f-ask-btns">
+        {button("go", "go", "Close folder", go)}
+        {button("cancel", "", "Cancel", cancel)}
+      </div>
+    </div>
   );
 }

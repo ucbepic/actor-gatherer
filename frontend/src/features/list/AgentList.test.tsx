@@ -23,8 +23,16 @@ function hostOf(more: Partial<ListHost> = {}): ListHost {
     shellPath: (s) => s.cwd,
     avatarSrc: (name) => (name ? `/avatars/${name}.svg` : null),
     head: () => [Object.assign(document.createElement("h2"), { textContent: "Agents" })],
-    gathererActs: () => [span("act start new-actor"), span("act row-more")],
-    folderActs: () => [span("act row-more")],
+    startMenu: () => ({
+      key: "start:g",
+      busy: false,
+      off: false,
+      title: "New in g",
+      label: "New in g",
+      head: "New in g",
+      items: [{ text: "Claude Code", run: () => {} }],
+    }),
+    gathererMore: () => ({ head: "g", items: [{ text: "Hide", run: () => {} }] }),
     gfActs: () => [],
     newForm: () => document.createElement("form"),
     formAt: () => "",
@@ -71,7 +79,7 @@ describe("the list in React", () => {
     expect(aside.querySelector(".gatherer-row .gname")?.textContent).toBe("g");
     expect(aside.querySelector(".gatherer-row .count")?.textContent).toBe("1"); // one running
     expect([...aside.querySelectorAll(".g-acts > *")].map((n) => n.className)).toEqual([
-      "act start new-actor",
+      "act start new-actor new-more",
       "act row-more",
     ]);
     const rows = [...aside.querySelectorAll("button.agent")];
@@ -79,6 +87,32 @@ describe("the list in React", () => {
     expect(rows.map((r) => r.querySelector(".name")?.className)).toEqual(["name", "name unnamed", "name"]);
     expect(rows[1].querySelector(":scope > .dot")?.getAttribute("aria-label")).toBe("Running");
     expect(rows[0].querySelector(".save-btn")?.getAttribute("aria-label")).toBe("Save for later");
+  });
+
+  it("a gatherer's " + " opens its menu, Radix's: an item chosen runs with the button it hangs from", () => {
+    const run = vi.fn();
+    const host = hostOf({
+      startMenu: () => ({
+        key: "start:g",
+        busy: false,
+        off: false,
+        title: "New in g",
+        label: "New in g",
+        head: "New in g",
+        sub: "~/w",
+        items: [{ text: "Codex", run }],
+      }),
+    });
+    const aside = draw(home, host);
+    const plus = aside.querySelector<HTMLButtonElement>(".g-acts .new-actor")!;
+    expect(plus.getAttribute("data-pop")).toBe("start:g");
+    fireEvent.keyDown(plus, { key: "Enter" });
+    const menu = document.querySelector(".row-menu[role=menu]")!;
+    expect(menu.querySelector(".hd")?.textContent).toBe("New in g~/w");
+    expect(calls(host).startOpening).toHaveBeenCalled();
+    fireEvent.click(menu.querySelector("[role=menuitem]")!);
+    expect(run).toHaveBeenCalledWith(plus);
+    expect(document.querySelector(".row-menu[role=menu]")).toBeNull();
   });
 
   it("calls the page for a press: a row shows its actor, its bookmark saves it, its caret folds its gatherer", () => {

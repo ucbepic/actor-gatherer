@@ -13,15 +13,15 @@ import {
   placeGroup, placeOf, showOutside,
 } from "./group-moves.js";
 import {
-  HOVERS, cardDraw, cardHide, cardLive, cardMoving, drawTotals, hover, listButtons, listPlaces, railDragged,
+  HOVERS, cardDraw, cardHide, drawTotals, hover, listButtons, listPlaces, railDragged,
   renderFolded, slideList,
 } from "./modes.js";
 import {
   actorPanes, appClosed, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnlyKey, branchChip,
   closeAppPane, closePane, closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, isAt,
   isAway, moveEnd, newForm, openActors, openCoordinator, openPop, openTaskBeside, paneNote, pick, pickBeside, showAppPanel,
-  placeIfShown, popMenu, rekeyTask, rememberTask, rowMore, rowPop, selectAppPane, selectedTask, show, shownPanels,
-  startButtons, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut, viaTabs,
+  placeIfShown, popMenu, rekeyTask, rememberTask, rowPop, selectAppPane, selectedTask, show, shownPanels,
+  startMenu, closePops, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut, viaTabs,
   workPlacer,
 } from "../layout/panes.js";
 import { refreshNewTab } from "../layout/new-tab.js";
@@ -32,13 +32,13 @@ import { shownGone } from "../terminal/shell.js";
 import * as appHost from "../apps/host";
 import * as prefs from "../../core/prefs";
 // the list's view-model (features/list/model.ts) and what it derives from the home: statuses, folders, tasks, groups
-import { boxKey, buildList, folderKey } from "./model";
+import { buildList, folderKey } from "./model";
+import { envelope } from "./envelope";
 import { drawList, listDrawing } from "./mount";
 import * as LS from "./status";
 import * as LT from "./tree";
 import * as LK from "./tasks";
 import * as LG from "./groups";
-import { crewLine, envelope } from "./envelope";
 
 // What the list's derivations read besides their arguments (features/list/types.ts's ListCtx): the home, and what the
 // page knows of it -- each read when asked, so the same object serves every draw
@@ -182,16 +182,10 @@ const kidFolders = (gname, id) => LT.kidFolders(CTX, gname, id);
 const filedAs = (gname, a) => LT.filedAs(CTX, gname, a);
 const folderOf = (gname, a) => LT.folderOf(CTX, gname, a);
 const within = (gname, id, inside) => LT.within(CTX, gname, id, inside);
-const folderPath = (gname, id, sep = " / ") => LT.folderPath(CTX, gname, id, sep);
 const actorsWithin = (g, id) => LT.actorsWithin(CTX, g, id);
-// Those of them open in a pane: in view under the folder while it is folded
-const inPane = (g, a) => openActors().some((sel) => isAt(sel, g.name, a.channel));
-const openIn = (g, id) => actorsWithin(g, id).filter((a) => inPane(g, a));
 const folderTally = (g, id) => LT.folderTally(CTX, g, id);
 const shellsWithin = (g, id) => LT.shellsWithin(CTX, g, id);
 const shownClosed = (g, f) => LT.shownClosed(CTX, g, f);
-const closedKids = (g, id) => LT.closedKids(CTX, g, id);
-const closedSays = (g, id, own) => LT.closedSays(CTX, g, id, own);
 // Each folder open or not (its key: its gatherer, its id), kept in this browser; a folder made, or one an actor is put
 // in, opened
 const FOLDERS_OPEN_KEY = "ag-dashboard-folders-open";
@@ -289,7 +283,7 @@ const deleteFolder = (gname, id) => folderPost(gname, { do: "delete", id }, (tre
   tree.folders = tree.folders.filter((x) => x.id !== id);
 });
 // Where the next actor started from the list goes: the folder whose "+ actor" or "+ ⋯" was pressed last, or its gatherer's
-// top (null) -- set by each start button as it is pressed (startButtons; railNew, railMore in the rail's cards). Once started, the actor is filed
+// top (null) -- set by each start button as it is pressed (startMenu's; cardStartPress in the rail's cards). Once started, the actor is filed
 // there (fileStarted), as the server answers with its id; a terminal is opened there (startShell, `shellFolder`).
 let startIn = { g: "", folder: null };
 const aimStart = (gname, id) => { startIn = { g: gname, folder: id }; };
@@ -384,20 +378,6 @@ async function moveHidingToServer() {
   prefs.drop(HIDDEN_KEY);
   renderAgents();
 }
-// A gatherer's or a folder's actors as its box lists them (features/list/tree.ts's boxGroups): [group, list] for each
-// that has any. `id`: the folder; null, the gatherer's top. The rail (railBox) has them so too.
-const OPEN = LT.OPEN;
-const boxGroups = (g, id) => LT.boxGroups(CTX, g, id);
-// how many of a group's actors wait on the user, how many stopped on an error, and how many run now (features/list/
-// groups.ts's Counts), as chips; nothing while none does
-function countChips(c) {
-  const of = plural(c.of, "actor");
-  const count = (k, cls, what) => k ? el("span", { class: "count" + cls, title: `${k} of ${of} ${what}` }, el("i", { "aria-hidden": "true" }), String(k)) : null;
-  return [count(c.asking, " asking", "waiting for you"), count(c.error, " error", "stopped on an error"),
-    c.notified ? el("span", { class: "count notified", title: `${plural(c.notified, "app")} with a notification you haven't seen` }, el("i", { "aria-hidden": "true" }), String(c.notified)) : null,
-    count(c.running, "", "running")].filter(Boolean);
-}
-const gathererCounts = (g) => countChips(LG.gathererCounts(CTX, g));
 // The reader's choices, and what is shown, as the list's view-model reads them (features/list/model.ts's ListView)
 function listView() {
   return {
@@ -436,13 +416,21 @@ const LIST_HOST = {
     aloneNew(),                                      // an actor on its own (features/list/group-moves.js)
     SNAPSHOT || !model.merged ? null : crewButton(null, "all"),   // the coordinator agent over everything
     el("span", { class: "list-btns" }, ...listButtons())].filter(Boolean),
-  // over a gatherer's counts while it is hovered (or in focus), in a folder's line's order: "+" (all that starts there),
-  // and "⋯": a new folder, rename, and hide
-  gathererActs: (g, title) => [...(SNAPSHOT ? [] : startButtons(g)), rowMore(`gmore:${g.name}`, title, [
+  // a gatherer's and a folder's buttons (features/list/Menus.tsx): "+" (all that starts there: startMenu) and "⋯"
+  startMenu: (g, f) => startMenu(g, f),
+  startOpening: (g, f) => { closePops(); aimStart(g.name, f ? f.id : null); },
+  closePops,
+  // a gatherer's "⋯": a new folder, rename, and hide
+  gathererMore: (g, title) => ({ head: title, items: [
     ...(SNAPSHOT ? [] : [{ icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, null) },
       { icon: ICONS.pencil, text: "Rename", run: () => retitle(g) }]),
-    { mark: hideIcon(), text: "Hide", run: () => setHidden(g, true) }])],
-  folderActs: (n) => folderActs(n.g, n.f, n.closed, n.crew),
+    { mark: hideIcon(), text: "Hide", run: () => setHidden(g, true) }] }),
+  // a folder's "⋯": a folder made in it, it renamed (F2), it deleted
+  folderMore: (g, f, crew) => ({ head: f.name, items: [
+    { icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, f.id) },
+    { icon: ICONS.pencil, text: "Rename", run: () => startFolderEdit(g.name, f.id) },
+    { icon: ICONS.bin, text: crew ? "Delete (its coordinator agent closes)" : "Delete", run: () => deleteFolder(g.name, f.id) }] }),
+  deleteFolder, reopenFolder, pressClose: (g, f) => pressClose(g, f, "list"),
   gfActs: (f, crew) => [state.home.merged && !crew ? crewButton(null, `groups:${f.id}`) : null,
     folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(GF, null, f.id)),
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(GF, f.id)),
@@ -499,7 +487,6 @@ const LIST_HOST = {
 };
 function renderAgents() {
   if (PANE) return;                                  // a frame has no list: the page around it has
-  if (listDrag && !listDrag.force) { listDrag.later = true; return; }   // dragged: the rail drawn once it is over (modes.js)
   drawn.agents = listSignature();                    // what render() compares a home's with
   const model = listModel();
   for (const g of model.visible) readApps(g.name);   // the apps its actors are attached to
@@ -511,7 +498,7 @@ function renderAgents() {
   manageEntry();                                     // Manage groups, in the settings panel (features/list/group-moves.js)
   drawList(aside, model, LIST_HOST);                 // (features/list/mount.tsx: drawn by now)
   slideList(aside, was);
-  if (manage.dialog && manage.dialog.open) drawManage();   // the groups as they are now (features/list/group-moves.js)
+  if (manage.open) drawManage();                     // the groups as they are now (features/list/group-moves.js)
   if (hover.from === "agents") cardDraw();           // its card, said again from the new data
   if (state.renaming && !(nameInput && nameInput.isConnected)) { state.renaming = null; nameInput = null; }   // its row folded away
   if (state.folderEdit && !(folderInput && folderInput.isConnected)) { state.folderEdit = null; folderInput = null; }   // folded away
@@ -556,14 +543,13 @@ function crewFace(a, fallback = null) {
 // "folder:<id>"
 const isCoordinator = LS.isCoordinator;
 const crewNode = LG.crewNode;
-const isCrewHome = LG.isCrewHome;
 const groupCrew = LG.groupCrew;
 const crewAt = (node, g = null) => LG.crewAt(CTX, node, g);
 const crewHideKey = LG.crewHideKey;
 const crewPlace = (node, g = null) => LG.crewPlace(CTX, node, g);
 // TASKS (tasks.py, `home.tasks`: {gatherer: {tasks: [{id, name}], tasked: {item: task id}}}): what the reader works with
 // at once -- actors and apps alike, its ITEMS: an actor by its channel, an app's instance by "app:<its id>" (appItem) --
-// one row in the list (taskRow), a leaf: what is in it shown in its card (features/list/modes.js's taskCard), and in its layout,
+// one row in the list (taskRow), a leaf: what is in it shown in its card (features/list/CardTask.tsx), and in its layout,
 // opened by a click (openTask). An item in none is a task of its own: an actor's row (agentRow), an app's (appRow). Within
 // a task every agent is attached to every app (task_links.py). Its "+" (addButton) adds to it a new agent (addToTask) or
 // an app (addAppToTask); an item dragged onto another's row is put in its task (dropOnItem); the × in its card takes one
@@ -581,15 +567,11 @@ const itemTaskOf = (g, k) => LK.itemTaskOf(CTX, g, k);
 // an item as the server keeps it: an actor by the channel it is in its task as, or filed as
 const keptAs = (g, k) => LK.keptAs(CTX, g, k);
 const taskMembers = (g, id) => LK.taskMembers(CTX, g, id);
-const LEAD_RANK = LS.LEAD_RANK;
 const taskActors = (g, id) => LK.taskActors(CTX, g, id);
 const taskLead = (g, id) => LK.taskLead(CTX, g, id);
 // AN ITEM'S STATUS, an app's as an actor's (features/list/status.ts)
 const appKey = LS.appKey;
-const appNotices = (gname, id) => LS.appNotices(CTX, gname, id);
 const appStatusOf = (gname, id) => LS.appStatusOf(CTX, gname, id);
-const taskStatus = (g, id) => LK.taskStatus(CTX, g, id);
-const appsNotified = (g, inside = undefined) => LT.appsNotified(CTX, g, inside);
 const actorTitle = LK.actorTitle;
 const appTitle = LK.appTitle;
 const appShown = LK.appShown;
@@ -658,53 +640,19 @@ const appMarkOf = (o) => o.app.mark
 // an app's face: its mark at an avatar's size, where an actor has its face
 const appFace = (o) => el("span", { class: "logo app-face", title: appTitle(o) }, o.app.mark
   ? el("img", { src: `/apps/mark/${encodeURIComponent(o.app.name)}.svg`, alt: "", draggable: "false" }) : strokeIcon(ICONS.app, 16));
-// several apps' marks, stacked over one another as faces are (`most` at most); none: nothing
-const appStack = (list, most = 3) => list.length ? el("span", { class: "t-apps" }, ...list.slice(0, most).map(appMarkOf)) : null;
 // Where a row's task is OPEN (features/layout/panes.js's screen tabs): its tab's number, for a screen reader only (features/list/list.css) -- a
 // boxed number by a face read as an unread count, and the row's bar already says it is open; the hover card says which
-// tab (tabLine). None, open nowhere: a click opens it in a tab of its own, and it can be dragged onto the work area.
+// tab (features/list/CardParts.tsx's TabLine). None, open nowhere: a click opens it in a tab of its own, and it can be
+// dragged onto the work area.
 const tabAt = (k) => k && workPlacer && !SNAPSHOT ? workPlacer.tabs.where(k) : null;
-// the same, said in its hover card
-function tabLine(k) {
-  const at = tabAt(k);
-  return at ? el("div", { class: "c-tab", text: at.here ? `Open here, in tab ${at.n}` : `Open in tab ${at.n}` }) : null;
-}
 // an actor's face alone, no harness's badge (actorLogo's): its avatar, else its harness's mark
 function plainFace(a) {
   const svg = SNAPSHOT && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
   const src = !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg) : `/avatars/${a.avatar}.svg`;
   return src ? el("span", { class: "logo avatar" }, el("img", { src, alt: "", draggable: "false" })) : harnessLogo(a.harness);
 }
-// its actors' faces, those not closed (three at most, then how many more: `faces`, [{a, status}], and `more`, as a
-// task's row has them), and the marks of its apps
-function facesOf(faces, more, apps) {
-  const out = [];
-  for (const { a, status } of faces) {
-    const svg = SNAPSHOT && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
-    const src = !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg) : `/avatars/${a.avatar}.svg`;
-    out.push(src ? el("img", { class: "t-face", src, alt: "", title: `${actorTitle(a)} · ${status[1]}`, draggable: "false" })
-      : el("span", { class: "t-face none", title: actorTitle(a) }, harnessLogo(a.harness)));
-  }
-  if (more) out.push(el("span", { class: "t-more", text: `+${more}` }));
-  const stack = appStack(apps);
-  if (stack) out.push(stack);
-  return out;
-}
-function taskFaces(g, id) {
-  const list = taskActors(g, id);
-  return facesOf(list.slice(0, 3).map((a) => ({ a, status: statusOf(a) })), Math.max(0, list.length - 3), taskApps(g, id));
-}
 // A task SAVED: every actor in it saved for later, as an actor's bookmark saves it -- the bookmark filled once every one
 // is; closed, the task is then listed in its folder's saved line, not its closed one (where its first actor comes)
-function taskSaveButton(g, t) {
-  const all = taskMembers(g, t.id);
-  if (!all.length) return null;
-  const saved = all.every((a) => !!savedAs(g.name, a));
-  if (SNAPSHOT) return saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null;
-  return rowButton("save-btn" + (saved ? " on" : ""), { "aria-pressed": saved ? "true" : "false",
-    title: saved ? "Saved for later · click to unsave" : "Save the task for later",
-    "aria-label": saved ? "Unsave the task" : "Save the task for later" }, () => saveTask(g.name, t.id, !saved), saveIcon(saved));
-}
 async function saveTask(gname, id, save) {
   const g = gathererNamed(gname);
   for (const a of g ? taskMembers(g, id) : []) if (!!savedAs(gname, a) !== save) await setSaved(gname, a, save);
@@ -714,11 +662,6 @@ async function saveTask(gname, id, save) {
 // does, and its apps put to sleep -- kept, in the task, with nothing running for them (a Browser's tabs closed, their pages
 // kept: app_host.py's `sleep_instance`) -- their panels here closed first. Clicked again later, it opens as
 // it was: its apps above (a Browser's tabs opened again), its actors as closed ones are, started again by a message.
-function taskCloseButton(g, t) {
-  if (SNAPSHOT || !taskMembers(g, t.id).some(closable)) return null;
-  return rowButton("close-btn", { title: "Close the task · it reopens as it was",
-    "aria-label": "Close the task" }, () => closeTask(g.name, t.id), closeIcon());
-}
 async function closeTask(gname, id) {
   const g = gathererNamed(gname);
   if (!g) return;
@@ -836,7 +779,7 @@ function addInfo(g, k, label = null) {
     title: `Add ${[w.hs.length ? "an agent" : null, w.apps.length ? "an app" : null].filter(Boolean).join(" or ")} to this task` };
 }
 // what its menu says: where it adds to, and its items ({mark, icon, text, note, run}) -- the list's own menu is drawn by
-// features/list/RowViews.tsx's AddMenu, a card's here (openAdd)
+// features/list/RowViews.tsx's AddMenu, a card's here (openAdd, from features/list/CardTask.tsx's AddAct)
 function addItems(g, k) {
   const w = addWhat(g, k);
   if (!w) return null;
@@ -854,15 +797,6 @@ function addItems(g, k) {
 function openAdd(g, k, label, button) {
   const m = addItems(g, k);
   if (m) openPop(addKey(g, k, label), button, popMenu(`Add to ${m.where}`, m.items));
-}
-// the same, built for a task's card (features/list/modes.js's taskCard)
-function addButton(g, k, label = null) {
-  const add = addInfo(g, k, label);
-  if (!add) return null;
-  const b = rowButton("task-add", { title: add.title, "aria-label": "Add to this task", "data-pop": add.key, "aria-haspopup": "menu",
-    "aria-expanded": String(rowPop.key === add.key) }, () => openAdd(g, k, label, b),
-  el("span", { class: "task-add-in", "aria-hidden": "true" }, "+", label ? el("span", { class: "t-lbl", text: label }) : null));
-  return b;
 }
 // the task of item `k` shown, if another is: entered as a click on it would -- where it is open, else in a tab of its own
 async function showItemsTask(g, k) {
@@ -967,38 +901,6 @@ async function joinTask(gname, k, items) {
   readApps(gname, true);
   renderAgents();
 }
-// A selected actor's check, on its avatar, once two or more are selected: a click on it leaves it out
-function pickMark(g, a, logo) {
-  if (!picked(g, a) || picks.cs.size < 2 || !(logo instanceof HTMLElement)) return logo;
-  logo.append(el("span", { class: "pick", role: "button", title: "Selected · click to deselect", "aria-label": "Deselect",
-    onclick: (ev) => { ev.stopPropagation(); togglePick(g, a); } }, strokeIcon("M4.25 8.25l2.5 2.5 5-5.25", 11)));
-  return logo;
-}
-// An actor's own buttons, in its row of the list and over its avatar in the rail (railActor): a press on one does only
-// what it says, not showing the actor. A span the keys reach (its row a button already), Enter or Space pressing it.
-const rowButton = (cls, attrs, run, icon) => el("span", { class: cls, role: "button", tabindex: "0", ...attrs,
-  onclick: (ev) => { ev.stopPropagation(); run(); },
-  onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); run(); } } }, icon);
-// Its bookmark: saved for later (filled), or to be, a press either way -- in a snapshot, filled if saved, and nothing to
-// press. The gatherer agent's, in its place: hidden from the list (its face on the gatherer's row shows it again).
-function saveButton(g, a) {
-  if (isCoordinator(a)) return SNAPSHOT ? null : rowButton("save-btn", { title: "Hide the coordinator agent · click its face on the folder's row to show it again",
-    "aria-label": "Hide the coordinator agent" }, () => setCrewHidden(crewHideKey(crewNode(g, a)), true), hideIcon());
-  const saved = !!savedAs(g.name, a);
-  if (SNAPSHOT) return saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null;
-  return rowButton("save-btn" + (saved ? " on" : ""), { "aria-pressed": saved ? "true" : "false",
-    title: saved ? "Saved for later · click to unsave" : "Save for later",
-    "aria-label": saved ? "Unsave" : "Save for later" }, () => setSaved(g.name, a, !saved), saveIcon(saved));
-}
-// Its ×: its process closed (closable), or, one that never started, it discarded (discardable); null: neither
-// (features/list/status.ts's closeHow).
-function closeButton(g, a) {
-  const how = LS.closeHow(CTX, a);
-  return how === "close" ? rowButton("close-btn", { title: "Close this session, even mid-turn",
-      "aria-label": "Close session" }, () => closeActor(g, a, closeSession), closeIcon())
-    : how === "discard" ? rowButton("close-btn", { title: "Never started · remove it from the list",
-      "aria-label": "Close session" }, () => closeActor(g, a, () => discardSession(g, a)), closeIcon()) : null;
-}
 // An actor closed from the list (`how`: its process closed, or it discarded): closed in the screen tabs first, as its tab's
 // × or its pane's would (features/layout/panes.js's closedInTabs: alone, its tab closed if it held nothing else)
 async function closeActor(g, a, how) {
@@ -1100,37 +1002,9 @@ async function nameItem(gname, k, value) {
   await readApps(gname, true);
   redrawNamed();
 }
-// a folder's icon: the full-page view's folder headings (the list's lines have none, its caret and indent enough)
-const folderMark = (open) => el("span", { class: "folder-mark", "aria-hidden": "true" }, strokeIcon(open ? ICONS.folderOpen : ICONS.folder, 14));
 // a small button on a folder's line, beside its start buttons
 const folderAct = (cls, title, icon, fn) => el("button", { class: `act folder-act ${cls}`, type: "button", title, "aria-label": title,
   onclick: (ev) => { ev.stopPropagation(); fn(); } }, icon);
-// how many of a folder's actors wait on the reader, stopped on an error, run: as a gatherer's row counts its own -- and,
-// on its line in the list (idle), how many are idle, a grey dot as an idle actor's
-function tallyChips(t, of, idle = false) {
-  const count = (k, cls, what) => k ? el("span", { class: "count" + cls, title: `${k} of ${of} ${what}` }, el("i", { "aria-hidden": "true" }), String(k)) : null;
-  const told = t.notified ? el("span", { class: "count notified", title: `${plural(t.notified, "app")} with a notification you haven't seen` },
-    el("i", { "aria-hidden": "true" }), String(t.notified)) : null;
-  return [count(t.asking, " asking", "waiting for you"), count(t.error, " error", "stopped on an error"), told, count(t.running, "", "running"),
-    idle ? count(t.idle, " idle", "idle") : null].filter(Boolean);
-}
-const folderSays = (f, t) => `${f.name}: ${plural(t.open, "actor")} open${t.saved ? `, ${t.saved} saved` : ""}${t.closed ? `, ${t.closed} closed` : ""}`;
-// A folder's buttons, over its counts on its line while it is hovered or in focus (features/list/Boxes.tsx's FolderLine):
-// "+" (all that starts in it: startButtons), its coordinator agent (none yet), "⋯" -- a folder made in it, it renamed
-// (F2), it deleted -- and its × (closeFolder). A closed one's: rename, delete, reopen.
-function folderActs(g, f, closed, crew) {
-  if (closed) return [
-    folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
-    folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
-    folderAct("reopen", `Reopen ${f.name} · its actors stay closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
-  ];
-  return [...startButtons(g, f), crew ? null : crewButton(g, `folder:${f.id}`),
-    rowMore(`fmore:${g.name}:${f.id}`, f.name, [
-      { icon: ICONS.folderNew, text: "New folder", run: () => startFolderEdit(g.name, null, f.id) },
-      { icon: ICONS.pencil, text: "Rename", run: () => startFolderEdit(g.name, f.id) },
-      { icon: ICONS.bin, text: crew ? "Delete (its coordinator agent closes)" : "Delete", run: () => deleteFolder(g.name, f.id) }]),
-    folderAct("close", `Close ${f.name} and every actor in it`, closeIcon(), () => pressClose(g, f, "list"))].filter(Boolean);
-}
 // CLOSING a folder (its ×, on its line or its card): at once, if all in it is closed already, none saved, no terminal in
 // it; else first the question under it (`folderClosing`: {g, id, from: "list" | "card"}) -- what closing it would close,
 // end, take off -- with "Close folder" and Cancel (Esc). Its buttons keep their focus through the list's redraws
@@ -1150,36 +1024,13 @@ function pressClose(g, f, from) {
   if (from === "card") cardDraw(); else renderAgents();
   askRefocus(true);
 }
-// what the question says: what closing it does, and where it goes ({said, where}) -- the list's own question is drawn
-// by features/list/Boxes.tsx's CloseAsk, a card's here (closeAsk)
+// what the question says: what closing it does, and where it goes ({said, where}) -- drawn by features/list/Parts.tsx's
+// AskClose, under the folder's line or in its card
 function closeAskSays(g, f) {
   const w = closeWhat(g, f), up = parentOf(g.name, f), where = up === null ? titleOf(g) : folderById(g.name, up).name;
   const parts = [w.open ? `closes ${plural(w.open, "actor")}${w.busy ? ` (stopping ${w.busy} mid-turn)` : ""}` : null,
     w.shells ? `ends ${plural(w.shells, "terminal")}` : null, w.marks ? `removes ${plural(w.marks, "bookmark")}` : null].filter(Boolean);
   return { where, said: parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "closes it" };
-}
-function closeAsk(g, f) {
-  const { said, where } = closeAskSays(g, f);
-  const from = folderClosing.from;
-  const cancel = () => { folderClosing = null; if (from === "card") cardDraw(); else renderAgents(); };
-  const btn = (which, cls, text, fn) => el("button", { type: "button", class: `pb ${cls}`, "data-ask": which, onclick: (ev) => { ev.stopPropagation(); fn(); },
-    onfocus: () => { if (folderClosing) folderClosing.focus = which; } }, text);
-  return el("div", { class: "f-ask", role: "alertdialog", "aria-label": `Close ${f.name}?`, "data-key": `${g.name}/folder:${f.id}/ask`,
-    onclick: (ev) => ev.stopPropagation(),
-    onkeydown: (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); cancel(); } },
-    // in a card, the focus gone from it (a click elsewhere): taken back, the card let go of once the pointer is off it
-    onfocusout: (ev) => {
-      if (from !== "card" || cardMoving || (ev.relatedTarget && hover.node && hover.node.contains(ev.relatedTarget))) return;
-      setTimeout(() => {
-        if (!folderClosing || folderClosing.from !== "card" || (hover.node && hover.node.contains(document.activeElement))) return;
-        folderClosing = null;
-        if (cardLive() && !hover.node.matches(":hover")) cardHide(); else cardDraw();
-      }, 0);
-    } },
-    el("p", {}, el("b", { text: `Close ${f.name}?` }), ` This ${said}. The folder moves to ${where}'s closed line.`),
-    el("div", { class: "f-ask-btns" },
-      btn("go", "go", "Close folder", () => { folderClosing = null; if (from === "card") cardHide(); closeFolder(g, f); }),
-      btn("cancel", "", "Cancel", cancel)));
 }
 // the question's button that had the focus, given it again once drawn anew (`now`: the question just asked -- Cancel)
 function askRefocus(now = false) {
@@ -1253,18 +1104,19 @@ function nameFolder(gname, id, parent, text) {
   return true;
 }
 // DRAGGING an actor's row -- every selected one's, if it is selected -- or a folder's line, onto a folder's line (into
-// it) or its gatherer's row (to its top): `listDrag`, what is dragged, of its gatherer only. While one is, the list is
-// not drawn again (`later`, drawn once it is over) -- but to open the folder held over for DROP_OPEN_MS (`force`) -- so
-// the lines stay under the pointer. Over when its row says (dragend), or, its row drawn again meanwhile, once the page
-// has heard of the drag for DRAG_LOST_MS no more. The rail's actors are dragged so too, onto its names (railActor,
-// railDragged: the folders it leaves out shown while one is).
+// it) or its gatherer's row (to its top): `listDrag`, what is dragged, of its gatherer only. The list, the rail and
+// Manage groups draw each row by its key, so the row dragged stays the same element as they are drawn again meanwhile;
+// over when it says (dragend) -- its own listener, so said even by a row drawn elsewhere meanwhile (a folder opened
+// round it) -- or a drop anywhere. A folder held over for DROP_OPEN_MS opens. The rail's actors are dragged so too,
+// onto its names (railDragged: the folders it leaves out shown while one is).
 let listDrag = null;
-const DROP_OPEN_MS = 700, DRAG_LOST_MS = 3000;
+const DROP_OPEN_MS = 700;
 function startDrag(ev, g, what) {
   if (listDrag) endDrag();
-  listDrag = { g: g.name, cs: what.cs || null, gs: what.gs || null, folder: what.folder ?? null, later: false, force: false, revealed: false, seen: Date.now(), spring: null,
-    ask: ev.target instanceof Element && !!ev.target.closest(".mg-dialog"),   // from Manage groups: a change of group asked first
-    watch: setInterval(() => { if (listDrag && Date.now() - listDrag.seen > DRAG_LOST_MS) endDrag(); }, 500) };
+  listDrag = { g: g.name, cs: what.cs || null, gs: what.gs || null, folder: what.folder ?? null, revealed: false, spring: null,
+    ask: ev.target instanceof Element && !!ev.target.closest(".mg-dialog") };   // from Manage groups: a change of group asked first
+  const from = ev.currentTarget instanceof Element ? ev.currentTarget : ev.target;
+  if (from instanceof Element) from.addEventListener("dragend", endDrag, { once: true });
   ev.dataTransfer.effectAllowed = "move";
   ev.dataTransfer.setData("text/plain", what.cs ? what.cs.join(",") : what.gs ? what.gs.join(",") : `folder:${what.folder}`);
   if (what.cs && what.cs.length > 1) {               // several: said on what is dragged
@@ -1295,18 +1147,6 @@ function draggedWith(g, a) {
   const id = taskOf(g.name, a);
   return id === null ? [a.channel] : taskItems(g, id);
 }
-function dragRow(row, g, a) {
-  if (SNAPSHOT || isCoordinator(a)) return row;
-  return dragItems(row, g, () => draggedWith(g, a));
-}
-// a row dragged: the items `cs()` says (actors' channels, apps' "app:<id>")
-function dragItems(row, g, cs) {
-  if (SNAPSHOT) return row;
-  row.draggable = true;
-  row.addEventListener("dragstart", (ev) => { ev.stopPropagation(); startDrag(ev, g, { cs: cs() }); });
-  row.addEventListener("dragend", endDrag);
-  return row;
-}
 // What is dragged, with every item of the tasks it is of: what goes into a folder, so no task is split across two
 const withTasks = (g, cs) => LK.withTasks(CTX, g, cs);
 // the folder an item is in (null: its gatherer's top)
@@ -1333,42 +1173,26 @@ function canJoin(g, k) {
   const t = itemTaskOf(g, k);
   return d.cs.some((c) => t === null || itemTaskOf(g, c) !== t);
 }
-// An item's row, what is dragged dropped on it: put in its task (joinTask) -- as the list's rows (React's handlers,
-// features/list/RowViews.tsx) and the rail's (dropOnItem, listeners on its tile) have it: `ev.currentTarget` the row
+// An item's row, what is dragged dropped on it: put in its task (joinTask) -- the list's rows and the rail's tiles
+// (React's handlers, features/list/RowViews.tsx's joins): `ev.currentTarget` the row
 function joinEnter(ev, g, k) { if (canJoin(g, k)) { ev.preventDefault(); ev.currentTarget.classList.add("drop-on"); } }
 function joinOver(ev, g, k) { if (canJoin(g, k)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } }
 function joinDrop(ev, g, k) {
   if (!canJoin(g, k)) return;
   ev.preventDefault();
   const d = listDrag;
-  d.later = false;                                   // drawn by the change, next
   endDrag();
   if (d.cs.length > 1) clearPicks(false);
   joinTask(g.name, k, d.cs);
-}
-function dropOnItem(row, g, k) {
-  if (SNAPSHOT) return row;
-  row.addEventListener("dragenter", (ev) => joinEnter(ev, g, k));
-  row.addEventListener("dragover", (ev) => joinOver(ev, g, k));
-  row.addEventListener("dragleave", dropLeave);
-  row.addEventListener("drop", (ev) => joinDrop(ev, g, k));
-  return row;
-}
-function dragFolder(line, g, f) {
-  if (SNAPSHOT) return line;
-  line.draggable = true;
-  line.addEventListener("dragstart", (ev) => startDrag(ev, g, { folder: f.id }));
-  line.addEventListener("dragend", endDrag);
-  return line;
 }
 function endDrag() {
   const d = listDrag;
   if (!d) return;
   listDrag = null;
-  clearTimeout(d.spring); clearInterval(d.watch);
+  clearTimeout(d.spring);
   document.body.classList.remove("drag-out");
   for (const n of document.querySelectorAll(":is(#agents, #rail, .mg-dialog) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
-  if (d.later || d.revealed) renderAgents();         // the rail, its folders shown for the drag: as it was again
+  if (d.revealed) renderAgents();                    // the rail, its folders shown for the drag: as it was again
   if (d.offered) moveEnd();                          // over the work area too: its cover put away (features/layout/panes.js)
 }
 // Whether what is dragged may go into folder `id` (null: the gatherer's top): of that gatherer; a folder, not into
@@ -1388,8 +1212,8 @@ function canDrop(g, id) {
   return withTasks(g, d.cs).some((c) => (isAppItem(c) || !!actorOf(g, c)) && itemFolder(g, c) !== id);
 }
 // What is dragged dropped on a line or a row (`ev.currentTarget`): into folder `id` (null: the gatherer's top); `open`,
-// what opens when one is held over it -- as the list's (React's handlers, features/list/Boxes.tsx) and the rail's and
-// Manage groups' (dropOn, listeners on the node) have it
+// what opens when one is held over it -- the list's, the rail's and Manage groups' (React's handlers, features/list/
+// Boxes.tsx's drops)
 function dropEnter(ev, g, id, open) {
   if (!canDrop(g, id)) return;
   const n = ev.currentTarget;
@@ -1397,11 +1221,7 @@ function dropEnter(ev, g, id, open) {
   n.classList.add("drop-on");
   n.classList.toggle("drop-across", listDrag.ask && listDrag.g !== g.name);   // into another group, in Manage groups: asked first
   clearTimeout(listDrag.spring);
-  listDrag.spring = setTimeout(() => {
-    if (!listDrag || !canDrop(g, id)) return;
-    listDrag.force = true;
-    try { open(); } finally { if (listDrag) listDrag.force = false; }
-  }, DROP_OPEN_MS);
+  listDrag.spring = setTimeout(() => { if (listDrag && canDrop(g, id)) open(); }, DROP_OPEN_MS);
 }
 function dropOver(ev, g, id) { if (canDrop(g, id)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } }
 function dropLeave(ev) {
@@ -1414,7 +1234,6 @@ function dropDone(ev, g, id) {
   if (!canDrop(g, id)) return;
   ev.preventDefault();
   const d = listDrag, now = gathererNamed(g.name) || g;
-  d.later = false;                                   // drawn by the move, next
   endDrag();
   const was = placeOf(d.gs ? d.gs[0] : d.g);         // a group, or an actor on its own, already inside `g`: just moved
   if (d.gs && g.name !== GF) { gPicks.clear(); if (was && was.in === g.name) placeGroup(d.gs[0], g.name, id); else askMerge(d.gs[0], now, id, false, d.ask); return; }
@@ -1425,17 +1244,8 @@ function dropDone(ev, g, id) {
   if (d.cs.length > 1) clearPicks(false);
   fileItems(g.name, items, id);
 }
-function dropOn(n, g, id, open) {
-  if (SNAPSHOT) return n;
-  n.addEventListener("dragenter", (ev) => dropEnter(ev, g, id, open));
-  n.addEventListener("dragover", (ev) => dropOver(ev, g, id));
-  n.addEventListener("dragleave", dropLeave);
-  n.addEventListener("drop", (ev) => dropDone(ev, g, id));
-  return n;
-}
 // A shell's row (isShell): where it was opened, and when (features/list/RowViews.tsx's ShellRowView); its close button
 // closes its terminal, as a window's does.
-const SHELLS = LT.SHELLS;
 const shellLogo = () => el("span", { class: "logo shell-logo", "aria-hidden": "true" }, strokeIcon(ICONS.terminal, 18));
 async function closeShell(s) {
   try { await post("/api/shells/close", { id: s.id }); }
@@ -1445,9 +1255,6 @@ async function closeShell(s) {
 // those stopped on an error, saved for later, running, in the background, finished, idle, closed
 const GROUPS = LS.GROUPS;
 const groupOf = (g, a) => LS.groupOf(CTX, g, a);
-// each group's mark, as the list marks its actors
-const groupMark = (name) => name === "Saved" ? saveIcon(true) : el("span", { class: `status ${LS.GROUP_CLS[name]}`, "aria-hidden": "true" },
-  el("i", { style: `--spin-at: -${Date.now() % 1200}ms` }));
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   document.addEventListener("keydown", (ev) => {
@@ -1458,23 +1265,19 @@ export function start() {
   document.addEventListener("pointerdown", (ev) => {   // a press anywhere but in the name's box: named as typed
     if (state.renaming && ev.target !== nameInput) endRename(true);
   }, true);
-  document.addEventListener("dragover", () => { if (listDrag) listDrag.seen = Date.now(); }, true);
   document.addEventListener("drop", () => { if (listDrag) setTimeout(endDrag, 0); }, true);   // anywhere: after the line's own
 }
 
 export {
-  APP_ITEM, COLLAPSED_KEY, CTX, FOLDER_CHARS, GROUPS, LEAD_RANK, MANAGER, OPEN, SHELLS, TASK_ITEM, actorOf, actorTitle,
-  actorsWithin, addButton, aimStart, appFace, appFolder, appInfo, appItem, appKey, appMarkOf, appNotices,
-  appShown, appStatusOf, appTaskOf, appTitle, appsFollowHome, appsKnown, appsNotified, askRefocus, boxGroups, boxKey,
-  byName, closeApp, closeAsk, closeButton, closeShell, closedKids, closedSays, collapsed, crewAt, crewFace, crewHidden,
-  crewHideKey, crewLine, crewPlace, deleteFolder, dragFolder, dragItems, dragRow, dropFolderClosing, dropOn,
-  dropOnItem, endDrag, endRename, envelope, fileStarted, firstAgent, foldOpen, folderAct, folderById,
-  folderClosing, folderKey, folderMark, folderOf, folderPath, folderPost, folderSays, folderTally, gathererApps,
-  gathererCounts, groupCrew, groupMark, groupOf, inPane, isAppItem, isCoordinator, isCrewHome, isHidden,
-  isOpenFolder, itemNamed, keepTitle, kidFolders, listDrag, listModel, markDragged, moveHidingToServer, nameFolder, nameItem,
-  nameNote, openIn, openTask, openUp, parentOf, pickMark, picked, plainFace, pressClose, readApps, renderAgents,
-  reopenFolder, retask, rowButton, saveButton, savedAs, selectApp, setCrewHidden, setHidden, shellFolder,
-  shellLogo, showFolder, showItemsTask, shownClosed, staleNames, startDrag, startFolderEdit, startIn, tabLine, takeOut, tallyChips,
-  taskActors, taskApps, taskById, taskCloseButton, taskFaces, taskItems, taskLead, taskMembers, taskName, taskOf,
-  taskSaveButton, taskStatus, titleOf, toggleFold, toggleFolder, toggleGatherer, togglePick, treeOf, withTasks, within,
+  APP_ITEM, COLLAPSED_KEY, CTX, FOLDER_CHARS, GROUPS, LIST_HOST, MANAGER, actorOf, actorsWithin, actorTitle,
+  addInfo, aimStart, appFace, appFolder, appInfo, appItem, appKey, appMarkOf, appsFollowHome, appShown, appsKnown,
+  appStatusOf, appTaskOf, appTitle, byName, closeApp, closeShell, collapsed, crewAt, crewFace, crewHidden, crewHideKey,
+  crewPlace, deleteFolder, dropFolderClosing, endDrag, endRename, envelope, fileStarted, firstAgent, folderById, folderClosing,
+  folderKey, folderOf, folderPost, foldOpen, gathererApps, groupCrew, groupOf, isAppItem, isCoordinator, isHidden,
+  isOpenFolder, itemNamed, keepTitle, kidFolders, listDrag, listView, markDragged, moveHidingToServer, nameFolder,
+  nameItem, nameNote, openAdd, openTask, openUp, picked, plainFace, pressClose, readApps, renderAgents, reopenFolder,
+  retask, savedAs, selectApp, setCrewHidden, setHidden, shellFolder, shellLogo, showFolder, showItemsTask, shownClosed,
+  staleNames, startDrag, startFolderEdit, startIn, tabAt, takeOut, taskActors, taskApps, taskById, taskLead,
+  taskMembers, taskName, taskOf, titleOf, toggleFold, toggleFolder, toggleGatherer, togglePick, treeOf, within,
+  withTasks,
 };

@@ -3,7 +3,7 @@
 // page still builds -- its start buttons and menus, an actor's face, its branch -- which the list puts in its own
 // elements as they are.
 import type { MouseEvent, KeyboardEvent, DragEvent } from "react";
-import type { FolderNode, ListModel } from "./rows";
+import type { ListModel } from "./rows";
 import type { Actor, AppItem, Folder, Gatherer, Shell, Status } from "./types";
 
 /** An event of the list's (React's) or the page's own: what the page's handlers read of it. */
@@ -22,6 +22,34 @@ export interface CrewInfo {
   label: string;
 }
 
+/** An item of a menu of the page's: its mark (else an icon of ICONS), what it is, a note under it; a separator; set in
+ * by `depth`. `run`, given the button the menu hangs from: what choosing it does -- a box or a drop-down of its own
+ * opened from that button, for some. */
+export interface MenuItem {
+  sep?: boolean;
+  mark?: Node | null;
+  icon?: string;
+  text: string;
+  note?: string | null;
+  depth?: number;
+  run: (button: HTMLElement) => void;
+}
+/** A menu of the page's: its heading (a second line under it, muted: `sub`) and its items. */
+export interface MenuInfo {
+  head: string;
+  title?: string | null;
+  sub?: string | null;
+  items: MenuItem[];
+}
+/** A gatherer's or a folder's "+": its menu, and its button -- its key (data-pop: what it opens a second step from), what
+ * it says, starting (busy), something starting anywhere (off). No items: none can start there (`title` says why). */
+export interface StartMenu extends MenuInfo {
+  key: string;
+  busy: boolean;
+  off: boolean;
+  label: string;
+}
+
 /** A "+" adding to an item's task (addButton): what it says it adds. */
 export interface AddInfo {
   title: string;
@@ -35,40 +63,18 @@ export interface AddItem {
   run: () => void;
 }
 
-export interface ListHost {
+/** What every view of the list -- the list, the rail, the monitor, a card -- draws as the page draws it. */
+export interface PageParts {
   /** a snapshot of the page: no server, nothing to press */
   snapshot: boolean;
   /** where the pointer hovers, a row's card says who it is: no title */
   hovers(): boolean;
   /** "⌘" on a Mac, else "Ctrl" */
   besideKey: string;
-
-  // -- words
   harnessName(h: string | undefined): string;
   ago(t: number | null | undefined): string;
-  /** who named an actor, and how it went ("" for none) */
-  nameNote(g: Gatherer, a: Actor): string;
-  /** what runs in the background, by its kind */
-  taskKind(kind: string | undefined): string;
-  shellPath(s: Shell): string;
   /** where a session's image is: its avatar's, or a snapshot's own copy; null, none */
   avatarSrc(name: string | null | undefined): string | null;
-
-  // -- the page's own drawing, put in the list's elements as it builds it, afresh at each draw
-  /** the list's head: its title, the drop outside every group, a new group, an actor on its own, the coordinator
-   * agent over everything, the list's own buttons */
-  head(model: ListModel): Node[];
-  /** a gatherer's buttons over its counts: "+" and "⋯" */
-  gathererActs(g: Gatherer, title: string): Node[];
-  /** a folder's buttons over its counts */
-  folderActs(n: FolderNode): Node[];
-  /** a folder of gatherers' buttons */
-  gfActs(f: Folder, crew: boolean): Node[];
-  /** the form for a new actor, under a gatherer's row; what it shows, in a word (made again when that changes) */
-  newForm(): Node;
-  formAt(): string;
-  /** an actor's branch, under its name (none: null) */
-  branch(g: Gatherer, a: Actor): Node | null;
   /** a harness's mark, for an actor with no avatar */
   harnessLogo(h: string | undefined): Node;
   /** an app's face, and its mark */
@@ -79,6 +85,39 @@ export interface ListHost {
   saveIcon(on: boolean): Node;
   hideIcon(): Node;
   closeIcon(): Node;
+}
+
+export interface ListHost extends PageParts {
+  // -- words
+  /** who named an actor, and how it went ("" for none) */
+  nameNote(g: Gatherer, a: Actor): string;
+  /** what runs in the background, by its kind */
+  taskKind(kind: string | undefined): string;
+  shellPath(s: Shell): string;
+
+  // -- the page's own drawing, put in the list's elements as it builds it, afresh at each draw
+  /** the list's head: its title, the drop outside every group, a new group, an actor on its own, the coordinator
+   * agent over everything, the list's own buttons */
+  head(model: ListModel): Node[];
+  /** a folder of gatherers' buttons */
+  gfActs(f: Folder, crew: boolean): Node[];
+  /** the form for a new actor, under a gatherer's row; what it shows, in a word (made again when that changes) */
+  newForm(): Node;
+  formAt(): string;
+  /** an actor's branch, under its name (none: null) */
+  branch(g: Gatherer, a: Actor): Node | null;
+
+  // -- a gatherer's and a folder's buttons (Menus.tsx): "+" and "⋯", and a folder's own
+  startMenu(g: Gatherer, f: Folder | null): StartMenu;
+  /** "+" pressed: what it starts goes there; any drop-down of the page's open, closed */
+  startOpening(g: Gatherer, f: Folder | null): void;
+  closePops(): void;
+  gathererMore(g: Gatherer, title: string): MenuInfo;
+  folderMore(g: Gatherer, f: Folder, crew: boolean): MenuInfo;
+  deleteFolder(gname: string, id: number): void;
+  reopenFolder(gname: string, id: number): void;
+  /** a folder's ×: closed, or asked first */
+  pressClose(g: Gatherer, f: Folder): void;
 
   // -- a coordinator agent's button, a "+" adding to a task
   crew(g: Gatherer | null, node: string): CrewInfo | null;

@@ -443,9 +443,24 @@ pattern the list and Chat follow:
   card kept off a resting pointer (`hover.still`) stay for the rail, the cards and the menus, still drawn by hand.
   Vitest: `AgentList.test.tsx` (the list drawn by its mount, with a host standing in for the page).
 - *Left as it was:* a row is a `<button class="agent">` whose own buttons (bookmark, ×, "+") are `span[role=button]`
-  inside it -- the specs locate them inside `button.agent`, so moving them out waits for specs that allow it. The rail
-  and the monitor (`modes.js`) and Manage groups (`group-moves.js`) are the old page's still, reading the same
-  derivations.
+  inside it -- the specs locate them inside `button.agent`, so moving them out waits for specs that allow it.
+- *The list's other shapes, then:* each a view-model from the same derivations and view, drawn by React into its box at
+  once (`modes-mount.tsx`), by its keys -- the rail (`rail-model.ts`, `rail-rows.ts`; `Rail.tsx`, `RailTiles.tsx`),
+  the monitor (`monitor-model.ts`; `Monitor.tsx`: a card drawn again only when its signature changes, the cards in view
+  watched as before), the top bar's counts (`Totals.tsx`), the hover card (`Card.tsx`, `CardTask.tsx`,
+  `CardFolder.tsx`, `CardParts.tsx`: the page still decides which card, where and when, and places it), and Manage
+  groups with a move's question (`manage-model.ts`; `ManageGroups.tsx`, on Radix's Dialog, each still a `<dialog>`
+  with its classes, on a backdrop of its own, `.mg-dim`). `modes.js` and `group-moves.js` keep the state and what a
+  press does, handed to the views as hosts. Gone with the redraws: the drag kept from them (`listDrag.later`,
+  `DRAG_LOST_MS` -- the row dragged now says its dragend itself, by a listener of its own), the card kept off a
+  resting pointer (`hover.still`), the card's name box carried through them (`cardMoving`) and Manage groups' (`manage.
+  drawing`); a box a draw itself takes away is not the reader leaving it (`drawingNow`). A rail tile's bookmark and ×
+  are kept from draw to draw like the tile, so none fades in under a resting pointer; they show on hover or keyboard
+  focus (`:focus-visible`), not on any focus, so one pressed doesn't stay shown once the pointer leaves. A gatherer's and a folder's "+" and "⋯" are Radix's
+  DropdownMenu (`Menus.tsx`; the page says what each holds: `startMenu`, `gathererMore`, `folderMore`), closed by a
+  press the page never hears as the page's own drop-downs are (`pressedAway`'s `PRESSED_AWAY`); an item that opens a box
+  or the branch picker opens it from the same button, the menu closed (its second step, `openPop` by the button's
+  `data-pop`). The card's "+ actor" and "+ ⋯", the new-tab page's and the panes' drop-downs are `openPop`'s still.
 
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
