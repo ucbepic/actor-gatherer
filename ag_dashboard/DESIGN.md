@@ -367,10 +367,40 @@ over, and its frame drawn by the old page around the turn list:
   once. chatCard holds every node of a view's own that is on the page apart from the card it builds, so the box keeps its
   focus and caret through the page's draws -- which no longer wait while it is typed in (data.js's TYPING_MS holds them
   only for the other views' boxes). Sending, Esc and the error line under the box are still chat.js's.
-- **Left as it was:** react-virtuoso for the turn list. The specs, the CSS and the page read the turns, the actor's line
-  and its stage as the conversation box's own children (`.fl-talk > .fl-turn`, `> .fl-done`, `> .fl-status`), and every
-  turn from the first drawn in the page (the pulls, a turn's id brought into view, the browser's find); a virtualized list
-  draws only the turns in sight, each in an item box of its own inside a list of its own. `pull.ts` and `follow.ts` stay.
+- **Its turns, react-virtuoso's list** (`Turns.tsx`): Virtuoso's scroller is the conversation's box (`.fl-talk`, with
+  `fl-list`), each turn in an item box of its own (`.fl-item`), the count of earlier turns its header (`.fl-top`), the
+  actor at work or done under the latest and a turn opened since its footer (`.fl-foot`). Before the first turn is stored
+  (the hello, a turn opening) the box is a plain one, as before. The list's items are the turns' numbers (the first
+  one's is its `firstItemIndex`); each item draws its turn from the feed (`TurnItem`, kept by its number), so a draw of
+  the page changes the turns in place, and Virtuoso draws its list again only as turns come or are pulled in.
+  - *What is on the page:* the turns in sight and 4,000px above and below them (`core/ui/lists.tsx`'s `OVERSCAN_PX`);
+    as the list is made, before it has measured its box, up to 60 at once. The browser's find reads only what is on the
+    page: with the latest five drawn (`TURNS_SHOWN`) and five more a pull, an ordinary conversation is there whole, as is
+    every spec's; only a long one -- pulled far up, or a turn picked far back (a minimized pane's card) -- is there
+    around where the reader is (3,000 turns, the first picked: about 100 on the page).
+  - *Earlier turns* are still the latest five and a pull past the top (`pull.ts`: the wheel, a finger, the keys), not
+    Virtuoso's `startReached`, which a conversation shorter than its box is at as it opens; the top is its
+    `atTopStateChange` (the document's scroll listener went). Those pulled in are put before the first (`firstItemIndex`):
+    Virtuoso keeps the reader's place by the height it guesses they have and draws them a frame later at theirs, so the
+    turn the reader looked at is held (`holdTurn`) and put back in that draw, to the pixel; the count above them changes
+    as the first turn is drawn, not a frame before (`Top`'s `firstDrawn`).
+  - *A turn brought into view* (picked, or the latest at its end): at once where it is drawn, else by `scrollToIndex` --
+    a turn picked held at the top as it is drawn, since the count above goes as the first turn comes.
+  - *The end followed* by the reader's last scroll, as before (`follow.ts`): the box's size, and now each turn's item box
+    and the footer watched (`followContent`) -- a turn added, a reply streaming in, a turn growing in, the actor done --
+    in the same frame. Not Virtuoso's `followOutput` or `atBottomStateChange`: its at-bottom turns false as a turn grows,
+    and its next draw scrolls to the end on that, undoing a turn kept in place by a click (`keepTurn`, which stays).
+  - *Gone:* `showMore` (the place kept by hand as earlier turns came), the scroll listener, the keep-at-end after each
+    draw of the turns, the box's `data-keep`/`data-follow` (the page's `keepingPlace()` no longer keeps or follows it:
+    the node is React's from draw to draw, and Virtuoso and `follow.ts` keep its place), the stage after the latest
+    turn's box (in the footer). Virtuoso's scroller has no tab stop of its own (`tabIndex` left out), as the box had none.
+  - *The look:* Virtuoso measures each box without its margins, so none sticks out of one: the box's 6px and 24px of
+    padding are its header's and footer's, a turn's top margin its item box's padding, and margins that met (two turns,
+    a turn and the stage under it, the short box's) meet as they did. Checked against the page before in eleven states
+    (each actor, pulled, a turn shown, short, narrow, at work, a turn opening, History): every turn, line, stage, reply
+    and row in the same place, to the pixel. `turns.spec.ts` and `Turns.test.tsx` read the turns, the stage and the
+    count in their boxes (`.fl-item > .fl-turn`, `.fl-foot > .fl-done`, `.fl-top > .fl-earlier`); `long-lists.spec.ts`
+    has a conversation of 3,000 turns and a history of 4,000.
 
 **A5, fourth part: Chat scoped to the actor it is given (`features/chat/`).** What was left of Chat on the old page --
 the cards, sending, Esc, the line under the box, the header -- each read the page's one actor (`state.selected`) and
@@ -398,8 +428,8 @@ as components of one page:
   becomes that key in one place (`files-view.js`'s `chatActor`). The host's calls name the actor (`setFilesTurn`,
   `foldSide`). A minimized pane's lines (`mini-history.js`, still the old page's) are drawn again when the store
   changes. `chat.js` (the chat card and Details' cards) is off the long files' list.
-- **Left:** the turn list's own state is one actor's at a time (`store.ts`'s folds, `useOnPage`), and its pulls and the
-  turn brought into view find the conversation on the page (`pull.ts`, `Turns.tsx`); switching views is the page's draw
+- **Left:** the turn list's own state is one actor's at a time (`store.ts`'s folds, `useOnPage`), and its pulls and a
+  turn kept in place by a click find the conversation on the page (`pull.ts`); switching views is the page's draw
   (its other views are its DOM); the message box of the other views (`ctx.input`) and a minimized pane are the old
   page's.
 
@@ -501,8 +531,14 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
   one is made), a search's hits, an opened message's whole text. The types shown are Radix's DropdownMenu (checkbox
   items; a pick keeps it open), in place of a `details` closed by a click elsewhere; its button and menu restyled as the
   summary and box were. history.js only registers the view (and keeps `enc`, which the list's modes.js imports); it is
-  off the long files' list. Not virtualized: the list keeps its rows' `content-visibility`, and the browser's find and
-  the specs read every row. Vitest: `history.test.tsx`.
+  off the long files' list. Its rows are react-virtuoso's list (`Rows`): every row listed -- the 2,000-row cap and its
+  "Show more" went -- those in sight and `OVERSCAN_PX` around them on the page, the first 200 as the view opens; "Load
+  more" (the outline not all loaded) its footer. A row is told whether it is the first or the last (`first`, `last`:
+  where the timeline down the left begins and ends, which `:first-child` and `:last-of-type` said while the rows were
+  each other's siblings), and is contained as `content-visibility` had it in sight, not skipped out of sight, where
+  Virtuoso would measure it at a guessed size. Selecting works on the rows' keys, the presses on Virtuoso's scroller:
+  a shift-click selects to a row thousands away, ⌘A every row listed. The browser's find reads the rows on the page;
+  the view's own search, all of them. Vitest: `history.test.tsx`.
 - **Terminal**: xterm.js as it was, wrapped -- the terminal's session (`terminal/term.ts`: one xterm at a time, its node
   kept across draws, its stream, what is typed sent in order; TypeScript now, what it asks of the page handed to it,
   `setTermHost`) and the view's frame React's (`mount.tsx`'s `drawTerminal`: xterm's node first in it, never React's,
