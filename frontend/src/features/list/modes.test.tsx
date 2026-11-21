@@ -102,13 +102,15 @@ describe("the rail", () => {
     drawRail(boxOf(), buildRail(ctxOf(home), viewOf(), rv), host);
     expect(box.querySelector(".r-gname .nm")?.textContent).toBe("g");
     const tiles = [...box.querySelectorAll(".r-actor")];
-    expect(tiles.map((t) => t.getAttribute("aria-label"))).toEqual(["Parser, in g: Idle", "fix it, in g: Running"]);
-    const bookmark = tiles[0].querySelector(".save-btn");
+    const mains = tiles.map((t) => t.querySelector(":scope > button.r-main")!);
+    expect(mains.map((t) => t.getAttribute("aria-label"))).toEqual(["Parser, in g: Idle", "fix it, in g: Running"]);
+    const bookmark = tiles[0].querySelector(":scope > button.save-btn");
+    expect(box.querySelectorAll("button button, [role=button]")).toHaveLength(0); // none inside another
     drawRail(box, buildRail(ctxOf(home), viewOf({ focused: ["g", "a1"] }), rv), host);
     expect(box.querySelector(".r-actor")).toBe(tiles[0]);
-    expect(tiles[0].getAttribute("aria-current")).toBe("true");
+    expect(mains[0].getAttribute("aria-current")).toBe("true");
     expect(tiles[0].querySelector(".save-btn")).toBe(bookmark);
-    fireEvent.click(tiles[1], { shiftKey: true });
+    fireEvent.click(mains[1], { shiftKey: true });
     expect(calls(host).togglePick).toHaveBeenCalledWith(home.gatherers[0], a2);
     fireEvent.click(box.querySelector(".r-gname")!);
     expect(calls(host).toggleGatherer).toHaveBeenCalledWith("g");

@@ -7,7 +7,7 @@ import { expect, test } from "./test";
 import { CLAUDE, CODEX, open } from "./home";
 
 const side = (page: Page) => page.locator(".side");
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 
 test("hidden at once by its button; out at the page's left edge, staying under a still pointer; back once left", async ({
   page,
@@ -25,7 +25,7 @@ test("hidden at once by its button; out at the page's left edge, staying under a
   await expect(side(page)).toBeVisible();
   await expect(row(page, CODEX)).toBeInViewport();
   await row(page, CODEX).click(); // usable as ever
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await page.mouse.move(700, 450); // left: back out of sight
   await expect(side(page)).toBeHidden({ timeout: 1500 });
   await page.reload();
@@ -64,7 +64,7 @@ test("the top bar's counts slide the hidden list out, and keep it while the poin
   await page.waitForTimeout(700);
   await expect(side(page)).toBeVisible();
   await row(page, CODEX).click();
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await page.mouse.move(700, 450); // left: back out of sight
   await expect(side(page)).toBeHidden({ timeout: 1500 });
 

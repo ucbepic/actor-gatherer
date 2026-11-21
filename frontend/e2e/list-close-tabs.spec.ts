@@ -8,7 +8,7 @@ import { CLAUDE, CODEX, open } from "./home";
 import { cardOf, taskHome, taskRow } from "./task-home";
 
 const beside = process.platform === "darwin" ? "Meta" : "Control";
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const mark = (page: Page, text: string) => row(page, text).locator(".tab-no");
 const tabs = (page: Page) => page.locator(".lay-tabs:visible .lay-tab");
 const panes = (page: Page) => page.locator("#panes > .pane:not(.lay-away)");
@@ -48,7 +48,7 @@ test("an actor closed in the list: its tab, shown, holding nothing else, closed 
   await expect.poll(() => asked.length).toBe(1);
   await expect(tabs(page)).toHaveCount(1);
   await expect(tabs(page).first()).toHaveAttribute("aria-selected", "true");
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(mark(page, CODEX)).toHaveCount(0); // open in no tab
   await closeRow(page, CLAUDE); // the only tab: emptied, a new tab's page
   await expect.poll(() => asked.length).toBe(2);
@@ -65,7 +65,7 @@ test("an actor closed in the list, open in another tab: that tab closed, the tab
   await expect.poll(() => asked.length).toBe(1);
   await expect(tabs(page)).toHaveCount(1);
   await expect(tabs(page).first()).toHaveAttribute("aria-selected", "true");
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(mark(page, CLAUDE)).toHaveCount(0);
 });
 
@@ -83,7 +83,7 @@ test("an actor closed in the list, beside another in the tab shown: its pane clo
   await expect.poll(() => asked.length).toBe(1);
   await expect(panes(page)).toHaveCount(1);
   await expect(tabs(page)).toHaveCount(1);
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(mark(page, CLAUDE)).toHaveText("1");
   await expect(mark(page, CODEX)).toHaveCount(0);
 });

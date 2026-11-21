@@ -115,20 +115,20 @@ button:disabled { opacity: .5; cursor: default; }
   padding: 2px; border-radius: 8px; background: var(--surface); box-shadow: 0 0 0 1px var(--ring), 0 2px 6px rgba(0, 0, 0, .16);
   opacity: 0; pointer-events: none; }
 .agent .a-acts :is(.task-add, .save-btn, .close-btn) { opacity: 1; width: 22px; min-width: 22px; height: 22px; border-radius: 6px; }
-.agent:not(.renaming):is(:hover, :focus-visible, :has(.a-acts :focus-visible), :has(.task-add[aria-expanded="true"])) .a-acts { opacity: 1; pointer-events: auto; }
-.agent:not(.renaming):is(:hover, :focus-visible, :has(.a-acts :focus-visible), :has(.task-add[aria-expanded="true"])) :is(.a-face, .t-faces) { visibility: hidden; }
+.agent:not(.renaming):is(:hover, :has(> .a-main:focus-visible), :has(.a-acts :focus-visible), :has(.task-add[aria-expanded="true"])) .a-acts { opacity: 1; pointer-events: auto; }
+.agent:not(.renaming):is(:hover, :has(> .a-main:focus-visible), :has(.a-acts :focus-visible), :has(.task-add[aria-expanded="true"])) :is(.a-face, .t-faces) { visibility: hidden; }
 @media (hover: none) {
   .agent:not(.renaming) .a-acts { opacity: 1; pointer-events: auto; }
   .agent:not(.renaming) :is(.a-face, .t-faces) { visibility: hidden; }
 }
 .agent .close-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
-  border-radius: 4px; color: var(--muted); cursor: pointer; }
+  border: 0; padding: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
 .agent .close-btn:hover, .agent .close-btn:focus-visible { color: var(--critical); background: var(--surface); }
 /* saved for later: a bookmark beside the close button -- filled, and always there, once saved; else only while
    the row is hovered, in focus or selected, so the list stays quiet */
 .agent .save-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
-  border-radius: 4px; color: var(--muted); cursor: pointer; opacity: 0; }
-.agent:is(:hover, :focus-visible, [aria-current="true"]) .save-btn, .agent .save-btn:focus-visible, .agent .save-btn.on { opacity: 1; }
+  border: 0; padding: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; opacity: 0; }
+.agent:is(:hover, :has(> .a-main:focus-visible), [data-current="true"]) .save-btn, .agent .save-btn:focus-visible, .agent .save-btn.on { opacity: 1; }
 @media (hover: none) { .agent .save-btn { opacity: 1; } }
 .agent .save-btn.on { color: var(--s1); }
 .agent .save-btn:hover, .agent .save-btn:focus-visible { color: var(--s1); background: var(--surface); }
@@ -231,9 +231,11 @@ button:disabled { opacity: .5; cursor: default; }
    each one's avatar and a bar under the list */
 .agent.picked, .agent.picked:hover, .gatherer-row.picked, .gatherer-row.picked:hover { background: color-mix(in srgb, var(--pick) 15%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pick) 55%, transparent); }
-.agent .avatar .pick { position: absolute; left: -5px; top: -5px; width: 15px; height: 15px; border-radius: 50%; display: flex; align-items: center;
+/* (the check: a button of the row's own, beside its main one, at its face's top left corner: the face 24px, at the main
+   button's right padding, centred on the row) */
+.agent > .pick { position: absolute; right: 24px; top: calc(50% - 17px); width: 15px; height: 15px; border: 0; padding: 0; border-radius: 50%; display: flex; align-items: center;
   justify-content: center; background: var(--pick); box-shadow: 0 0 0 1.5px var(--side); color: #fff; cursor: pointer; }
-.agent .avatar .pick svg { width: 11px; height: 11px; stroke-width: 2.2; }
+.agent > .pick svg { width: 11px; height: 11px; stroke-width: 2.2; }
 .pick-bar { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 16px; border-top: 1px solid var(--ring);
   background: var(--surface); font-size: var(--fs-ui); }
 .pick-bar[hidden], :root:is(.list-folded, .list-full) .pick-bar { display: none; }
@@ -249,7 +251,7 @@ button:disabled { opacity: .5; cursor: default; }
 .m-folder svg { color: var(--muted); flex: none; }
 /* a TASK's row (features/list/list.js's taskRow): as an actor's, its actors' faces and their apps' marks at its right; and
    "+" (an agent or an app added), on its row and an actor's, shown as their bookmark is (hovered, in focus, the one shown) */
-.agent.task { grid-template-columns: 10px minmax(0, 1fr) auto; }
+.agent.task > .a-main { grid-template-columns: 10px minmax(0, 1fr) auto; }
 .agent .meta .says { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-faces { display: flex; align-items: center; align-self: start; margin-top: 3px; }
 .t-faces .t-face { width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 0 2px var(--side); flex: none; display: block; }
@@ -259,10 +261,10 @@ button:disabled { opacity: .5; cursor: default; }
 .t-faces .t-more { font-size: var(--fs-label); color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .t-faces .t-app { width: 16px; height: 16px; border-radius: 4px; flex: none; display: block; }
 .task-add { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 2px;
-  border-radius: 4px; color: var(--muted); cursor: pointer; }
+  border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
 .task-add-in { font-size: 15px; font-weight: 600; line-height: 1; }
 .agent .task-add { opacity: 0; }
-.agent:is(:hover, :focus-visible, [aria-current="true"]) .task-add, .agent .task-add:is(:focus-visible, [aria-expanded="true"]) { opacity: 1; }
+.agent:is(:hover, :has(> .a-main:focus-visible), [data-current="true"]) .task-add, .agent .task-add:is(:focus-visible, [aria-expanded="true"]) { opacity: 1; }
 @media (hover: none) { .agent .task-add { opacity: 1; } }
 .task-add:is(:hover, :focus-visible, [aria-expanded="true"]) { color: var(--s1); background: var(--surface); outline: none; }
 /* its card (features/list/modes.js's taskCard): its actors, each a row showing it and its own "take out" */
@@ -274,14 +276,14 @@ button:disabled { opacity: .5; cursor: default; }
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .actor-card .take-out:is(:hover, :focus-visible) { color: var(--ink); background: var(--wash); outline: none; }   /* out: not a close */
 /* an actor's own bookmark and close in a task's card, as its row's: the bookmark filled once saved */
-.actor-card .c-task-row :is(.save-btn, .close-btn) { flex: none; width: 22px; height: 22px; border-radius: 6px; color: var(--muted);
+.actor-card .c-task-row :is(.save-btn, .close-btn) { flex: none; width: 22px; height: 22px; border: 0; padding: 0; border-radius: 6px; background: none; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .actor-card .c-task-row .save-btn.on { color: var(--s1); }
 .actor-card .c-task-row .save-btn:is(:hover, :focus-visible) { color: var(--s1); background: var(--wash); outline: none; }
 .actor-card .c-task-row .close-btn:is(:hover, :focus-visible) { color: var(--critical); background: var(--wash); outline: none; }
 /* an actor's face at its row's right, no harness badge, the marks of the apps it works with beside it, small */
 .agent .a-face { display: flex; align-items: center; gap: 3px; align-self: start; }
-.agent { grid-template-columns: 10px minmax(0, 1fr) auto; }
+.agent > .a-main { grid-template-columns: 10px minmax(0, 1fr) auto; }
 .t-app { width: 14px; height: 14px; border-radius: 4px; flex: none; display: block; }
 .t-app.none { display: grid; place-items: center; color: var(--muted); }
 /* a task in the rail (features/list/modes.js's railTask): its lead's face in the room of one avatar, and how many actors and apps
@@ -311,19 +313,19 @@ button:disabled { opacity: .5; cursor: default; }
 /* an app with no mark of its own: its tile, so several stack as marks do */
 .t-app.none { background: var(--surface); border-radius: 4px; }
 .t-app.none svg { width: 10px; height: 10px; }
-.agent { padding-left: 14px; }
+.agent > .a-main { padding-left: 14px; }
 /* an actor's row: its face and its apps' marks in a slot of one width, the face at its left, so the faces of the rows
    under one another line up, marks or not (two marks stacked fit it, reaching into the row's padding) */
 /* A ROW is one line: its state at its left, its name, its face at its right, centred on one another (what it is at,
    its size and when it was last used: in its card, hovered) */
-.agent { align-items: center; padding-top: 7px; padding-bottom: 7px; }
-.agent > .dot, .agent > .dot.running { margin-top: 0; }
+.agent > .a-main { align-items: center; padding-top: 7px; padding-bottom: 7px; }
+.a-main > .dot, .a-main > .dot.running { margin-top: 0; }
 .agent :is(.a-face, .t-faces) { align-self: center; margin-top: 0; }
 .agent .a-face .logo { width: 24px; height: 24px; margin-top: 0; }
-.agent:not(.task) { grid-template-columns: 10px minmax(0, 1fr) 24px; }   /* its face alone at its right */
+.agent:not(.task) > .a-main { grid-template-columns: 10px minmax(0, 1fr) 24px; }   /* its face alone at its right */
 .agent .a-face { justify-self: end; }
 /* An app in no task (appRow, railApp): its mark where an actor's face is, on a soft tile; no state at its left */
-.agent > .dot-none { width: 10px; }
+.a-main > .dot-none { width: 10px; }
 .agent .a-face .app-face, .rail .r-pic > .app-face, .r-group > .app-face { display: grid; place-items: center; border-radius: 7px;
   background: color-mix(in srgb, var(--s1) 10%, transparent); }
 .agent .a-face .app-face img { width: 18px; height: 18px; }

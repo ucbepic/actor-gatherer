@@ -15,7 +15,7 @@ const tabs = (page: Page) => page.locator(".lay-tabs:visible .lay-tab");
 const page_ = (page: Page) => page.locator(".work > .lay-empty.nt:not([hidden])");
 const box = (page: Page) => page_(page).getByRole("textbox", { name: "Message a new actor" });
 const chip = (page: Page, which: "in" | "dir" | "on") => page_(page).locator(`.nt-chip[data-pop="nt:${which}"] .val`);
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const menuItem = (page: Page, text: string) =>
   page
     .locator(".row-menu[role=menu] [role=menuitem]")
@@ -129,7 +129,7 @@ test("on the home's one database, a new tab starts an actor on its own, on any h
   await box(page).press("Enter");
   await expect.poll(() => asked.map((x) => x.path)).toEqual(["sessions", "send"]); // filed in no folder
   expect(asked[0].body).toEqual({ gatherer: GATHERER, cwd: "/work/demo", harness: "codex", alone: true });
-  await expect(page.locator("#agents .gatherer.alone button.agent")).toHaveCount(1);
+  await expect(page.locator("#agents .gatherer.alone .agent")).toHaveCount(1);
 });
 
 test("⌃T opens a new tab, its box in focus; ⌃W closes the tab shown -- the only one emptied, a new tab", async ({
@@ -146,7 +146,7 @@ test("⌃T opens a new tab, its box in focus; ⌃W closes the tab shown -- the o
   await expect(tabs(page)).toHaveCount(2);
   await page.keyboard.press("Control+w"); // from its box: the tab closed, Claude's shown
   await expect(tabs(page)).toHaveCount(1);
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(page_(page)).toHaveCount(0);
   await page.keyboard.press("Control+w"); // the only tab: emptied, Claude kept as it was (open nowhere now)
   await expect(tabs(page)).toHaveCount(1);

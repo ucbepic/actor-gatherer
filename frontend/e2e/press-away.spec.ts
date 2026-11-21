@@ -11,7 +11,7 @@ const beside = process.platform === "darwin" ? "Meta" : "Control";
 // Claude, with a Notepad in its task: the Notepad's panel, up
 async function withNotepad(page: Page) {
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   const pane = page.locator("#top-row > .app-pane[data-app=notepad]");
@@ -63,8 +63,8 @@ test("a row's drop-down closes on a press in an app's panel", async ({ page }) =
 
 test("Settings closes on a press in another actor's pane", async ({ page }) => {
   await open(page);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
-  await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] });
   const codex = page.locator("#panes > .pane").nth(1);
   await expect(codex).toHaveCount(1);
   const chat = codex.frameLocator("iframe").locator("#main");

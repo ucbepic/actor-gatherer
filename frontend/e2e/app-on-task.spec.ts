@@ -50,7 +50,7 @@ test('an app not offered: "+" lists the agents, not it', async ({ page }) => {
   await taskHome(page, false);
   await notepadDoes(page, "no");
   await open(page);
-  const row = page.locator("#agents button.agent").first();
+  const row = page.locator("#agents .agent").first();
   await row.hover();
   await row.locator(".task-add").click();
   const menu = page.locator(".row-menu[role=menu]");

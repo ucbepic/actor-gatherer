@@ -134,9 +134,9 @@ test("folds the latest reply to its first line, and keeps it so across views; an
   await expect(reply).toHaveAttribute("open", "");
   await mainDot(page, 14);
   // another actor, then this one again: as at first
-  await page.locator("#agents button.agent", { hasText: CODEX }).click();
+  await page.locator("#agents .agent", { hasText: CODEX }).click();
   await expect(turn(page, 6)).toContainText("Spawn one subagent");
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
   await expect(turn(page, 14)).toContainText("probe-greet");
   await expect(reply).toHaveAttribute("open", "");
 });
@@ -305,11 +305,11 @@ test("an actor shown before is drawn at once when picked again, while its loads 
   await openActor(page, CLAUDE);
   await expect(latest.locator(".fl-finished .now")).toHaveText("Done");
   const claude = await latest.textContent();
-  await page.locator("#agents button.agent", { hasText: CODEX }).click();
+  await page.locator("#agents .agent", { hasText: CODEX }).click();
   await expect(latest).not.toHaveText(claude!);
   await expect(page.locator("#main")).not.toContainText("Loading…");
   held = true;
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
   await expect(latest).toHaveText(claude!, { timeout: 1000 });
   await expect(page.locator("#main")).not.toContainText("Loading…");
 });

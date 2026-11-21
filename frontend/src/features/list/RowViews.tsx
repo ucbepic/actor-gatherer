@@ -1,7 +1,9 @@
 // The list's ROWS (model.ts's Row): an actor's, a task's, an app's, a terminal's -- each its item's state at its left,
 // its name, its buttons over its face while hovered (list.css), its face or faces at its right; pressed, its item shown;
-// dragged, put in a folder or another item's task; an item dropped on it, put in its task. A row being named is a box in
-// place of its name, and a div, not a button.
+// dragged, put in a folder or another item's task; an item dropped on it, put in its task. A row is a box (`.agent`, what
+// is dragged and dropped on) holding its main button (`.a-main`: its state, name and face; what a press, a key or a
+// right-click on the row does) and, beside it, its own buttons ("+", bookmark, ×, a selected actor's check): no button
+// inside another, each one the keys reach in turn. A row being named is a box in place of its name, its main part a div.
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import { firstLine } from "../../core/format";
@@ -78,18 +80,11 @@ function AddMenu({ host, g, k, title }: { host: ListHost; g: Gatherer; k: string
   return (
     <Menu.Root modal={false} open={open && !!menu} onOpenChange={setOpen}>
       <Menu.Trigger asChild>
-        <span
-          className="task-add"
-          role="button"
-          tabIndex={0}
-          title={title}
-          aria-label="Add to this task"
-          onClick={stop}
-        >
+        <button className="task-add" type="button" title={title} aria-label="Add to this task" onClick={stop}>
           <span className="task-add-in" aria-hidden="true">
             +
           </span>
-        </span>
+        </button>
       </Menu.Trigger>
       {menu ? (
         <Menu.Portal>
@@ -178,21 +173,22 @@ export const closeButton = (host: Pick<ListHost, "closeIcon">, title: string, la
   </RowButton>
 );
 
-/** A selected actor's check, on its face, once two or more are selected: a click on it leaves it out. */
-export function PickCheck({ host, g, a }: { host: RowHost; g: Gatherer; a: Actor }) {
+/** A selected actor's check, over its face's corner, once two or more are selected: a click on it leaves it out. A
+ * button of the row's own, beside its main one (list.css places it on the face). */
+export function PickCheck({ host, g, a, name }: { host: RowHost; g: Gatherer; a: Actor; name: string }) {
   return (
-    <span
+    <button
       className="pick"
-      role="button"
+      type="button"
       title="Selected · click to deselect"
-      aria-label="Deselect"
+      aria-label={`Deselect ${name}`}
       onClick={(ev) => {
         ev.stopPropagation();
         host.togglePick(g, a);
       }}
     >
       <Html node={host.icon("M4.25 8.25l2.5 2.5 5-5.25", 11)} />
-    </span>
+    </button>
   );
 }
 
@@ -224,7 +220,7 @@ export function ActorRowView({ host, r }: { host: ListHost; r: ActorRow }) {
       () => host.closeActor(g, a, r.close!),
     );
   const bg = a.background || [];
-  const check = r.checked ? <PickCheck host={host} g={g} a={a} /> : null;
+  const check = r.checked ? <PickCheck host={host} g={g} a={a} name={r.label.text} /> : null;
   const kids = (
     <>
       <span className={`dot ${cls}`} aria-label={label} style={spin} />
@@ -236,7 +232,6 @@ export function ActorRowView({ host, r }: { host: ListHost; r: ActorRow }) {
             {r.label.text}
           </div>
         )}
-        {acts(addButton(host, g, a.channel), actorSave(host, g, a, r.saved), close)}
         <Html node={host.branch(g, a)} />
         {bg.length ? (
           <div className="bgline" title={bg.map((t) => `${host.taskKind(t.kind)}: ${t.label || t.id}`).join("\n")}>
@@ -246,13 +241,19 @@ export function ActorRowView({ host, r }: { host: ListHost; r: ActorRow }) {
       </div>
       <span className="a-face">
         <TabMark at={r.tab} />
-        <Face host={host} a={a} check={check} />
+        <Face host={host} a={a} />
       </span>
     </>
   );
   const cl =
     "agent" + (naming ? " renaming" : "") + (r.coordinator ? " coordinator" : "") + (r.picked ? " picked" : "");
-  const at = { "aria-current": current ? "true" : "false", "data-key": r.key, "data-group": r.group } as const;
+  // its state on its box too (data-current), as list.css draws it; its main button's for a screen reader (aria-current)
+  const box = {
+    "data-key": r.key,
+    "data-group": r.group,
+    "data-open": r.open ? "true" : undefined,
+    "data-current": current ? "true" : undefined,
+  } as const;
   const title = hovers
     ? undefined
     : `${host.harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}` +
@@ -263,38 +264,42 @@ export function ActorRowView({ host, r }: { host: ListHost; r: ActorRow }) {
         : `\n${host.besideKey}+click to open side by side${r.coordinator ? "" : "\nShift+click to select several"}`);
   if (naming)
     return (
-      <div className={cl} {...at} data-open={r.open ? "true" : undefined} title={title}>
-        {kids}
+      <div className={cl} {...box}>
+        <div className="a-main" aria-current={current ? "true" : "false"} title={title}>
+          {kids}
+        </div>
+        {check}
       </div>
     );
   const drag = r.coordinator ? {} : { ...drags(host, (ev) => host.dragActor(ev, g, a)), ...joins(host, g, a.channel) };
   return (
-    <button
-      className={cl}
-      type="button"
-      {...at}
-      data-open={r.open ? "true" : undefined}
-      data-card={`${g.name}\u0000${a.channel}`}
-      title={title}
-      onClick={(ev) => {
-        if (ev.shiftKey && !snap && !r.coordinator) {
-          ev.preventDefault();
-          host.togglePick(g, a);
-          return;
-        }
-        host.pick(g.name, a.channel, ev);
-      }}
-      onContextMenu={(ev) => host.pickBeside(g.name, a.channel, ev)}
-      onKeyDown={(ev) => {
-        if (ev.key === "F2" && !snap) {
-          ev.preventDefault();
-          host.startRename(g, a);
-        }
-      }}
-      {...drag}
-    >
-      {kids}
-    </button>
+    <div className={cl} {...box} data-card={`${g.name}\u0000${a.channel}`} {...drag}>
+      <button
+        className="a-main"
+        type="button"
+        aria-current={current ? "true" : "false"}
+        title={title}
+        onClick={(ev) => {
+          if (ev.shiftKey && !snap && !r.coordinator) {
+            ev.preventDefault();
+            host.togglePick(g, a);
+            return;
+          }
+          host.pick(g.name, a.channel, ev);
+        }}
+        onContextMenu={(ev) => host.pickBeside(g.name, a.channel, ev)}
+        onKeyDown={(ev) => {
+          if (ev.key === "F2" && !snap) {
+            ev.preventDefault();
+            host.startRename(g, a);
+          }
+        }}
+      >
+        {kids}
+      </button>
+      {acts(addButton(host, g, a.channel), actorSave(host, g, a, r.saved), close)}
+      {check}
+    </div>
   );
 }
 
@@ -325,7 +330,6 @@ export function TaskRowView({ host, r }: { host: ListHost; r: TaskRow }) {
             {name}
           </div>
         )}
-        {acts(first ? addButton(host, g, first) : null, save || null, close || null)}
       </div>
       <span className="t-faces">
         <TabMark at={r.tab} />
@@ -359,40 +363,48 @@ export function TaskRowView({ host, r }: { host: ListHost; r: TaskRow }) {
       </span>
     </>
   );
-  const at = { "aria-current": r.current ? "true" : "false", "data-key": r.key, "data-group": r.group } as const;
+  const box = {
+    "data-key": r.key,
+    "data-group": r.group,
+    "data-open": r.open ? "true" : undefined,
+    "data-current": r.current ? "true" : undefined,
+  } as const;
+  const current = r.current ? "true" : "false";
   const title = host.hovers()
     ? undefined
     : `${name} · ${r.what || "empty"}${snap ? "" : `\n${host.besideKey}+click to open side by side\nDouble-click the name (or F2) to ${t.name ? "rename" : "name"} it`}`;
   if (naming)
     return (
-      <div className="agent task renaming" {...at} data-open={r.open ? "true" : undefined} title={title}>
-        {kids}
+      <div className="agent task renaming" {...box}>
+        <div className="a-main" aria-current={current} title={title}>
+          {kids}
+        </div>
       </div>
     );
   const drag = first ? { ...drags(host, (ev) => host.dragItems(ev, g, r.items)), ...joins(host, g, first) } : {};
   return (
-    <button
-      className="agent task"
-      type="button"
-      {...at}
-      data-open={r.open ? "true" : undefined}
-      data-card={`${g.name}\u0000${k}`}
-      title={title}
-      // pressed, its card put away: a live card stays while the pointer is on the row, over the panels the task opens
-      onClick={(ev) => {
-        host.cardHide(ev);
-        host.openTask(g.name, t.id, ev);
-      }}
-      onKeyDown={(ev) => {
-        if (ev.key === "F2" && !snap) {
-          ev.preventDefault();
-          host.startItemRename(g, k);
-        }
-      }}
-      {...drag}
-    >
-      {kids}
-    </button>
+    <div className="agent task" {...box} data-card={`${g.name}\u0000${k}`} {...drag}>
+      <button
+        className="a-main"
+        type="button"
+        aria-current={current}
+        title={title}
+        // pressed, its card put away: a live card stays while the pointer is on the row, over the panels the task opens
+        onClick={(ev) => {
+          host.cardHide(ev);
+          host.openTask(g.name, t.id, ev);
+        }}
+        onKeyDown={(ev) => {
+          if (ev.key === "F2" && !snap) {
+            ev.preventDefault();
+            host.startItemRename(g, k);
+          }
+        }}
+      >
+        {kids}
+      </button>
+      {acts(first ? addButton(host, g, first) : null, save || null, close || null)}
+    </div>
   );
 }
 
@@ -416,12 +428,6 @@ export function AppRowView({ host, r }: { host: ListHost; r: AppRow }) {
             {r.shownAs}
           </div>
         )}
-        {acts(
-          addButton(host, g, k),
-          snap
-            ? null
-            : closeButton(host, `Close ${o.app.label}`, `Close ${o.app.label}`, () => host.closeApp(g.name, o)),
-        )}
       </div>
       <span className="a-face">
         <TabMark at={r.tab} />
@@ -429,45 +435,57 @@ export function AppRowView({ host, r }: { host: ListHost; r: AppRow }) {
       </span>
     </>
   );
-  const at = {
-    "aria-current": r.chosen ? "true" : "false",
+  const box = {
     "data-key": r.key,
     "data-instance": o.id,
     "data-group": "Open",
+    "data-open": r.shown ? "true" : undefined,
+    "data-current": r.chosen ? "true" : undefined,
   } as const;
+  const current = r.chosen ? "true" : "false";
   const title = host.hovers()
     ? undefined
     : `${o.name ? `${o.name} · ` : ""}${o.title ? `${o.app.label} · ${o.title}` : o.app.label}${last ? `\n${last.title}` : ""}${o.folder ? `\n${o.folder}` : ""}${snap ? "" : `\n${host.besideKey}+click to open side by side\nRight-click to move or close the panel\nDouble-click the name (or F2) to ${o.name ? "rename" : "name"} it`}`;
   if (naming)
     return (
-      <div className="agent app-row renaming" {...at} data-open={r.shown ? "true" : undefined} title={title}>
-        {kids}
+      <div className="agent app-row renaming" {...box}>
+        <div className="a-main" aria-current={current} title={title}>
+          {kids}
+        </div>
       </div>
     );
   return (
-    <button
+    <div
       className="agent app-row"
-      type="button"
-      {...at}
-      data-open={r.shown ? "true" : undefined}
+      {...box}
       data-card={`${g.name}\u0000${k}`}
-      title={title}
-      onClick={(ev) => {
-        host.cardHide(ev);
-        host.selectApp(g.name, o, ev);
-      }}
-      onKeyDown={(ev) => {
-        if (ev.key === "F2" && !snap) {
-          ev.preventDefault();
-          host.startItemRename(g, k);
-        }
-      }}
-      onContextMenu={(ev) => host.appPanelMenu(g.name, o, ev)}
       {...drags(host, (ev) => host.dragItems(ev, g, [k]))}
       {...joins(host, g, k)}
     >
-      {kids}
-    </button>
+      <button
+        className="a-main"
+        type="button"
+        aria-current={current}
+        title={title}
+        onClick={(ev) => {
+          host.cardHide(ev);
+          host.selectApp(g.name, o, ev);
+        }}
+        onKeyDown={(ev) => {
+          if (ev.key === "F2" && !snap) {
+            ev.preventDefault();
+            host.startItemRename(g, k);
+          }
+        }}
+        onContextMenu={(ev) => host.appPanelMenu(g.name, o, ev)}
+      >
+        {kids}
+      </button>
+      {acts(
+        addButton(host, g, k),
+        snap ? null : closeButton(host, `Close ${o.app.label}`, `Close ${o.app.label}`, () => host.closeApp(g.name, o)),
+      )}
+    </div>
   );
 }
 
@@ -476,35 +494,38 @@ export function ShellRowView({ host, r }: { host: ListHost; r: ShellRow }) {
   const { g, s } = r,
     where = host.shellPath(s);
   return (
-    <button
+    <div
       className="agent shell"
-      type="button"
-      aria-current={r.current ? "true" : "false"}
       data-key={r.key}
       data-group="Terminals"
       data-open={r.open ? "true" : undefined}
-      title={`Terminal · ${s.cwd}${host.snapshot ? "" : `\n${host.besideKey}+click to open side by side`}`}
-      onClick={(ev) => host.pick(g.name, s.id, ev)}
-      onContextMenu={(ev) => host.pickBeside(g.name, s.id, ev)}
+      data-current={r.current ? "true" : undefined}
     >
-      <span className="logo shell-logo" aria-hidden="true">
-        <Html node={host.icon("terminal", 18)} />
-      </span>
-      <div>
-        <div className="name">{where.split("/").filter(Boolean).pop() || where}</div>
-        <div className="asked">{where}</div>
-        <div className="meta">
-          <span>
-            {"Terminal · opened "}
-            <span data-ago={s.since || ""}>{host.ago(s.since)}</span>
-          </span>
-          {acts(
-            closeButton(host, "End the shell and everything running in it", "Terminate shell", () =>
-              host.closeShell(s),
-            ),
-          )}
+      <button
+        className="a-main"
+        type="button"
+        aria-current={r.current ? "true" : "false"}
+        title={`Terminal · ${s.cwd}${host.snapshot ? "" : `\n${host.besideKey}+click to open side by side`}`}
+        onClick={(ev) => host.pick(g.name, s.id, ev)}
+        onContextMenu={(ev) => host.pickBeside(g.name, s.id, ev)}
+      >
+        <span className="logo shell-logo" aria-hidden="true">
+          <Html node={host.icon("terminal", 18)} />
+        </span>
+        <div>
+          <div className="name">{where.split("/").filter(Boolean).pop() || where}</div>
+          <div className="asked">{where}</div>
+          <div className="meta">
+            <span>
+              {"Terminal · opened "}
+              <span data-ago={s.since || ""}>{host.ago(s.since)}</span>
+            </span>
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+      {acts(
+        closeButton(host, "End the shell and everything running in it", "Terminate shell", () => host.closeShell(s)),
+      )}
+    </div>
   );
 }

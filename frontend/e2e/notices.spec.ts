@@ -44,10 +44,10 @@ test("an app's notification: its row's status, counted, popped up, in its card; 
   await openActor(page, CLAUDE);
   const { pane, instance } = await openNotepad(page);
   await closePanel(page, pane); // its panel closed: the app still open, a row of its own
-  const row = page.locator(`#agents button.agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
-  await expect(row.locator(":scope > .dot-none")).toHaveCount(1);
+  const row = page.locator(`#agents .agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
+  await expect(row.locator(":scope > .a-main > .dot-none")).toHaveCount(1);
   await notify(page, instance, { title: "Build failed", text: "3 tests failed", where: { run: 7 } });
-  await expect(row.locator(":scope > .dot.notified")).toHaveCount(1);
+  await expect(row.locator(":scope > .a-main > .dot.notified")).toHaveCount(1);
   await expect(page.locator("#agents .gatherer-row .count.notified")).toHaveText("1");
   const pop = page.locator("#pops .pop.notified");
   await expect(pop).toHaveCount(1);
@@ -62,7 +62,7 @@ test("an app's notification: its row's status, counted, popped up, in its card; 
   await expect(pop).toHaveCount(0);
   const panel = page.locator("#top-row > .app-pane[data-app=notepad]").frameLocator("iframe");
   await expect(panel.locator("#intent")).toHaveText('notice {"run":7}');
-  await expect(row.locator(":scope > .dot.notified")).toHaveCount(0);
+  await expect(row.locator(":scope > .a-main > .dot.notified")).toHaveCount(0);
   await expect(page.locator("#agents .gatherer-row .count.notified")).toHaveCount(0);
   expect(await openOnServer(page, instance)).toEqual(["Build failed"]); // seen is the reader's: still open on the server
   // one sent while its panel is in front: seen at once, nothing popped up
@@ -70,16 +70,16 @@ test("an app's notification: its row's status, counted, popped up, in its card; 
   await expect.poll(() => openOnServer(page, instance)).toContain("While you look");
   await page.waitForTimeout(400);
   await expect(page.locator("#pops .pop")).toHaveCount(0);
-  await expect(row.locator(":scope > .dot.notified")).toHaveCount(0);
+  await expect(row.locator(":scope > .a-main > .dot.notified")).toHaveCount(0);
 });
 
 test("an app's quiet notification (show []): listed, counted and in its card, never popped up", async ({ page }) => {
   await openActor(page, CLAUDE);
   const { pane, instance } = await openNotepad(page);
   await closePanel(page, pane);
-  const row = page.locator(`#agents button.agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
+  const row = page.locator(`#agents .agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
   await notify(page, instance, { title: "3 new messages in #design", text: "Leo: done", show: [] });
-  await expect(row.locator(":scope > .dot.notified")).toHaveCount(1);
+  await expect(row.locator(":scope > .a-main > .dot.notified")).toHaveCount(1);
   await expect(page.locator("#agents .gatherer-row .count.notified")).toHaveText("1");
   await page.waitForTimeout(400);
   await expect(page.locator("#pops .pop")).toHaveCount(0);
@@ -102,8 +102,8 @@ test("an app's backend notifies, its panel closed meanwhile; clicked on, the pan
     return ag.api("remind?after=0.5&text=water%20the%20plants", { method: "POST" }).then((r) => r.status);
   });
   await closePanel(page, pane);
-  const row = page.locator(`#agents button.agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
-  await expect(row.locator(":scope > .dot.notified")).toHaveCount(1);
+  const row = page.locator(`#agents .agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
+  await expect(row.locator(":scope > .a-main > .dot.notified")).toHaveCount(1);
   const pop = page.locator("#pops .pop.notified");
   await expect(pop).toContainText("A reminder from your notepad");
   await expect(pop).toContainText("water the plants");
@@ -130,11 +130,11 @@ test("dismissed from its card, cleared by its app, its key's newer one in its pl
   await openActor(page, CLAUDE);
   const { pane, instance } = await openNotepad(page);
   await closePanel(page, pane);
-  const row = page.locator(`#agents button.agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
+  const row = page.locator(`#agents .agent.app-row[data-key="${GATHERER}/app:${instance}"]`);
   await notify(page, instance, { title: "Old build", key: "build" });
   await notify(page, instance, { title: "New build", key: "build" }); // the same key: in the first one's place
   await notify(page, instance, { title: "Dismiss me" });
-  await expect(row.locator(":scope > .dot.notified")).toHaveCount(1);
+  await expect(row.locator(":scope > .a-main > .dot.notified")).toHaveCount(1);
   await row.hover();
   const card = page.locator("#actor-card");
   await expect(card.locator(".c-notice")).toHaveCount(2);
@@ -148,7 +148,7 @@ test("dismissed from its card, cleared by its app, its key's newer one in its pl
   });
   expect(r.status()).toBe(200);
   await expect.poll(() => openOnServer(page, instance)).toEqual([]);
-  await expect(row.locator(":scope > .dot.notified")).toHaveCount(0);
+  await expect(row.locator(":scope > .a-main > .dot.notified")).toHaveCount(0);
   await expect(card.locator(".c-st")).toHaveText("No notifications");
 });
 
@@ -156,13 +156,13 @@ test("a task shows its app's notification as its state, where it ranks first", a
   await openActor(page, CLAUDE);
   const { instance } = await openNotepad(page);
   await attachTo(page, GATHERER, instance, CLAUDE_CHANNEL); // the actor attached: the two one task
-  const task = page.locator("#agents button.agent.task");
+  const task = page.locator("#agents .agent.task");
   await expect(task).toHaveCount(1);
-  await page.locator("#agents button.agent", { hasText: CODEX }).click(); // another task shown: its panel put away
+  await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task shown: its panel put away
   await expect(page.locator("#top-row > .app-pane[data-app=notepad]")).toHaveCount(0);
-  await expect(task.locator(":scope > .dot.notified")).toHaveCount(0);
+  await expect(task.locator(":scope > .a-main > .dot.notified")).toHaveCount(0);
   await notify(page, instance, { title: "Your turn" });
-  await expect(task.locator(":scope > .dot.notified")).toHaveCount(1);
+  await expect(task.locator(":scope > .a-main > .dot.notified")).toHaveCount(1);
   await expect(page.locator("#pops .pop.notified")).toContainText("Your turn");
   await task.hover(); // its card: its app's notifications
   await expect(page.locator("#actor-card .c-notice")).toContainText("Your turn");
@@ -188,14 +188,14 @@ test("an actor that comes to wait for you, or stops on an error, pops up -- unle
   await page.waitForTimeout(300);
   await expect(page.locator("#pops .pop")).toHaveCount(1);
   await pop.locator(".pop-open").click(); // shows the actor
-  await expect(page.locator("#agents button.agent[aria-current=true]")).toContainText(CODEX);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])")).toContainText(CODEX);
   // now in front of the reader: its error is not popped up
   codex = { status: "error", stopped: { kind: "error", at: 2, text: "Overloaded" } };
   homes.again();
   await page.waitForTimeout(400);
   await expect(page.locator("#pops .pop.error")).toHaveCount(0);
   // another shown, and actors' pop-ups turned off: nothing more
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
   await page.locator("#about-btn").click();
   await page.locator('[data-heed="actors:off"]').click();
   await expect(page.locator('[data-heed="actors:off"]')).toHaveAttribute("aria-pressed", "true");

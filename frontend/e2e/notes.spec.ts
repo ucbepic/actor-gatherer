@@ -130,7 +130,7 @@ test("a block dragged by its grip moves, and what one window types shows in anot
   // Codex beside it, under it: the panel in the top half (a second window open, headless Chrome takes no click into the
   // bottom of a frame of another origin -- the trash's, at the panel's foot)
   await page
-    .locator("#agents button.agent", { hasText: CODEX })
+    .locator("#agents .agent", { hasText: CODEX })
     .click({ modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
   await expect(page.locator("#pane-here")).toBeVisible();
   await newPage(page, panel, "Order");

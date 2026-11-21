@@ -309,7 +309,7 @@ function cardDraw() {
     : { kind: "actor", g, a, shown: hover.from === "agents" && isAt(focusedActor(), g.name, a.channel) };
   drawCard(card, { what, edit: cardEdit && cardEdit.g === g.name && cardEdit.key === hover.key ? cardEdit : null }, CARD_HOST());
   card.hidden = false;
-  at.setAttribute("aria-describedby", "actor-card");
+  (at.querySelector(":scope > :is(.a-main, .r-main)") || at).setAttribute("aria-describedby", "actor-card");   // a row's: its main button's
   const r = at.getBoundingClientRect(), side = box.getBoundingClientRect();
   const w = card.offsetWidth, h = card.offsetHeight, clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   if (side.width > side.height || side.right + 8 + w > innerWidth) {      // no room beside it: under the actor
@@ -452,7 +452,7 @@ async function monLoad() {
 function listPlaces(root) {
   const places = new Map();
   for (const n of root.querySelectorAll("[data-key]")) {
-    const dot = n.querySelector(":scope > .dot");
+    const dot = n.querySelector(":scope > .a-main > .dot");
     places.set(n.dataset.key, { top: n.getBoundingClientRect().top, status: dot && dot.getAttribute("aria-label"), group: n.dataset.group });
   }
   return places;
@@ -463,7 +463,7 @@ function slideList(root, was) {
   for (const n of root.querySelectorAll("[data-key]")) {
     const before = was.get(n.dataset.key);
     if (!before) { n.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, easing: "ease-out" }); continue; }
-    const dot = n.querySelector(":scope > .dot"), changed = dot && before.status && dot.getAttribute("aria-label") !== before.status;
+    const dot = n.querySelector(":scope > .a-main > .dot"), changed = dot && before.status && dot.getAttribute("aria-label") !== before.status;
     const regrouped = changed || (before.group && n.dataset.group !== before.group);
     const dy = before.top - n.getBoundingClientRect().top;
     if (Math.abs(dy) >= 1) {
@@ -544,9 +544,10 @@ export function start() {
       hoverTo(from, at && !ev.target.closest(".save-btn, .close-btn, .branchline, .f-acts, .pick") ? at.dataset.card : null);
     });
     box.addEventListener("pointerleave", () => hoverTo(from, null));
-    box.addEventListener("focusin", (ev) => {
+    box.addEventListener("focusin", (ev) => {   // a row's or a tile's main button, or a name, in focus from the keys
       const at = ev.target.closest("[data-card]");
-      if (at && ev.target === at && at.matches(":focus-visible")) { hover.shown = true; hover.keys = true; hoverTo(from, at.dataset.card); }
+      const main = at && (ev.target === at || (ev.target.parentElement === at && ev.target.matches(".a-main, .r-main")));
+      if (main && ev.target.matches(":focus-visible")) { hover.shown = true; hover.keys = true; hoverTo(from, at.dataset.card); }
     });
     box.addEventListener("focusout", () => hoverTo(from, null));
     box.addEventListener("scroll", () => { if (hover.shown && hover.from === from) cardDraw(); }, true);   // kept level with its actor

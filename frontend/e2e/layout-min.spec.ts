@@ -44,7 +44,7 @@ test("two panes under an app: minimized together by either's button, their row o
 
 test("a minimized pane moved beside its app is whole; moved back under it, minimized again", async ({ page }) => {
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   await expect(notes(page)).toHaveCount(1);
@@ -64,7 +64,7 @@ test("a minimized pane moved beside its app is whole; moved back under it, minim
 
 test("a pane dragged shorter than its least is minimized; dragged longer again, whole", async ({ page }) => {
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude); // Notepad above Claude's pane
   await expect(notes(page)).toHaveCount(1);
@@ -116,7 +116,7 @@ test("a pane dragged shorter than its least is minimized; dragged longer again, 
 
 test("an app under a pane is never minimized by its bar: it stops at its least, as before", async ({ page }) => {
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   await expect(notes(page)).toHaveCount(1);
@@ -133,7 +133,7 @@ test("an app under a pane is never minimized by its bar: it stops at its least, 
 
 test("a bar dragged keeps the layout in the browser once, when it is let go, not at each move", async ({ page }) => {
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   await expect(notes(page)).toHaveCount(1);
@@ -161,9 +161,9 @@ test("a task of one pane under another task in the tab: minimized by the line be
   page,
 }) => {
   await open(page);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
   const beside = process.platform === "darwin" ? "Meta" : "Control";
-  await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] }); // a task of its own
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] }); // a task of its own
   await expect(other(page)).toHaveCount(1);
   await page.locator("#pane-here > .pane-top").click({ button: "right" }); // Claude's task under Codex's
   await page

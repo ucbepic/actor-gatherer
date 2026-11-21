@@ -193,8 +193,8 @@ export function CrewButton({ host, g, node }: { host: ListHost; g: Gatherer | nu
   );
 }
 
-/** A row's own button -- its bookmark, its × -- a span the keys reach (its row a button already), Enter or Space
- * pressing it: a press on one does only what it says, not showing the row's item. */
+/** A row's own button -- its bookmark, its × -- beside the row's main button, not in it: a press on one does only what
+ * it says, not showing the row's item. */
 export function RowButton({
   className,
   run,
@@ -212,25 +212,17 @@ export function RowButton({
   "aria-expanded"?: "true" | "false";
 }) {
   return (
-    <span
+    <button
       className={className}
-      role="button"
-      tabIndex={0}
+      type="button"
       {...attrs}
       onClick={(ev) => {
         ev.stopPropagation();
         run(ev.currentTarget);
       }}
-      onKeyDown={(ev) => {
-        if (ev.key === "Enter" || ev.key === " ") {
-          ev.preventDefault();
-          ev.stopPropagation();
-          run(ev.currentTarget);
-        }
-      }}
     >
       {children}
-    </span>
+    </button>
   );
 }
 
@@ -245,23 +237,13 @@ export function TabMark({ at }: { at: TabAt | null }) {
   );
 }
 
-/** An actor's face alone, no harness's badge: its avatar, else its harness's mark -- with a check on it, selected with
- * another (`check`: a click on it leaves it out). */
-export function Face({
-  host,
-  a,
-  check,
-}: {
-  host: Pick<PageParts, "avatarSrc" | "harnessLogo">;
-  a: Actor;
-  check?: ReactNode;
-}) {
+/** An actor's face alone, no harness's badge: its avatar, else its harness's mark. */
+export function Face({ host, a }: { host: Pick<PageParts, "avatarSrc" | "harnessLogo">; a: Actor }) {
   const src = host.avatarSrc(a.avatar);
-  if (!src) return <Html node={host.harnessLogo(a.harness)} extra={check} />;
+  if (!src) return <Html node={host.harnessLogo(a.harness)} />;
   return (
     <span className="logo avatar">
       <img src={src} alt="" draggable="false" />
-      {check}
     </span>
   );
 }

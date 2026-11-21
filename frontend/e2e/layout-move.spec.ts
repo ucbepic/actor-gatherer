@@ -31,7 +31,7 @@ const leftOf = (b: { x: number; y: number; width: number; height: number }) => (
 // turns shown), the grip there
 async function claudeAndNotepad(page: Page) {
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
@@ -49,7 +49,7 @@ test("a pane dragged by its grip onto the left of its task's app: the two side b
     return h.x + h.width <= a.x + 1 && Math.abs(h.y - a.y) < 1 && Math.abs(h.height - a.height) < 1;
   };
   await expect.poll(sideBySide).toBe(true);
-  await page.locator("#agents button.agent", { hasText: CODEX }).click(); // another task, then back: as it was left
+  await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task, then back: as it was left
   await expect(notes).toHaveCount(0);
   await claude.click();
   await expect(notes).toHaveCount(1);
@@ -94,7 +94,7 @@ test("a panel moved from its menu: along a side of its task, or in another's pla
 test("a pane's head dragged in its frame: the pane moved over the page around it", async ({ page }) => {
   await taskHome(page, true); // the two actors one task: side by side
   await open(page);
-  await page.locator("#agents button.agent.task").click();
+  await page.locator("#agents .agent.task").click();
   const panes = page.locator("#panes > .pane");
   await expect(panes).toHaveCount(2);
   const other = panes.nth(1);
@@ -113,7 +113,7 @@ test("a task opened beside another is a block of its own: its panels together, n
   page,
 }) => {
   const { notes, here } = await claudeAndNotepad(page);
-  await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] });
   const other = page.locator("#panes > .pane").nth(1);
   await expect(other).toHaveCount(1);
   const [n, h, o] = [await box(notes), await box(here), await box(other)];
@@ -153,7 +153,7 @@ test("a task's arrangement, the first time it shows, is made from the widths an 
     [`demo\u0000t${id}`, a, b],
   );
   await open(page);
-  await page.locator("#agents button.agent.task").click();
+  await page.locator("#agents .agent.task").click();
   const panes = page.locator("#panes > .pane");
   await expect(panes).toHaveCount(2);
   const ratio = async () => {
@@ -168,7 +168,7 @@ test("the apps' panels kept in this browser all come back, the page loaded again
 }) => {
   await taskHome(page, false);
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]");

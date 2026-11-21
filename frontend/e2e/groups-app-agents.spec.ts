@@ -12,7 +12,7 @@ const LAB = "lab";
 type Agent = { channel: string; harness?: string; [k: string]: unknown };
 type Group = { name: string; agents: Agent[]; [k: string]: unknown };
 
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const groupRow = (page: Page, name: string) => page.locator("#agents .gatherer-row", { hasText: name });
 
 // The server's home, merged, with a second group, `lab`: Claude Code is the Notepad's own agent (its role names "Shopping list", n1, which it
@@ -73,7 +73,7 @@ test("in the home's one database, an app's own agent dragged outside every group
     });
   });
   await open(page);
-  await expect(page.locator("#agents button.agent.app-row", { hasText: "Shopping list" })).toBeVisible();
+  await expect(page.locator("#agents .agent.app-row", { hasText: "Shopping list" })).toBeVisible();
   const dialog = page.locator("dialog.mv-dialog");
   await manage(page); // in Manage groups: asked first, saying its window goes with it
   await dragOutside(page, mgRow(page, CLAUDE), panel(page), "Outside every group: on its own"); // its window with it: not refused
@@ -84,8 +84,8 @@ test("in the home's one database, an app's own agent dragged outside every group
   await expect.poll(() => asked).toEqual([{ gatherer: GATHERER, do: "alone", channel: state.claude }]);
   await expect(dialog).toBeHidden();
   const lone = page.locator("#agents .gatherer.alone");
-  await expect(lone.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
-  await expect(lone.locator("button.agent.app-row", { hasText: "Shopping list" })).toBeVisible(); // listed with it
+  await expect(lone.locator(".agent", { hasText: CLAUDE })).toBeVisible();
+  await expect(lone.locator(".agent.app-row", { hasText: "Shopping list" })).toBeVisible(); // listed with it
 });
 
 test("in the home's one database, an app's own agent dragged into a group with that app's own: its window closes for that one", async ({
@@ -119,7 +119,7 @@ test("in the home's one database, an app's own agent dragged into a group with t
     });
   });
   await open(page);
-  await page.locator("#agents button.agent.app-row", { hasText: "Shopping list" }).click(); // its pane open
+  await page.locator("#agents .agent.app-row", { hasText: "Shopping list" }).click(); // its pane open
   const frame = page.locator(".app-frame");
   await expect(frame).toHaveAttribute("src", new RegExp(`gatherer=${GATHERER}&instance=n1`));
   const dialog = page.locator("dialog.mv-dialog");
@@ -133,7 +133,7 @@ test("in the home's one database, an app's own agent dragged into a group with t
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await closeManage(page);
   // in the list, its window dragged: at once, with its agent
-  await page.locator("#agents button.agent.app-row", { hasText: "Shopping list" }).dragTo(groupRow(page, LAB));
+  await page.locator("#agents .agent.app-row", { hasText: "Shopping list" }).dragTo(groupRow(page, LAB));
   await expect
     .poll(() => asked.at(-1))
     .toMatchObject({ do: "move", to: LAB, channels: expect.arrayContaining(["app:n1", state.claude]) });

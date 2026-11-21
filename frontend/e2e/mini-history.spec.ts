@@ -26,7 +26,7 @@ test("a minimized pane shows its last message and reply; hovered, the whole conv
   page,
 }) => {
   await open(page);
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   await codex.click();
   await addNotepad(page, codex);
   await expect(notes(page)).toHaveCount(1);
@@ -79,7 +79,7 @@ test("a minimized pane's card, opened again for the same line, keeps its place: 
   page,
 }) => {
   await open(page);
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   await codex.click();
   await addNotepad(page, codex);
   await expect(notes(page)).toHaveCount(1);

@@ -35,7 +35,7 @@ export function streamHome(page: Page): Promise<void> {
 /** The page with the actor whose row shows `text` picked in the list. */
 export async function openActor(page: Page, text: string) {
   await open(page);
-  await page.locator("#agents button.agent", { hasText: text }).click();
+  await page.locator("#agents .agent", { hasText: text }).click();
 }
 
 /** What a screenshot covers: the home's path (a temporary folder, other on each run). */

@@ -23,12 +23,12 @@ const middle = (b: Box) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 // Claude and a Notepad, one task (two panels: under a strip), and Codex beside it (⌘+click: a task of one pane)
 async function twoTasks(page: Page) {
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
   await expect(notes).toHaveCount(1);
-  await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] });
   const codex = page.locator("#panes > .pane").nth(1);
   await expect(codex).toHaveCount(1);
   return { notes, codex, here: page.locator("#pane-here"), strip: page.locator(".lay-strip:visible") };
@@ -45,7 +45,7 @@ test("with other tasks shown, a task of two panels or more is under a strip with
   expect(s.y + s.height).toBeLessThanOrEqual(n.y + 1); // over both its panels, as wide
   expect(s.width).toBeCloseTo(n.width, 0);
   expect(h.x).toBeCloseTo(s.x, 0);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click({ modifiers: ["Alt"] }); // Claude's task alone: no strip
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click({ modifiers: ["Alt"] }); // Claude's task alone: no strip
   await expect(strip).toHaveCount(0);
 });
 
@@ -56,10 +56,13 @@ test("a task's card head's × closes the task here, its agents going on; the las
   await strip.locator(".lay-sclose").click(); // Claude's task: its Notepad and its pane closed, Codex left
   await expect(notes).toHaveCount(0);
   await expect(codex).toHaveCount(0); // (Codex now in this page's own pane)
-  await expect(page.locator("#agents button.agent", { hasText: CODEX })).toHaveAttribute("aria-current", "true");
-  await expect(page.locator("#agents button.agent", { hasText: CLAUDE }).locator(".tab-no")).toHaveCount(0); // open nowhere
-  await expect(page.locator("#agents button.agent", { hasText: CLAUDE })).toHaveCount(1); // still listed, as it was
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click({ modifiers: [beside] }); // beside again
+  await expect(page.locator("#agents .agent", { hasText: CODEX }).locator(".a-main")).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(page.locator("#agents .agent", { hasText: CLAUDE }).locator(".tab-no")).toHaveCount(0); // open nowhere
+  await expect(page.locator("#agents .agent", { hasText: CLAUDE })).toHaveCount(1); // still listed, as it was
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click({ modifiers: [beside] }); // beside again
   await expect(notes).toHaveCount(1); // as it was left: its Notepad back
   await strip.locator(".lay-sclose").click();
   await expect(notes).toHaveCount(0);
@@ -98,10 +101,10 @@ test("a task's row dragged from the list onto the top of the work area: opened t
   page,
 }) => {
   await open(page);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
   const here = page.locator("#pane-here");
   const h = await box(here);
-  const codexRow = page.locator("#agents button.agent", { hasText: CODEX });
+  const codexRow = page.locator("#agents .agent", { hasText: CODEX });
   await expect(codexRow).toBeVisible(); // (the list drawn again as Claude is shown)
   const row = await settledBox(codexRow);
   await drag(page, middle(row), { x: h.x + h.width / 2, y: h.y + h.height * 0.1 });

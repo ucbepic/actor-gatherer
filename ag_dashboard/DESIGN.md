@@ -442,8 +442,15 @@ pattern the list and Chat follow:
   now); the drag kept from redraws (`listDrag.later`, `DRAG_LOST_MS`), the menus found again by `data-pop` and the
   card kept off a resting pointer (`hover.still`) stay for the rail, the cards and the menus, still drawn by hand.
   Vitest: `AgentList.test.tsx` (the list drawn by its mount, with a host standing in for the page).
-- *Left as it was:* a row is a `<button class="agent">` whose own buttons (bookmark, ×, "+") are `span[role=button]`
-  inside it -- the specs locate them inside `button.agent`, so moving them out waits for specs that allow it.
+- *No button inside another:* a row is a box (`div.agent`: what is hovered, dragged and dropped on, its `data-key`,
+  `data-card`, `data-open`, and `data-current` for the CSS) holding its main button (`.a-main`: its state, name and face,
+  the whole box -- a press, F2 and a right-click on the row are its, and `aria-current` and its title) and, beside it,
+  its own real buttons, each named -- "+", bookmark and × in `.a-acts`, and a selected actor's check (`.pick`, set on
+  its face's corner by list.css, as the rail's on its avatar's). The rail's tiles are built the same way (`div.r-actor`,
+  `.r-main`), and the card's rows' bookmark and × are buttons too. The keys reach the main button, then each of its own
+  in turn; their focus rings are the same as before, as is every pixel of the rows, tiles and cards in each state
+  (hovered, in focus, selected, shown). The hover card is shown for a row's main button in focus from the keys, and
+  described by it (`aria-describedby`).
 - *The list's other shapes, then:* each a view-model from the same derivations and view, drawn by React into its box at
   once (`modes-mount.tsx`), by its keys -- the rail (`rail-model.ts`, `rail-rows.ts`; `Rail.tsx`, `RailTiles.tsx`),
   the monitor (`monitor-model.ts`; `Monitor.tsx`: a card drawn again only when its signature changes, the cards in view

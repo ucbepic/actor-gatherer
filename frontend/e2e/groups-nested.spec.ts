@@ -74,11 +74,11 @@ test("a group and an actor on its own placed in a folder are drawn there, unmark
   await workLine(page).locator(".fname").click(); // folded at first: opened, to show what is in it
   const work = demoBox(page).locator(".f-kids").first();
   await expect(work.locator(".gatherer.nested .gatherer-row", { hasText: LAB })).toBeVisible();
-  await expect(work.locator("button.agent", { hasText: LAB_ACTOR })).toBeVisible();
-  await expect(work.locator("button.agent", { hasText: ALONE_ACTOR })).toBeVisible();
-  await expect(work.locator("button.agent", { hasText: CLAUDE })).toBeVisible(); // demo's own, beside them
+  await expect(work.locator(".agent", { hasText: LAB_ACTOR })).toBeVisible();
+  await expect(work.locator(".agent", { hasText: ALONE_ACTOR })).toBeVisible();
+  await expect(work.locator(".agent", { hasText: CLAUDE })).toBeVisible(); // demo's own, beside them
   await expect(page.locator("#agents > .gatherer > .gatherer-row", { hasText: LAB })).toHaveCount(0); // not at the top too
-  await expect(page.locator("#agents button.agent", { hasText: ALONE_ACTOR })).toHaveCount(1);
+  await expect(page.locator("#agents .agent", { hasText: ALONE_ACTOR })).toHaveCount(1);
   // nothing of groups in the list: no marks, no switches on a folder, a nested group or an actor
   await expect(page.locator("#agents :is(.g-mark, .alone-mark, .group-btn, .act.own, .act.above)")).toHaveCount(0);
   await workLine(page).hover();

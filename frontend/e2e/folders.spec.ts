@@ -13,7 +13,7 @@ test("keeps actors in folders: made from the gatherer's row, filled by dragging,
   const g = (await homeOf(page)).gatherers.find((x) => x.name === GATHERER)!;
   const channelOf = (harness: string) => g.agents.find((a) => a.harness === harness)!.channel;
   const [claudeCh, codexCh] = [channelOf("claude"), channelOf("codex")];
-  const row = (text: string) => page.locator("#agents button.agent", { hasText: text });
+  const row = (text: string) => page.locator("#agents .agent", { hasText: text });
   const line = (name: string) => page.locator("#agents .folder-line", { hasText: name });
   const gRow = page.locator("#agents .gatherer-row").first();
   const box = page.locator("#agents .folder-box");
@@ -31,7 +31,7 @@ test("keeps actors in folders: made from the gatherer's row, filled by dragging,
     const paper = (await treeOf(page)).folders[0].id;
 
     await row(CLAUDE).dragTo(line("Paper revisions"));
-    await expect(page.locator("#agents .f-kids button.agent", { hasText: CLAUDE })).toBeVisible(); // listed in it
+    await expect(page.locator("#agents .f-kids .agent", { hasText: CLAUDE })).toBeVisible(); // listed in it
     await expect(line("Paper revisions").locator(".count")).toHaveText(["1"]); // its one actor idle, a grey dot
     await expect(line("Paper revisions").locator(".count.idle")).toHaveCount(1);
     await expect.poll(async () => (await treeOf(page)).filed).toEqual({ [claudeCh]: paper });
@@ -56,7 +56,7 @@ test("keeps actors in folders: made from the gatherer's row, filled by dragging,
       .toEqual(["Drafts", "Figures"]);
 
     await row(CLAUDE).dragTo(gRow); // onto its gatherer's row: at its top again
-    await expect(page.locator("#agents .f-kids button.agent", { hasText: CLAUDE })).toHaveCount(0);
+    await expect(page.locator("#agents .f-kids .agent", { hasText: CLAUDE })).toHaveCount(0);
     await expect.poll(async () => (await treeOf(page)).filed).toEqual({});
 
     await more("Drafts", "Delete"); // deleted: the folder in it moves up a level
@@ -130,7 +130,7 @@ test("lists a closed saved actor in its folder's saved line, folded till opened"
   const lines = page.locator("#agents .folder-line");
   await expect(lines.locator(".fname")).toHaveText(["Empty", "Paper"]);
   await expect(lines.locator(".count")).toHaveCount(0); // none open in either: no counts
-  const codexRow = page.locator("#agents .f-kids button.agent", { hasText: CODEX });
+  const codexRow = page.locator("#agents .f-kids .agent", { hasText: CODEX });
   const isOpen = await codexRow.count(); // the first actor is shown, so in view under its folded folder
   await lines.filter({ hasText: "Paper" }).locator(".fname").click(); // opened (its name clicked): its saved line, folded
   const saved = page.locator("#agents .f-kids .fold-line", { hasText: "saved" });
@@ -146,7 +146,7 @@ test("moves several actors at once: Shift+click selects them, the bar under the 
   await open(page);
   const g = (await homeOf(page)).gatherers.find((x) => x.name === GATHERER)!;
   const [claudeCh, codexCh] = ["claude", "codex"].map((h) => g.agents.find((a) => a.harness === h)!.channel);
-  const row = (text: string) => page.locator("#agents button.agent", { hasText: text });
+  const row = (text: string) => page.locator("#agents .agent", { hasText: text });
   const bar = page.locator("#pick-bar");
   const batch = await newFolder(page, "Batch");
   try {
@@ -165,7 +165,7 @@ test("moves several actors at once: Shift+click selects them, the bar under the 
     await menu.getByRole("menuitem", { name: "Batch" }).click();
     await expect.poll(async () => (await treeOf(page)).filed).toEqual({ [claudeCh]: batch, [codexCh]: batch });
     await expect(bar).toBeHidden(); // moved: the selection cleared
-    await expect(page.locator("#agents .f-kids button.agent")).toHaveCount(2); // in it, opened
+    await expect(page.locator("#agents .f-kids .agent")).toHaveCount(2); // in it, opened
     await row(CLAUDE).click({ modifiers: ["Shift"] });
     await row(CODEX).click({ modifiers: ["Shift"] });
     await expect(bar).toBeVisible();
@@ -269,7 +269,7 @@ test("in the rail, a folder's and a gatherer's cards stay to be used: their butt
     await expect(card.locator("button.c-row", { hasText: CLAUDE })).toBeVisible();
     await card.locator("button.c-row", { hasText: CODEX }).click(); // shown, from the folder's card
     await expect(card).toBeHidden();
-    await expect(rail.locator('.r-actor[aria-current="true"] .r-name')).toContainText(CODEX);
+    await expect(rail.locator('.r-main[aria-current="true"] .r-name')).toContainText(CODEX);
     await rail.locator(".r-gname").first().hover(); // the gatherer's own card, its buttons
     await expect(card).toBeVisible();
     await expect(card.locator(".c-acts .act.newfolder, .c-acts .act.rename, .c-acts .act.hide")).toHaveCount(3);
