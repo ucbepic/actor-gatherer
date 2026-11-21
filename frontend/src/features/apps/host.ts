@@ -9,7 +9,7 @@ import { get, post } from "../../core/api/client";
 import { glyph } from "../../core/ui/glyphs";
 import { stream, type Stream } from "../../core/api/stream";
 import "./apps.css";
-import { desktop, nativePanes, nativeSoon, type NativePlace } from "./native";
+import { desktop, nativePanes, nativeSoon, stillDrawn, type NativePlace } from "./native";
 import { ACTOR_OPS, toActors } from "./actors";
 import { NOTICE_OPS, toNotices } from "./notices";
 import { SPELLING_OPS, spellingOn, toSpelling } from "./spelling";
@@ -393,7 +393,7 @@ export class AppPane {
         return null;
       }
       case "native.drawn":
-        desktop()?.stillDrawn?.(String(m.target || ""));
+        stillDrawn(String(m.target || ""));
         return null;
       case "native.release":
         desktop()?.focusDashboard?.();

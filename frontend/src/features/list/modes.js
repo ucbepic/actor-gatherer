@@ -19,6 +19,7 @@ import { tildePath } from "../../core/page/code.js";
 import { FILE_KINDS, showKept } from "../chat/files-view.js";
 import { enc } from "../history/history.js";
 import { actorLogo } from "../apps/app-actors.js";
+import { onceUncovered } from "../apps/native";
 import { useSettings } from "../settings/store";
 import * as prefs from "../../core/prefs";
 import { buildMonitor } from "./monitor-model";
@@ -99,8 +100,15 @@ function listButtons() {
 // down to the list, though the rail is narrower than where they sit). Where the pointer
 // is, is asked of the page at its last place (elementFromPoint): a list slid in under a still pointer is under it,
 // though the browser's own hover may not say so till it moves -- and a pointer over a pane's frame moves unseen.
-const HIDE_KEY = "ag-dashboard-list-hidden", UNPEEK_MS = 300;
+// Out over the panes, it floats over them (class "floats": features/apps/native.ts). In the ag app, a Browser's own page
+// there is drawn over everything of the dashboard's, the list too, till the app has put it out of sight under a picture
+// of it -- taken, sent to its panel and drawn there, which takes longer than the slide. So the list slides out once the
+// pages under where it goes are out of sight (COVER_WAIT at the most), and they stay so till it has slid back (SLIDE_MS:
+// its slide's time, features/page/layout.css). `peekAt`: "in"; "covering" (floating, the pages being put out of sight,
+// it not out yet); "out" (list-peek); "back" (sliding back, the pages under it still covered).
+const HIDE_KEY = "ag-dashboard-list-hidden", UNPEEK_MS = 300, SLIDE_MS = 160, COVER_WAIT = 400;
 let listHidden = false, peekTimer = null;
+let peekAt = "in", peekCancel = () => {}, backTimer = null;
 const pointerAt = { x: -1, y: -1 };
 function setListHidden(on, keep = true) {
   listHidden = !!on && !PANE;
@@ -110,13 +118,32 @@ function setListHidden(on, keep = true) {
   if (keep) { prefs.setText(HIDE_KEY, listHidden ? "1" : ""); }
 }
 function peekList(on) {
+  const root = document.documentElement, side = document.querySelector(".side");
+  if (on && listHidden) {
+    if (peekAt === "covering") return;               // (its way back kept: the pointer gone before it is out)
+    clearTimeout(peekTimer);
+    if (peekAt === "out") return;
+    clearTimeout(backTimer);
+    side.classList.add("floats");
+    if (peekAt === "back") { peekAt = "out"; root.classList.add("list-peek"); }   // (the pages under it covered still)
+    else {
+      peekAt = "covering";
+      peekCancel = onceUncovered(side, COVER_WAIT, () => { peekAt = "out"; root.classList.add("list-peek"); });
+    }
+    unpeekSoon();                                    // (left again at once, never come onto it: back too)
+    return;
+  }
   clearTimeout(peekTimer);
-  const was = document.documentElement.classList.contains("list-peek");
-  document.documentElement.classList.toggle("list-peek", on && listHidden);
-  // out over the panes, it floats over them (features/apps/native.ts): a Browser's own page under it, in the ag app,
-  // pictured in its place from the first frame it is over any of it
-  document.querySelector(".side").classList.toggle("floats", on && listHidden);
-  if (on && listHidden && !was) unpeekSoon();        // (left again at once, never come onto it: back too)
+  peekCancel();
+  root.classList.remove("list-peek");
+  clearTimeout(backTimer);
+  if (peekAt === "out" && listHidden) {
+    peekAt = "back";
+    backTimer = setTimeout(() => { side.classList.remove("floats"); peekAt = "in"; }, SLIDE_MS);
+  } else {
+    side.classList.remove("floats");
+    peekAt = "in";
+  }
 }
 // in use: the pointer on it (or a menu or card of it), a name typed in it, a row dragged from it
 function listInUse() {
