@@ -573,7 +573,10 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    pane focused); kept in this browser under `ag-dashboard-top-apps`.
    - The SDK, `app_kit/js/app.js`, served on every app's origin at `/_ag/app.js`: events (read, subscribe, insert),
      tools (answer, call), agents, intents, the selection, the theme (its colours set on the panel's `:root`), the
-     backend's messages, its own `/api/`; Esc and ⌘/Ctrl keys it leaves unhandled go on to the page.
+     backend's messages, its own `/api/`; Esc and ⌘/Ctrl keys it leaves unhandled go on to the page. A request the
+     page doesn't answer fails after a wait longer than the page's own for it (30 s; `tools.call` 3 min, over
+     app_host's 30 s + 120 s for a tool a panel answers; starting or messaging an actor 1 min): a page reloaded or gone
+     between a request and its answer never answers it, and a panel would wait on it for good.
    - The kit, served on every app's origin at `/_ag/lib/` (`ag_dashboard/libs.py`): `kit.js` (`agKit`: `el`,
      `patch`, `ago`) and `kit.css`, the theme's colours -- every one the host hands a panel (`theme-vars.ts`), light
      and, under `:root[data-ag-theme="dark"]`, dark, with the dashboard's values (`theme-vars.test.ts` keeps them the
