@@ -70,6 +70,9 @@ Everything goes through the page around it, by postMessage, which checks it agai
     ag.api(path, init?)                                  its backend's own routes, on its own origin (no bridge)
     ag.close()                                           its pane closed
 
+A call the page doesn't answer fails, its promise rejected: after 30 s, or 3 min for ag.tools.call and 1 min for
+starting or messaging an actor and reading a transcript (a page reloaded meanwhile never answers it).
+
 Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as they would outside the frame. A press in
 the panel is told to the page too, which closes what floats over it (a menu, Settings), as a press outside the frame would.
 
@@ -90,10 +93,24 @@ keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
   let info = null, attached = [], selection = null, theme = null, states = {}, nativeOn = false, actors = null;
   let spellOn = false;
 
+  // How long a request waits for the page's answer, in ms, before it fails: a page reloaded or gone between the request
+  // and its answer never answers it, and a panel waiting on it (Notes' saving, a button's busy state) would wait for good.
+  // Each is longer than the page's own longest wait for it: a tool the app's panel answers waits 30 s for a panel to be
+  // open and 120 s for its answer (ag_dashboard/app_host.py's PAGE_WAIT, TOOL_WAIT); starting an actor or sending it a
+  // message waits on its terminal.
+  const WAITS = { "tools.call": 180000, "actors.start": 60000, "actors.send": 60000, "agents.send": 60000,
+                  "agents.transcript": 60000 };
+  const WAIT = 30000;
+
   function send(op, body) {
     return new Promise((resolve, reject) => {
       const id = ++seq;
-      waiting.set(id, { resolve, reject });
+      const ms = WAITS[op] || WAIT;
+      const timer = setTimeout(() => {
+        if (waiting.delete(id)) reject(new Error(`${op}: the dashboard did not answer in ${ms / 1000} s`));
+      }, ms);
+      const settle = (fn) => (v) => { clearTimeout(timer); fn(v); };
+      waiting.set(id, { resolve: settle(resolve), reject: settle(reject) });
       window.parent.postMessage({ ag: 1, id, op, ...body }, HOST);
     });
   }

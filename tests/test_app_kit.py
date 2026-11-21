@@ -99,11 +99,16 @@ class PanelKitTest(unittest.TestCase):
         body, kind = libs.lib_file("kit.js")
         self.assertIn(b"window.agKit", body)
         self.assertTrue(kind.startswith("text/javascript"))
+        body, kind = libs.lib_file("kit.css")              # its colours: the theme's, light and dark
+        self.assertIn(b'[data-ag-theme="dark"]', body)
+        self.assertTrue(kind.startswith("text/css"))
         for app in ("browser", "files", "latex", "notes", "paper_news", "slack"):
             with self.subTest(app=app):
                 with open(os.path.join(self.ROOT, "ag_apps", app, "panel", "index.html"), encoding="utf-8") as fh:
                     page = fh.read()
                 self.assertLess(page.index('src="/_ag/lib/kit.js"'), page.index('src="/_ag/app.js"'))
+                first_sheet = page.index('<link rel="stylesheet"')        # the kit's colours, before its own
+                self.assertEqual(first_sheet, page.index('<link rel="stylesheet" href="/_ag/lib/kit.css">'))
                 if app in ("files", "latex", "notes"):
                     entry = f'<script type="module" src="{app}.js"></script>'
                     self.assertLess(page.index('src="/_ag/app.js"'), page.index(entry))
@@ -135,6 +140,51 @@ class PanelKitTest(unittest.TestCase):
                                     ["x", "<node>", "y"]])
         self.assertEqual(got["i"], ["v", True, {}])
         self.assertEqual(got["j"], [True, False])            # "" as a present attribute (`cond ? "" : null`)
+
+    def test_a_call_the_page_never_answers_fails_after_its_wait(self):
+        # the SDK in a frame whose page posts nothing back (reloaded, gone): each call rejected once its wait is over --
+        # tools.call's longer than the page's own wait for a panel's answer -- and an answer coming after it is ignored
+        if not shutil.which("node"):
+            self.skipTest("no node here")
+        from ag_dashboard import app_host
+        script = textwrap.dedent("""
+            const timers = [], posted = [], on = {};
+            globalThis.setTimeout = (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length - 1; };
+            globalThis.clearTimeout = (i) => { if (timers[i]) timers[i].live = false; };
+            globalThis.location = { search: "?host=http%%3A%%2F%%2Fdash" };
+            globalThis.document = { documentElement: { style: { setProperty() {} }, dataset: {} } };
+            globalThis.requestAnimationFrame = () => 0;
+            const parent = { postMessage: (m) => posted.push(m) };
+            globalThis.window = { parent, addEventListener: (k, fn) => { on[k] = fn; } };
+            %s
+            const fire = (i) => { const t = timers[i]; if (t.live) { t.live = false; t.fn(); } };
+            const reply = (m) => on.message({ source: parent, origin: "http://dash", data: { ag: 1, ...m } });
+            (async () => {
+              const hello = window.AgApp.connect().then(() => "ok", (e) => e.message);
+              fire(0);
+              reply({ re: posted[0].id, ok: true, value: { info: { app: "a" } } });   // too late: ignored
+              const out = { hello: await hello, waits: [timers[0].ms] };
+              const again = window.AgApp.connect();                  // answered in time: its timer cleared
+              reply({ re: posted[1].id, ok: true, value: { info: { app: "a", gatherer: "g", instance: "i" } } });
+              const ag = await again;
+              out.cleared = !timers[1].live;
+              const call = ag.tools.call("t", {}).then(() => "ok", (e) => e.message);
+              const read = ag.events.read({ types: ["x"] }).then(() => "ok", (e) => e.message);
+              out.waits.push(timers[2].ms, timers[3].ms);
+              fire(3); fire(2);
+              out.call = await call; out.read = await read;
+              console.log(JSON.stringify(out));
+            })();
+        """)
+        with open(os.path.join(self.ROOT, "app_kit", "js", "app.js"), encoding="utf-8") as fh:
+            script %= fh.read()
+        got = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(got["hello"], "hello: the dashboard did not answer in 30 s")
+        self.assertTrue(got["cleared"])
+        self.assertEqual(got["waits"], [30000, 180000, 30000])
+        self.assertGreater(got["waits"][1] / 1000, app_host.PAGE_WAIT + app_host.TOOL_WAIT)
+        self.assertEqual(got["call"], "tools.call: the dashboard did not answer in 180 s")
+        self.assertEqual(got["read"], "events.read: the dashboard did not answer in 30 s")
 
 
 class SeparateTest(unittest.TestCase):
