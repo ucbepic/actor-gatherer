@@ -854,6 +854,12 @@ DOMPurify, the kit and the SDK, read as globals), as app_kit.fileedit's are. Wha
 SDK's `ag`, the notebook, the page open, the line whose conversation is open) is in `state.js`, each with its setter.
 Nothing runs as they load: `start.js` connects the panel, then sets each module's listeners (its `wire...` function) in
 the order they always were -- the document's key handlers rely on it -- and reads the notebook.
+A panel closed mid-send (2026-11-20) loses nothing: before, the flush on `pagehide` / `visibilitychange` skipped the
+queue while a batch was on its way, so a change queued behind it, and words still waiting for their pause, were never
+sent. Now each batch a panel sends is named (`<panel>.<n>`) and the backend takes each name once (backend.py's module
+doc), so as the page goes it sends, in one request kept alive past the page (`leaving`), the batch it was sending and
+everything behind it, in order: whichever of that and the batch's own request comes first applies it, and the rest only
+after it. A batch tried again after no answer keeps its name, so it is never applied twice either.
 
 **Notes and the actors** (2026-11-08): the user works with the gatherer's actors from the notebook.
 - **Sending a line:** `@` typed in a block (or its Assign / Ask button) picks an actor, the gatherer agent, or a new

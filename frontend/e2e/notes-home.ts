@@ -58,7 +58,7 @@ export async function binPage(panel: FrameLocator, title: string) {
     await expect(binned).toHaveCount(n - 1);
   }
   await panel.locator("#trash-btn").click();
-  // sent before the test goes on, or ends: a change made while one is still being sent waits for it, and a page closed
-  // meanwhile never sends it -- the page left in the trash for the next test of that title
+  // sent before the test goes on, or ends: a change made while one is still being sent waits for it, and one sent as the
+  // page closes may land after the next test of that title has looked in the trash
   await expect(panel.locator("#saved")).toHaveText("Saved");
 }
