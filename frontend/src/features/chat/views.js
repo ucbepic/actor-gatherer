@@ -83,7 +83,7 @@ const chatView = (p) => {
 // Pane `p` showing view `id`: this page's own kept as the page's choice (every page opens on it), a pane beside it with
 // the pane (the layout's).
 async function setChatView(p, id) {
-  if (id === "history" && chatView(p).id !== "history") viewOpened();   // opened again: built again
+  if (id === "history" && chatView(p).id !== "history") viewOpened(paneKey(p));   // opened again: built again
                                                      // if due, and at its tasks if it has them
   p.view = id;
   if (p.here) prefs.setText(CHAT_VIEW_KEY, id);

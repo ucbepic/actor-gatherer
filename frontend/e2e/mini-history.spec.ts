@@ -185,8 +185,12 @@ test("a minimized pane's line between its box and its last lines, dragged: the r
     })
     .toBe(Math.round(kept * 100));
   expect(Math.abs((await widths(fstrip)).reduce((a, b) => a + b) - (fb0 + fh0))).toBeLessThan(2);
-  // a share too small for a pane (made in a wider one): its box held at 150px, the lines the rest -- the room still filled
-  await page.evaluate(() => localStorage.setItem("ag-dashboard-mini-split", "0.2"));
+  // a share too small for a pane (made in a wider one, another page of the dashboard's: its change heard as a storage
+  // event): its box held at 150px, the lines the rest -- the room still filled
+  await page.evaluate(() => {
+    localStorage.setItem("ag-dashboard-mini-split", "0.2");
+    dispatchEvent(new StorageEvent("storage", { key: "ag-dashboard-mini-split" }));
+  });
   await expect.poll(async () => Math.round((await widths(fstrip))[0])).toBe(150);
   expect(Math.abs((await widths(fstrip)).reduce((a, b) => a + b) - (fb0 + fh0))).toBeLessThan(2);
   // as far left as it goes: the box 150px at the least, the lines the rest -- the two still the whole room

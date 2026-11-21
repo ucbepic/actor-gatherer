@@ -1,8 +1,10 @@
 // The History view's own state: how its list is shown (grouped by tasks or not, the rows opened, the search typed, how
-// many rows), what is selected -- rows of the gatherer's database, so all of it starts over for another gatherer's actor
-// -- and the panel at the right: what to ask the Gatherer's model, the record opened, a record being saved. Each action
-// what a click or a key does.
-import { create } from "zustand";
+// many rows), what is selected -- rows of the gatherer's database -- and the panel at the right: what to ask the
+// Gatherer's model, the record opened, a record being saved. Each actor's its own (`histOf`: every pane showing History
+// shows its own actor's), the view drawn inside its actor's (`HistContext`, mount.tsx); the message types listed are the
+// reader's, every actor's. Each action what a click or a key does, in the History it is given.
+import { createContext, useContext } from "react";
+import { createStore, useStore, type StoreApi } from "zustand";
 import { post } from "../../core/api/client";
 import * as prefs from "../../core/prefs";
 import { loadExtracts, pollExtracts, setExtracts, useAsked, type Rec } from "./data";
@@ -71,7 +73,10 @@ const typesAtFirst = (): Set<string> => {
   return v ? new Set(v.map(String)) : new Set(["user_message", "agent_message"]);
 };
 
-export const useHist = create<Hist>()(() => ({
+/** An actor's History state. */
+export type HistStore = StoreApi<Hist>;
+
+const fresh = (): Hist => ({
   gatherer: null,
   actor: null,
   group: null,
@@ -92,66 +97,88 @@ export const useHist = create<Hist>()(() => ({
   busy: false,
   saving: null,
   homes: {},
-}));
+});
 
-const set = useHist.setState,
-  now = useHist.getState;
-
-/** The view opened again: built again if due, and at its tasks if it has them. */
-export function viewOpened(): void {
-  useAsked.setState({ askedFor: null });
-  set({ group: null, stay: null });
+const hists = new Map<string, HistStore>();
+/** Actor `actor`'s History state (made the first time it is asked for). */
+export function histOf(actor: string): HistStore {
+  let st = hists.get(actor);
+  if (!st) hists.set(actor, (st = createStore<Hist>()(fresh)));
+  return st;
+}
+/** The History drawn: its actor's state (mount.tsx gives it). */
+export const HistContext = createContext<HistStore | null>(null);
+const none = createStore<Hist>()(fresh);
+export const useHistStore = (): HistStore => useContext(HistContext) ?? none;
+/** The History drawn's state, drawn again as it changes. */
+export function useHist(): Hist;
+export function useHist<T>(pick: (s: Hist) => T): T;
+export function useHist<T>(pick?: (s: Hist) => T): T | Hist {
+  return useStore<HistStore, T | Hist>(useHistStore(), pick ?? ((s: Hist) => s));
 }
 
-/** The view drawn for `actor` of `gatherer`: another actor's grouped by its tasks if it has them; another gatherer's
- * rows none picked, opened or read yet. */
+/** Actor `actor`'s view opened again: built again if due, and at its tasks if it has them. */
+export function viewOpened(actor: string | null): void {
+  if (!actor) return;
+  const asked = new Set(useAsked.getState().asked);
+  asked.delete(actor);
+  useAsked.setState({ asked });
+  histOf(actor).setState({ group: null, stay: null });
+}
+
+/** The view drawn for `actor` of `gatherer`. */
 export function showing(actor: string, gatherer: string): void {
-  const s = now();
-  if (s.gatherer !== gatherer)
-    set({ gatherer, sel: new Map(), last: null, panel: false, open: new Set(), saving: null, recOpen: null });
-  if (s.actor !== actor) set({ actor, group: null, stay: null });
+  const st = histOf(actor);
+  if (st.getState().actor !== actor) st.setState({ gatherer, actor, group: null, stay: null });
 }
 
-export function setGroup(on: boolean): void {
-  set({ group: on, stay: null, limit: SHOWN });
+export function setGroup(st: HistStore, on: boolean): void {
+  st.setState({ group: on, stay: null, limit: SHOWN });
 }
 
 /** Tasks came in for `key` while it was shown ungrouped by choice of none: kept so, and the box pulsing a while. */
-let flashing: ReturnType<typeof setTimeout> | undefined;
-export function tasksCame(key: string): void {
-  set({ flash: key, ...(now().group === null ? { stay: key } : {}) });
-  clearTimeout(flashing);
-  flashing = setTimeout(() => set({ flash: null }), 2700);
+const flashing = new WeakMap<HistStore, ReturnType<typeof setTimeout>>();
+export function tasksCame(st: HistStore, key: string): void {
+  st.setState({ flash: key, ...(st.getState().group === null ? { stay: key } : {}) });
+  clearTimeout(flashing.get(st));
+  flashing.set(
+    st,
+    setTimeout(() => st.setState({ flash: null }), 2700),
+  );
 }
 
+/** A type listed, or no longer: in every actor's History. */
 export function toggleType(type: string): void {
-  const types = new Set(now().types);
+  const types = new Set(typesAtFirst());
   if (types.has(type)) types.delete(type);
   else types.add(type);
   prefs.keep(TYPES_KEY, [...types]);
-  set({ types });
+  for (const st of [none, ...hists.values()]) st.setState({ types });
 }
 
-export function toggleOpen(id: string): void {
-  const open = new Set(now().open);
+export function toggleOpen(st: HistStore, id: string): void {
+  const open = new Set(st.getState().open);
   if (open.has(id)) open.delete(id);
   else open.add(id);
-  set({ open });
+  st.setState({ open });
 }
 
-let searching: ReturnType<typeof setTimeout> | undefined;
-export function search(q: string): void {
-  set({ q });
-  clearTimeout(searching);
-  searching = setTimeout(() => set({ query: q.trim(), limit: SHOWN }), SEARCH_MS);
+const searching = new WeakMap<HistStore, ReturnType<typeof setTimeout>>();
+export function search(st: HistStore, q: string): void {
+  st.setState({ q });
+  clearTimeout(searching.get(st));
+  searching.set(
+    st,
+    setTimeout(() => st.setState({ query: q.trim(), limit: SHOWN }), SEARCH_MS),
+  );
 }
 
-export const showMore = () => set({ limit: now().limit + SHOWN });
+export const showMore = (st: HistStore) => st.setState({ limit: st.getState().limit + SHOWN });
 
 /** What is selected now; the panel shown while anything is, and while a record it asked for is being made or opened. */
-export function select(sel: Selection, making = false, last?: string | null): void {
-  const s = now();
-  set({
+export function select(st: HistStore, sel: Selection, making = false, last?: string | null): void {
+  const s = st.getState();
+  st.setState({
     sel,
     ...(last !== undefined ? { last } : {}),
     panel: sel.size ? true : s.recOpen || making ? s.panel : false,
@@ -159,17 +186,18 @@ export function select(sel: Selection, making = false, last?: string | null): vo
 }
 
 /** The panel closed, and all it showed. */
-export function closePanel(): void {
-  set({ panel: false, recOpen: null, saving: null, sel: new Map() });
+export function closePanel(st: HistStore): void {
+  st.setState({ panel: false, recOpen: null, saving: null, sel: new Map() });
 }
 
-export const setAsk = (ask: string) => set({ ask });
-export const setSaving = (saving: Saving | null) => set({ saving });
-export const toggleAllRecs = () => set({ allRecs: !now().allRecs });
+export const setAsk = (st: HistStore, ask: string) => st.setState({ ask });
+export const setSaving = (st: HistStore, saving: Saving | null) => st.setState({ saving });
+export const toggleAllRecs = (st: HistStore) => st.setState({ allRecs: !st.getState().allRecs });
 
 /** The selected rows given to the Gatherer's model, as a record of `kind` -- or a record's own again (`again`). */
-export async function make(gatherer: string, kind: string, again: Rec | null = null): Promise<void> {
-  const s = now();
+export async function make(st: HistStore, gatherer: string, kind: string, again: Rec | null = null): Promise<void> {
+  const set = st.setState,
+    s = st.getState();
   if (s.busy || (!again && !s.sel.size)) return;
   set({ busy: true, err: "" });
   try {
@@ -191,11 +219,13 @@ export async function make(gatherer: string, kind: string, again: Rec | null = n
 
 /** The selected rows saved as a file of `fmt`. */
 export async function exportRows(
+  st: HistStore,
   gatherer: string,
   fmt: "md" | "json",
   save: (name: string, text: string, type: string) => void,
 ) {
-  const s = now();
+  const set = st.setState,
+    s = st.getState();
   if (!s.sel.size) return;
   try {
     const got = await post<{ name: string; text: string }>("/api/history/export", {
@@ -220,8 +250,10 @@ export async function deleteRec(r: Rec): Promise<void> {
 }
 
 /** Where a record would be saved, and what each file would get: nothing written yet. */
-export async function planSave(r: Rec): Promise<void> {
-  const sv = now().saving;
+export async function planSave(st: HistStore, r: Rec): Promise<void> {
+  const set = st.setState,
+    now = st.getState,
+    sv = now().saving;
   if (!sv || sv.id !== r.id) return;
   let next: Saving = { ...sv, err: "", done: null };
   try {
@@ -240,8 +272,9 @@ export async function planSave(r: Rec): Promise<void> {
 }
 
 /** The plan seen written. */
-export async function writeSave(r: Rec): Promise<void> {
-  const sv = now().saving;
+export async function writeSave(st: HistStore, r: Rec): Promise<void> {
+  const set = st.setState,
+    sv = st.getState().saving;
   if (!sv || !sv.plan) return;
   try {
     const got = await post<{ saved: string[] }>("/api/history/save", {
