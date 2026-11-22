@@ -6,6 +6,7 @@
 import type { Home } from "../../core/api/types";
 import type { Answer, Ask, Failing, StoppedCall } from "./asking/ask";
 import type { CardsHost } from "./asking/Cards";
+import type { PaneActsProps } from "./side/PaneActs";
 
 /** A message of the agent's in a turn (files.py's `replies`): what it said, a run of its thinking, or a note of its
  * harness's (a subagent's report handed back, another session's message). */
@@ -277,7 +278,7 @@ export interface ChatHost extends CardsHost {
   /** the files and commands folded to their bar, or shown (folded: the latest turn's, which the bar counts) */
   foldSide(actor: string, fold: boolean): unknown;
   /** the head of the pane showing `actor`, put in the files' folded bar with a panel open above the panes; null: none */
-  barActs(actor: string): Node | null;
+  paneActs(actor: string): PaneActsProps | null;
   /** a turn's files and commands shown: null, the latest's */
   setFilesTurn(actor: string, n: number | null): Promise<unknown>;
 }
