@@ -3,11 +3,13 @@
 import { describe, expect, it } from "vitest";
 import {
   appsPlan,
+  besidePlan,
   clearPlan,
   closePlan,
   enterPlan,
   herePlan,
   itemsPlan,
+  layOutPlan,
   onlyPlan,
   tabPlan,
   type Open,
@@ -204,5 +206,24 @@ describe("clearPlan and closePlan", () => {
     const plan = enterPlan(open, "g\u0000x");
     expect([plan.others.map((o) => o.c), plan.apps, plan.focus]).toEqual([["x", "shell:1"], [], { g: "g", c: "a" }]);
     expect(plan.here).toMatchObject({ c: "a", keep: true });
+  });
+
+  it("a task opened beside: its actors beside the pane in focus, as many as fit, its apps added, its first in focus", () => {
+    const t = task("g\u0000t7", { first: "p", rest: ["q", "r"], views: { q: "terminal" }, apps: [app("i7")] });
+    const plan = besidePlan({ ...open, at: 0 }, t, 5); // after b, in focus
+    expect(plan.others.map((o) => o.c)).toEqual(["b", "p", "x", "shell:1"]);
+    expect(plan.left).toBe(2); // q and r: no room
+    expect(plan.apps.map((a) => a.id)).toEqual(["i1", "i9", "i7"]);
+    expect([plan.focus, plan.here?.keep, plan.order]).toEqual([{ g: "g", c: "p" }, true, []]);
+    // beside a task of apps alone: out of it, its first in the page's own pane
+    const out = besidePlan({ ...open, here: null, others: [], appsOnly: "g\u0000t1" }, t, 4);
+    expect([out.appsOnly, out.here?.c, out.others.map((o) => o.c)]).toEqual([null, "p", ["q", "r"]]);
+    expect(out.others[0].view).toBe("terminal");
+  });
+
+  it("the rest of a task laid out beside its actor just shown, as many as fit, it in focus", () => {
+    const plan = layOutPlan({ ...open, others: [], at: -1 }, "g", "a", ["a", "b", "c", "d", "e"], {}, 4);
+    expect(plan.others.map((o) => o.c)).toEqual(["b", "c", "d"]);
+    expect(plan.focus).toEqual({ g: "g", c: "a" });
   });
 });

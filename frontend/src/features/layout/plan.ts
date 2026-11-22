@@ -335,3 +335,96 @@ export function enterPlan(now: Open, k: string): Plan {
     left: 0,
   };
 }
+
+// actors `cs` of group `g` opened beside the pane in focus (`at` among `list`; -1: the page's own, `here`), each in its view
+// as left, else the view of the pane it is opened from -- those open already skipped, at most `max` panes (the rest
+// counted: `left`; `stop`, none after the first left out)
+function besideOf(
+  list: PaneWant[],
+  at: number,
+  here: PaneWant | null,
+  g: string,
+  cs: string[],
+  views: Record<string, string>,
+  max: number,
+  stop: boolean,
+  view: string,
+): { at: number; left: number } {
+  let left = 0;
+  for (const c of cs) {
+    if ((here && here.g === g && here.c === c) || list.some((p) => p.g === g && p.c === c)) continue;
+    if (1 + list.length >= max) {
+      if (stop) break;
+      left += 1;
+      continue;
+    }
+    const from = at < 0 ? (here?.view ?? view) : list[at].view;
+    list.splice(at + 1, 0, { g, c, view: views[c] || from });
+    at += 1;
+  }
+  return { at, left };
+}
+
+/** Task `t` opened beside the tasks shown (⌘+click, a task dropped on the work area): nothing shown closed -- its actors,
+ * `first` first, beside the pane in focus, as many as there is room for, its apps added; out of apps alone first, `first`
+ * then in the page's own pane; `first`'s pane in focus after. */
+export function besidePlan(now: Open, t: TaskFacts, max: number): Plan {
+  const list = now.others.map(bare);
+  let here: Plan["here"] = now.here ? { g: now.here.g, c: now.here.c, view: null, shut: false, keep: true } : null,
+    at = now.at ?? -1;
+  if (now.appsOnly && t.first) {
+    const keep = (now.here ?? now.away)?.g === t.g && (now.here ?? now.away)?.c === t.first;
+    here = { g: t.g, c: t.first, view: null, shut: false, keep };
+    at = -1;
+  }
+  const h = here ? { g: here.g, c: here.c, view: here.view } : null;
+  const r = besideOf(list, at, h, t.g, t.first ? [t.first, ...t.rest] : [], t.views, max, false, now.view);
+  const apps = now.apps.map(appOf);
+  for (const a of t.apps) if (!apps.some((x) => x.id === a.id)) apps.push(a);
+  const f = t.first ? list.find((p) => p.g === t.g && p.c === t.first) : null;
+  const focus = f ? { g: f.g, c: f.c } : here && t.first && here.c === t.first ? { g: here.g, c: here.c } : null;
+  return {
+    order: [],
+    appsOnly: now.appsOnly && t.first ? null : (now.appsOnly ?? null),
+    here,
+    others: list,
+    apps,
+    focus,
+    left: r.left,
+  };
+}
+
+/** The rest of task `k`'s actors (`rest`) laid out beside `c`, just shown in the pane in focus: each in its view as left,
+ * as many as there is room for; `c` in focus after. */
+export function layOutPlan(
+  now: Open,
+  g: string,
+  c: string,
+  rest: string[],
+  views: Record<string, string>,
+  max: number,
+): Plan {
+  const list = now.others.map(bare);
+  const here = now.here ? { g: now.here.g, c: now.here.c, view: null, shut: false, keep: true } : null;
+  const h = here ? { g: here.g, c: here.c, view: null } : null;
+  besideOf(
+    list,
+    now.at ?? -1,
+    h,
+    g,
+    rest.filter((x) => x !== c),
+    views,
+    max,
+    true,
+    now.view,
+  );
+  return {
+    order: [],
+    appsOnly: now.appsOnly ?? null,
+    here,
+    others: list,
+    apps: now.apps.map(appOf),
+    focus: { g, c },
+    left: 0,
+  };
+}

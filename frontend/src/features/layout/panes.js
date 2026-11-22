@@ -27,7 +27,7 @@ import { termOf } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
 import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
 import { herePane, newPane } from "./pane";
-import { appsPlan, clearPlan, closePlan, enterPlan, herePlan, itemsPlan, onlyPlan, tabPlan } from "./plan";
+import { appsPlan, besidePlan, clearPlan, closePlan, enterPlan, herePlan, itemsPlan, layOutPlan, onlyPlan, tabPlan } from "./plan";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
 import { shadow } from "./shadow";
@@ -199,43 +199,35 @@ function layOutTask(g, to, c, rest, was = null) {
   const gg = gathererNamed(g);
   const open = (ch) => { const a = gg && gg.agents.find((x) => x.channel === ch); return a && statusOf(a)[0] !== "closed" && taskKey(g, ch) === to; };
   tasksLaidOut.add(to);
-  for (const ch of rest) {
-    if (ch === c || !open(ch) || openActors().some((s) => isAt(s, g, ch))) continue;
-    if (allPanes().length >= MAX_PANES) break;
-    openBeside(g, ch, (was && was.views && was.views[ch]) || null);
-  }
-  focusPane(actorPanes().find((p) => isAt([p.g, p.c], g, c)) || panes.here);
+  renderLayout(layOutPlan(openNow(), g, c, rest.filter(open), (was && was.views) || {}, MAX_PANES));   // (features/layout/plan.ts)
 }
 // A task opened BESIDE the one shown (⌘/Ctrl+click on it): nothing of the one shown closed -- its actors not closed, as it
 // was left (else its lead first; `first`, first), in panes beside the one in focus, as many as there is room for, and its
 // apps' panels added above (openTaskApps, `beside`); `first`'s pane in focus after.
 async function openTaskBeside(g, key, first) {
   shadow.tell("beside", model.open, key, true);
-  await outOfAppsOnly(g, first);
   const gg = gathererNamed(g), was = taskLayout(key);
   tasksLaidOut.add(key);
   const open = (ch) => { const a = gg && gg.agents.find((x) => x.channel === ch); return a && statusOf(a)[0] !== "closed" && taskKey(g, ch) === key; };
   const order = [first, ...(was ? was.actors : taskOrder(g, key))].filter((ch, i, all) => ch && all.indexOf(ch) === i && open(ch));
-  let left = 0;
-  for (const ch of order) {
-    if (openActors().some((s) => isAt(s, g, ch))) continue;
-    if (allPanes().length >= MAX_PANES) { left++; continue; }
-    openBeside(g, ch, (was && was.views && was.views[ch]) || null);
-  }
-  if (left) paneNote(`${plural(left, "actor")} of the task not opened. At most ${MAX_PANES} fit side by side.`);
-  await openTaskApps(g, first, key, was ? was.apps : null, true);
+  const found = taskAppsFound(g, gg, first, key, was ? was.apps : null).found;
+  for (const a of found) if (a.inst) instCache.set(a.id, a.inst);
+  const facts = { key, g, first: order[0] || null, rest: order.slice(1), shut: false, views: (was && was.views) || {},
+    apps: found.map((a) => ({ app: a.app, id: a.id, g, ...(+a.size > 0 ? { size: +a.size } : {}) })), back: null, focusApp: null,
+    mine: false };
+  const plan = besidePlan(openNow(), facts, MAX_PANES);   // (features/layout/plan.ts)
+  await renderLayout(plan);
+  if (plan.left) paneNote(`${plural(plan.left, "actor")} of the task not opened. At most ${MAX_PANES} fit side by side.`);
+  await openTaskApps(g, first, key, was ? was.apps : null, true);   // its apps the page did not know, once read
   const p = actorPanes().find((q) => isAt([q.g, q.c], g, first));
   if (p) focusPane(p);
 }
-// An actor opened beside a task of apps alone (⌘+click): this page's own pane, out of sight while apps alone show (its
-// actor not shown, though selected), in sight again with `c` in it -- the apps kept, beside
+// An actor opened beside a task of apps alone (⌘+click): this page's own pane, out of sight while apps alone show, in
+// sight again with `c` in it -- the apps kept, beside (features/layout/plan.ts's besidePlan, of `c` alone)
 async function outOfAppsOnly(g, c) {
   if (!appsOnlyKey() || !c) return;
-  if (isAt(awayOf(), g, c)) backInSight();
-  setAppsOnly(null);
-  focusPane(panes.here);
-  if (!isAt(state.selected, g, c)) await showIn(g, c, null);
-  placeWork(); renderAgents();
+  await renderLayout(besidePlan(openNow(), { key: "", g, first: c, rest: [], shut: false, views: {}, apps: [], back: null,
+    focusApp: null, mine: false }, MAX_PANES));
 }
 // a task's actors not closed, as it opens at first: its lead first (features/list/list.js's taskActors)
 function taskOrder(g, key) {
