@@ -147,13 +147,6 @@ export interface ChatPage {
   otherViews(): ChatViewDef[];
   /** what a view of the reader's own draws with */
   readonly reader: ReaderParts;
-
-  // the actor's stage (core/page/helpers.js), until it moves
-  atWork(info: Actor, t: { work?: unknown }): Node;
-  atRest(info: Actor, turn: number | null | undefined): Node;
-  greeting(info: Actor): Node | null;
-  bareAvatar(info: Actor): string | null;
-  hueInk(info: Actor): string | null;
 }
 
 let page: ChatPage | null = null;

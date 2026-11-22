@@ -45,9 +45,7 @@ export function testHost(): TestHost {
   const host: TestHost = {
     calls,
     envelopes: {},
-    atWork: (info, t) => span("stage-box", JSON.stringify(["work", info.avatar, t.work ?? null])),
-    atRest: (info, turn) => span("done", JSON.stringify(["rest", info.avatar, turn])),
-    greeting: (info) => (info.avatar ? span("stage-box", JSON.stringify(["hello", info.avatar])) : null),
+    avatarMode: () => "acting",
     crewFace: (a, coordinator) => {
       const n = document.createElement("img");
       n.className = "crew-face";
@@ -55,8 +53,6 @@ export function testHost(): TestHost {
       return n;
     },
     appWords: (text) => (text.startsWith("[app] ") ? span("tx", null, text.slice(6)) : null),
-    bareAvatar: (info) => (info.avatar ? `/avatars/${info.avatar}.svg?bare=1` : null),
-    hueInk: (info) => (info.avatar_hue ? "color: light-dark(#b91c1c, #f57474)" : null),
     envelope: (text) => host.envelopes[text] ?? null,
     typedAs,
     sameWords: (a, b) => typedAs(a).slice(0, 200) === typedAs(b).slice(0, 200),

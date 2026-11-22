@@ -256,18 +256,12 @@ export type PageFeed = Omit<ChatFeed, "mine" | "picked" | "interrupting" | "canI
 
 /** What the turn list calls of the old page, until those parts move too; and the cards under it (asking/Cards.tsx). */
 export interface ChatHost extends CardsHost {
-  /** the actor's stage (core/page/helpers.js): at work, done, waving hello */
-  atWork(info: Actor, t: { work?: unknown }): Node;
-  atRest(info: Actor, turn: number | null | undefined): Node;
-  greeting(info: Actor): Node | null;
+  /** how the actor at work is drawn: "acting" (its stage) or "simple" (the setting) */
+  avatarMode(): string;
   /** an actor's face, small (features/list/list.js's crewFace); the gatherer agent's picture for one with none */
   crewFace(a: Actor | null, coordinator: boolean): Node;
   /** a message an app wrote with its own block (a Browser's), as the app draws it; null for any other */
   appWords(text: string): Node | null;
-  /** the actor's avatar without its circle: where to get it */
-  bareAvatar(info: Actor): string | null;
-  /** the words in the actor's hue: a style ("color: ...") */
-  hueInk(info: Actor): string | null;
   /** a message between actors (coordination.py's envelope) */
   envelope(text: string): Envelope | null;
   /** a message's words as matched with one stored, and whether two say the same */

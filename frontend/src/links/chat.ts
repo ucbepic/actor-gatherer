@@ -185,11 +185,6 @@ export function linkChat(): void {
       harnessBadge: (h) => helpers.harnessBadge(h),
       actorLogo: (a) => appActors.actorLogo(a),
     },
-    atWork: (info, t) => helpers.atWork(info, t),
-    atRest: (info, turn) => helpers.atRest(info, turn),
-    greeting: (info) => helpers.greeting(info),
-    bareAvatar: (info) => helpers.bareAvatar(info),
-    hueInk: (info) => helpers.hueInk(info),
   };
   setChatPage(page);
 }

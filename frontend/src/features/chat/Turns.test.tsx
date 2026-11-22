@@ -62,7 +62,7 @@ describe("Turns", () => {
     // over: the actor done under it, and short of height, how long it took
     expect(node.querySelector("#fl-turn-7 .fl-finished .fl-times")!.textContent).toBe("took 5s");
     expect(node.querySelector(".fl-foot > .fl-done > .done")!.getAttribute("data-sig")).toBe(
-      '["rest","animal/fox",107]',
+      '["/avatars/animal/fox.svg?bare=1",107]', // core/ui/stage's: its picture, its turn
     );
     expect(node.querySelector(".fl-foot > .fl-done")!.getAttribute("title")).toBe("Done · 10m ago");
   });
@@ -73,14 +73,11 @@ describe("Turns", () => {
     const stage = node.querySelector(".fl-done > .done")!;
     expect(page.draw(withTurns(turns(3)))).toBe(node);
     expect(node.querySelector(".fl-done > .done")).toBe(stage);
-    // the stage put its next moment in its place meanwhile: that one is compared, and kept
-    const next = stage.cloneNode(true) as HTMLElement;
-    stage.replaceWith(next);
     page.draw();
-    expect(node.querySelector(".fl-done > .done")).toBe(next);
-    // a new turn: another stage
+    expect(node.querySelector(".fl-done > .done")).toBe(stage);
+    // a new turn: another stage, its check grown in anew
     page.draw(withTurns(turns(4)));
-    expect(node.querySelector(".fl-done > .done")).not.toBe(next);
+    expect(node.querySelector(".fl-done > .done")).not.toBe(stage);
     expect(node.querySelectorAll(".fl-done").length).toBe(1);
   });
 
@@ -207,7 +204,12 @@ describe("Turns", () => {
     expect(line.querySelector(".fl-mini img")!.getAttribute("src")).toBe("/avatars/animal/fox.svg?bare=1");
     const status = node.querySelector(".fl-foot > .fl-status")!;
     expect([...status.children].map((c) => c.className)).toEqual(["stage-box", "now"]);
-    expect(status.firstElementChild!.getAttribute("data-sig")).toBe('["work","animal/fox",{"doing":"read"}]');
+    expect(status.firstElementChild!.getAttribute("data-sig")).toBe(
+      '["stage s-read","read","/avatars/animal/fox.svg?bare=1","","red"]', // what the stage shows: reading
+    );
+    expect(status.querySelector(".stage-box > svg.stage.s-read image")!.getAttribute("href")).toBe(
+      "/avatars/animal/fox.svg?bare=1",
+    );
     expect(node.querySelector(".fl-done")).toBeNull();
     expect(node.querySelector("#fl-turn-1 .fl-finished")).toBeNull();
     // thinking; its calls failing; Esc sent
@@ -437,7 +439,7 @@ describe("before the first turn", () => {
     expect(node.className).toBe("fl-talk hi");
     expect(node.dataset.keep).toBeUndefined();
     const hello = node.querySelector(":scope > .fl-hello")!;
-    expect(hello.firstElementChild!.getAttribute("data-sig")).toBe('["hello","animal/fox"]');
+    expect(hello.firstElementChild!.getAttribute("data-sig")).toBe('["hello","/avatars/animal/fox.svg?bare=1","red"]');
     expect(hello.querySelector(".fl-say.verse")!.innerHTML).toBe("Hi, I'm Fox.<br>Ready when you are.");
     page.draw({ session: { status: "starting" } });
     expect(hello.lastElementChild!.outerHTML).toBe("<div>Starting the agent…</div>");

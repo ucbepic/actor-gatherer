@@ -29,11 +29,6 @@ export declare const helpers: {
   runnableNames(join: string): string;
   el(tag: string, attrs?: Record<string, unknown>, ...kids: unknown[]): HTMLElement;
   svgEl(tag: string, attrs?: Record<string, unknown>): Element;
-  atWork(a: Actor, t: { work?: unknown }): Node;
-  atRest(a: Actor, turn: number | null | undefined): Node;
-  greeting(a: Actor): Node | null;
-  bareAvatar(a: Actor): string | null;
-  hueInk(a: Actor): string | null;
 };
 
 /** features/page/data.js */

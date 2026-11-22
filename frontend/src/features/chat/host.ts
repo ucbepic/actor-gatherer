@@ -1,5 +1,5 @@
 // What Chat's React parts call of the page around them (types.ts's ChatHost), made from what the page hands Chat (link.ts):
-// the actor's stage, an actor's face, a Browser's message, a message's words as matched, the icons; the pane showing an
+// how the actor at work is drawn, an actor's face, a Browser's message, a message's words as matched, the icons; the pane showing an
 // actor -- its turn picked, its files and commands folded or shown, its view switched, its head in the files' bar; and a
 // permission's call and words as the cards show them (asking/Cards.tsx).
 import { setFilesTurn, foldSide } from "./files-view";
@@ -65,11 +65,7 @@ function paneActs(actor: string): ReturnType<ChatHost["paneActs"]> {
 }
 
 const host: ChatHost = {
-  atWork: (info, t) => P().atWork(info, t),
-  atRest: (info, turn) => P().atRest(info, turn),
-  greeting: (info) => P().greeting(info),
-  bareAvatar: (info) => P().bareAvatar(info),
-  hueInk: (info) => P().hueInk(info),
+  avatarMode: () => P().avatarMode(),
   envelope: (text) => P().envelope(text),
   typedAs,
   sameWords,
