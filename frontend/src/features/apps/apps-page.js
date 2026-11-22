@@ -1,12 +1,12 @@
-import { SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { harnessInfo } from "../../core/page/helpers.js";
-import { setAbout } from "../page/data.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state";
+import { harnessInfo } from "../../core/page/helpers";
+import { setAbout } from "../page/data";
 import { aimStart, renderAgents } from "../list/list";
 import {
   appClosed, openAppTab, startable, startCwd, startWithApp, workPlacer,
-} from "../layout/panes.js";
-import { START_HARNESS_KEY, keptValue, ntGroup, realGroups, startPlace } from "../layout/new-tab.js";
-import { topChanged } from "../layout/top.js";
+} from "../layout/panes";
+import { START_HARNESS_KEY, keptValue, ntGroup, realGroups, startPlace } from "../layout/new-tab";
+import { topChanged } from "../layout/top";
 import { draw as drawCatalog } from "./catalog";
 import * as appHost from "./host";
 

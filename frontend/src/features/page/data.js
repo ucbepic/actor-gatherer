@@ -1,17 +1,17 @@
-import { SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state";
 import {
   avatarMode, clock, el, get, isShell, keepAvatarMode, parseKey, selectedInfo, signature,
-} from "../../core/page/helpers.js";
+} from "../../core/page/helpers";
 import { statusOf, takeHome } from "../list/seen";
 import { firstAgent, isHidden, moveHidingToServer, renderAgents, staleNames } from "../list/list";
-import { drawWho, paneSig, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes.js";
-import { drawPane } from "./main-view.js";
+import { drawWho, paneSig, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes";
+import { drawPane } from "./main-view";
 import { termsKept } from "../terminal/term";
-import { chatFeed, chatView } from "../chat/views.js";
-import { opened } from "../chat/files-view.js";
-import { canMinimize, chatMin, topShown } from "../layout/top.js";
+import { chatFeed, chatView } from "../chat/views";
+import { opened } from "../chat/files-view";
+import { canMinimize, chatMin, topShown } from "../layout/top";
 import { clearFlips } from "../chat/store";
-import { allPanes, paneInfo, paneKey, paneSel } from "./pane-view.js";
+import { allPanes, paneInfo, paneKey, paneSel } from "./pane-view";
 import { drafts, keepDraft } from "../chat/drafts";
 import { ownBox } from "../chat/Composer";
 import { useSettings } from "../settings/store";

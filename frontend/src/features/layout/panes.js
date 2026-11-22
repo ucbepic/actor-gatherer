@@ -1,11 +1,11 @@
-import { MAX_PANES, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { MAX_PANES, SNAPSHOT, panes, state } from "../../core/page/state";
 import {
   HUE_MAIN, ICONS, MAC, el, gathererNamed, get, harnessBadge, harnessInfo, harnessLogo, harnessName, isShell, key,
   parseKey, post, runnableNames, runsHere, shellOf, shellPath, signature, strokeIcon, taskId,
   taskNumber,
-} from "../../core/page/helpers.js";
-import { loadAgent, loadChat, loadHome, setAbout, setLive } from "../page/data.js";
-import { connect } from "../settings/panel.js";
+} from "../../core/page/helpers";
+import { loadAgent, loadChat, loadHome, setAbout, setLive } from "../page/data";
+import { connect } from "../settings/panel";
 import { markSeen, statusOf } from "../list/seen";
 import {
   APP_ITEM, MANAGER, actorOf, actorTitle, actorsWithin, aimStart, appInfo, appItem, appMarkOf, appShown, appStatusOf,
@@ -17,19 +17,19 @@ import {
 import { GF, gfOf } from "../list/gatherer-folders";
 import { ALONE_NEW, everyActor } from "../list/group-moves";
 import { cardRelease, listMode, select, setListMode } from "../list/modes";
-import { drawNewTab, keptHarness, keptStart } from "./new-tab.js";
-import { drawPane } from "../page/main-view.js";
-import { askKey, askWhere } from "../chat/chat.js";
-import { tildePath } from "../../core/page/code.js";
+import { drawNewTab, keptHarness, keptStart } from "./new-tab";
+import { drawPane } from "../page/main-view";
+import { askKey, askWhere } from "../chat/chat";
+import { tildePath } from "../../core/page/code";
 import { firstLine, plural } from "../../core/format";
-import { CHAT_VIEWS, CHAT_VIEW_KEY, chatView, setChatView } from "../chat/views.js";
-import { termOf } from "../terminal/terminal.js";
-import { minRedraw, topChanged } from "./top.js";
-import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
+import { CHAT_VIEWS, CHAT_VIEW_KEY, chatView, setChatView } from "../chat/views";
+import { termOf } from "../terminal/terminal";
+import { minRedraw, topChanged } from "./top";
+import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view";
 import { herePane, newPane } from "./pane";
 import { appsPlan, besidePlan, clearPlan, closePlan, enterPlan, herePlan, itemsPlan, layOutPlan, onlyPlan, tabPlan } from "./plan";
 import { keptToDrop, tabHolding } from "./kept";
-import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
+import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors";
 import * as model from "./model";
 import { shadow } from "./shadow";
 import { work as workLayout } from "./work";

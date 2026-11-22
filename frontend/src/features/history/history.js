@@ -1,7 +1,7 @@
-import { SNAPSHOT, state } from "../../core/page/state.js";
-import { ICONS } from "../../core/page/helpers.js";
-import { CHAT_FEEDS, addChatView, chatView } from "../chat/views.js";
-import { allPanes, paneKey } from "../page/pane-view.js";
+import { SNAPSHOT, state } from "../../core/page/state";
+import { ICONS } from "../../core/page/helpers";
+import { CHAT_FEEDS, addChatView, chatView } from "../chat/views";
+import { allPanes, paneKey } from "../page/pane-view";
 import { loadOutline, outlineOf, setHistHost } from "./data";
 import { drawHistory, outlineSignature } from "./mount";
 

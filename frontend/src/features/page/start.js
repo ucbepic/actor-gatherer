@@ -1,10 +1,10 @@
-import { AGO_MS, SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { refresh, render } from "./data.js";
-import { $, connect } from "../settings/panel.js";
+import { AGO_MS, SNAPSHOT, panes, state } from "../../core/page/state";
+import { refresh, render } from "./data";
+import { $, connect } from "../settings/panel";
 import { renderAgents } from "../list/list";
-import { closeHerePane, focusPane, restoreAppPanes, showActorsApp, startPlacing, watchTop } from "../layout/panes.js";
-import { topChanged } from "../layout/top.js";
-import { loadOwnViews } from "../chat/own-views.js";
+import { closeHerePane, focusPane, restoreAppPanes, showActorsApp, startPlacing, watchTop } from "../layout/panes";
+import { topChanged } from "../layout/top";
+import { loadOwnViews } from "../chat/own-views";
 import * as appHost from "../apps/host";
 
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.

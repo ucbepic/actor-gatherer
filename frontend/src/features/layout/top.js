@@ -1,15 +1,15 @@
-import { SNAPSHOT, panes } from "../../core/page/state.js";
+import { SNAPSHOT, panes } from "../../core/page/state";
 import {
   ICONS, bareAvatar, doneCheck, el, restDelay, shellOf, shellPath, signature, strokeIcon,
-} from "../../core/page/helpers.js";
-import { loadChat } from "../page/data.js";
+} from "../../core/page/helpers";
+import { loadChat } from "../page/data";
 import { markSeen, statusOf } from "../list/seen";
-import { placeIfShown, placeWork, workPlacer } from "./panes.js";
-import { drawPane } from "../page/main-view.js";
-import { chatToEnd } from "../chat/chat.js";
-import { miniCard, miniHistory, miniRest } from "../chat/mini-history.js";
+import { placeIfShown, placeWork, workPlacer } from "./panes";
+import { drawPane } from "../page/main-view";
+import { chatToEnd } from "../chat/chat";
+import { miniCard, miniHistory, miniRest } from "../chat/mini-history";
 import { chatOf, showTurn } from "../chat/actors";
-import { allPanes } from "../page/pane-view.js";
+import { allPanes } from "../page/pane-view";
 import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ the top row, as the actors' panes see it

@@ -1,12 +1,12 @@
-import { SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { ICONS, closeIcon, el, post, strokeIcon } from "../../core/page/helpers.js";
-import { setLive } from "../page/data.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state";
+import { ICONS, closeIcon, el, post, strokeIcon } from "../../core/page/helpers";
+import { setLive } from "../page/data";
 import { markSeen, seen, statusOf } from "../list/seen";
 import {
   actorTitle, appFace, appInfo, appKey, appTitle, plainFace, readApps, renderAgents, selectApp, titleOf,
 } from "../list/list";
 import { cardDraw, hover } from "../list/modes";
-import { isAt, openActors, paneNote, pick } from "../layout/panes.js";
+import { isAt, openActors, paneNote, pick } from "../layout/panes";
 import * as appHost from "../apps/host";
 import * as prefs from "../../core/prefs";
 
