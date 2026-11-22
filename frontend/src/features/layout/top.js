@@ -43,11 +43,13 @@ const canMinimize = (p) => !SNAPSHOT && !!p && !chatMin(p) && !!workPlacer && wo
 function setChatMin(p, on) {
   if (workPlacer) workPlacer.setMin(p.node, on);    // drawn so as it is placed (minChanged, features/layout/panes.js)
 }
-// Pane `p` minimized or shown again: its counts are the latest turn's, from the files' feed (chatFeed) -- then, shown
-// again, its view's own feed.
+// Pane `p` minimized or shown again: drawn so at once, with what it has -- not once its feed has loaded, which a busy
+// page or server can hold up for seconds, the pane placed whole meanwhile with its minimized strip in it -- then again
+// once loaded: its counts are the latest turn's, from the files' feed (chatFeed) -- then, shown again, its view's own feed.
 async function minRedraw(p) {
   if (chatMin(p) && p.files && chatOf(p.files.key).picked !== null) showTurn(p.files.key, null);
   topMount();
+  drawPane(p);
   await loadChat(p);
   drawPane(p);
   if (!chatMin(p)) chatToEnd(p);
