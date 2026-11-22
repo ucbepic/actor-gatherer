@@ -85,6 +85,8 @@ frontend/                  the dashboard's front end: Vite, TypeScript, React
     compat/                agDashboard.chatView, for <home>/dashboard/views/*.js
     page.js, styles.ts     page.html's script and styles as modules (A3, A3b): started in its order; each module goes
                            as its view moves to React (core/page/ and the .js files of features/)
+    links/                 what a feature takes of the page around it and of other features (chat.ts, terminal.ts,
+                           history.ts): typed in the feature, filled here before the page starts (page.js calls them)
   tests/                   Vitest
   e2e/                     Playwright: a spec per view, screenshots (tests/web_home.py builds and serves its home)
 ag_dashboard/
