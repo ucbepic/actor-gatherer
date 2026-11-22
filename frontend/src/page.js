@@ -26,8 +26,10 @@ import { start as startLayoutTop } from "./features/layout/top";
 import { start as startChatOwnViews } from "./features/chat/own-views";
 import { start as startPageStart } from "./features/page/start";
 import { linkList } from "./list-link";
+import { linkLayout } from "./links/layout";
 
 linkList(); // the list (TypeScript) handed the old page's modules it calls
+linkLayout(); // the layout (TypeScript) handed the page around it
 startPageData();
 startSettingsPanel();
 startListSeen();

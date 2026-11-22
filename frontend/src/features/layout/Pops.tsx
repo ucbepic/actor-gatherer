@@ -1,13 +1,13 @@
 // The page's drop-downs and boxes hung from a button (or a point), one at a time: a menu -- a panel's moves, what can
 // start in a place, the new-tab page's "In" and "On", the list's moves -- as Radix's DropdownMenu (arrow keys, Home/End,
 // typing a letter, Esc giving the focus back to the button), and a box to fill in -- a new actor's directory and harness,
-// an app's folder -- as Radix's Popover, its form the page's own node. Each placed by Radix under its button (from the
+// an app's folder -- as Radix's Popover, its form React's (StartBoxes.tsx). Each placed by Radix under its button (from the
 // rail, beside it), flipped above where there is no room, and closed by its button pressed again, a press elsewhere, Esc,
 // the page resizing, or the page or a box holding its button scrolling. The page says what each holds and what a choice
-// does (features/layout/panes.js's openPop, popMenu); the look is the page's (.br-menu.row-menu, .dw-menu).
+// does (pops.ts's openPop, popMenu); the look is the page's (.br-menu.row-menu, .dw-menu).
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { Html } from "../../core/ui/PageNode";
@@ -30,12 +30,12 @@ export interface PopMenu {
   items: PopItem[];
   cls?: string;
 }
-/** What is open: hung from `anchor` (a button, found again by its data-pop, `key`), a menu or a box (the page's node). */
+/** What is open: hung from `anchor` (a button, found again by its data-pop, `key`), a menu or a box (a form, React's). */
 export interface Pop {
   key: string;
   anchor: HTMLElement;
   menu?: PopMenu;
-  box?: HTMLElement;
+  box?: ReactNode;
 }
 /** What the pop-ups ask of the page: an icon's node (by its name or its SVG path); that one closed (its button told). */
 export interface PopsHost {
@@ -65,6 +65,10 @@ export function showPop(pop: Pop | null): void {
 }
 /** The pop-up shown, if one is. */
 export const popShown = (): Pop | null => shown;
+// the box a form is in: the pop-up it is shown in (usePop), so it closes that one alone once it is done
+const InPop = createContext<Pop | null>(null);
+/** The pop-up a box's form is shown in. */
+export const usePop = (): Pop | null => useContext(InPop);
 
 // the one shown closed, as `how` says
 const close = (pop: Pop, how: "esc" | "chosen" | "away") => {
@@ -183,22 +187,15 @@ function MenuPop({ pop, menu, side }: { pop: Pop; menu: PopMenu; side: "right" |
   );
 }
 
-// the page's form `box` put in `at`, laid out in the pop-up (not fixed where the page put it before); taken out again
-function hostBox(at: HTMLElement, box: HTMLElement): () => void {
-  box.style.position = "relative";
-  at.append(box);
-  return () => box.remove();
-}
-
 function BoxPop({ pop, side }: { pop: Pop; side: "right" | "bottom" }) {
   const how = useRef<"esc" | "away">("away");
-  // (put in as its place is made: the portal draws it a moment after the pop-up)
-  const into = useCallback((at: HTMLDivElement | null) => (at ? hostBox(at, pop.box!) : undefined), [pop]);
+  const content = useRef<HTMLDivElement>(null);
   return (
     <Popover.Root open onOpenChange={(open) => (open ? undefined : close(pop, how.current))}>
       <Popover.Anchor virtualRef={{ current: pop.anchor }} />
       <Popover.Portal>
         <Popover.Content
+          ref={content}
           className="pop-box"
           role="presentation"
           side={side}
@@ -209,7 +206,7 @@ function BoxPop({ pop, side }: { pop: Pop; side: "right" | "bottom" }) {
           // its first box in focus, the caret at its end (a folder's end in sight)
           onOpenAutoFocus={(ev) => {
             ev.preventDefault();
-            const first = pop.box!.querySelector<HTMLElement>("input, [role=menuitem], button");
+            const first = content.current?.querySelector<HTMLElement>("input, [role=menuitem], button");
             if (!first) return;
             first.focus({ preventScroll: true });
             if (first instanceof HTMLInputElement) {
@@ -227,7 +224,7 @@ function BoxPop({ pop, side }: { pop: Pop; side: "right" | "bottom" }) {
           }}
           onFocusOutside={(ev) => ev.preventDefault()}
         >
-          <div ref={into} />
+          <InPop.Provider value={pop}>{pop.box}</InPop.Provider>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

@@ -1,6 +1,6 @@
 // Lint for the dashboard's front end, with the import rules between its folders (ag_dashboard/DESIGN.md, "Rules"):
 // core/ imports no feature; a feature imports core/ and itself, not another feature; the app's own files (main.ts,
-// bridge.ts, page.js) put them together.
+// bridge.ts, page.js, and links/: what a feature's TypeScript takes of the others, handed over) put them together.
 import js from "@eslint/js";
 import boundaries from "eslint-plugin-boundaries";
 import reactHooks from "eslint-plugin-react-hooks";
@@ -10,8 +10,7 @@ import tseslint from "typescript-eslint";
 // The page's script from before its views were rewritten -- page.html's sections, modules now (src/page.js starts
 // them): the .js files in features/ (core/page/ holds what they share, and keeps core/'s rules). Each still imports
 // other features' modules, as the one script they were, so the import rules leave them out; each goes, or becomes a
-// feature's own code, as its view is rewritten (A5, A6). Files of it over max-lines, until then: this list only shrinks.
-const PAGE_LONG = ["src/features/layout/panes.js"];
+// feature's own code, as its view is rewritten (A5, A6). None is over max-lines any more.
 
 export default tseslint.config(
   { ignores: ["node_modules/", "test-results/", "playwright-report/"] },
@@ -30,9 +29,8 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-expressions": ["error", { allowTernary: true, allowShortCircuit: true }],
     },
   },
-  { files: PAGE_LONG, rules: { "max-lines": "off" } },
   {
-    files: ["src/**/*.{ts,tsx}", "src/core/**/*.js", "src/*.js"],
+    files: ["src/**/*.{ts,tsx}", "src/core/**/*.js", "src/*.js", "src/links/*.js"],
     plugins: { boundaries },
     settings: {
       "import/resolver": { node: { extensions: [".ts", ".tsx", ".js"] } },
@@ -40,6 +38,7 @@ export default tseslint.config(
         { type: "core", pattern: "src/core" },
         { type: "feature", pattern: "src/features/*", capture: ["name"] },
         { type: "app", pattern: "src/*.{ts,tsx,js}" },
+        { type: "app", pattern: "src/links" },
       ],
     },
     rules: {

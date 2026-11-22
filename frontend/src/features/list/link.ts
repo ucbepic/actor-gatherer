@@ -111,8 +111,8 @@ export interface PanesPart {
   noHarness(): string;
   openActors(): At[];
   openCoordinator(g: Gatherer | null, node: string): void;
-  /** a box (the page's node) or a menu hung from `button`, by its key (Pops.tsx draws it) */
-  openPop(key: string, button: HTMLElement, box: HTMLElement): void;
+  /** a box (its form, the layout's: railNewBox's) or a menu hung from `button`, by its key (Pops.tsx draws it) */
+  openPop(key: string, button: HTMLElement, what: object): void;
   openTaskBeside(gname: string, k: string, first: string): Promise<void>;
   paneNote(text: string): void;
   /** pane `p` drawn for the actor it is given now: its calls and view loaded */
@@ -130,11 +130,12 @@ export interface PanesPart {
     cwd: string,
     error: string,
     alone: boolean,
-  ): HTMLElement;
+  ): object;
   rekeyTask(was: string, now: string): void;
   rememberTask(k: string): void;
   retarget(p: ActorPane, g: string, c: string): void;
-  readonly rowPop: { key: string; el: Element | null };
+  /** what is open: its button's key, and what it is (nothing: none) */
+  readonly rowPop: { key: string; el: unknown };
   savePanes(): void;
   selectAppPane(p: AppPane): void;
   selectedTask(): string | null;
