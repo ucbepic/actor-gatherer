@@ -9,7 +9,7 @@ test("a task opened again has its chat minimized under its apps as it was left, 
   await open(page);
   const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
   const codex = page.locator("#agents button.agent", { hasText: CODEX });
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   const mini = page.locator("#main > .chat.mini");
   await claude.click();
   await addNotepad(page, claude); // Claude and Notepad: one task
@@ -103,7 +103,7 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   // the row's height, the band under it included: from its panel's top to the panes' below (0: not shown)
   const tall = async () => {
     const [above, below] = [
-      await row.locator("> .app-pane").first().boundingBox(),
+      await row.locator("> .app-pane:not([hidden])").first().boundingBox(),
       await page.locator("#pane-here").boundingBox(),
     ];
     return above && below ? Math.round(below.y - above.y) : 0;
@@ -111,7 +111,7 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   // dragged down, over this page's own pane
   const drag = async (to: number) => {
     const grip = (await page.locator(".lay-bar.thick").boundingBox())!;
-    const top = (await row.locator("> .app-pane").first().boundingBox())!.y;
+    const top = (await row.locator("> .app-pane:not([hidden])").first().boundingBox())!.y;
     await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
     await page.mouse.down();
     await page.mouse.move(grip.x + grip.width / 2, top + to, { steps: 5 });
@@ -119,14 +119,14 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   };
   await claude.click();
   await addNotepad(page, claude); // Claude's task: Notepad above
-  await expect(row.locator("> .app-pane")).toHaveCount(1);
+  await expect(row.locator("> .app-pane:not([hidden])")).toHaveCount(1);
   const column = (await page.locator(".work").boundingBox())!.height; // the work area, under the page's top bar
   await expect.poll(tall).toBe(Math.round(column / 2)); // no row dragged yet: half the column
   await drag(520);
   await expect.poll(tall).toBeGreaterThan(505);
   const claudes = await tall();
   await codex.click();
-  await expect(row.locator("> .app-pane")).toHaveCount(1);
+  await expect(row.locator("> .app-pane:not([hidden])")).toHaveCount(1);
   await expect.poll(tall).toBe(claudes); // never dragged in it: as tall as the row dragged last
   await drag(600);
   await expect.poll(tall).toBeGreaterThan(585);

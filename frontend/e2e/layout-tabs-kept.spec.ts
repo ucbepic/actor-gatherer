@@ -75,7 +75,7 @@ test("the panels of the three tabs left latest are kept; those of a tab left bef
   }
   await expect(tabs(page)).toHaveCount(folders.length);
   await expect(notepads(page)).toHaveCount(4); // k1..k3 kept, k4 shown
-  await row(page, CODEX).click(); // a fifth tab: k1's tab, left first, loses its panel
+  await page.locator(".lay-tab-add").click(); // a fifth tab ("+"): k1's tab, left first, loses its panel
   await expect(tabs(page)).toHaveCount(5);
   await expect(shownNotepads(page)).toHaveCount(0);
   await expect(notepadAt(page, "k1")).toHaveCount(0);
