@@ -43,8 +43,11 @@ export interface Plan {
   order: string[];
   /** the task of apps alone shown (the actors' panes out of sight), if the tab has only such */
   appsOnly: string | null;
-  /** the page's own pane: its actor -- kept as it is (`keep`), or another, in `view` -- shown out of sight (`shut`) */
-  here: { g: string; c: string; view: string | null; shut: boolean; keep: boolean } | null;
+  /** the page's own pane: its actor -- kept as it is (`keep`), or another, in `view` (as wide as `size`) -- shown out
+   * of sight (`shut`) */
+  here: { g: string; c: string; view: string | null; shut: boolean; keep: boolean; size?: number } | null;
+  /** none for the page's own pane: its actor put out of sight (a terminal's kept in sight) */
+  away?: boolean;
   /** the panes beside it, in order: the tab's tasks' actors, then those kept (terminals) */
   others: PaneWant[];
   /** the apps' panels: those of the first task open already, then the tasks' own as they come */
@@ -58,10 +61,58 @@ export interface Plan {
 /** What is open now: the page's own pane's actor, the panes beside it (each kept if `keep` says so: a terminal, or an
  * actor of the tab's tasks), the apps' panels open (by instance, each with its task). */
 export interface Open {
-  here: { g: string; c: string } | null;
+  here: { g: string; c: string; task?: string | null } | null;
   view: string;
-  others: (PaneWant & { keep: boolean })[];
+  others: (PaneWant & { keep: boolean; task?: string | null; size?: number })[];
   apps: (AppWant & { task: string | null })[];
+  /** the task of apps alone shown, and the task in focus */
+  appsOnly?: string | null;
+  focus?: string | null;
+}
+
+const bare = ({ g, c, view }: PaneWant): PaneWant => ({ g, c, view });
+const appOf = ({ app, id, g, size }: AppWant): AppWant => ({ app, id, g, size });
+const isShell = (c: string) => c.startsWith("shell:");
+
+/** The tab shown emptied (a new tab): every task's panels closed, the terminals kept, the page's own pane out of
+ * sight (a terminal's kept). */
+export function clearPlan(now: Open): Plan {
+  return {
+    order: [],
+    appsOnly: null,
+    here: now.here && isShell(now.here.c) ? { ...now.here, view: null, shut: false, keep: true } : null,
+    away: true,
+    others: now.others.filter((o) => isShell(o.c)).map(bare),
+    apps: [],
+    focus: null,
+    left: 0,
+  };
+}
+
+/** Task `k` closed in the tab shown (its card head's ×, or moved to another tab): its panels closed, the others as they
+ * are -- the page's own pane, if it showed one of k's actors, given the next pane's actor (and view and width), else out
+ * of sight -- and, k in focus, the next task shown in focus. */
+export function closePlan(now: Open, k: string): Plan {
+  const others = now.others.filter((o) => o.task !== k);
+  const apps = now.apps.filter((a) => a.task !== k).map(appOf);
+  let here: Plan["here"] = null,
+    away = false,
+    appsOnly = now.appsOnly ?? null;
+  if (appsOnly === k) {
+    appsOnly = null;
+    away = true; // (the actors' panes stay out of sight)
+  } else if (now.here && now.here.task === k) {
+    const next = others.shift();
+    if (next) here = { g: next.g, c: next.c, view: next.view, shut: false, keep: false, size: next.size };
+    else away = true;
+  } else if (now.here) here = { g: now.here.g, c: now.here.c, view: null, shut: false, keep: true };
+  let focus: Plan["focus"] = null;
+  if (!now.focus || now.focus === k) {
+    const p = here && !here.keep ? here : here && now.here && now.here.task ? here : others.find((o) => o.task);
+    if (p) focus = { g: p.g, c: p.c };
+    else if (apps.length) focus = { app: apps[0].id };
+  }
+  return { order: [], appsOnly, here, away, others: others.map(bare), apps, focus, left: 0 };
 }
 
 /** The panels of a tab showing `tasks` (`focus`'s first), as the page opens them. */

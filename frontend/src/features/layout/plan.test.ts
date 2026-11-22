@@ -1,7 +1,7 @@
 // A screen tab's panels worked out at once (plan.ts): the first task with actors in the page's own pane, its others beside
 // it, each other task beside them in the order the page opened them, apps alone last, terminals kept, at most so many.
 import { describe, expect, it } from "vitest";
-import { tabPlan, type Open, type TaskFacts } from "./plan";
+import { clearPlan, closePlan, tabPlan, type Open, type TaskFacts } from "./plan";
 
 const task = (key: string, over: Partial<TaskFacts> = {}): TaskFacts => ({
   key,
@@ -101,5 +101,43 @@ describe("tabPlan", () => {
   it("puts the focus back on the actor in focus when the task was left", () => {
     const plan = tabPlan([task("g\u0000t1", { first: "a", rest: ["b", "c"], back: "c" })], "g\u0000t1", nothing, 4);
     expect(plan.focus).toEqual({ g: "g", c: "c" });
+  });
+});
+
+describe("clearPlan and closePlan", () => {
+  const open: Open = {
+    here: { g: "g", c: "a", task: "g\u0000t1" },
+    view: "files",
+    others: [
+      { g: "g", c: "b", view: "history", keep: false, task: "g\u0000t1", size: 2 },
+      { g: "g", c: "x", view: null, keep: false, task: "g\u0000x" },
+      { g: "g", c: "shell:1", view: null, keep: true, task: null },
+    ],
+    apps: [
+      { ...app("i1"), task: "g\u0000t1" },
+      { ...app("i9"), task: null },
+    ],
+    appsOnly: null,
+    focus: "g\u0000t1",
+  };
+
+  it("a new tab: every task's panels closed, the terminals kept, the page's own pane out of sight", () => {
+    const plan = clearPlan(open);
+    expect([plan.here, plan.away, plan.apps, plan.order]).toEqual([null, true, [], []]);
+    expect(plan.others.map((o) => o.c)).toEqual(["shell:1"]);
+  });
+
+  it("a task closed here: its panels gone, the next pane's actor in the page's own, the focus on what is left", () => {
+    const plan = closePlan(open, "g\u0000t1");
+    expect(plan.here).toEqual({ g: "g", c: "x", view: null, shut: false, keep: false, size: undefined });
+    expect(plan.others.map((o) => o.c)).toEqual(["shell:1"]);
+    expect(plan.apps.map((a) => a.id)).toEqual(["i9"]); // (one of no task kept)
+    expect(plan.focus).toEqual({ g: "g", c: "x" });
+    // another task's closed: the page's own kept as it is, the focus left where it was
+    const other = closePlan(open, "g\u0000x");
+    expect([other.here?.keep, other.focus, other.others.map((o) => o.c)]).toEqual([true, null, ["b", "shell:1"]]);
+    // the task of apps alone closed: out of it, the actors' panes out of sight still
+    const apps = closePlan({ ...open, here: null, appsOnly: "g\u0000t1" }, "g\u0000t1");
+    expect([apps.appsOnly, apps.away]).toEqual([null, true]);
   });
 });
