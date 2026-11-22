@@ -28,6 +28,7 @@ import { minRedraw, topChanged } from "./top.js";
 import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
 import { herePane, newPane } from "./pane";
 import { clearPlan, closePlan, onlyPlan, tabPlan } from "./plan";
+import { keptToDrop, tabHolding } from "./kept";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
 import { shadow } from "./shadow";
@@ -574,7 +575,7 @@ function startPlacing() {
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
     focus: selectedTask, enter: enterTasks, status: taskStates, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
-    faces: blockFaces, about: blockAbout, look: cellLook, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); },
+    faces: blockFaces, about: blockAbout, look: cellLook, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { sweepKept(); if (state.home) renderAgents(); },
     blank: drawNewTab });                            // a tab showing nothing: its new-tab page (features/layout/new-tab.js)
   NARROW.addEventListener("change", placeWork);
   // a task's row dragged from the list over the work area (features/list/list.js's listDrag): one open in no tab, opened beside
@@ -1242,6 +1243,7 @@ function swapAppPane(p, inst) {
   instCache.set(inst.id, inst);
   shadow.update(model.swapApp, p.instance.id, { app: p.app.name, instance: inst.id, g: inst.gatherer });
   const q = addAppPane(p.app, inst, p.size, p.held);  // made at the row's end: put where p was
+  q.kept = p.kept || null;
   topRowEl().insertBefore(q.node, p.node);
   panes.apps.splice(panes.apps.indexOf(q), 1);
   panes.apps.splice(i, 1, q);
@@ -1254,6 +1256,7 @@ function swapAppPane(p, inst) {
 // appsAtWork).
 function holdAppPane(p, held) {
   p.held = held;
+  if (!held) p.kept = null;
   if (held) unselectApp(p.instance.id);
   p.node.hidden = held;
   topLayout(); saveAppPanes(); topChanged();
@@ -1288,17 +1291,68 @@ function renderApps() {
   }
   if (changed) { appsOnlyLeft(); markSelected(); topLayout(); saveAppPanes(); if (state.home) renderAgents(); topChanged(); }
 }
-// its panel gone from the page (its instance stays open): held out of sight instead while its agent is at work
+// its panel gone from the page (its instance stays open): held out of sight instead while a tab not shown holds its task
+// (keepForTab), or while its agent is at work
 function dropAppPanel(p) {
   const i = panes.apps.indexOf(p);
   if (i < 0) return;
   const gk = state.home ? appPaneTask(p) : null;
   queueMicrotask(() => shadowGone(gk));
+  if (keepForTab(p)) return;                         // its tab left: shown as it is when that tab is shown again
   if (appNeeded(p)) return holdAppPane(p, true);     // its agent at work: its page answers its tools, out of sight
+  destroyAppPanel(p);
+}
+function destroyAppPanel(p) {
+  const i = panes.apps.indexOf(p);
+  if (i < 0) return;
   panes.apps.splice(i, 1);
   unselectApp(p.instance.id);
   p.panel.destroy();                                 // its streams go; the instance stays open
   p.node.remove();
+}
+// A SCREEN TAB'S APP PANELS KEPT READY (features/layout/kept.ts). An app's panel no longer wanted in the tab shown whose
+// task a tab not shown holds -- the tab just left, kept as it was (tabs.ts), or the tab the task was moved to -- is held
+// out of sight, its frame as it is (the Browser's page, its picture, its stream; in the ag app, its native page placed
+// again once its panel shows: features/apps/native.ts), not closed: that tab shown, the panel is wanted again and shown
+// as it is (renderApps), with no frame to load. `p.kept`: the tab it is kept for. The panels of the KEPT_TABS tabs left
+// latest are kept so, those of a tab left before them closed; a panel whose task no tab not shown holds any longer (its
+// task closed, its tab closed or emptied, the task shown and not wanted) closed, unless its agent is at work.
+const KEPT_TABS = 3;
+const tabsLeft = new Map();                          // a tab's id -> the order its panels were last kept in (1, 2, ...)
+let keptCount = 0;
+const tabKeeping = (p) => {
+  if (!state.home) return null;
+  const l = shadow.now();
+  return tabHolding(l.tabs, l.current, appPaneTask(p), keyNow);
+};
+function keepForTab(p) {
+  if (SNAPSHOT || !workPlacer) return false;
+  const tab = tabKeeping(p);
+  if (!tab) return false;
+  p.kept = tab;
+  tabsLeft.set(tab, ++keptCount);
+  p.held = true;                                     // (holdAppPane's, but the row laid out once: renderApps, after)
+  unselectApp(p.instance.id);
+  p.node.hidden = true;
+  queueMicrotask(sweepKept);                         // (the cap: a tab left before the latest ones, its panels closed)
+  return true;
+}
+// on each change of the screen tabs (a tab shown, closed, a task moved or closed in one) and each panel kept -- not while a
+// tab is being shown: its kept panels are shown again only once its plan is rendered
+function sweepKept() {
+  const kept = panes.apps.filter((p) => p.kept);
+  if (!kept.length || !workPlacer || workPlacer.tabs.busy()) return;   // (a tab being shown: swept once it is, tabs.ts)
+  for (const p of kept) p.kept = tabKeeping(p) || null;       // (moved to another tab meanwhile: kept for that one)
+  const drop = new Set(keptToDrop(kept.map((p) => ({ id: p.instance.id, tab: p.kept })), tabsLeft, KEPT_TABS));
+  let gone = false;
+  for (const p of kept) {
+    if (!drop.has(p.instance.id)) continue;
+    p.kept = null;
+    if (!appNeeded(p)) { destroyAppPanel(p); gone = true; }   // (its agent at work: held for it, as before)
+  }
+  const tabs = new Set(shadow.now().tabs.map((t) => t.id));
+  for (const id of [...tabsLeft.keys()]) if (!tabs.has(id)) tabsLeft.delete(id);
+  if (gone) { topLayout(); topChanged(); }
 }
 // instance `inst` of `app` shown above the panes (as wide as `size`, if given) -> its panel
 function showAppPanel(app, inst, size = 0) {
@@ -1373,7 +1427,8 @@ async function appsAtWork() {
       }
     }
   }
-  for (const p of [...panes.apps]) if (p.held && !appNeeded(p)) {     // its agents done: it goes
+  for (const p of [...panes.apps]) if (p.held && !p.kept && !appNeeded(p)) {     // its agents done: it goes (one kept for a
+                                                                                   // tab: sweepKept's)
     panes.apps.splice(panes.apps.indexOf(p), 1);
     p.panel.destroy(); p.node.remove();
   }
