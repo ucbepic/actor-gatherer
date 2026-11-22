@@ -27,7 +27,7 @@ import { termOf } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
 import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
 import { herePane, newPane } from "./pane";
-import { clearPlan, closePlan, onlyPlan, tabPlan } from "./plan";
+import { appsPlan, clearPlan, closePlan, enterPlan, herePlan, itemsPlan, onlyPlan, tabPlan } from "./plan";
 import { keptToDrop, tabHolding } from "./kept";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
@@ -164,10 +164,7 @@ function enterTask(g, c) {
     // one never laid out here (its apps never opened) is not remembered, nor one out of sight (an empty tab's, kept as it
     // was when that tab was left) -- but one whose actor's pane the reader closed is (its apps shown still, or not)
     if (tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
-    setAppsOnly(null);
-    for (const p of [...actorPanes()]) if (!isShell(p.c) && taskKey(p.g, p.c) !== to) closePane(p);
-    if (state.selected && taskKey(...state.selected) !== to) focusPane(panes.here);   // the new task's actor: in this page's pane
-    unwantTaskApps((t) => t === to);
+    renderLayout(enterPlan(openNow(), to));          // the others' panels closed (features/layout/plan.ts's enterPlan)
   }
   tasksLaidOut.add(to);
   taskAppsOpening = openTaskApps(g, c, to, was ? was.apps : null);   // (each pane minimized as it was: its arrangement)
@@ -185,13 +182,10 @@ function enterAppTask(g, k) {
   shadow.tell("apps", model.open, k);                 // (the layout model beside the page: shadow.ts)
   if (from && tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
   setTaskNow(k);
-  for (const p of [...actorPanes()]) if (!isShell(p.c)) closePane(p);
-  unwantTaskApps((t) => t === k);
-  setAppsOnly(k);
-  const was = taskLayout(k);
   tasksLaidOut.add(k);
-  taskAppsOpening = openTaskApps(g, null, k, was ? was.apps : null);
-  renderAgents();
+  renderLayout(appsPlan(openNow(), k));              // (features/layout/plan.ts's appsPlan)
+  const was = taskLayout(k);
+  taskAppsOpening = openTaskApps(g, null, k, was ? was.apps : null);   // its apps, as it was left
 }
 // The tasks laid out in this page (entered, or opened at first by openTask): a task shown, laid out, stays as it is -- the
 // layout model's (model.ts's laidOut), read and written as a set (the list's openTask too)
@@ -410,15 +404,9 @@ function closePane(p) {
   renderPanes();
 }
 // This page's own pane closed: the next pane's actor (`next`) -- and view -- moves into it, its frame gone.
-async function closeHere(next = actorPanes()[0]) {
-  if (!next) return;
-  shadow.update(model.unwantPanes, (o) => isAt([o.g, o.c], next.g, next.c));
-  dropPane(next, false);                             // (its actor shown on in this page's own: not gone)
-  panes.here.size = next.size;
-  if (next.view) setViewHere(next.view);
-  focusPane(panes.here);
-  layout();
-  await select(next.g, next.c);
+async function closeHere() {
+  if (!actorPanes().length) return;
+  return renderLayout(herePlan(openNow()));         // (features/layout/plan.ts's herePlan: the next pane's actor in it)
 }
 // This page's own pane closed by its × -- its head's, its Chat bar's, its minimized box's -- as an app's panel's × closes
 // it: out of its task's tab shown (workClosed); the next pane's actor moved into it, or, none, it out of sight (away) and
@@ -433,11 +421,8 @@ async function closeHerePane() {
   if (NARROW.matches) return;
   workClosed(panes.here.node);
   const k = taskKey(...state.selected);
-  putAway(state.selected, true);
-  const app = panes.apps.find((q) => !q.held && appPaneTask(q) === k) || panes.apps.find((q) => !q.held);
-  if (app) selectAppPane(app);
+  renderLayout(herePlan(openNow()));                 // out of sight, closed by the reader; an app of its task selected
   if (k && tasksLaidOut.has(k)) rememberTask(k);
-  placeWork(); renderAgents();
 }
 // An actor's pane focused: the app selected, if one was, no longer (selectAppPane)
 function focusPane(p) {
@@ -716,6 +701,8 @@ function openNow(keep = () => false) {
     apps: panes.apps.filter((p) => !p.held).map((p) => ({ app: p.app.name, id: p.instance.id, g: p.instance.gatherer, size: p.size,
       task: state.home ? appPaneTask(p) : null })),
     appsOnly: appsOnlyKey(), focus: selectedTask(),
+    away: state.selected && isAway() ? { g: state.selected[0], c: state.selected[1], task: t(...state.selected) } : null,
+    at: panes.others.indexOf(focusedPane()),
   };
 }
 // A TAB SHOWN: its tasks in place of those shown, each as it was left -- worked out at once (features/layout/plan.ts's
@@ -806,16 +793,20 @@ function renderLayout(plan, firstKept = false) {
     const k0 = kept.find((x) => x.g === o.g && x.c === o.c);
     return { ...(k0 || {}), g: o.g, c: o.c, ...(o.view ? { view: o.view } : {}), size: (k0 && k0.size) || 1 };
   }) } }));
-  setAppsOnly(plan.appsOnly);
+  // this page's own pane out of sight, or in sight again, before anything is placed: a panel placed in sight is put in
+  // its task's arrangement (work.ts)
   const h = plan.here;
+  let loading = null;
   if (!h && plan.away && state.selected && !isShell(state.selected[1])) putAway(state.selected);
+  if (h && h.shut) putAway([h.g, h.c], true);
+  else if (h && shadow.layout.away) backInSight();
+  setAppsOnly(plan.appsOnly);
   if (h) {
     if (h.size) panes.here.size = h.size;
-    if (h.shut) putAway([h.g, h.c], true);
-    else if (shadow.layout.away) shadow.update(model.setAway, null);
     if (!h.keep && !isAt(state.selected, h.g, h.c)) {
       if (h.view) setViewHere(h.view);
-      select(h.g, h.c).catch(() => {});
+      loading = select(h.g, h.c);
+      loading.catch(() => {});
     }
   }
   renderPanes();
@@ -825,6 +816,7 @@ function renderLayout(plan, firstKept = false) {
   else if (f) focusPane(isAt(state.selected, f.g, f.c) ? panes.here : actorPanes().find((q) => isAt([q.g, q.c], f.g, f.c)) || panes.here);
   markSelected(); placeWork();
   if (state.home) renderAgents();
+  return loading;                                    // this page's own pane's actor loading, if it was given another
 }
 // A task's key as it is now: a lone item's -- an actor's, an app's -- the task it has been put in since, if it has (taskKey);
 // any other, as it is (a task's; one not known yet, its apps not read). A screen tab keeps the keys of the tasks it was
@@ -875,23 +867,11 @@ function taskStates(k) {
 // TASK TABS (features/layout/tasks.ts). A task's tab shown: `items` of task `k` open, each in the view it showed, and
 // the task's other panels closed -- this page's own pane given another of the tab's actors, if it showed one not in it
 async function showTaskItems(k, items) {
-  const g = parseKey(k).group, want = new Set(items), mine = (pg, c) => pg === g && taskKey(pg, c) === k;
-  const views = (taskLayout(k) || {}).views || {}, actors = items.filter((c) => !isAppItem(c) && !isShell(c));
-  const open = (c) => openActors().some((s) => isAt(s, g, c));
-  for (const p of [...actorPanes()]) if (mine(p.g, p.c) && !want.has(p.c)) closePane(p);
-  shadow.update(model.unwantApps, (w) => entryTask(w) === k && !want.has(appItem(w.instance)));
-  renderApps();
-  if (state.selected && mine(...state.selected) && !want.has(state.selected[1])) {
-    const next = actors.find((c) => !open(c));
-    if (next) { focusPane(panes.here); await showIn(g, next, views[next] || null); }
-    else if (actorPanes().length) await closeHere();
-    else putAway(state.selected);                    // none to show in it: away while this tab shows
-  } else if (isAway() && want.has(state.selected[1])) backInSight();
-  for (const c of actors) if (!open(c) && allPanes().length < MAX_PANES) openBeside(g, c, views[c] || null);
-  const apps = items.filter(isAppItem).map((it) => appInfo(g, it.slice(APP_ITEM.length))).filter(Boolean)
-    .map((o) => ({ app: o.app.name, id: o.id, inst: o.inst }));
-  if (apps.length) await openTaskApps(g, null, k, apps, true);
-  placeWork();
+  const g = parseKey(k).group, views = (taskLayout(k) || {}).views || {};   // (features/layout/plan.ts's itemsPlan)
+  const apps = items.filter(isAppItem).map((it) => appInfo(g, it.slice(APP_ITEM.length))).filter(Boolean);
+  for (const o of apps) if (o.inst) instCache.set(o.id, o.inst);
+  renderLayout(itemsPlan(openNow(), k, g, items, views, apps.map((o) => ({ app: o.app.name, id: o.id, g })), MAX_PANES));
+  if (apps.length) await openTaskApps(g, null, k, apps.map((o) => ({ app: o.app.name, id: o.id, inst: o.inst })), true);
 }
 // a task's lead actor (a new tab of the task holds it)
 function taskLeadOf(k) {
@@ -1262,13 +1242,12 @@ function holdAppPane(p, held) {
   topLayout(); saveAppPanes(); topChanged();
 }
 // THE APPS' PANELS follow the layout model's `apps` (model.ts): what opens or closes one says so to the model
-// (showAppPanel, closeAppPane, unwantTaskApps, appClosed) and renderApps makes the panels match -- each wanted one shown,
+// (showAppPanel, closeAppPane, appClosed, the plans: renderLayout) and renderApps makes the panels match -- each wanted one shown,
 // its instance known (the page's apps, or the one given) at once, in the frame that asked for it, else once the host
 // gives it, if it is still wanted then (a task entered meanwhile no longer wants another's); each shown one no longer
 // wanted closed, or held out of sight while its agent is at work (appNeeded).
 const instCache = new Map(), fetching = new Set();
 const wanted = (id) => (shadow.layout.apps || []).some((w) => w.instance === id);
-const entryTask = (w) => (state.home ? taskKey(w.g, appItem(w.instance)) : null);   // (the home not come: none known)
 function renderApps() {
   if (SNAPSHOT) return;
   let changed = false;
@@ -1373,11 +1352,6 @@ function closeAppPane(p) {
   if (p.held) { if (!appNeeded(p)) dropAppPanel(p); }
   else renderApps();
   saveAppPanes(); if (state.home) renderAgents(); topChanged();
-}
-// the apps' panels of the tasks `keep` does not keep no longer wanted -- those opening still too
-function unwantTaskApps(keep) {
-  shadow.update(model.unwantApps, (w) => !keep(entryTask(w)));
-  renderApps();
 }
 // instance `id` closed, or its app gone: its panel gone, held or not
 function appClosed(id) {

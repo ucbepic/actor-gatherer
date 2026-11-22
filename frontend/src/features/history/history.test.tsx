@@ -5,9 +5,10 @@ import { act, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../../core/api/query";
 import { key } from "../../core/model/keys";
+import { sizesForTests } from "../../core/ui/lists";
 import { loadOutline, outlineKey, outlineOf, setHistHost, useAsked } from "./data";
 import { drawHistory } from "./mount";
-import { SHOWN, histOf } from "./store";
+import { histOf } from "./store";
 import {
   buildTree,
   marked,
@@ -19,6 +20,9 @@ import {
   type Outline,
   type OutlineEvent,
 } from "./tree";
+
+// jsdom lays nothing out: the list (react-virtuoso) takes its box as tall as a few hundred rows, each 40px
+sizesForTests.now = { viewportHeight: 20_000, itemHeight: 40 };
 
 const ev = (row_id: number, type: string, text = type, channel = "c1"): OutlineEvent => ({
   row_id,
@@ -147,7 +151,6 @@ afterEach(() => {
     panel: false,
     q: "",
     query: "",
-    limit: SHOWN,
     gatherer: null,
     actor: null,
   });
@@ -233,6 +236,42 @@ describe("the view, drawn by its mount", () => {
       expect(node.querySelector(".h-full")!.textContent).toBe("first ask, in full\n… 3 more characters not shown"),
     );
     expect(asked).toEqual(["/api/history?gatherer=demo&channel=c1&from=2&to=2"]);
+  });
+});
+
+describe("a long history", () => {
+  const long = (turns: number) =>
+    Array.from({ length: turns * 2 }, (_, i) =>
+      ev(i + 1, i % 2 ? "agent_message" : "user_message", i % 2 ? `answer ${i >> 1}` : `ask ${i >> 1}`),
+    );
+
+  it("lists every row, puts only those around the view on the page, and marks where the timeline begins", () => {
+    const tall = sizesForTests.now;
+    sizesForTests.now = { viewportHeight: 400, itemHeight: 40 }; // the list 10 rows tall
+    try {
+      const node = drawn(outline({ events: long(3000), more: true }));
+      const shown = rows(node);
+      expect(node.querySelector(".h-list")!.hasAttribute("tabindex")).toBe(false); // no tab stop of its own
+      expect(shown.length).toBeGreaterThan(10);
+      expect(shown.length).toBeLessThan(200);
+      expect(shown[0].className).toBe("h-row turn nested first");
+      expect(shown[1].className).toBe("h-row turn nested");
+      expect(node.querySelector(".h-row.last")).toBeNull(); // the last of 3,000: not on the page
+      // ⌘A selects every row listed, not those on the page
+      act(() => {
+        fireEvent.keyDown(document.body, { key: "a", metaKey: true });
+      });
+      expect(histOf(ACTOR).getState().sel.size).toBe(6000);
+    } finally {
+      sizesForTests.now = tall;
+    }
+  });
+
+  it("draws Load more under the last row while the outline is not all loaded", () => {
+    const node = drawn(outline({ more: true }));
+    const [first, last] = rows(node);
+    expect([first.classList.contains("first"), last.classList.contains("last")]).toEqual([true, true]);
+    expect(node.querySelector(".h-foot > .h-more")!.textContent).toBe("Load more");
   });
 });
 

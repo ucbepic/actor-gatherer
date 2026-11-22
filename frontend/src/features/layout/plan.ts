@@ -68,6 +68,9 @@ export interface Open {
   /** the task of apps alone shown, and the task in focus */
   appsOnly?: string | null;
   focus?: string | null;
+  /** the page's own pane's actor while out of sight; the pane in focus among `others` (-1: the page's own) */
+  away?: { g: string; c: string; task?: string | null } | null;
+  at?: number;
 }
 
 const bare = ({ g, c, view }: PaneWant): PaneWant => ({ g, c, view });
@@ -217,4 +220,118 @@ export function onlyPlan(now: Open, k: string): Plan {
         ? { app: apps[0].id }
         : null;
   return { order: [], appsOnly, here: appsOnly ? null : here, others: others.map(bare), apps, focus, left: 0 };
+}
+
+/** Task `k`'s tab shown (tasks.ts: a tab of the task's own), holding `items` (its actors, by channel, each in `views`'
+ * view; its apps, "app:<id>", `apps` those the page knows): its panels not in the tab closed -- the page's own pane, if it
+ * showed one of k's actors not in it, given the first of the tab's actors not open, else the next pane's actor, else out
+ * of sight (in sight again if it shows one in it) -- the tab's actors not open opened beside the pane in focus, as many
+ * as there is room for, its apps added. */
+export function itemsPlan(
+  now: Open,
+  k: string,
+  g: string,
+  items: string[],
+  views: Record<string, string>,
+  apps: AppWant[],
+  max: number,
+): Plan {
+  const want = new Set(items),
+    actors = items.filter((c) => !c.startsWith("app:") && !isShell(c));
+  const focused = now.at !== undefined && now.at >= 0 ? now.others[now.at] : null;
+  const list: PaneWant[] = now.others.filter((o) => !(o.task === k && !want.has(o.c))).map(bare);
+  const kept = now.apps.filter((a) => !(a.task === k && !want.has(`app:${a.id}`))).map(appOf);
+  const sel = now.here ?? now.away ?? null,
+    out = !now.here && !!now.away;
+  let here: Plan["here"] = sel ? { g: sel.g, c: sel.c, view: null, shut: false, keep: true } : null,
+    away = false,
+    at = focused ? list.findIndex((p) => p.g === focused.g && p.c === focused.c) : -1;
+  const open = (c: string) => (here && here.g === g && here.c === c) || list.some((p) => p.g === g && p.c === c);
+  if (sel && sel.task === k && !want.has(sel.c)) {
+    const next = actors.find((c) => !open(c));
+    here = null;
+    if (next) here = { g, c: next, view: views[next] || null, shut: false, keep: false };
+    else if (list.length) {
+      const n = list.shift()!,
+        size = now.others.find((o) => o.g === n.g && o.c === n.c)?.size;
+      here = { g: n.g, c: n.c, view: n.view, shut: false, keep: false, size };
+    } else away = true;
+    at = -1;
+  } else if (out && sel && want.has(sel.c)) here = { g: sel.g, c: sel.c, view: null, shut: false, keep: true };
+  else if (out) here = null; // (out of sight still)
+  for (const c of actors) {
+    if (open(c) || 1 + list.length >= max) continue;
+    const from = at < 0 ? (here?.view ?? now.view) : list[at].view;
+    list.splice(at + 1, 0, { g, c, view: views[c] || from });
+    at += 1;
+  }
+  for (const a of apps) if (!kept.some((x) => x.id === a.id)) kept.push(a);
+  // in focus: the pane last opened, else the page's own given another actor
+  const last = at >= 0 ? list[at] : here && !here.keep ? here : null;
+  const focus = last ? { g: last.g, c: last.c } : null;
+  return { order: [], appsOnly: now.appsOnly ?? null, here, away, others: list, apps: kept, focus, left: 0 };
+}
+
+/** The page's own pane closed by its × (`next`: the pane beside whose actor moves into it, if one is): that actor (its
+ * view, its width) in it, its own pane gone, in focus -- or, none beside, the page's own out of sight, closed by the
+ * reader (`shut`), an app of its task selected (else any app shown). */
+export function herePlan(now: Open): Plan {
+  const keepAll = now.others.map(bare),
+    apps = now.apps.map(appOf);
+  if (now.others.length) {
+    const [next, ...rest] = now.others;
+    return {
+      order: [],
+      appsOnly: now.appsOnly ?? null,
+      here: { g: next.g, c: next.c, view: next.view, shut: false, keep: false, size: next.size },
+      others: rest.map(bare),
+      apps,
+      focus: { g: next.g, c: next.c },
+      left: 0,
+    };
+  }
+  const h = now.here!,
+    app = now.apps.find((a) => a.task === h.task) || now.apps[0];
+  return {
+    order: [],
+    appsOnly: now.appsOnly ?? null,
+    here: { g: h.g, c: h.c, view: null, shut: true, keep: true },
+    others: keepAll,
+    apps,
+    focus: app ? { app: app.id } : null,
+    left: 0,
+  };
+}
+
+/** Task `k` of apps alone entered (an app alone, or a task holding no actor): every actor's pane closed (terminals kept),
+ * the page's own out of sight while its apps alone show; its panels open already kept (the rest come as the page opens
+ * them: openTaskApps). */
+export function appsPlan(now: Open, k: string): Plan {
+  // (the page's own pane is left as it is: out of sight while the task's apps alone show)
+  return {
+    order: [],
+    appsOnly: k,
+    here: null,
+    others: now.others.filter((o) => isShell(o.c)).map(bare),
+    apps: now.apps.filter((a) => a.task === k).map(appOf),
+    focus: null,
+    left: 0,
+  };
+}
+
+/** Another task `k` entered by a click (an actor of it shown in the pane in focus: features/layout/panes.js's show): the
+ * panes and panels of the others closed (terminals kept), out of apps alone, k's open already kept, the page's own pane
+ * in focus if it shows another task's actor (k's actor is shown in it next); the rest of k laid out after (layOutTask). */
+export function enterPlan(now: Open, k: string): Plan {
+  const here = now.here ? { g: now.here.g, c: now.here.c, view: null, shut: false, keep: true } : null,
+    sel = now.here ?? now.away ?? null;
+  return {
+    order: [],
+    appsOnly: null,
+    here,
+    others: now.others.filter((o) => isShell(o.c) || o.task === k).map(bare),
+    apps: now.apps.filter((a) => a.task === k).map(appOf),
+    focus: sel && sel.task !== k ? { g: sel.g, c: sel.c } : null,
+    left: 0,
+  };
 }
