@@ -104,6 +104,14 @@
 .md > .proposed-plan:first-child { margin-top: 0; } .md > .proposed-plan:last-child { margin-bottom: 0; }
 .term .md .proposed-plan { background: none; border-color: var(--term-rule); }
 .term .md .proposed-plan > .pp-head { color: var(--term-dim); }
+/* LaTeX math in a message (core/ui/tex.ts): KaTeX's, a little smaller than its own 1.21em so it sits in a line of text;
+   displayed math set apart, scrolled sideways in a narrow pane rather than overflowing it; a formula KaTeX couldn't
+   read shown as written, dotted, its reason in its tooltip */
+.md .katex { font-size: 1.1em; }
+.md .katex-display { margin: 6px 0 10px; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
+.md > div.md-tex-display:first-child > .katex-display { margin-top: 0; }
+.md > div.md-tex-display:last-child > .katex-display { margin-bottom: 0; }
+.md .md-tex-error { text-decoration: underline dotted; text-decoration-color: var(--muted); text-underline-offset: 3px; cursor: help; }
 .asking-note .foot { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px 8px 14px;
   border-top: 1px solid var(--ring); background: var(--wash); }
 .asking-note .foot .say { flex: 1 1 220px; min-width: 0; color: var(--muted); font-size: var(--fs-meta); }
