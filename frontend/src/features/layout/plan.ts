@@ -192,3 +192,29 @@ export function tabPlan(tasks: TaskFacts[], focus: string | null, now: Open, max
   }
   return { order: order.map((t) => t.key), appsOnly, here, others: list, apps, focus: selected, left };
 }
+
+/** Task `k` alone in the tab shown (⌥+click on it while others show): the others' panels closed (terminals kept) -- the
+ * page's own pane, if it showed another's actor, given k's first pane's actor, else (k of apps alone) out of sight while
+ * k's apps alone show -- k in focus. */
+export function onlyPlan(now: Open, k: string): Plan {
+  const others = now.others.filter((o) => isShell(o.c) || o.task === k);
+  const apps = now.apps.filter((a) => a.task === k).map(appOf);
+  let appsOnly = now.appsOnly ?? null;
+  let here: Plan["here"] = now.here ? { g: now.here.g, c: now.here.c, view: null, shut: false, keep: true } : null;
+  if (!appsOnly && now.here && now.here.task !== k) {
+    const at = others.findIndex((o) => o.task === k);
+    if (at >= 0) {
+      const [next] = others.splice(at, 1);
+      here = { g: next.g, c: next.c, view: next.view, shut: false, keep: false, size: next.size };
+    } else appsOnly = k;
+  }
+  const mine = here && (!here.keep || now.here?.task === k) ? here : others.find((o) => o.task === k);
+  const focus: Plan["focus"] = appsOnly
+    ? null
+    : mine
+      ? { g: mine.g, c: mine.c }
+      : apps.length
+        ? { app: apps[0].id }
+        : null;
+  return { order: [], appsOnly, here: appsOnly ? null : here, others: others.map(bare), apps, focus, left: 0 };
+}

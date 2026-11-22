@@ -27,7 +27,7 @@ import { termOf } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
 import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
 import { herePane, newPane } from "./pane";
-import { clearPlan, closePlan, tabPlan } from "./plan";
+import { clearPlan, closePlan, onlyPlan, tabPlan } from "./plan";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
 import { shadow } from "./shadow";
@@ -650,16 +650,10 @@ async function onlyTask(k) {
   const others = [...new Set(shownPanels().map((s) => s.key))].filter((x) => x && x !== k);
   if (!others.length) return;
   for (const o of others) if (tasksLaidOut.has(o)) rememberTask(o);
-  const g = parseKey(k).group, mine = (pg, c) => taskKey(pg, c) === k;
-  unwantTaskApps((t) => t === k);
-  for (const p of [...actorPanes()]) if (!isShell(p.c) && !mine(p.g, p.c)) closePane(p);
-  if (!appsOnlyKey() && state.selected && !isAway() && !mine(...state.selected)) {
-    const next = actorPanes().find((p) => mine(p.g, p.c));
-    if (next) await closeHere(next);
-    else enterAppTask(g, k);
-  }
-  focusTask(k);
-  placeWork(); renderAgents();
+  const plan = onlyPlan(openNow(), k), apps = plan.appsOnly === k && appsOnlyKey() !== k;   // (features/layout/plan.ts)
+  if (apps) { setTaskNow(k); tasksLaidOut.add(k); }
+  renderLayout(plan);
+  if (apps) taskAppsOpening = openTaskApps(parseKey(k).group, null, k, (taskLayout(k) || {}).apps || null);   // as it was left
 }
 // A task of a screen tab dragged into the tab shown (features/layout/work.ts's mergeTab): opened beside the tasks shown,
 // as ⌘+click opens one -- not routed, its tab gone from the bar
