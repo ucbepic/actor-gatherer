@@ -1,6 +1,6 @@
 # The dashboard on a standard stack: plan
 
-Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
+Status: A0–A4, B1, B2, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
 the views share, in `core/ui/`; Chat; the list, all of it TypeScript; Details, Transcript, Messages, History and
 Terminal's frame); A6 begun (the layout model, steps 1-4c-3c, all of it: the model the page's source, rendered; the panes as parts of
 one page; the page's pop-ups on Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
@@ -746,7 +746,8 @@ What went another way, and why:
   schema B2 generates types from) but sends the JSON `json.dumps` writes, as before. Serialized through Pydantic,
   the keys would be reordered, non-ASCII written as is, NaN refused, and a model's field the answer lacks (every
   route answers `{error}` for a gatherer with no database) a 500. `test_dashboard_app.py` checks each model takes
-  real answers and gives them back unchanged. Every field may be left out, and fields not named are kept.
+  real answers and gives them back unchanged. Fields not named are kept; which are always there, and of what type, is
+  B2's.
 - **Bad parameters are still "not found".** Query parameters are declared with types (`Whole`: digits only, as the
   old `isdigit()` checks; `Decimal`), and a request FastAPI finds invalid is answered 404 "not found", text: the old
   server's if-chain fell through to that, and the page and tests read it so. Errors raised by the logic are answered
@@ -756,7 +757,7 @@ What went another way, and why:
   first. Starlette keeps blanks and takes the last; the page's `?channel=` and `?to=` would have meant something new.
   The path's leading slashes are made one, as http.server did.
 - **POST bodies are a dict, not a model.** The routes read them as before (`str(body.get(...) or "")`): a model
-  would refuse what the old server took (a number for a string). Typing them is left for when the page is typed (B2).
+  would refuse what the old server took (a number for a string). B2 typed the answers, not these.
 - **Streams** (`common.Events`, a sse-starlette `EventSourceResponse`) send the same bytes: `event:`/`data:` lines
   ended by `\n`, a `: keepalive` comment as before (sse-starlette's own ping off). Each blocking wait runs in a thread
   (`anyio.to_thread`, given up on when the page goes), and what a stream holds (its hub watch, its editor room, its
@@ -777,12 +778,48 @@ What went another way, and why:
   works and `server_port` is known at once): the caller's thread keeps Ctrl-C and `__main__.py`'s SIGTERM and SIGHUP
   handlers, and `shutdown()` and `server_close()` work as socketserver's did, so the tests and `__main__` are unchanged.
   FastAPI and uvicorn are imported only once a server is made: `page()` and `--out` need neither.
-- **No /docs, /redoc or /openapi.json** are served (none were); `app.create().openapi()` makes the schema for B2.
+- **No /docs, /redoc or /openapi.json** are served (none were); `app.schema()` makes the schema for B2.
 - Rule 3 was not met yet on the server: `/api/send` composed a Browser actor's message and the home said whether
   DocWriter and the Browser are offered, outside their routers, as `server.py` did. B3 moved them.
 
-**B2. Generated types.** FastAPI's OpenAPI schema generates `frontend/src/core/api/types.gen.ts`, and CI fails when
-it is stale. This needs B1 and A1.
+**B2. Generated types.** Built. FastAPI's OpenAPI schema generates `frontend/src/core/api/types.gen.ts`, and CI fails
+when it is stale.
+- **The models say what is always there.** `models.py` describes every answer the page reads: the home (and the stream's
+  `home`), an actor (`agent`), a call's context, the transcript, the history, a turn's files and commands, Chat's view
+  (the stream's `chat`), the History view's outline, records, search and event, the monitor, the apps listed, the Apps
+  page's catalog and a staged app, the settings. A field is `x: T` (always there), `Optional[T]` (there, perhaps null),
+  `Maybe[T]` (sometimes left out) or `Maybe[Optional[T]]`; nested answers have models of their own (an actor's session,
+  what it asks, how a turn stopped, a file's sources and their blocks, a harness's words). A route that can answer
+  {error} declares `Union[X, Failed]`. The stream's events are its `text/event-stream` answer's schema (`Stream`: each
+  event's data by its name). They still only describe: the JSON sent is json.dumps's, unchanged.
+- **Checked against real answers.** `test_dashboard_app.py` requests every route the page reads of a served dashboard,
+  on the test's home and on the browser tests' (`web_home.py`: a Claude Code and a Codex actor from recorded sessions),
+  and checks each answer against the model its route declares: it validates -- a field said to be there that the
+  answer lacks, or one of another type, fails it -- and dumps back unchanged. While the models were made, every answer
+  the whole Python suite made was checked so too.
+- **Generated.** `python -m ag_dashboard --openapi` prints the schema (`app.schema()`: FastAPI's, less the 422 answer
+  it describes for an invalid request, which this app answers 404), with no server started;
+  `frontend/scripts/gen-types.mjs` (`pnpm gen:types`) runs it with this checkout first on PYTHONPATH (AG_PYTHON, else
+  python3), makes the types with openapi-typescript (pinned, a devDependency; a field not required is optional:
+  `defaultNonNullable: false`) and formats them with Prettier. The file is committed, and left out of ESLint (over
+  max-lines, and no one's to edit).
+- **CI.** The frontend job installs the server too, runs `pnpm gen:types` and fails if `git diff` finds the file
+  changed; `pnpm check:types` does the same locally. A FastAPI or Pydantic upgrade that changes the schema shows there.
+- **The page reads them.** `core/api/types.ts` names the generated types (`Home`, `Actor`, `Agent`, `Turn`, `ChatView`,
+  ...), and the features' response types are those: a feature keeps a view of its own only where the page adds to an
+  answer (a read's `counted_tokens`, an actor's `key`) or a snapshot's home lacks what a running dashboard sends (the
+  list's home: `server.py`'s `read_home` fields optional). `failed()` tells {error} apart. Tests build whole answers
+  with `core/api/testing.ts`. The old `.js` modules are not type-checked: they read the server unchecked until they
+  move.
+
+What went another way, and why:
+- **The models name what the page reads, not all there is.** A field the page doesn't read may be typed `Any` (an
+  app's tools' input schemas, a call's view), and a field not named is kept, as before.
+- **A snapshot's home is not the route's.** `ag dashboard --out` inlines data.home()'s home, without `read_home`'s
+  fields (`app_groups` on) and with its sessions' rows alone: `Home` describes /api/home; the list's own home makes
+  those fields optional.
+- **POST bodies are still dicts**, and most POST answers (folders, tasks, groups, names) have no model: the page reads
+  few of their fields, typed where it reads them.
 
 **B3. The apps behind one list.** Built. `apps.py`'s `APPS` lists DocWriter and the Browser, each an `App` giving
 what the shared code asks of it -- found there by name (`named`), by its page's path (`under`) or by its actor's
