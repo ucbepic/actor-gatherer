@@ -27,7 +27,7 @@ import { termOf } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
 import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
 import { herePane, newPane } from "./pane";
-import { clearPlan, closePlan, herePlan, itemsPlan, onlyPlan, tabPlan } from "./plan";
+import { appsPlan, clearPlan, closePlan, herePlan, itemsPlan, onlyPlan, tabPlan } from "./plan";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
 import { shadow } from "./shadow";
@@ -184,13 +184,10 @@ function enterAppTask(g, k) {
   shadow.tell("apps", model.open, k);                 // (the layout model beside the page: shadow.ts)
   if (from && tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
   setTaskNow(k);
-  for (const p of [...actorPanes()]) if (!isShell(p.c)) closePane(p);
-  unwantTaskApps((t) => t === k);
-  setAppsOnly(k);
-  const was = taskLayout(k);
   tasksLaidOut.add(k);
-  taskAppsOpening = openTaskApps(g, null, k, was ? was.apps : null);
-  renderAgents();
+  renderLayout(appsPlan(openNow(), k));              // (features/layout/plan.ts's appsPlan)
+  const was = taskLayout(k);
+  taskAppsOpening = openTaskApps(g, null, k, was ? was.apps : null);   // its apps, as it was left
 }
 // The tasks laid out in this page (entered, or opened at first by openTask): a task shown, laid out, stays as it is -- the
 // layout model's (model.ts's laidOut), read and written as a set (the list's openTask too)

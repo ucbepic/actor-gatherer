@@ -302,3 +302,18 @@ export function herePlan(now: Open): Plan {
     left: 0,
   };
 }
+
+/** Task `k` of apps alone entered (an app alone, or a task holding no actor): every actor's pane closed (terminals kept),
+ * the page's own out of sight while its apps alone show; its panels open already kept (the rest come as the page opens
+ * them: openTaskApps). */
+export function appsPlan(now: Open, k: string): Plan {
+  return {
+    order: [],
+    appsOnly: k,
+    here: null,
+    others: now.others.filter((o) => isShell(o.c)).map(bare),
+    apps: now.apps.filter((a) => a.task === k).map(appOf),
+    focus: null,
+    left: 0,
+  };
+}
