@@ -1,5 +1,5 @@
 // What the page keys each thing of the home by: a gatherer's item, `${group}\0${id}` -- the id an actor's channel, an
-// app's instance as "app:<its id>", a task of several items as "t<its number>" (features/list/list.js's TASKS), or a
+// app's instance as "app:<its id>", a task of several items as "t<its number>" (features/list/task-acts.ts's TASKS), or a
 // shell's "shell:<id>". The list, the rail, the panes and the screen tabs all key by it; read and made here, not by
 // hand.
 

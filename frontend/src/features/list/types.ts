@@ -21,7 +21,7 @@ export interface Session {
 /** An actor of a gatherer (data.py's), as the list reads it. */
 export interface Actor {
   channel: string;
-  /** its gatherer's name and channel, as the page keys it (seen.js's takeHome sets it) */
+  /** its gatherer's name and channel, as the page keys it (seen.ts's takeHome sets it) */
   key?: string;
   harness?: string;
   name?: { text?: string; by?: string } | null;
@@ -144,7 +144,7 @@ export interface AppManifest {
   failed?: string | null;
 }
 
-/** An open instance of an app, as the list has it (list.js's appOf). */
+/** An open instance of an app, as the list has it (apps.ts's appOf). */
 export interface AppItem {
   app: AppManifest;
   id: string;
@@ -163,7 +163,7 @@ export interface ListCtx {
   readonly snapshot: boolean;
   /** the time now, in seconds (the server's clock where the home has one: its `now`) */
   now(): number;
-  /** when the reader last looked at each item, by its key (seen.js's `seen.at`) */
+  /** when the reader last looked at each item, by its key (seen.ts's `seen.at`) */
   readonly seenAt: Readonly<Record<string, number>>;
   /** whether the actor's harness opened a turn the page shows before ag stored it (chat's `opened`) */
   opened(a: Actor): boolean;

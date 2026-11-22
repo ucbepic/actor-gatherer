@@ -47,7 +47,7 @@ test("a DocWriter started from the menu: its page above, its actor below, one ta
   expect(cfg.root).toBe(folder);
   expect(cfg.channel).toMatch(/^[0-9a-f-]{36}$/);
   // its actor below: the new one, shown, in a task with its DocWriter -- the task's row, the app's mark among its faces
-  const task = page.locator("#agents button.agent.task[aria-current=true]");
+  const task = page.locator("#agents .agent.task:has(> .a-main[aria-current=true])");
   await expect(task.locator(".t-faces img.t-app")).toHaveAttribute("src", "/apps/mark/docwriter.svg");
   await expect(task.locator(".t-faces .t-face")).toHaveCount(1);
   await expect(page.locator("#panes > .pane")).toHaveCount(1);

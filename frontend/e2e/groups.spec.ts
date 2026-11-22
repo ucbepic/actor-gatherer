@@ -1,4 +1,4 @@
-// Moves between groups (features/list/group-moves.js; groups.py): in the home's one database, an actor dragged onto another
+// Moves between groups (features/list/group-moves.ts; groups.py): in the home's one database, an actor dragged onto another
 // group asks first -- who moves, from which group to which -- and moves only once the reader says so, and a folder
 // dragged outside every group asks first, then is a group of its own, and an actor dragged there is on its own; an
 // app in a folder that moves goes with it, its pane opened again in its new group, unless it is its group's only one
@@ -48,12 +48,12 @@ async function twoGroups(page: Page, merged: boolean, moved: { channel: string |
   await page.route("**/api/stream*", (route) => route.abort());
 }
 
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const groupRow = (page: Page, name: string) => page.locator("#agents .gatherer-row", { hasText: name });
 const inGroup = (page: Page, name: string, text: string) =>
   page
     .locator("#agents .gatherer", { has: page.locator(".gatherer-row", { hasText: name }) })
-    .locator("button.agent", { hasText: text });
+    .locator(".agent", { hasText: text });
 
 test("in the home's one database, an actor dragged onto another group moves at once in the list, asked first in Manage groups", async ({
   page,
@@ -235,17 +235,17 @@ test("in the home's one database, an actor dragged outside every group is on its
   await expect(dialog).toBeHidden();
   const lone = page.locator("#agents .gatherer.alone");
   await expect(lone.locator(".alone-head")).toHaveCount(0); // no "own context" head
-  await expect(lone.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
+  await expect(lone.locator(".agent", { hasText: CLAUDE })).toBeVisible();
   await expect(inGroup(page, GATHERER, CLAUDE)).toHaveCount(0);
 
-  await lone.locator("button.agent", { hasText: CLAUDE }).dragTo(groupRow(page, GATHERER)); // back into a group: it joins
+  await lone.locator(".agent", { hasText: CLAUDE }).dragTo(groupRow(page, GATHERER)); // back into a group: it joins
   await expect
     .poll(() => asked.at(-1))
     .toEqual({ gatherer: `self:${state.claude}`, to: GATHERER, do: "move", channels: [state.claude], into: null });
   await expect(dialog).toBeHidden();
 });
 
-// An actor on its own from its start (features/list/group-moves.js's aloneNew): the list head's "+" beside its folder button opens a
+// An actor on its own from its start (features/list/group-moves.ts's aloneNew): the list head's "+" beside its folder button opens a
 // box -- the directory the latest active actor works in, each harness that runs here (Codex too: its session is kept
 // under the dashboard's id from its start) -- and starts one on its own, run under the shown actor's group,
 // listed as its own row; with a database per gatherer there is none
@@ -295,7 +295,7 @@ test("in the home's one database, the list head's + starts an actor on its own",
   await expect.poll(() => asked.length).toBe(1);
   expect(asked[0]).toEqual({ gatherer: GATHERER, cwd: "/work/demo", harness: "claude", alone: true });
   await expect(box).toBeHidden();
-  await expect(page.locator("#agents .gatherer.alone button.agent")).toHaveCount(1);
+  await expect(page.locator("#agents .gatherer.alone .agent")).toHaveCount(1);
 });
 
 test("with a database per gatherer, the list head has no + for an actor on its own", async ({ page }) => {
@@ -305,7 +305,7 @@ test("with a database per gatherer, the list head has no + for an actor on its o
   await expect(page.locator(".aside-head button.alone-new")).toHaveCount(0);
 });
 
-// An actor on its own (features/list/group-moves.js's aloneShut): open, its row at the top with its ×; closed, it leaves the top for
+// An actor on its own (features/list/groups.ts's aloneShut): open, its row at the top with its ×; closed, it leaves the top for
 // a line at the list's end, "1 closed", folded till opened (kept in this browser) -- never "hidden" as a
 // group is; in the rail, that line only once its foot shows the closed ones
 test("an actor on its own, closed, goes from the top of the list into a closed line at its end", async ({ page }) => {
@@ -342,10 +342,10 @@ test("an actor on its own, closed, goes from the top of the list into a closed l
   await open(page);
   const top = page.locator("#agents .gatherer.alone:not(.shut)");
   const shut = page.locator("#agents .gatherer.alone.shut");
-  await expect(top.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
+  await expect(top.locator(".agent", { hasText: CLAUDE })).toBeVisible();
   await expect(top).not.toContainText("own context");
   await expect(shut).toHaveCount(0);
-  await top.locator("button.agent", { hasText: CLAUDE }).hover();
+  await top.locator(".agent", { hasText: CLAUDE }).hover();
   await top.locator(".close-btn").click();
   expect(stopped).toEqual([state.claude]);
 
@@ -355,10 +355,10 @@ test("an actor on its own, closed, goes from the top of the list into a closed l
   await expect(page.locator("#hidden-gatherers")).toHaveCount(0);
   const line = shut.locator(".fold-line");
   await expect(line).toHaveText("▸ 1 closed");
-  await expect(shut.locator("button.agent")).toHaveCount(0);
+  await expect(shut.locator(".agent")).toHaveCount(0);
   await line.click();
   await expect(line).toHaveText("▾ 1 closed");
-  await expect(shut.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
+  await expect(shut.locator(".agent", { hasText: CLAUDE })).toBeVisible();
   const order = await page
     .locator("#agents")
     .evaluate((n) =>
@@ -366,7 +366,7 @@ test("an actor on its own, closed, goes from the top of the list into a closed l
     );
   expect(order.at(-1)).toBe("shut"); // at the list's end
   await page.reload();
-  await expect(shut.locator("button.agent", { hasText: CLAUDE })).toBeVisible(); // kept open in this browser
+  await expect(shut.locator(".agent", { hasText: CLAUDE })).toBeVisible(); // kept open in this browser
 
   // the rail: nothing of it till the foot shows the closed ones; then its line, open as the list's is
   await page.locator("#agents .lb-fold").click();
@@ -448,7 +448,7 @@ test("in the home's one database, an app in a folder that moves goes with it, it
   });
   await open(page);
   await openWork(page); // what is in it shown
-  await page.locator("#agents button.agent.app-row", { hasText: "Shopping list" }).click(); // its pane open
+  await page.locator("#agents .agent.app-row", { hasText: "Shopping list" }).click(); // its pane open
   const frame = page.locator(".app-frame");
   await expect(frame).toHaveAttribute("src", new RegExp(`gatherer=${GATHERER}&instance=n1`));
   const dialog = page.locator("dialog.mv-dialog");
@@ -477,7 +477,7 @@ test("in the home's one database, a folder holding its group's only one of an ap
   });
   await open(page);
   await openWork(page);
-  await expect(page.locator("#agents button.agent.app-row", { hasText: "Shopping list" })).toBeVisible();
+  await expect(page.locator("#agents .agent.app-row", { hasText: "Shopping list" })).toBeVisible();
   await page.locator("#agents .folder-line", { hasText: "Work" }).dragTo(groupRow(page, LAB));
   await expect(page.locator("dialog.mv-dialog")).toHaveCount(0);
   expect(asked).toEqual([]);

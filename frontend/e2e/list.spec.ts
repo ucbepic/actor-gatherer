@@ -5,13 +5,13 @@ import { CLAUDE, CODEX, GATHERER, NOW, masks, open, streamHome } from "./home";
 
 test("lists the gatherer's actors, each by its name alone: hovered, a card says who it is", async ({ page }) => {
   await open(page);
-  const rows = page.locator("#agents button.agent");
+  const rows = page.locator("#agents .agent");
   await expect(rows).toHaveCount(2);
   await expect(page.locator("#agents .gatherer-row")).toContainText(GATHERER);
   const claude = rows.filter({ hasText: "Parser fixes" });
   await expect(claude).not.toContainText("/probe-greet Bob");
   await expect(claude).not.toContainText("Fixed the CSV parser's quoting");
-  await expect(claude).not.toHaveAttribute("title"); // the card, not the browser's own tooltip
+  await expect(claude.locator(".a-main")).not.toHaveAttribute("title"); // the card, not the browser's own tooltip
   await expect(rows.filter({ hasText: "Spawn one subagent" })).toHaveCount(1); // no name: its last request in its place
   await expect(page.locator(".side")).toHaveScreenshot("list.png", { mask: masks(page) });
   await claude.hover();
@@ -59,7 +59,7 @@ test("the rail groups the actors by gatherer, names each, says who it is hovered
   await page.mouse.move(700, 450);
   await expect(card).toBeHidden();
   await claude.click();
-  await expect(claude).toHaveAttribute("aria-current", "true");
+  await expect(claude.locator(".r-main")).toHaveAttribute("aria-current", "true");
   // folded from the rail as in the list: its actors go, and come back
   await rail.locator(".r-gname").click();
   await expect(rail.locator(".r-actor")).toHaveCount(1); // the one shown stays in view
@@ -184,12 +184,12 @@ test("the rail's avatars have the list's bookmark and ×, over their corners: pr
   await claude.hover(); // its card says it is saved
   await expect(page.locator("#actor-card .c-saved")).toHaveText("Saved");
   await page.mouse.move(700, 450);
-  await expect(claude).toHaveAttribute("aria-current", "false"); // pressing it did not show the actor
+  await expect(claude.locator(".r-main")).toHaveAttribute("aria-current", "false"); // pressing it did not show the actor
   await claude.hover();
   await claude.locator(".close-btn").click();
   await expect.poll(() => stopped.length).toBe(1);
   expect(stopped[0]).toEqual({ session_id: "s-claude" });
-  await expect(claude).toHaveAttribute("aria-current", "false");
+  await expect(claude.locator(".r-main")).toHaveAttribute("aria-current", "false");
 });
 
 test("a row keeps the keyboard's focus as time passes: the list is not drawn again for its clocks", async ({
@@ -201,11 +201,11 @@ test("a row keeps the keyboard's focus as time passes: the list is not drawn aga
   await expect(page.locator("#agents")).toContainText(GATHERER);
   await homed; // the stream's first home come before the clock moves on, not to a list already 95 s on
   await page.clock.fastForward(15_000); // the list as it settles after loading, drawn again once
-  const claude = page.locator("#agents button.agent", { hasText: "Parser fixes" });
-  await claude.focus();
-  await expect(claude).toBeFocused();
+  const claude = page.locator("#agents .agent", { hasText: "Parser fixes" });
+  await claude.locator(".a-main").focus();
+  await expect(claude.locator(".a-main")).toBeFocused();
   await page.clock.fastForward(95_000); // the page's 30 s redraws, three of them
-  await expect(claude).toBeFocused();
+  await expect(claude.locator(".a-main")).toBeFocused();
 });
 
 test("a bookmark the server refused is taken back, with no home coming to say so", async ({ page }) => {
@@ -213,7 +213,7 @@ test("a bookmark the server refused is taken back, with no home coming to say so
   await page.route("**/api/stream*", (route) => route.abort()); // no home after the first: the page's own copy shown
   await page.route("**/api/saved", (route) => route.fulfill({ status: 500, json: { error: "disk full" } }));
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: "Parser fixes" });
+  const claude = page.locator("#agents .agent", { hasText: "Parser fixes" });
   await claude.hover();
   await claude.locator(".save-btn").click();
   await expect(page.locator("#live")).toContainText("Not saved");
@@ -241,7 +241,7 @@ test("a rail bookmark under a resting pointer stays shown, every frame, while th
   const list = page.locator("#rail .r-actors");
   await list.evaluate((n) => (n.scrollTop = 60));
   await expect.poll(() => list.evaluate((n) => n.scrollTop)).toBeGreaterThan(0);
-  const tile = page.locator('#rail .r-actor[aria-current="false"]').first(); // the one shown has its buttons anyway
+  const tile = page.locator('#rail .r-actor:has(> .r-main[aria-current="false"])').first(); // the one shown has its buttons anyway
   const card = await tile.getAttribute("data-card");
   await tile.locator(".save-btn").hover();
   await expect(tile.locator(".save-btn")).toHaveCSS("opacity", "1");
@@ -315,7 +315,7 @@ test("lists a saved actor with the open ones while open, and in its saved line o
   await streamsAsRequests(page);
   await page.route("**/api/stream*", (route) => route.abort());
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await expect(claude).toBeVisible();
   await expect(claude.locator(".save-btn.on")).toHaveCount(1); // still saved: its bookmark filled
   // the open one listed with the open ones; the closed one in the saved line, under them, apart from the closed
@@ -326,7 +326,7 @@ test("lists a saved actor with the open ones while open, and in its saved line o
     .locator("#agents .gatherer")
     .first()
     .evaluate((box) =>
-      [...box.querySelectorAll("button.agent, .fold-line")].map((n) =>
+      [...box.querySelectorAll(".agent, .fold-line")].map((n) =>
         n.matches(".fold-line") ? `[${n.textContent}]` : n.getAttribute("data-key") || "",
       ),
     );
@@ -335,7 +335,7 @@ test("lists a saved actor with the open ones while open, and in its saved line o
   expect(codexChannel).not.toBe("");
   await saved.click();
   await expect(saved).toHaveText("▾ 1 saved");
-  await expect(page.locator(`#agents button.agent[data-key="${GATHERER}/${codexChannel}"]`)).toBeVisible();
+  await expect(page.locator(`#agents .agent[data-key="${GATHERER}/${codexChannel}"]`)).toBeVisible();
 });
 
 test("keeps each actor in its place whatever its status: the newest first, under no heading", async ({ page }) => {
@@ -355,10 +355,8 @@ test("keeps each actor in its place whatever its status: the newest first, under
   await streamsAsRequests(page);
   await page.route("**/api/stream*", (route) => route.abort());
   await open(page);
-  await expect(page.locator("#agents button.agent .dot.running")).toHaveCount(1);
-  const shown = await page
-    .locator("#agents button.agent")
-    .evaluateAll((ns) => ns.map((n) => n.getAttribute("data-key")));
+  await expect(page.locator("#agents .agent .dot.running")).toHaveCount(1);
+  const shown = await page.locator("#agents .agent").evaluateAll((ns) => ns.map((n) => n.getAttribute("data-key")));
   expect(shown).toEqual(order);
   await expect(page.locator("#agents .agent-group")).toHaveCount(0); // no "Running", no "Idle"
 });

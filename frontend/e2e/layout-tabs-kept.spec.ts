@@ -6,7 +6,7 @@ import { expect, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, open } from "./home";
 import { addNotepad } from "./task-home";
 
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const tabs = (page: Page) => page.locator(".lay-tabs:visible .lay-tab");
 // every Notepad's panel on the page (one kept out of sight too), and those in sight
 const notepads = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]");
@@ -68,7 +68,7 @@ test("the panels of the three tabs left latest are kept; those of a tab left bef
     expect(r.ok()).toBe(true);
   }
   await open(page);
-  const lone = (folder: string) => page.locator("#agents button.agent.app-row", { hasText: folder });
+  const lone = (folder: string) => page.locator("#agents .agent.app-row", { hasText: folder });
   for (const folder of folders) {
     await lone(folder).click(); // each a tab of its own
     await expect(notepadAt(page, folder)).toBeVisible();

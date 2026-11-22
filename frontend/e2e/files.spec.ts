@@ -126,7 +126,7 @@ test("an actor's lines marked in the file with its avatar, which opens it; the w
   await expect(panel.locator(".cm-line.ed-recent")).toHaveCount(1);
   // its avatar pressed, last: that actor opened, as its row in the list opens it (its task, the panel gone with it)
   await panel.locator(".ed-recent-av").click();
-  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CODEX })).toHaveCount(1);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CODEX })).toHaveCount(1);
 });
 
 test("an actor started from the tree's menu, on a folder or a file, in that folder with what the reader wrote", async ({

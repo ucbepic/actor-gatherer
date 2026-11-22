@@ -7,7 +7,7 @@ import { expect, test } from "./test";
 import { CLAUDE, CODEX, open } from "./home";
 import { addNotepad, cardOf } from "./task-home";
 
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const notes = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])"); // in sight (one kept for another tab: hidden)
 const here = (page: Page) => page.locator("#pane-here");
 const tabs = (page: Page) => page.locator(".lay-tabs:visible .lay-tab");

@@ -4,7 +4,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./test";
 import { CLAUDE, CODEX, open } from "./home";
 
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const tabs = (page: Page) => page.locator(".lay-tabs:visible .lay-tab");
 const box = async (l: Locator) => (await l.boundingBox())!;
 

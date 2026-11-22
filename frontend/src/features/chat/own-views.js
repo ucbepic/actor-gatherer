@@ -3,7 +3,7 @@ import {
   ago, clock, compact, el, full, get, harnessBadge, harnessLogo, harnessName, itemType, svgEl,
 } from "../../core/page/helpers.js";
 import { drawingPane, paneInfo } from "../page/pane-view.js";
-import { statusOf } from "../list/seen.js";
+import { statusOf } from "../list/seen";
 import { askingNote, backgroundNote, errorNote } from "./chat.js";
 import { callsNow } from "../page/main-view.js";
 import { columnsNode, contextCardNode, contextItemNode, sizeCardNode, typeChipsNode } from "../details/mount";

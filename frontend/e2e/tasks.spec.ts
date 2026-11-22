@@ -1,4 +1,4 @@
-// TASKS (features/list/list.js, tasks.py): actors and apps alike kept together as one task -- one row in the list, its actors'
+// TASKS (features/list/list.ts, tasks.py): actors and apps alike kept together as one task -- one row in the list, its actors'
 // faces and its apps' marks at its right, opened as one layout (its apps above, its actors side by side), its card listing
 // them, each taken out from there -- "+", on an item's row or a task's, adding to its task a new actor or an app (a task
 // made of the two, for a lone one), an item dragged onto another's row put in its task, and an app in no task a row of
@@ -14,15 +14,15 @@ test("a task is one row, its actors' faces at its right; opened, its actors side
 }) => {
   await taskHome(page, true);
   await open(page);
-  const row = page.locator("#agents button.agent.task");
+  const row = page.locator("#agents .agent.task");
   await expect(row).toHaveCount(1);
   await expect(row.locator(".name")).toHaveText("Parser work");
   await expect(row.locator(".t-face")).toHaveCount(2);
-  await expect(page.locator("#agents button.agent:not(.task)", { hasText: CLAUDE })).toHaveCount(0); // in it, not a row
+  await expect(page.locator("#agents .agent:not(.task)", { hasText: CLAUDE })).toHaveCount(0); // in it, not a row
 
   await row.click(); // opened: both, side by side, the task the one shown
   await expect(page.locator("#panes > .pane")).toHaveCount(2); // this page's own pane, and one beside it
-  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row.locator(".a-main")).toHaveAttribute("aria-current", "true");
 
   await page.mouse.move(0, 0);
   await row.hover(); // its card: live, its two actors, each with its own "take out"
@@ -31,9 +31,9 @@ test("a task is one row, its actors' faces at its right; opened, its actors side
   await expect(card.locator(".c-task-row")).toHaveCount(2);
   await card.locator(".c-task-row", { hasText: CODEX }).locator(".take-out").hover();
   await card.locator(".c-task-row", { hasText: CODEX }).locator(".take-out").click(); // one left: the task gone
-  await expect(page.locator("#agents button.agent.task")).toHaveCount(0);
-  await expect(page.locator("#agents button.agent", { hasText: CLAUDE })).toHaveCount(1);
-  await expect(page.locator("#agents button.agent", { hasText: CODEX })).toHaveCount(1);
+  await expect(page.locator("#agents .agent.task")).toHaveCount(0);
+  await expect(page.locator("#agents .agent", { hasText: CLAUDE })).toHaveCount(1);
+  await expect(page.locator("#agents .agent", { hasText: CODEX })).toHaveCount(1);
 });
 
 test("an actor's + starts a new agent in its directory, put in a task with it, opened beside it", async ({ page }) => {
@@ -51,7 +51,7 @@ test("an actor's + starts a new agent in its directory, put in a task with it, o
     });
   });
   await open(page);
-  const row = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const row = page.locator("#agents .agent", { hasText: CLAUDE });
   await row.hover();
   const add = row.locator(".task-add");
   await expect(add).toBeVisible(); // shown while hovered
@@ -78,14 +78,14 @@ test("a task's + adds an app to it: in it, opened above its actors, every one of
   await expect(pane).toHaveCount(1);
   await expect(pane.frameLocator("iframe").locator("#agents")).toHaveText(/^[^,]+, [^,]+$/); // both its actors attached
   await expect(row.locator(".t-faces .t-app")).toHaveCount(1); // in it: its mark among the task's faces
-  await expect(page.locator("#agents button.agent.app-row")).toHaveCount(0); // not a row of its own
-  await expect(row).toHaveAttribute("aria-current", "true"); // the task's: the app, selected
+  await expect(page.locator("#agents .agent.app-row")).toHaveCount(0); // not a row of its own
+  await expect(row.locator(".a-main")).toHaveAttribute("aria-current", "true"); // the task's: the app, selected
 });
 
 test("a task opened again is as it was left: an actor's pane closed in it stays closed", async ({ page }) => {
   await taskHome(page, true);
   await open(page);
-  const row = page.locator("#agents button.agent.task");
+  const row = page.locator("#agents .agent.task");
   const panes = page.locator("#panes > .pane");
   await page.locator("#agents").hover({ position: { x: 5, y: 5 } });
   await row.click(); // at first: both, side by side
@@ -110,7 +110,7 @@ test("a task's card lists its actors and its apps; one taken out is a row of its
   await expect(card.locator(".c-task-row:not(.c-app-row)")).toHaveCount(2); // its actors
   await expect(card.locator(".c-app-row", { hasText: "Notepad" })).toHaveCount(1); // and its app
   await card.locator(".c-app-row .take-out").click(); // out of the task: an app of its own
-  const own = page.locator("#agents button.agent.app-row");
+  const own = page.locator("#agents .agent.app-row");
   await expect(own).toHaveCount(1);
   await expect(row.locator(".t-faces .t-app")).toHaveCount(0);
   await page.mouse.move(0, 0);
@@ -123,20 +123,20 @@ test("a task's card lists its actors and its apps; one taken out is a row of its
 test("an app's panel closed in a task stays closed when the task is opened again", async ({ page }) => {
   await taskHome(page, false); // each actor a task of its own
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude); // Claude and Notepad: one task, its row Claude's
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   await expect(notes).toHaveCount(1);
   await expect(taskRow(page)).toHaveCount(1);
-  await page.locator("#agents button.agent", { hasText: CODEX }).click(); // another task: Claude's Notepad goes with its own
+  await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task: Claude's Notepad goes with its own
   await expect(notes).toHaveCount(0);
   await claude.click(); // back: as it was left, Notepad with it
   await expect(notes).toHaveCount(1);
   await closePanel(page, notes); // closed in it
-  await page.locator("#agents button.agent", { hasText: CODEX }).click();
+  await page.locator("#agents .agent", { hasText: CODEX }).click();
   await claude.click(); // back again: as it was left, Notepad closed
-  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CLAUDE })).toHaveCount(1);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CLAUDE })).toHaveCount(1);
   await page.waitForTimeout(1500); // what the task opens comes after a read of its apps: none came
   await expect(notes).toHaveCount(0);
 });
@@ -169,7 +169,7 @@ test("an app added to an actor on its own makes a task of the two: its card list
 }) => {
   await taskHome(page, false);
   await open(page);
-  const claude = page.locator("#agents button.agent:not(.task)", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent:not(.task)", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
@@ -225,7 +225,7 @@ test("a task's card lists its apps: one selected by a click, taken out by its ×
   await row.hover();
   await card.locator(".c-app-row", { hasText: "Notepad" }).locator(".take-out").click(); // out of the task: gone from the card
   await expect(card.locator(".c-app-row")).toHaveCount(0);
-  const own = page.locator("#agents button.agent.app-row"); // an app of its own
+  const own = page.locator("#agents .agent.app-row"); // an app of its own
   await expect(own).toHaveCount(1);
   await expect(own.locator(".app-face")).toHaveAttribute("title", /^Notepad/);
   await expect(row.locator(".t-faces .t-app")).toHaveCount(0);
@@ -266,11 +266,11 @@ test("an app in no task is a row of its own, its face lined up with the actors';
   await taskHome(page, false);
   await fakeApps(page, [{ id: "n1", title: "Shopping list" }]);
   await open(page);
-  const app = page.locator("#agents button.agent.app-row");
+  const app = page.locator("#agents .agent.app-row");
   await expect(app).toHaveCount(1);
   await expect(app.locator(".name")).toHaveText("Shopping list");
   await expect(app.locator(".app-face")).toHaveAttribute("title", "Notepad · Shopping list"); // its kind: on its face
-  const faces = page.locator("#agents button.agent .a-face > .logo");
+  const faces = page.locator("#agents .agent .a-face > .logo");
   await expect(faces).toHaveCount(3);
   const xs = await Promise.all([0, 1, 2].map(async (n) => Math.round((await faces.nth(n).boundingBox())!.x)));
   expect(new Set(xs).size).toBe(1);
@@ -279,7 +279,7 @@ test("an app in no task is a row of its own, its face lined up with the actors';
     asked.push(route.request().postDataJSON());
     await route.continue();
   });
-  await app.dragTo(page.locator("#agents button.agent", { hasText: CODEX }));
+  await app.dragTo(page.locator("#agents .agent", { hasText: CODEX }));
   await expect.poll(() => asked.length).toBe(1);
   expect(asked[0]).toMatchObject({ do: "add", items: ["app:n1"] });
   await expect(taskRow(page)).toHaveCount(1); // Codex and the app: one task
@@ -293,9 +293,9 @@ test("a task dragged onto a folder goes in it whole: every actor in it filed the
     await taskHome(page, true);
     await open(page);
     const line = page.locator("#agents .folder-line", { hasText: "Trips" });
-    await page.locator("#agents button.agent.task").dragTo(line);
+    await page.locator("#agents .agent.task").dragTo(line);
     await expect.poll(async () => Object.values((await treeOf(page)).filed)).toEqual([fid, fid]);
-    await expect(page.locator("#agents .f-kids button.agent.task")).toHaveCount(1); // the task, in it
+    await expect(page.locator("#agents .f-kids .agent.task")).toHaveCount(1); // the task, in it
   } finally {
     await noFolders(page);
   }
@@ -307,8 +307,8 @@ test("⌘/Ctrl+click on a task opens it whole beside the one shown: its actor an
   const beside = process.platform === "darwin" ? "Meta" : "Control";
   await taskHome(page, false); // each actor a task of its own
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   const panes = page.locator("#panes > .pane");
   await codex.click();
@@ -320,7 +320,7 @@ test("⌘/Ctrl+click on a task opens it whole beside the one shown: its actor an
   await codex.click({ modifiers: [beside] }); // Codex's task beside Claude's: Codex in a pane of its own, its Notepad above
   await expect(panes).toHaveCount(2);
   await expect(notes).toHaveCount(1);
-  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CODEX })).toHaveCount(1);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CODEX })).toHaveCount(1);
   await expect(claude).toHaveAttribute("data-open", "true"); // Claude's still open, beside
 });
 
@@ -329,7 +329,7 @@ test("the actor the page opens on, given an app since, gets it once clicked, and
 }) => {
   await taskHome(page, false);
   await open(page);
-  const shown = page.locator("#agents button.agent[aria-current=true]");
+  const shown = page.locator("#agents .agent:has(> .a-main[aria-current=true])");
   await expect(shown).toHaveCount(1); // the one the page opened on: its apps not opened with it
   const channel = ((await shown.getAttribute("data-key")) || "").split("/").pop();
   const opened = await page.request.post("/api/apps/open", {
@@ -340,7 +340,7 @@ test("the actor the page opens on, given an app since, gets it once clicked, and
   await expect(notes).toHaveCount(0);
   await shown.click(); // laid out now: its app with it
   await expect(notes).toHaveCount(1);
-  const other = page.locator("#agents button.agent:not(.task)[aria-current=false]").first();
+  const other = page.locator("#agents .agent:not(.task):has(> .a-main[aria-current=false])").first();
   await other.click(); // another task: its app goes
   await expect(notes).toHaveCount(0);
   await taskRow(page).click(); // back: as it was left, its app with it
@@ -353,8 +353,8 @@ test("an app is selected as an actor is: one thing selected, the panes below lef
   const beside = process.platform === "darwin" ? "Meta" : "Control";
   await taskHome(page, false); // each actor a task of its own
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   const panes = page.locator("#panes > .pane");
   await claude.click();
@@ -362,7 +362,7 @@ test("an app is selected as an actor is: one thing selected, the panes below lef
   await expect(notes).toHaveClass(/focused/); // added: selected
   const task = taskRow(page);
   const app = async () => (await cardOf(page, task)).locator(".c-app-row .c-row");
-  await expect(task).toHaveAttribute("aria-current", "true"); // its task's row
+  await expect(task.locator(".a-main")).toHaveAttribute("aria-current", "true"); // its task's row
   await expect(panes.and(page.locator(".focused"))).toHaveCount(0); // the actor's pane not, while it is
   await (await cardOf(page, task)).locator(".c-task-row:not(.c-app-row) .c-row").click(); // the actor: selected again
   await expect(panes.and(page.locator(".focused"))).toHaveCount(1);
@@ -376,20 +376,20 @@ test("an app is selected as an actor is: one thing selected, the panes below lef
   await (await app()).click(); // Claude's app selected from Codex's task: Claude's task entered, it selected
   await expect(notes).toHaveCount(1);
   await expect(notes).toHaveClass(/focused/);
-  await expect(task).toHaveAttribute("aria-current", "true");
+  await expect(task.locator(".a-main")).toHaveAttribute("aria-current", "true");
   await page.mouse.move(0, 0);
   await codex.click({ modifiers: ["Alt"] }); // Codex in Claude's task's place (⌥): Claude's open in no tab
   await expect(notes).toHaveCount(0);
   await (await app()).click({ modifiers: [beside] }); // ⌘: beside, no task entered
   await expect(notes).toHaveCount(1);
   await expect(notes).toHaveClass(/focused/);
-  await expect(page.locator("#agents button.agent[data-open=true]", { hasText: CODEX })).toHaveCount(1); // Codex still below
+  await expect(page.locator("#agents .agent[data-open=true]", { hasText: CODEX })).toHaveCount(1); // Codex still below
 });
 
 test("a row's buttons show over its face while it is hovered, its face alone at rest", async ({ page }) => {
   await taskHome(page, false);
   await open(page);
-  const row = page.locator("#agents button.agent:not(.task)", { hasText: CLAUDE });
+  const row = page.locator("#agents .agent:not(.task)", { hasText: CLAUDE });
   const acts = row.locator(".a-acts"),
     face = row.locator(".a-face");
   await page.mouse.move(0, 0);
@@ -410,9 +410,9 @@ test("a row is one line; a click on the actor shown shows it, a double-click on 
 }) => {
   await taskHome(page, false);
   await open(page);
-  const row = page.locator("#agents button.agent:not(.task)", { hasText: CLAUDE });
+  const row = page.locator("#agents .agent:not(.task)", { hasText: CLAUDE });
   await row.click();
-  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row.locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(row.locator(".meta")).toHaveCount(0); // one line: its state, its name, its face
   expect((await row.boundingBox())!.height).toBeLessThan(44);
   await row.click(); // the one shown, clicked again: shown, not named

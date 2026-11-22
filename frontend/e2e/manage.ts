@@ -1,4 +1,4 @@
-// Manage groups (features/list/group-moves.js), as the specs drive it: opened from the settings panel (the logo); its rows found
+// Manage groups (features/list/group-moves.ts), as the specs drive it: opened from the settings panel (the logo); its rows found
 // by their names -- not their switches, which name groups too -- and dragged as the list's are, a change of group
 // asked first there (in the list, done at once by the default rule).
 import type { Locator, Page } from "@playwright/test";

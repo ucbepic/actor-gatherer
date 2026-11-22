@@ -102,13 +102,15 @@ describe("the rail", () => {
     drawRail(boxOf(), buildRail(ctxOf(home), viewOf(), rv), host);
     expect(box.querySelector(".r-gname .nm")?.textContent).toBe("g");
     const tiles = [...box.querySelectorAll(".r-actor")];
-    expect(tiles.map((t) => t.getAttribute("aria-label"))).toEqual(["Parser, in g: Idle", "fix it, in g: Running"]);
-    const bookmark = tiles[0].querySelector(".save-btn");
+    const mains = tiles.map((t) => t.querySelector(":scope > button.r-main")!);
+    expect(mains.map((t) => t.getAttribute("aria-label"))).toEqual(["Parser, in g: Idle", "fix it, in g: Running"]);
+    const bookmark = tiles[0].querySelector(":scope > button.save-btn");
+    expect(box.querySelectorAll("button button, [role=button]")).toHaveLength(0); // none inside another
     drawRail(box, buildRail(ctxOf(home), viewOf({ focused: ["g", "a1"] }), rv), host);
     expect(box.querySelector(".r-actor")).toBe(tiles[0]);
-    expect(tiles[0].getAttribute("aria-current")).toBe("true");
+    expect(mains[0].getAttribute("aria-current")).toBe("true");
     expect(tiles[0].querySelector(".save-btn")).toBe(bookmark);
-    fireEvent.click(tiles[1], { shiftKey: true });
+    fireEvent.click(mains[1], { shiftKey: true });
     expect(calls(host).togglePick).toHaveBeenCalledWith(home.gatherers[0], a2);
     fireEvent.click(box.querySelector(".r-gname")!);
     expect(calls(host).toggleGatherer).toHaveBeenCalledWith("g");
@@ -175,5 +177,28 @@ describe("the hover card", () => {
     expect(calls(host).closeCancel).toHaveBeenCalled();
     fireEvent.click(box.querySelector(".c-acts .act.new")!);
     expect(calls(host).editIn).toHaveBeenCalledWith({ g: "g", id: null, parent: 1 });
+  });
+
+  it("a task's: its + a menu of Radix's, what it adds; an item chosen runs, and the card is told it closed", () => {
+    const run = vi.fn();
+    const t = { id: 3, name: "Work" };
+    const tasked = { gatherers: [g], tasks: { g: { tasks: [t], tasked: { a1: 3 } } } };
+    const host = hostOf<CardHost>({
+      ctx: ctxOf(tasked),
+      ...parts,
+      adds: () => ({ key: "card-task-add:g/a1", title: "Add an agent to this task" }),
+      addMenu: () => ({ where: "Work", items: [{ mark: span("badge"), text: "Codex", run }] }),
+    });
+    drawCard(boxOf(), { what: { kind: "task", g, t }, edit: null }, host);
+    const add = box.querySelector<HTMLButtonElement>(".c-acts button.task-add")!;
+    expect(add.getAttribute("data-pop")).toBe("card-task-add:g/a1");
+    expect(add.getAttribute("aria-label")).toBe("Add to this task");
+    fireEvent.keyDown(add, { key: "Enter" });
+    const menu = document.querySelector(".row-menu[role=menu]")!;
+    expect(menu.getAttribute("aria-label")).toBe("Add to Work");
+    expect(add.getAttribute("aria-expanded")).toBe("true"); // (the card kept while it is: hover-card.ts's cardLetGo)
+    fireEvent.click(menu.querySelector("[role=menuitem]")!);
+    expect(run).toHaveBeenCalled();
+    expect(calls(host).addClosed).toHaveBeenCalled();
   });
 });

@@ -7,8 +7,8 @@ import { addNotepad, taskHome, taskRow } from "./task-home";
 test("a task opened again has its chat minimized under its apps as it was left, or not", async ({ page }) => {
   await taskHome(page, false); // each actor a task of its own
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   const mini = page.locator("#main > .chat.mini");
   await claude.click();
@@ -56,7 +56,7 @@ test("a task opened again shows each of its actors in the view it showed, as wid
   const width = async (n: number) => Math.round((await panes.nth(n).boundingBox())!.width);
   const was = [await width(0), await width(1)];
   expect(was[1] - was[0]).toBeGreaterThan(150);
-  await page.locator("#agents button.agent.app-row").click(); // the lone app's task: the actors' panes closed
+  await page.locator("#agents .agent.app-row").click(); // the lone app's task: the actors' panes closed
   await expect(page.locator(".work.apps-only")).toHaveCount(1);
   await row.click(); // back: as it was left
   await expect(panes).toHaveCount(2);
@@ -69,14 +69,14 @@ test("a task opened again shows each of its actors in the view it showed, as wid
 test("an actor of a task opened again shows the view it showed when the task was left", async ({ page }) => {
   await taskHome(page, false);
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   const pressed = page.locator("#controls .views button[aria-pressed=true]");
   await claude.click();
   await page.locator("#controls").getByRole("button", { name: "Terminal" }).click();
   await expect(pressed).toHaveAttribute("aria-label", "Terminal");
   await codex.click(); // another task: in the view shown, never left before
-  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CODEX })).toHaveCount(1);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CODEX })).toHaveCount(1);
   await page.locator("#controls").getByRole("button", { name: "Chat" }).click();
   await expect(pressed).toHaveAttribute("aria-label", "Chat");
   await claude.click(); // back: its Terminal, as it was left
@@ -97,8 +97,8 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   expect(opened.ok()).toBe(true); // Codex's task: a Notepad of its own (another folder's) above
   await taskHome(page, false);
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   const row = page.locator("#top-row");
   // the row's height, the band under it included: from its panel's top to the panes' below (0: not shown)
   const tall = async () => {

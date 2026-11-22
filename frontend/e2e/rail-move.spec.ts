@@ -1,4 +1,4 @@
-// Moving actors in the folded rail (features/list/modes.js railActor, railDragged; features/list/list.js "DRAGGING"): an actor
+// Moving actors in the folded rail (features/list/RailTiles.tsx railActor, railDragged; features/list/list.ts "DRAGGING"): an actor
 // dragged onto a folder's name, its gatherer's, the name the rail is drilled into or a step of the path over it goes
 // there; the folders the rail leaves out are shown while one is dragged; a folded one held over opens; Shift+click
 // selects several, dragged together.

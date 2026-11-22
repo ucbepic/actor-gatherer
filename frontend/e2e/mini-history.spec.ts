@@ -5,8 +5,8 @@
 // not in the pane, only as tall as its strip. A message in the card clicked: the chat shown again at that turn. Its turn over, the actor's
 // avatar on its line, and under the card's last turn, is Chat's done avatar: a green check at its corner.
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "./test";
-import { CODEX, open } from "./home";
+import { chatAs, expect, test } from "./test";
+import { CODEX, NOW, open } from "./home";
 import { addNotepad, taskHome, taskRow } from "./task-home";
 
 const box = async (l: Locator) => (await l.boundingBox())!;
@@ -26,7 +26,7 @@ test("a minimized pane shows its last message and reply; hovered, the whole conv
   page,
 }) => {
   await open(page);
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   await codex.click();
   await addNotepad(page, codex);
   await expect(notes(page)).toHaveCount(1);
@@ -79,7 +79,7 @@ test("a minimized pane's card, opened again for the same line, keeps its place: 
   page,
 }) => {
   await open(page);
-  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
   await codex.click();
   await addNotepad(page, codex);
   await expect(notes(page)).toHaveCount(1);
@@ -99,6 +99,44 @@ test("a minimized pane's card, opened again for the same line, keeps its place: 
   await page.waitForTimeout(400);
   await expect(card).toBeVisible();
   expect(await left()).toBeLessThan(8); // still at its end, not at its top
+});
+
+test("a minimized pane's line drawn anew before its card opens: the card over the pane, at its end", async ({
+  page,
+}) => {
+  // the actor's view as the server sends it, its latest turn's end moved on at each sending (as a message an app writes to
+  // it moves it): its line drawn anew each time
+  let end = 0;
+  const chat = await chatAs(page, (v) => {
+    const turns = (v as { turns?: { end?: number }[] }).turns;
+    if (end && turns && turns.length) turns[turns.length - 1].end = end;
+    return v;
+  });
+  await open(page);
+  const codex = page.locator("#agents .agent", { hasText: CODEX });
+  await codex.click();
+  await addNotepad(page, codex);
+  await minimize(here(page)).click();
+  const lines = page.locator("#main > .chat.mini .mini-hist .mh-row");
+  await expect(lines).toHaveCount(2);
+  await page.mouse.move(700, 300);
+  // the pointer come onto the line -- and the line drawn anew before its card opens, the browser's own mouseenter on the
+  // new one not come yet
+  const was = await lines.nth(1).elementHandle();
+  await was!.dispatchEvent("mouseenter");
+  end = NOW - 60;
+  chat.again();
+  await expect.poll(() => was!.evaluate((n) => !n.isConnected)).toBe(true);
+  const card = page.locator(".mh-card");
+  await expect(card).toBeVisible();
+  const c = await box(card),
+    s = await box(page.locator("#main > .chat.mini"));
+  expect(c.y + c.height).toBeLessThanOrEqual(s.y); // placed over the pane, from the line drawn now
+  end = NOW - 30;
+  chat.again(); // drawn again, the card open
+  await expect(card.locator(".mh-head")).toContainText("30s ago");
+  const body = card.locator(".mh-body");
+  await expect.poll(() => body.evaluate((b) => b.scrollHeight - b.scrollTop - b.clientHeight)).toBeLessThan(8); // at its end
 });
 
 test("a pane beside the page's own, minimized: its card over the page; an earlier turn opened, its commands fetched", async ({

@@ -11,7 +11,7 @@ const AGO_MS = 30000;
 let state = { home: null, selected: null, paused: false, stream: null,
   adding: null,         // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
   renaming: null,       // the actor being named in the list: {g, c, value (as typed so far), was (its name before)}; a
-                        // task or an app: c its item, kind, auto (features/list/list.js's startItemRename); the gatherer: c null
+                        // task or an app: c its item, kind, auto (features/list/naming.ts's startItemRename); the gatherer: c null
   // the page's own pane's actor's calls, as the list's select() lets them go for another actor: each pane keeps its own
   // (features/layout/panes.js's makePane)
   get agent() { return panes.here ? panes.here.agent : null; },

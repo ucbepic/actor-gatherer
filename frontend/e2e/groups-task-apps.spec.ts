@@ -64,9 +64,9 @@ test("in the home's one database, a task moved with its app is never listed in b
     });
   });
   await open(page);
-  const demoTask = inGroup(page, GATHERER).locator("button.agent.task", { hasText: CLAUDE });
+  const demoTask = inGroup(page, GATHERER).locator(".agent.task", { hasText: CLAUDE });
   await expect(demoTask.locator(".t-app")).toHaveCount(1); // the Notepad in it
-  const rows = page.locator("#agents button.agent", { hasText: new RegExp(`${CLAUDE}|${APP}`) });
+  const rows = page.locator("#agents .agent", { hasText: new RegExp(`${CLAUDE}|${APP}`) });
   await expect(rows).toHaveCount(1);
 
   const labRead = page.waitForResponse((r) => r.url().endsWith(`/api/apps?gatherer=${LAB}`) && state.moved);
@@ -76,10 +76,8 @@ test("in the home's one database, a task moved with its app is never listed in b
   expect(await rows.count()).toBe(1); // not its task in lab and its app alone in demo
 
   release();
-  const labTask = inGroup(page, LAB).locator("button.agent.task", { hasText: CLAUDE });
+  const labTask = inGroup(page, LAB).locator(".agent.task", { hasText: CLAUDE });
   await expect(labTask.locator(".t-app")).toHaveCount(1); // its app with it
-  await expect(
-    inGroup(page, GATHERER).locator("button.agent", { hasText: new RegExp(`${CLAUDE}|${APP}`) }),
-  ).toHaveCount(0);
+  await expect(inGroup(page, GATHERER).locator(".agent", { hasText: new RegExp(`${CLAUDE}|${APP}`) })).toHaveCount(0);
   expect(await rows.count()).toBe(1);
 });

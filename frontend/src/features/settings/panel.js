@@ -1,8 +1,8 @@
 import { SNAPSHOT, panes, state } from "../../core/page/state.js";
 import { isShell } from "../../core/page/helpers.js";
 import { fitBox, loadAgent, loadChat, render, setAbout, setLive, takeAgent } from "../page/data.js";
-import { takeHome } from "../list/seen.js";
-import { firstAgent } from "../list/list.js";
+import { takeHome } from "../list/seen";
+import { firstAgent } from "../list/list";
 import { actorPanes, isAt, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes.js";
 import { takeChatView } from "../chat/files-view.js";
 import { allPanes } from "../page/pane-view.js";

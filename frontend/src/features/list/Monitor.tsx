@@ -15,7 +15,7 @@ import { Face, useFilled, useSpin } from "./Parts";
 import { GROUP_CLS, type Group } from "./status";
 import type { Actor, Gatherer, ListCtx } from "./types";
 
-/** What the monitor calls of the page around it (features/list/modes.js's MON_HOST). */
+/** What the monitor calls of the page around it (features/list/monitor-feed.ts's MON_HOST). */
 export interface MonitorHost extends PageParts {
   ctx: ListCtx;
   /** a folder's icon path (ICONS.folder) */

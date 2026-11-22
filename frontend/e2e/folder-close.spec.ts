@@ -1,4 +1,4 @@
-// A folder closed (folders.py's `close`; features/list/list.js "CLOSING a folder"): its × asks first while something in it is
+// A folder closed (folders.py's `close`; features/list/list.ts "CLOSING a folder"): its × asks first while something in it is
 // open or saved, then it goes into its parent's closed line, with its actors, till reopened; its bin deletes it, what was
 // in it moved up. In the list, and in the rail and a folder's card there.
 import type { Page } from "@playwright/test";
@@ -78,7 +78,7 @@ test("a folder's × asks first, closes it into its gatherer's closed line, its b
     await expect(shut.locator(".folder-act")).toHaveClass([/rename/, /delete/, /reopen/]);
     await expect(shut.locator(".act.start")).toHaveCount(0);
     await shut.locator(".fname").click(); // opened: its actors, under no line of their own
-    await expect(page.locator("#agents .f-kids button.agent", { hasText: CODEX })).toBeVisible();
+    await expect(page.locator("#agents .f-kids .agent", { hasText: CODEX })).toBeVisible();
     await expect(page.locator("#agents .f-kids .fold-line")).toHaveCount(0);
 
     // reopened: with the open folders again, the closed line gone
