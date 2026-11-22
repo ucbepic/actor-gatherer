@@ -2,7 +2,7 @@
 
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
 the views share, in `core/ui/`; Chat; the list; Details, Transcript, Messages, History and Terminal's frame); A6 begun
-(the layout model, steps 1-4c-3b and the first three parts of 4c-3c; the panes as parts of one page; the page's pop-ups
+(the layout model, steps 1-4c-3b and the first four parts of 4c-3c; the panes as parts of one page; the page's pop-ups
 on Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
@@ -677,11 +677,12 @@ The layout slice comes first, in four steps, each with every test passing:
      others' panels closed; its actor shown and the rest of it laid out after, through `openBeside`). `renderLayout`
      puts the page's own pane out of sight, or back in sight, before anything is placed -- placed in sight a moment, its
      actor would be put in its task's arrangement.
-   - 4c-3c, left: opening a task beside (`openTaskBeside`, `outOfAppsOnly`, and the rest of a task laid out:
-     `layOutTask`) still opens its panes one by one through `openBeside` -- each the model's `wantPane` rendered by
-     `renderPanes` -- not as one plan; the list's `openTask` moves when the list's rewrite (list.ts, its typed link to
-     panes.js) is on main. Then the model holds each task's open items itself (what `keysNow` reads off the panels now),
-     and `shadow.ts` becomes the layout's store: its tells, its check against the page (`AG_LAYOUT_STRICT`) and the
+   - 4c-3c, fourth part (built): a task opened beside (`besidePlan`, for `openTaskBeside` and `outOfAppsOnly`) and the
+     rest of a task laid out beside its actor just shown (`layOutPlan`, for `layOutTask`), sharing the rule `tabPlan`'s
+     tasks beside follow; and the model holds each task's items open as last placed (`items`, `open`: `noteOpen`, at
+     each placing), which `keysNow` reads in place of what it kept of each task itself (`heldSeen`) and of the panels.
+   - 4c-3c, left: the list's `openTask` moves when the list's rewrite (list.ts, its typed link to panes.js) is on main;
+     then `shadow.ts` becomes the layout's store: its tells, its check against the page (`AG_LAYOUT_STRICT`) and the
      check's workarounds (`keysWith`, `waitWhile`, `appsWith`, `panesWith`) go.
 
 ### Track B: the server

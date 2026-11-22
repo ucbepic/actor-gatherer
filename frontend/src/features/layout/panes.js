@@ -27,7 +27,7 @@ import { termOf } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
 import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
 import { herePane, newPane } from "./pane";
-import { appsPlan, clearPlan, closePlan, enterPlan, herePlan, itemsPlan, onlyPlan, tabPlan } from "./plan";
+import { appsPlan, besidePlan, clearPlan, closePlan, enterPlan, herePlan, itemsPlan, layOutPlan, onlyPlan, tabPlan } from "./plan";
 import { keptToDrop, tabHolding } from "./kept";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
@@ -183,9 +183,12 @@ function enterAppTask(g, k) {
   if (from && tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
   setTaskNow(k);
   tasksLaidOut.add(k);
-  renderLayout(appsPlan(openNow(), k));              // (features/layout/plan.ts's appsPlan)
-  const was = taskLayout(k);
-  taskAppsOpening = openTaskApps(g, null, k, was ? was.apps : null);   // its apps, as it was left
+  const was = taskLayout(k), gg = gathererNamed(g);
+  // its apps the page knows, opened with it (features/layout/plan.ts's appsPlan); the rest once read (openTaskApps)
+  const known = gg ? taskAppsFound(g, gg, null, k, was ? was.apps : null).found.filter((a) => a.inst) : [];
+  for (const a of known) instCache.set(a.id, a.inst);
+  renderLayout(appsPlan(openNow(), k, known.map((a) => ({ app: a.app, id: a.id, g, ...(+a.size > 0 ? { size: +a.size } : {}) }))));
+  taskAppsOpening = openTaskApps(g, null, k, was ? was.apps : null);   // as it was left
 }
 // The tasks laid out in this page (entered, or opened at first by openTask): a task shown, laid out, stays as it is -- the
 // layout model's (model.ts's laidOut), read and written as a set (the list's openTask too)
@@ -200,43 +203,35 @@ function layOutTask(g, to, c, rest, was = null) {
   const gg = gathererNamed(g);
   const open = (ch) => { const a = gg && gg.agents.find((x) => x.channel === ch); return a && statusOf(a)[0] !== "closed" && taskKey(g, ch) === to; };
   tasksLaidOut.add(to);
-  for (const ch of rest) {
-    if (ch === c || !open(ch) || openActors().some((s) => isAt(s, g, ch))) continue;
-    if (allPanes().length >= MAX_PANES) break;
-    openBeside(g, ch, (was && was.views && was.views[ch]) || null);
-  }
-  focusPane(actorPanes().find((p) => isAt([p.g, p.c], g, c)) || panes.here);
+  renderLayout(layOutPlan(openNow(), g, c, rest.filter(open), (was && was.views) || {}, MAX_PANES));   // (features/layout/plan.ts)
 }
 // A task opened BESIDE the one shown (⌘/Ctrl+click on it): nothing of the one shown closed -- its actors not closed, as it
 // was left (else its lead first; `first`, first), in panes beside the one in focus, as many as there is room for, and its
 // apps' panels added above (openTaskApps, `beside`); `first`'s pane in focus after.
 async function openTaskBeside(g, key, first) {
   shadow.tell("beside", model.open, key, true);
-  await outOfAppsOnly(g, first);
   const gg = gathererNamed(g), was = taskLayout(key);
   tasksLaidOut.add(key);
   const open = (ch) => { const a = gg && gg.agents.find((x) => x.channel === ch); return a && statusOf(a)[0] !== "closed" && taskKey(g, ch) === key; };
   const order = [first, ...(was ? was.actors : taskOrder(g, key))].filter((ch, i, all) => ch && all.indexOf(ch) === i && open(ch));
-  let left = 0;
-  for (const ch of order) {
-    if (openActors().some((s) => isAt(s, g, ch))) continue;
-    if (allPanes().length >= MAX_PANES) { left++; continue; }
-    openBeside(g, ch, (was && was.views && was.views[ch]) || null);
-  }
-  if (left) paneNote(`${plural(left, "actor")} of the task not opened. At most ${MAX_PANES} fit side by side.`);
-  await openTaskApps(g, first, key, was ? was.apps : null, true);
+  const found = taskAppsFound(g, gg, first, key, was ? was.apps : null).found;
+  for (const a of found) if (a.inst) instCache.set(a.id, a.inst);
+  const facts = { key, g, first: order[0] || null, rest: order.slice(1), shut: false, views: (was && was.views) || {},
+    apps: found.map((a) => ({ app: a.app, id: a.id, g, ...(+a.size > 0 ? { size: +a.size } : {}) })), back: null, focusApp: null,
+    mine: false };
+  const plan = besidePlan(openNow(), facts, MAX_PANES);   // (features/layout/plan.ts)
+  await renderLayout(plan);
+  if (plan.left) paneNote(`${plural(plan.left, "actor")} of the task not opened. At most ${MAX_PANES} fit side by side.`);
+  await openTaskApps(g, first, key, was ? was.apps : null, true);   // its apps the page did not know, once read
   const p = actorPanes().find((q) => isAt([q.g, q.c], g, first));
   if (p) focusPane(p);
 }
-// An actor opened beside a task of apps alone (⌘+click): this page's own pane, out of sight while apps alone show (its
-// actor not shown, though selected), in sight again with `c` in it -- the apps kept, beside
+// An actor opened beside a task of apps alone (⌘+click): this page's own pane, out of sight while apps alone show, in
+// sight again with `c` in it -- the apps kept, beside (features/layout/plan.ts's besidePlan, of `c` alone)
 async function outOfAppsOnly(g, c) {
   if (!appsOnlyKey() || !c) return;
-  if (isAt(awayOf(), g, c)) backInSight();
-  setAppsOnly(null);
-  focusPane(panes.here);
-  if (!isAt(state.selected, g, c)) await showIn(g, c, null);
-  placeWork(); renderAgents();
+  await renderLayout(besidePlan(openNow(), { key: "", g, first: c, rest: [], shut: false, views: {}, apps: [], back: null,
+    focusApp: null, mine: false }, MAX_PANES));
 }
 // a task's actors not closed, as it opens at first: its lead first (features/list/list.js's taskActors)
 function taskOrder(g, key) {
@@ -550,6 +545,15 @@ const shownSig = () => JSON.stringify([isAway(), shownPanels().map((s) => [s.key
 function placeWork() {
   if (!workPlacer) return;
   try { placedFor = shownSig(); workPlacer.place(); } catch (e) { setTimeout(() => { throw e; }, 0); }
+  noteOpen();
+}
+// the items open as placed, by task, kept in the layout model (model.ts's noteOpen): what a task held, read after it
+// changes (keysNow)
+function noteOpen() {
+  if (!state.home) return;
+  const byTask = {}, shown = shownPanels();
+  for (const s of shown) if (s.key) (byTask[s.key] = byTask[s.key] || []).push(s.item);
+  shadow.update(model.noteOpen, byTask, shown.map((s) => s.item));
 }
 // placed again only if what it shows changed since (an actor shown in this page's own pane, one put in a task): each draw
 function placeIfShown() { if (workPlacer && shownSig() !== placedFor) placeWork(); }
@@ -779,7 +783,12 @@ function taskFacts(k) {
 // panes beside, the apps' panels, the task of apps alone, this page's own pane out of sight or not), then the page: its
 // own pane given its actor (the list's select), the panes and panels opened and closed to match (renderPanes,
 // renderApps), what is in focus. `kept`: the first task's actor in this page's own pane already (the page opened on it).
+let laying = false;                                  // a plan being rendered
 function renderLayout(plan, firstKept = false) {
+  laying = true;
+  try { return layOut(plan, firstKept); } finally { laying = false; }
+}
+function layOut(plan, firstKept) {
   plan.order.forEach((k, i) => { if (i || !firstKept) shadow.tell(i ? "beside" : "enter", model.open, k, i > 0); });
   for (const k of plan.order) tasksLaidOut.add(k);
   if (plan.order.length) setTaskNow(plan.order[0]);
@@ -829,17 +838,16 @@ function keyNow(k) {
 // The layout model's keys now (shadow.ts): keyNow's -- and for a task, the keys now of the items it held when last asked
 // about and holds no more whose panels are open (taken out of it: each a task of its own, shown still; one closed for
 // good, not), with its own if it is left. (Step 4's model knows each task's open items itself.)
-const heldSeen = new Map();
 function keysNow(k) {
   const { group: g, id } = parseKey(k), n = taskNumber(id);
   if (!state.home) return [k];
   if (n === null) return isAppItem(id) || taskKey(g, id) ? [keyNow(k)] : [];   // (an actor gone from its group: none)
   const kept = (state.home.tasks || {})[g] || { tasks: [], tasked: {} };
-  const was = heldSeen.get(k) || [], open = new Set(shownPanels().map((p) => p.item));
+  // its items open as last placed, and those open then (the layout model's: noteOpen, at each placing)
+  const was = (shadow.layout.items || {})[k] || [], open = new Set(shadow.layout.open || []);
   const left = (now) => was.filter((item) => !now.includes(item) && open.has(item)).map((item) => taskKey(g, item)).filter(Boolean);
   if (!kept.tasks.some((t) => String(t.id) === String(n))) return was.length ? [...new Set(left([]))] : [k];
   const now = Object.keys(kept.tasked).filter((item) => String(kept.tasked[item]) === String(n));
-  heldSeen.set(k, now);
   return [...new Set([k, ...left(now)])];
 }
 shadow.keysWith(keysNow);
@@ -1367,8 +1375,9 @@ function appClosed(id) {
 // a task of apps only shown, its last panel gone: out of apps only -- under screen tabs the tab is left showing nothing
 // (its new-tab page), this page's own actor not brought back into it: that actor's task was left when the apps were
 // entered (it is another tab's, or ⌥ replaced it), and one task is never in two tabs
+// (not while a plan is rendered: the task of apps alone it shows is its own, its panels still opening)
 function appsOnlyLeft() {
-  if (!appsOnlyKey() || panes.apps.some((q) => !q.held)) return;
+  if (laying || !appsOnlyKey() || panes.apps.some((q) => !q.held)) return;
   setAppsOnly(null);
   if (workPlacer && state.selected && !isShell(state.selected[1]) && !isAway()) putAway(state.selected);
 }
