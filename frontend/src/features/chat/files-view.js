@@ -3,7 +3,7 @@ import {
   BESIDE_KEY, ICONS, atRest, atWork, bareAvatar, el, greeting, hueInk, key, strokeIcon,
 } from "../../core/page/helpers.js";
 import { earlierTurns, fitBox, loadChat, refresh, render, setLive } from "../page/data.js";
-import { MANAGER, crewFace, envelope } from "../list/list.js";
+import { MANAGER, crewFace, envelope } from "../list/list";
 import { DETAILS_TIP, dashboardCommand, setDetails } from "../page/main-view.js";
 import { chatToEnd, permissionVerb, permissionView } from "./chat.js";
 import { fullscreenFor, termOf } from "../terminal/terminal.js";

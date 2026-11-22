@@ -4,7 +4,7 @@
 import { useList } from "./store";
 import { drops, GFS, NodeView } from "./Boxes";
 import type { ListHost } from "./host";
-import { useFilled } from "./Parts";
+import { HeadParts } from "./Head";
 import { ActorRowView } from "./RowViews";
 import type { HiddenRow, ListModel } from "./rows";
 
@@ -29,11 +29,14 @@ export function AgentList() {
   );
 }
 
-/** The list's head, held at its top as it scrolls: its buttons (the page's); a gatherer or a folder of gatherers
- * dropped on it, at the list's top. */
+/** The list's head, held at its top as it scrolls (Head.tsx); a gatherer or a folder of gatherers dropped on it, at the
+ * list's top. */
 function Head({ host, model }: { host: ListHost; model: ListModel }) {
-  const ref = useFilled<HTMLDivElement>(() => host.head(model));
-  return <div className="aside-head" ref={ref} {...drops(host, GFS, null, () => {})} />;
+  return (
+    <div className="aside-head" {...drops(host, GFS, null, () => {})}>
+      <HeadParts host={host} merged={model.merged} />
+    </div>
+  );
 }
 
 /** The hidden groups, folded under a line: each with why, and a button showing it again. */

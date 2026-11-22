@@ -1,4 +1,4 @@
-// THE LIST, as the page around it draws it (features/list/list.js's renderAgents): its view-model handed to the list in
+// THE LIST, as the page around it draws it (features/list/list.ts's renderAgents): its view-model handed to the list in
 // React (AgentList.tsx), drawn into aside#agents at once -- so what the page does next (a box focused, a card placed, the
 // rows slid into their places) finds it drawn.
 import { createElement } from "react";

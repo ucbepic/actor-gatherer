@@ -106,7 +106,7 @@ export async function startEditor(page: Page, repo: string, app: FileApp = "file
   await expect(editorPane(page, app)).toHaveCount(1);
   // the app and its actor, one task (the dashboard's task_links.py): the task's row shown, the app's mark among its
   // faces; its actor, the one attached to the app's instance
-  const actor = page.locator("#agents button.agent.task[aria-current=true]");
+  const actor = page.locator("#agents .agent.task:has(> .a-main[aria-current=true])");
   await expect(actor.locator(".t-faces img.t-app")).toHaveAttribute("src", `/apps/mark/${app}.svg`);
   await expect(actor.locator(".t-faces .t-face")).toHaveCount(1);
   const src = new URL((await editorPane(page, app).locator("iframe").getAttribute("src")) || "");

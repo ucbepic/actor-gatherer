@@ -1,7 +1,7 @@
 // THE HOVER CARD (#actor-card): what a row of the list or a tile of the rail is, shown while it is hovered (or in focus
 // from the keys) -- an actor's (who it is, its status, what it was asked, its recap, its branch), a task's and an app's
 // (live: their items and notifications, each a button), a folder's and a gatherer's (CardFolder.tsx). The page decides
-// which card shows, where, and when (features/list/modes.js's cardDraw); this draws it, each part by its key, so a box
+// which card shows, where, and when (features/list/hover-card.ts's cardDraw); this draws it, each part by its key, so a box
 // in it -- a name being typed, the question a folder's × asks -- stays the same element as it is drawn again.
 import { compact, firstLine } from "../../core/format";
 import { appItem, key, taskId } from "../../core/model/keys";

@@ -1,4 +1,4 @@
-// Folders of gatherers (gatherer_folders.py; features/list/gatherer-folders.js): none at first, the list as without them; one made
+// Folders of gatherers (gatherer_folders.py; features/list/gatherer-folders.ts): none at first, the list as without them; one made
 // as the server makes them (the list makes none: its folder button makes a group, groups-merge.spec.ts), a gatherer dragged into it and out onto the head, folders in folders, folded (nothing of it in
 // view), renamed and deleted -- no counts, no start buttons on their lines, no actor dropped in one; and
 // in the rail, the same folders, folded and opened there.
@@ -37,19 +37,19 @@ test("keeps gatherers in folders of their own: filled by dragging, nested, folde
     await expect(line("Work projects").locator(".folder-act")).toHaveCount(3);
     await expect(line("Work projects").locator(":is(.count, .act.start)")).toHaveCount(0);
 
-    await page.locator("#agents button.agent", { hasText: CODEX }).dragTo(line("Work projects")); // an actor: not put in it
+    await page.locator("#agents .agent", { hasText: CODEX }).dragTo(line("Work projects")); // an actor: not put in it
     await expect(gRow).toHaveAttribute("draggable", "true");
     await gRow.dragTo(line("Work projects"));
     await expect(page.locator("#agents .gf-kids .gatherer-row", { hasText: GATHERER })).toBeVisible();
-    await expect(page.locator("#agents .gf-kids button.agent", { hasText: CLAUDE })).toBeVisible(); // its actors with it
+    await expect(page.locator("#agents .gf-kids .agent", { hasText: CLAUDE })).toBeVisible(); // its actors with it
     await expect.poll(async () => (await gfTree(page)).filed).toEqual({ [GATHERER]: work });
     expect((await treeOf(page)).filed).toEqual({}); // the actor dragged before: still at its gatherer's top
 
-    await page.locator("#agents button.agent", { hasText: CLAUDE }).click(); // open in the pane...
+    await page.locator("#agents .agent", { hasText: CLAUDE }).click(); // open in the pane...
     await line("Work projects").locator(".fbtn").click(); // ...folded: nothing of it in view, not even that actor
     await expect(line("Work projects").locator(".fbtn")).toHaveAttribute("aria-expanded", "false");
     await expect(gRow).toHaveCount(0);
-    await expect(page.locator("#agents .gf-kids button.agent")).toHaveCount(0);
+    await expect(page.locator("#agents .gf-kids .agent")).toHaveCount(0);
     await page.reload(); // folded, kept in this browser
     await expect(line("Work projects").locator(".fbtn")).toHaveAttribute("aria-expanded", "false");
     await line("Work projects").locator(".fbtn").click();

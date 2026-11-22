@@ -22,8 +22,8 @@ test("the History view lists the actor's history", async ({ page }) => {
 
 test("two panes on History, side by side: each its own rows picked, its own panel", async ({ page }) => {
   await open(page);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
-  await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] });
   const here = page.locator("#pane-here"),
     other = page.locator("#panes > .pane").nth(1);
   await expect(other).toHaveCount(1);

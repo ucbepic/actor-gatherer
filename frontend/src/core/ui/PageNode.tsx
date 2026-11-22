@@ -17,23 +17,15 @@ const styleOf = (s: string) =>
 /**
  * A node the old page builds -- nothing listening on it, nothing changing it after it is built: a call opened, a call's
  * line, a face, a Browser's message -- drawn as React's own: the same element, attributes and contents, its contents set
- * again only when they change. A text as it is; none, nothing. `extra`: React's own after its contents (a check on a
- * face), its contents then drawn each as a node of its own.
+ * again only when they change. A text as it is; none, nothing.
  */
-export function Html({ node, extra }: { node: Node | string | null; extra?: ReactNode }): ReactNode {
+export function Html({ node }: { node: Node | string | null }): ReactNode {
   if (node === null) return null;
   if (typeof node === "string") return node;
   if (!(node instanceof Element)) return node.textContent;
   const props: Record<string, unknown> = {};
   for (const a of node.attributes) props[PROP[a.name] ?? a.name] = a.name === "style" ? styleOf(a.value) : a.value;
   const tag = node.tagName.toLowerCase();
-  if (extra !== undefined && extra !== null && extra !== false)
-    return createElement(
-      tag,
-      props,
-      ...[...node.childNodes].map((c, i) => createElement(Html, { key: i, node: c })),
-      extra,
-    );
   if (!EMPTY.has(tag)) props.dangerouslySetInnerHTML = { __html: node.innerHTML };
   return createElement(tag, props);
 }

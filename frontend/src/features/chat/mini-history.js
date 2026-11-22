@@ -2,7 +2,7 @@ import { SNAPSHOT } from "../../core/page/state.js";
 import {
   HUE_INK, ICONS, ago, bareAvatar, buddy, doneCheck, el, full, harnessName, lasting, restDelay, strokeIcon,
 } from "../../core/page/helpers.js";
-import { statusOf } from "../list/seen.js";
+import { statusOf } from "../list/seen";
 import { drawPane } from "../page/main-view.js";
 import { paneAt, paneInfo, paneKey } from "../page/pane-view.js";
 import { str } from "../../core/model/items";
@@ -154,11 +154,17 @@ const miniCard = (() => {
     clearTimeout(shutAt);
     if (isOpen()) { open(r, false); return; }      // open: another line's at once
     clearTimeout(timer);
-    timer = setTimeout(() => open(r, true), 140);
+    const from = paneAt(r);                          // (its pane, should the line be drawn anew meanwhile)
+    timer = setTimeout(() => open(r, true, from), 140);
   }
   function leave() { clearTimeout(timer); clearTimeout(shutAt); shutAt = setTimeout(shut, 260); }
-  function open(r, grow) {
+  function open(r, grow, from = null) {
     if (hush) return;
+    if (!r.isConnected) {                            // drawn anew since the pointer came onto it (a view came meanwhile,
+      const kind_ = r.dataset.kind;                  // before the browser's own mouseenter on the new one): its pane's
+      r = from && from.main ? [...from.main.querySelectorAll(".chat.mini .mh-row")].find((x) => x.dataset.kind === kind_) : null;
+      if (!r) return;                                // line of its kind there now
+    }
     clearTimeout(shutAt);
     const p = paneAt(r), k = paneKey(p);
     if (!p || !k) return;
@@ -175,8 +181,9 @@ const miniCard = (() => {
       host().body.append(card);
       for (const d of docs()) d.addEventListener("keydown", onKey, true);
     }
+    place();                                         // placed first: its scroll kept, or set, at the size it has
     fill(again);                                     // open for this line already (the pointer back on it, the line drawn
-    place();                                         // again under it): its scroll kept, not grown in again
+                                                     // again under it): its scroll kept, not grown in again
     if (grow && !again) { card.classList.remove("grow"); void card.offsetWidth; card.classList.add("grow"); }
     if (!again) aim();
   }
@@ -196,8 +203,8 @@ const miniCard = (() => {
       if (!now || !chatMin(p)) { shut(); return; }
       for (const n of lines) n.classList.toggle("hot", n === now);
       anchor = now;
+      place();                                       // (first: its scroll kept at the size it has)
       fill(true);
-      place();
     });
   }
   // over the pane, rising from its lines: at least 420px wide, as tall as its content up to 640px or the room above it

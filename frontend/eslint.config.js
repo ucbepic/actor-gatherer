@@ -11,12 +11,7 @@ import tseslint from "typescript-eslint";
 // them): the .js files in features/ (core/page/ holds what they share, and keeps core/'s rules). Each still imports
 // other features' modules, as the one script they were, so the import rules leave them out; each goes, or becomes a
 // feature's own code, as its view is rewritten (A5, A6). Files of it over max-lines, until then: this list only shrinks.
-const PAGE_LONG = [
-  "src/features/layout/panes.js",
-  "src/features/list/group-moves.js",
-  "src/features/list/list.js",
-  "src/features/list/modes.js",
-];
+const PAGE_LONG = ["src/features/layout/panes.js"];
 
 export default tseslint.config(
   { ignores: ["node_modules/", "test-results/", "playwright-report/"] },

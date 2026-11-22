@@ -6,7 +6,7 @@ const beside = process.platform === "darwin" ? "Meta" : "Control";
 
 test("opens a second actor beside the first, and closes it", async ({ page }) => {
   await openActor(page, CODEX);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click({ modifiers: [beside] });
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click({ modifiers: [beside] });
   const panes = page.locator("#panes > .pane");
   await expect(panes).toHaveCount(2);
   // the pointer off the actor clicked: its hover card not drawn over the panes

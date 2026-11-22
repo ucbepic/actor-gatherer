@@ -6,7 +6,8 @@ import { plural } from "../../core/format";
 import type { ListHost } from "./host";
 import { AskClose, CountChips, CrewButton, FoldMark, FolderBox, NameBox, TallyChips, useFilled } from "./Parts";
 import type { FoldNode, FolderNode, GathererNode, GfFolderNode, Node } from "./rows";
-import { FolderActs, GathererActs } from "./Menus";
+import { FolderActs, GathererActs, GfActs } from "./Menus";
+import { useList } from "./store";
 import { ActorRowView, AppRowView, ShellRowView, TaskRowView } from "./RowViews";
 import { GF } from "./tree";
 import type { Folder, Gatherer } from "./types";
@@ -279,7 +280,7 @@ function Fold({ host, n }: { host: ListHost; n: FoldNode }) {
  * another, or onto the list's head; a gatherer or a folder of them dropped on it, put in it. */
 function GfLines({ host, n }: { host: ListHost; n: GfFolderNode }) {
   const f = n.f;
-  const acts = useFilled<HTMLSpanElement>(() => host.gfActs(f, n.crew));
+  const merged = useList((s) => !!s.model?.merged);
   const toggle = () => host.toggleFolder(GF, f.id);
   return (
     <>
@@ -309,7 +310,11 @@ function GfLines({ host, n }: { host: ListHost; n: GfFolderNode }) {
           </button>
           {host.snapshot || !n.crew ? null : <CrewButton host={host} g={null} node={`groups:${f.id}`} />}
           <span className="fill" onClick={toggle}>
-            {host.snapshot ? null : <span className="f-acts" ref={acts} onClick={stop} />}
+            {host.snapshot ? null : (
+              <span className="f-acts" onClick={stop}>
+                <GfActs host={host} f={f} crew={n.crew} merged={merged} />
+              </span>
+            )}
           </span>
         </div>
       )}

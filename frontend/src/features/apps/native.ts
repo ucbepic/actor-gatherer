@@ -34,7 +34,7 @@ export const desktop = (): Desktop | null => {
 export const nativePanes = new Set<AppPane>();
 const GRID = 5;
 // What floats over the panels, class "floats" -- the hover card of the rail and the list, the hidden list slid out
-// (features/list/modes.js): looked at by its box, over a page's place while it shows. elementFromPoint looks past one the
+// (features/list/modes.ts): looked at by its box, over a page's place while it shows. elementFromPoint looks past one the
 // pointer passes through (pointer-events: none, as an actor's card), and the grid's points past one over a corner of the
 // place only. Its box where it comes to rest: its own slide (a translation of it) left out -- the hidden list's, out or
 // back, covers the pages under where it goes from the start, and till it is gone.

@@ -1,4 +1,4 @@
-// A TASK or an APP NAMED by the user, as an actor is (features/list/list.js's startItemRename): its name in its row
+// A TASK or an APP NAMED by the user, as an actor is (features/list/naming.ts's startItemRename): its name in its row
 // double-clicked (or F2 on its row), or its card's pencil -- a box with its name in it; Enter keeps what is typed, Esc
 // leaves it, nothing typed takes the name back. A task's name kept by the dashboard (POST /api/tasks rename), an app's
 // with its instance (POST /api/apps/rename), which its panel's head shows too and is named in by a double-click
@@ -24,7 +24,7 @@ test("a task named from its row and from its card; nothing typed: named by what 
   await expect(box).toHaveCount(0);
   await expect(row.locator(".name")).toHaveText("Parser work");
 
-  await row.focus();
+  await row.locator(".a-main").focus();
   await page.keyboard.press("F2"); // or F2 on its row
   await expect(box).toBeFocused();
   await box.fill("  Trip   plans ");
@@ -53,7 +53,7 @@ test("an app named from its row and its card, its panel told; nothing typed: its
   await page.locator(".row-menu[role=menu]").getByText("Notepad", { exact: true }).click();
   const pane = page.locator("#top-row > .app-pane[data-app=notepad]");
   await expect(pane).toHaveCount(1);
-  const row = page.locator("#agents button.agent.app-row");
+  const row = page.locator("#agents .agent.app-row");
   await expect(row).toHaveCount(1);
   const title = (await row.locator(".name").textContent()) || "";
   const named = async () =>
@@ -79,5 +79,5 @@ test("an app named from its row and its card, its panel told; nothing typed: its
   await expect.poll(named).toBe("");
   await expect(row.locator(".name")).toHaveText(title);
   await expect(pane).not.toHaveAttribute("aria-label", /Groceries/);
-  await expect(page.locator("#agents button.agent", { hasText: CLAUDE })).toHaveCount(1); // the actors as they were
+  await expect(page.locator("#agents .agent", { hasText: CLAUDE })).toHaveCount(1); // the actors as they were
 });

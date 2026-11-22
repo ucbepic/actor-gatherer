@@ -19,10 +19,10 @@ for (const n of [1, 2]) {
       ).toBe(true);
     await open(page);
     for (const folder of folders) {
-      await page.locator("#agents button.agent.app-row", { hasText: folder }).click();
+      await page.locator("#agents .agent.app-row", { hasText: folder }).click();
       await expect(page.locator(`#top-row > .app-pane[aria-label="Notepad · ${folder}"]`)).toBeVisible();
     }
-    await page.locator("#agents button.agent", { hasText: CODEX }).click();
+    await page.locator("#agents .agent", { hasText: CODEX }).click();
     await expect(page.locator("#top-row > .app-pane:not([hidden])")).toHaveCount(0);
   });
 }

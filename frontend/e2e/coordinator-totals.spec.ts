@@ -1,4 +1,4 @@
-// THE TOP BAR'S COUNTS OF A COORDINATOR AGENT (features/list/modes.js's drawTotals): counted by what it does -- waiting for the
+// THE TOP BAR'S COUNTS OF A COORDINATOR AGENT (features/list/modes.ts's drawTotals): counted by what it does -- waiting for the
 // reader, stopped on an error, at work, finished and not yet seen -- as any actor is, but not idle: every group has one,
 // at rest most of the time.
 import { expect, homeAs, test } from "./test";
@@ -27,7 +27,7 @@ test("a coordinator agent counted in the top bar waiting, failed, at work and fi
   const show = async (to: Record<string, unknown>) => {
     codex = to;
     homes.again();
-    await expect(page.locator("#agents button.agent", { hasText: CODEX })).toHaveClass(
+    await expect(page.locator("#agents .agent", { hasText: CODEX })).toHaveClass(
       to.role ? /coordinator/ : /^(?!.*coordinator)/,
     );
   };
@@ -53,9 +53,9 @@ test("a coordinator agent counted in the top bar waiting, failed, at work and fi
     await expect.poll(() => count(cls)).toBe(before);
   }
   // done since the reader looked at it, out of sight (the other actor shown): finished, counted
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
-  await expect(claude).toHaveAttribute("aria-current", "true");
+  await expect(claude.locator(".a-main")).toHaveAttribute("aria-current", "true");
   const finished = await count("finished");
   await show({ status: "idle", last: NOW + 60, role: "coordinator", avatar: "roles/manager" });
   await expect.poll(() => count("finished")).toBe(finished + 1);

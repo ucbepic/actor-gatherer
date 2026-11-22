@@ -47,7 +47,7 @@ export async function addNotepad(page: Page, row: ReturnType<Page["locator"]>) {
   await row.locator(".task-add").first().click();
   await page.locator(".row-menu[role=menu] [role=menuitem] .nm", { hasText: /^Notepad$/ }).click();
 }
-export const taskRow = (page: Page) => page.locator("#agents button.agent.task");
+export const taskRow = (page: Page) => page.locator("#agents .agent.task");
 // a task's card -- what is in it, listed (a group: not in the list) -- its row hovered, the pointer come from off the list
 export async function cardOf(page: Page, row: ReturnType<Page["locator"]>) {
   await page.mouse.move(0, 0);
