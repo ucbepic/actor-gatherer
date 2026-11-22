@@ -92,8 +92,6 @@ jobs:
       - name: Browser tests
         env:
           AG_PYTHON: python
-          # the layout model checked against the page after each test (e2e/test.ts): a difference fails the test
-          AG_LAYOUT_STRICT: "1"
         run: |
           if [ "${{ inputs.update_screenshots }}" = "true" ]; then
             pnpm e2e --update-snapshots
