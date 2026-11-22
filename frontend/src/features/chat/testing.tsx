@@ -4,7 +4,12 @@
 import { act } from "@testing-library/react";
 import { change } from "./actors";
 import { drawChat } from "./mount";
+import { sizesForTests } from "../../core/ui/lists";
 import type { Actor, ChatFeed, ChatHost, ChatView, Current, Envelope, PageFeed, Turn } from "./types";
+
+// jsdom lays nothing out: the turn list (react-virtuoso) takes its box as tall as a few hundred turns, each 40px, and
+// puts every turn of the tests on the page
+sizesForTests.now = { viewportHeight: 20_000, itemHeight: 40 };
 
 /** When the turns of the tests were stored, in seconds. */
 export const AT = 1790874000;

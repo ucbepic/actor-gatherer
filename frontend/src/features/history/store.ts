@@ -1,5 +1,5 @@
-// The History view's own state: how its list is shown (grouped by tasks or not, the rows opened, the search typed, how
-// many rows), what is selected -- rows of the gatherer's database, so all of it starts over for another gatherer's actor
+// The History view's own state: how its list is shown (grouped by tasks or not, the rows opened, the search typed),
+// what is selected -- rows of the gatherer's database, so all of it starts over for another gatherer's actor
 // -- and the panel at the right: what to ask the Gatherer's model, the record opened, a record being saved. Each action
 // what a click or a key does.
 import { create } from "zustand";
@@ -8,8 +8,6 @@ import * as prefs from "../../core/prefs";
 import { loadExtracts, pollExtracts, setExtracts, useAsked, type Rec } from "./data";
 import { ranges, type Selection } from "./tree";
 
-/** the rows drawn before "show more" */
-export const SHOWN = 2000;
 /** the time a search waits for the typing to stop */
 const SEARCH_MS = 250;
 
@@ -34,7 +32,7 @@ export interface Saving {
   done: string[] | null;
 }
 
-interface Hist {
+export interface Hist {
   /** the gatherer whose rows these are */
   gatherer: string | null;
   /** the actor the view last showed */
@@ -53,7 +51,6 @@ interface Hist {
   sel: Selection;
   /** the row clicked last: a shift-click selects from it */
   last: string | null;
-  limit: number;
   /** the panel at the right shown; all records listed, not only the latest */
   panel: boolean;
   allRecs: boolean;
@@ -83,7 +80,6 @@ export const useHist = create<Hist>()(() => ({
   open: new Set(),
   sel: new Map(),
   last: null,
-  limit: SHOWN,
   panel: false,
   allRecs: false,
   recOpen: null,
@@ -113,7 +109,7 @@ export function showing(actor: string, gatherer: string): void {
 }
 
 export function setGroup(on: boolean): void {
-  set({ group: on, stay: null, limit: SHOWN });
+  set({ group: on, stay: null });
 }
 
 /** Tasks came in for `key` while it was shown ungrouped by choice of none: kept so, and the box pulsing a while. */
@@ -143,10 +139,8 @@ let searching: ReturnType<typeof setTimeout> | undefined;
 export function search(q: string): void {
   set({ q });
   clearTimeout(searching);
-  searching = setTimeout(() => set({ query: q.trim(), limit: SHOWN }), SEARCH_MS);
+  searching = setTimeout(() => set({ query: q.trim() }), SEARCH_MS);
 }
-
-export const showMore = () => set({ limit: now().limit + SHOWN });
 
 /** What is selected now; the panel shown while anything is, and while a record it asked for is being made or opened. */
 export function select(sel: Selection, making = false, last?: string | null): void {

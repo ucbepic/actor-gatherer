@@ -3,6 +3,7 @@
 // folds a click made.
 import { act, fireEvent } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { sizesForTests } from "../../core/ui/lists";
 import { loadVendored } from "../../core/ui/testing";
 import { chatOf } from "./actors";
 import { useSide } from "./side/store";
@@ -11,7 +12,9 @@ import { ACTOR, AT, chatView, now, testPage, turn, withTurns } from "./testing";
 
 const NOW = AT + 3600;
 const turns = (n: number) => Array.from({ length: n }, (_, i) => turn(i));
-const ids = (node: HTMLElement) => [...node.querySelectorAll(":scope > .fl-turn")].map((t) => t.id);
+/** The turns drawn: each in its item box of the list (react-virtuoso's). */
+const drawnTurns = (node: HTMLElement) => [...node.querySelectorAll(".fl-item > .fl-turn")];
+const ids = (node: HTMLElement) => drawnTurns(node).map((t) => t.id);
 
 beforeAll(() => loadVendored());
 beforeEach(() => {
@@ -27,12 +30,11 @@ describe("Turns", () => {
   it("draws the latest turns, the earlier counted above them, those before the latest two answered folded", () => {
     const { page } = testPage(turns(8));
     const node = page.draw();
-    expect(node.className).toBe("fl-talk");
-    expect(node.dataset.keep).toBe("files-talk");
-    expect(node.dataset.follow).toBe("1");
-    expect(node.querySelector(":scope > .fl-earlier")!.textContent).toBe("3 earlier turns · scroll up for more");
+    expect(node.className).toBe("fl-talk fl-list");
+    expect(node.hasAttribute("tabindex")).toBe(false); // no tab stop of its own, as before
+    expect(node.querySelector(".fl-top > .fl-earlier")!.textContent).toBe("3 earlier turns · scroll up for more");
     expect(ids(node)).toEqual(["fl-turn-3", "fl-turn-4", "fl-turn-5", "fl-turn-6", "fl-turn-7"]);
-    expect([...node.querySelectorAll(":scope > .fl-turn")].map((t) => t.className)).toEqual([
+    expect(drawnTurns(node).map((t) => t.className)).toEqual([
       "fl-turn folded",
       "fl-turn folded",
       "fl-turn folded",
@@ -59,8 +61,10 @@ describe("Turns", () => {
     expect(main.querySelector(".md")!.textContent!.trim()).toBe("Answer 7");
     // over: the actor done under it, and short of height, how long it took
     expect(node.querySelector("#fl-turn-7 .fl-finished .fl-times")!.textContent).toBe("took 5s");
-    expect(node.querySelector(":scope > .fl-done > .done")!.getAttribute("data-sig")).toBe('["rest","animal/fox",107]');
-    expect(node.querySelector(":scope > .fl-done")!.getAttribute("title")).toBe("Done · 10m ago");
+    expect(node.querySelector(".fl-foot > .fl-done > .done")!.getAttribute("data-sig")).toBe(
+      '["rest","animal/fox",107]',
+    );
+    expect(node.querySelector(".fl-foot > .fl-done")!.getAttribute("title")).toBe("Done · 10m ago");
   });
 
   it("keeps its node, and the actor's stage while it shows the same, from draw to draw", () => {
@@ -201,7 +205,7 @@ describe("Turns", () => {
     expect(line.querySelector("[data-ago]")!.getAttribute("data-ago")).toBe(String(NOW - 3));
     expect(line.querySelector(".now")!.textContent).toBe("Working…");
     expect(line.querySelector(".fl-mini img")!.getAttribute("src")).toBe("/avatars/animal/fox.svg?bare=1");
-    const status = node.querySelector(":scope > .fl-status")!;
+    const status = node.querySelector(".fl-foot > .fl-status")!;
     expect([...status.children].map((c) => c.className)).toEqual(["stage-box", "now"]);
     expect(status.firstElementChild!.getAttribute("data-sig")).toBe('["work","animal/fox",{"doing":"read"}]');
     expect(node.querySelector(".fl-done")).toBeNull();
@@ -247,10 +251,10 @@ describe("Turns", () => {
     const opening = { text: "And now?", cid: "p1", began: NOW - 30, seen: true };
     const { page } = testPage(ts, { view: chatView(ts, { opening, current: { state: "opening", turn: "opening" } }) });
     const node = page.draw();
-    const opened = node.querySelector(":scope > .fl-turn.opened")!;
+    const opened = node.querySelector(".fl-foot > .fl-turn.opened")!;
     expect(opened.querySelector(".fl-user")!.getAttribute("title")).toBe("Sent to the agent");
     expect(opened.querySelector(".fl-times")!.textContent).toBe("last activity 30s ago · 30s so far");
-    expect(node.lastElementChild!.className).toBe("fl-status");
+    expect(node.querySelector(".fl-foot")!.lastElementChild!.className).toBe("fl-status");
     expect(node.querySelector("#fl-turn-1 .fl-working, .fl-done")).toBeNull(); // the latest stored: not at work
     // stored, at a later time: still from when it was sent
     const stored = [...ts, turn(2, { text: "And now?", at: NOW - 10, began: NOW - 30, cid: "p1" })];
@@ -263,7 +267,7 @@ describe("Turns", () => {
     const ts = turns(1);
     const { page } = testPage(ts);
     const node = page.draw({ mine: [{ cid: "p9", text: "And now?", at: NOW * 1000 }] });
-    const opened = node.querySelector<HTMLElement>(":scope > .fl-turn.opened")!;
+    const opened = node.querySelector<HTMLElement>(".fl-foot > .fl-turn.opened")!;
     expect(opened.classList.contains("fl-in")).toBe(true);
     expect(opened.style.getPropertyValue("--in")).toBe("-0ms");
     vi.setSystemTime(NOW * 1000 + 100);
@@ -281,7 +285,7 @@ describe("Turns", () => {
     expect(page.draw().querySelector(".fl-done")).not.toBeNull();
     const node = page.draw({ mine: [{ cid: "p1", text: "And now?", at: NOW * 1000 }] });
     expect(node.querySelector(".fl-done")).toBeNull();
-    expect(node.querySelector(":scope > .fl-turn.opened .tx")!.textContent).toBe("And now?");
+    expect(node.querySelector(".fl-foot > .fl-turn.opened .tx")!.textContent).toBe("And now?");
     expect(node.querySelector(".fl-turn.opened .fl-times")!.textContent).toBe("last activity 0s ago · 0s so far");
     expect(node.querySelector(".fl-pending")).toBeNull();
   });
@@ -294,7 +298,7 @@ describe("Turns", () => {
       interrupting: true,
     });
     const node = page.draw();
-    const opened = node.querySelector(":scope > .fl-turn.opened")!;
+    const opened = node.querySelector(".fl-foot > .fl-turn.opened")!;
     expect(opened.querySelector(".fl-stopped")!.textContent).toBe("⎿Interrupted");
     expect(node.querySelector(".fl-working, .fl-status")).toBeNull();
     expect(chatOf(page.feed.key).interrupting).toBeNull(); // the Esc sent is over
@@ -329,7 +333,7 @@ describe("Turns", () => {
       view: chatView(ts, { opening, current: { state: "opening", turn: "opening" } }),
     });
     const node = page.draw();
-    const opened = node.querySelector(":scope > .fl-turn.opened")!;
+    const opened = node.querySelector(".fl-foot > .fl-turn.opened")!;
     expect(opened.querySelector(".lbl")!.textContent).toBe(
       "Not received by the session yet. Its terminal may be asking something first. Open the terminal",
     );
@@ -391,7 +395,34 @@ describe("Turns", () => {
     });
     const node = page.draw();
     expect(node.querySelector("#fl-turn-1 .fl-stopped")!.textContent).toBe("⎿Interrupted");
-    expect(node.querySelector(":scope > .fl-done")).not.toBeNull();
+    expect(node.querySelector(".fl-foot > .fl-done")).not.toBeNull();
+  });
+});
+
+describe("a long conversation", () => {
+  it("lists every turn from the first drawn, and puts on the page only those around the view", () => {
+    const tall = sizesForTests.now;
+    sizesForTests.now = { viewportHeight: 400, itemHeight: 40 }; // the box 10 turns tall
+    try {
+      const { page } = testPage(turns(1000), { picked: 0 }); // the first turn picked: all from it on in the list
+      const node = page.draw();
+      const shown = ids(node);
+      expect(shown[0]).toBe("fl-turn-0");
+      expect(shown.length).toBeGreaterThan(10); // the box's and more around it
+      expect(shown.length).toBeLessThan(200);
+      expect(node.querySelector("#fl-turn-999")).toBeNull();
+      expect(node.querySelector(".fl-earlier")).toBeNull(); // none earlier: all are in the list
+      expect(node.querySelector("#fl-turn-0")!.className).toBe("fl-turn on folded"); // picked: its files shown
+    } finally {
+      sizesForTests.now = tall;
+    }
+  });
+
+  it("says how many earlier turns are not in the list, above the first", () => {
+    const { page } = testPage(turns(1000));
+    const node = page.draw();
+    expect(ids(node)).toEqual(["fl-turn-995", "fl-turn-996", "fl-turn-997", "fl-turn-998", "fl-turn-999"]);
+    expect(node.querySelector(".fl-top > .fl-earlier")!.textContent).toBe("995 earlier turns · scroll up for more");
   });
 });
 
