@@ -541,6 +541,15 @@ const shownSig = () => JSON.stringify([isAway(), shownPanels().map((s) => [s.key
 function placeWork() {
   if (!workPlacer) return;
   try { placedFor = shownSig(); workPlacer.place(); } catch (e) { setTimeout(() => { throw e; }, 0); }
+  noteOpen();
+}
+// the items open as placed, by task, kept in the layout model (model.ts's noteOpen): what a task held, read after it
+// changes (keysNow)
+function noteOpen() {
+  if (!state.home) return;
+  const byTask = {}, shown = shownPanels();
+  for (const s of shown) if (s.key) (byTask[s.key] = byTask[s.key] || []).push(s.item);
+  shadow.update(model.noteOpen, byTask, shown.map((s) => s.item));
 }
 // placed again only if what it shows changed since (an actor shown in this page's own pane, one put in a task): each draw
 function placeIfShown() { if (workPlacer && shownSig() !== placedFor) placeWork(); }
@@ -820,17 +829,16 @@ function keyNow(k) {
 // The layout model's keys now (shadow.ts): keyNow's -- and for a task, the keys now of the items it held when last asked
 // about and holds no more whose panels are open (taken out of it: each a task of its own, shown still; one closed for
 // good, not), with its own if it is left. (Step 4's model knows each task's open items itself.)
-const heldSeen = new Map();
 function keysNow(k) {
   const { group: g, id } = parseKey(k), n = taskNumber(id);
   if (!state.home) return [k];
   if (n === null) return isAppItem(id) || taskKey(g, id) ? [keyNow(k)] : [];   // (an actor gone from its group: none)
   const kept = (state.home.tasks || {})[g] || { tasks: [], tasked: {} };
-  const was = heldSeen.get(k) || [], open = new Set(shownPanels().map((p) => p.item));
+  // its items open as last placed, and those open then (the layout model's: noteOpen, at each placing)
+  const was = (shadow.layout.items || {})[k] || [], open = new Set(shadow.layout.open || []);
   const left = (now) => was.filter((item) => !now.includes(item) && open.has(item)).map((item) => taskKey(g, item)).filter(Boolean);
   if (!kept.tasks.some((t) => String(t.id) === String(n))) return was.length ? [...new Set(left([]))] : [k];
   const now = Object.keys(kept.tasked).filter((item) => String(kept.tasked[item]) === String(n));
-  heldSeen.set(k, now);
   return [...new Set([k, ...left(now)])];
 }
 shadow.keysWith(keysNow);

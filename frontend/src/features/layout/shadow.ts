@@ -76,6 +76,8 @@ class Shadow {
     delete kept.entered;
     delete kept.laidOut;
     delete kept.auto;
+    delete kept.items;
+    delete kept.open;
     const now = JSON.stringify(kept);
     if (now === this.persisted) return;
     this.persisted = now;
