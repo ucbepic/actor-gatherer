@@ -2,7 +2,7 @@
 
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
 the views share, in `core/ui/`; Chat; the list, all of it TypeScript; Details, Transcript, Messages, History and
-Terminal's frame); A6 begun (the layout model, steps 1-4c-3b and the first four parts of 4c-3c; the panes as parts of
+Terminal's frame); A6 begun (the layout model, steps 1-4c-3c, all of it: the model the page's source, rendered; the panes as parts of
 one page; the page's pop-ups on Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
@@ -646,7 +646,8 @@ The layout slice comes first, in four steps, each with every test passing:
 2. *Shadow mode* (built): `shadow.ts` runs the model beside the page. Each change is told where the page makes it --
    the tab bar's operations, a task entered (`enterTask`, `enterAppsTask`), opened beside, an app's panel added, a
    task's last panel closed, the actor the page opens on by itself -- and once the page is quiet, the tasks shown and
-   every tab's are checked against it. The browser tests record each difference (`AG_LAYOUT_STRICT` fails on one).
+   every tab's are checked against it. The browser tests record each difference (`AG_LAYOUT_STRICT` fails on one). (The
+   check went with step 4c-3c, once the model was the page's source.)
    A task's key is read as it is now (`keysNow`): the task an item joined, or the items of one that dissolved, those
    whose panels are open.
 3. *The tab bar on the model* (built): `tabs.ts` keeps no tabs of its own -- it reads the model's, and every change it
@@ -713,9 +714,17 @@ The layout slice comes first, in four steps, each with every test passing:
      rest of a task laid out beside its actor just shown (`layOutPlan`, for `layOutTask`), sharing the rule `tabPlan`'s
      tasks beside follow; and the model holds each task's items open as last placed (`items`, `open`: `noteOpen`, at
      each placing), which `keysNow` reads in place of what it kept of each task itself (`heldSeen`) and of the panels.
-   - 4c-3c, left: the list's `openTask` moves when the list's rewrite (list.ts, its typed link to panes.js) is on main;
-     then `shadow.ts` becomes the layout's store: its tells, its check against the page (`AG_LAYOUT_STRICT`) and the
-     check's workarounds (`keysWith`, `waitWhile`, `appsWith`, `panesWith`) go.
+   - 4c-3c, last part (built): a task clicked in the list (features/list/task-acts.ts's `openTask`, through link.ts) is
+     one plan too -- panes.js's `openTaskHere`: the task's facts as it was left (`taskFacts`, the actor asked for first),
+     `tabPlan` of that task alone, rendered -- so every change to what a tab shows is a plan of the model's, rendered by
+     `renderLayout`. With that, two full browser runs with the check on (`AG_LAYOUT_STRICT`) found no difference between
+     the model and the page, and `shadow.ts` became the layout's store: the one layout value, changed only by the
+     model's rules (`update`), kept under one key (`persist`, leaving out what is this page's alone: model.ts's
+     `PAGE_ONLY`), read by its tasks' keys now (`now`, through the page's `keysWith`: what each task held open). Gone:
+     the tells (each change told by name, logged), the check against the page after each placement (`later`, `check`,
+     `flush`, the mismatches) and its workarounds (`waitWhile`, `appsWith`, `panesWith`), `window.agLayoutShadow`, the
+     browser tests' `layoutAgreed` and its file of differences, and `AG_LAYOUT_STRICT` with its CI setting. `keysWith`
+     stays: not the check's, how a tab's task reads once an item joined or left it.
 
 ### Track B: the server
 

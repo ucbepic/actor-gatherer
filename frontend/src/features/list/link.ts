@@ -117,6 +117,8 @@ export interface PanesPart {
   paneNote(text: string): void;
   /** pane `p` drawn for the actor it is given now: its calls and view loaded */
   paneGiven(p: ActorPane): Promise<void>;
+  /** task `k` shown as it was left, in place of what is shown (`focus`: the actor it opens first), as one plan */
+  openTaskHere(k: string, focus: string | null, wait: boolean): Promise<void>;
   pick(gname: string, c: string, ev?: AnyEvent | Record<string, never>): Promise<void>;
   pickBeside(gname: string, c: string, ev: AnyEvent): void;
   placeIfShown(): void;

@@ -7,13 +7,12 @@
 import { expect, test as base, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
 
 export const test = base.extend({
-  page: async ({ page }, use, info) => {
+  page: async ({ page }, use) => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
     await use(page);
     try {
       expect(errors, "errors thrown in the page").toEqual([]);
-      await layoutAgreed(page, info.title);
     } finally {
       await page.unrouteAll({ behavior: "ignoreErrors" }); // a request a test's route still answers, as it ends: let go
       await clearApps(page);
@@ -21,19 +20,6 @@ export const test = base.extend({
     }
   },
 });
-
-/** The layout model run beside the page (features/layout/shadow.ts) agreed with it: every difference it found, kept in
- * test-results/layout-mismatches.jsonl -- and, AG_LAYOUT_STRICT set, failing the test. */
-async function layoutAgreed(page: Page, title: string) {
-  const found = await page
-    .evaluate(() => (window as unknown as { agLayoutShadow?: { flush(): unknown[] } }).agLayoutShadow?.flush() ?? [])
-    .catch(() => []);
-  if (!found.length) return;
-  const fs = await import("node:fs");
-  fs.mkdirSync("test-results", { recursive: true });
-  fs.appendFileSync("test-results/layout-mismatches.jsonl", JSON.stringify({ test: title, found }) + "\n");
-  if (process.env.AG_LAYOUT_STRICT) expect(found, "the layout model differs from the page").toEqual([]);
-}
 
 const undos: ((page: Page) => Promise<unknown>)[] = [];
 /** What a helper changed in the home, undone after the test that called it -- as the test itself would at its end, had

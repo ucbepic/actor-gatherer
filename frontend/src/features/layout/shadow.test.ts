@@ -1,147 +1,63 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+// The layout's store (shadow.ts): changed by the model's rules, read by its tasks' keys as they are now, kept in this
+// browser under one key -- what is this page's alone left out -- and not while a bar is being dragged.
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as M from "./model";
 import { shadow } from "./shadow";
 
-const page = (current: string, shown: string[], tabs: { id: string; tasks: string[] }[]) => ({ current, shown, tabs });
+const kept = () => JSON.parse(localStorage.getItem(M.KEY) || "null");
 
-describe("the layout model run beside the page", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    shadow.mismatches.length = 0;
-  });
-
-  let first = "";
-  it("agrees with the page as changes are told", () => {
-    shadow.reset();
-    shadow.start(() => null);
-    first = shadow.now().current;
-    shadow.tell("auto", M.opened, "g\u0000c1");
-    shadow.tell("route", M.routed, "g\u0000c2", { id: "s2" });
-    shadow.tell("enter", M.open, "g\u0000c2");
-    shadow.check(
-      page(
-        "s2",
-        ["g\u0000c2"],
-        [
-          { id: first, tasks: ["g\u0000c1"] },
-          { id: "s2", tasks: [] },
-        ],
-      ),
-    );
-    expect(shadow.mismatches).toEqual([]);
-  });
-
-  it("reports a difference with the changes told since, then takes the page's state", () => {
-    shadow.tell("enter", M.open, "g\u0000c9");
-    shadow.check(
-      page(
-        "s2",
-        ["g\u0000c3"],
-        [
-          { id: first, tasks: ["g\u0000c1"] },
-          { id: "s2", tasks: [] },
-        ],
-      ),
-    );
-    expect(shadow.mismatches.map((m) => [m.what, m.since])).toEqual([["tasks shown", ['enter("g\\u0000c9")']]]);
-    shadow.check(
-      page(
-        "s2",
-        ["g\u0000c3"],
-        [
-          { id: first, tasks: ["g\u0000c1"] },
-          { id: "s2", tasks: [] },
-        ],
-      ),
-    );
-    expect(shadow.mismatches.length).toBe(1);
-  });
-
-  it("checks once the page is quiet, not while a tab is shown; flush checks what waits", () => {
-    vi.useFakeTimers();
-    let busy = true;
-    const now = () =>
-      busy
-        ? null
-        : page(
-            "s2",
-            ["g\u0000c4"],
-            [
-              { id: first, tasks: ["g\u0000c1"] },
-              { id: "s2", tasks: [] },
-            ],
-          );
-    shadow.later(now);
-    vi.advanceTimersByTime(1000);
-    expect(shadow.mismatches).toEqual([]); // still busy
-    busy = false;
-    vi.advanceTimersByTime(1000);
-    expect(shadow.mismatches.map((m) => m.what)).toEqual(["tasks shown"]);
-    shadow.tell("enter", M.open, "g\u0000c5");
-    shadow.later(() =>
-      page(
-        "s2",
-        ["g\u0000c5"],
-        [
-          { id: first, tasks: ["g\u0000c1"] },
-          { id: "s2", tasks: [] },
-        ],
-      ),
-    );
-    expect(shadow.flush().length).toBe(1);
-  });
-
-  it("reads the model's keys as they are now: a task an item joined, the items of a task gone", () => {
-    shadow.keysWith((k) => (k === "g\u0000c5" ? ["g\u0000t1"] : k === "g\u0000t1" ? ["g\u0000c5", "g\u0000a"] : [k]));
-    shadow.check(
-      page(
-        "s2",
-        ["g\u0000t1"],
-        [
-          { id: first, tasks: ["g\u0000c1"] },
-          { id: "s2", tasks: [] },
-        ],
-      ),
-    );
-    expect(shadow.mismatches).toEqual([]);
-  });
-});
-
-describe("the layout kept in this browser", () => {
-  it("is written to one key, the keys it was made from dropped; read back as it was", () => {
+describe("the layout's store", () => {
+  beforeEach(() => {
     localStorage.clear();
-    localStorage.setItem("ag-dashboard-task-trees", JSON.stringify({ "g\u0000t1": { tree: { id: "a" }, at: 1 } }));
     shadow.reset();
-    expect(shadow.now().tasks["g\u0000t1"].tree).toEqual({ id: "a" }); // made from the key of before
-    shadow.update(M.rename, shadow.now().current, "Mine");
-    shadow.persist();
-    expect(localStorage.getItem("ag-dashboard-task-trees")).toBe(null);
-    shadow.reset();
-    expect([shadow.now().tabs[0].name, shadow.now().tasks["g\u0000t1"].tree]).toEqual(["Mine", { id: "a" }]);
   });
-});
+  afterEach(() => shadow.keysWith((k) => [k]));
 
-describe("the model's rules the page tells it by", () => {
-  it("opens what the page opens by itself only in a tab holding nothing; closes a task here, the tab kept", () => {
-    const l = M.empty("e");
-    expect(M.shown(M.opened(l, "g\u0000c1"))).toEqual(["g\u0000c1"]);
-    expect(M.shown(M.opened(M.setDraft(l, "x"), "g\u0000c1"))).toEqual([]);
-    const two = M.open(M.open(l, "g\u0000c1"), "g\u0000c2", true);
-    const out = M.closeHere(two, "g\u0000c2");
-    expect([M.shown(out), M.shownTab(out).focus, out.tabs.length]).toEqual([["g\u0000c1"], "g\u0000c1", 1]);
-    expect(M.shownTab(M.pick(two, "g\u0000c1")).focus).toBe("g\u0000c1");
+  it("starts from what was kept, and is changed by the model's rules", () => {
+    const was = M.open(M.empty("t1"), "g\u0000a");
+    localStorage.setItem(M.KEY, JSON.stringify(was));
+    shadow.start();
+    expect(M.shown(shadow.now())).toEqual(["g\u0000a"]);
+    shadow.update(M.open, "g\u0000b", true);
+    expect(M.shown(shadow.now())).toEqual(["g\u0000a", "g\u0000b"]);
   });
 
-  it("keeps the model in this browser only once a bar dragged is let go", () => {
-    shadow.reset();
+  it("reads each task by its key now: an item joined a task as the task, a task that lost one as itself and it", () => {
     shadow.start(() => null);
-    localStorage.removeItem(M.KEY);
-    shadow.dragging(true);
-    shadow.tell("enter", M.open, "g\u0000c1");
+    shadow.update(M.open, "g\u0000a");
+    shadow.update(M.open, "g\u0000t1", true);
+    shadow.keysWith((k) => (k === "g\u0000a" ? ["g\u0000t2"] : k === "g\u0000t1" ? ["g\u0000t1", "g\u0000c"] : [k]));
+    expect(M.shown(shadow.now())).toEqual(["g\u0000t2", "g\u0000t1", "g\u0000c"]);
+    shadow.update(M.closeHere, "g\u0000c"); // a rule applied to the keys as they are now
+    expect(M.shown(shadow.layout)).toEqual(["g\u0000t2", "g\u0000t1"]);
+  });
+
+  it("keeps the layout under one key, but what is the page's alone; not while a bar is dragged", () => {
+    shadow.start(() => null);
+    shadow.update(M.open, "g\u0000a");
+    shadow.update(M.focusOn, "g\u0000a", true);
+    shadow.update(M.setEntered, "g\u0000a");
+    shadow.update(M.layOut, "g\u0000a", true);
     shadow.persist();
-    expect(localStorage.getItem(M.KEY)).toBeNull(); // not at each move
+    const k = kept();
+    expect(k.tabs[0].tasks).toEqual(["g\u0000a"]);
+    for (const page of M.PAGE_ONLY) expect(k).not.toHaveProperty(page);
+    shadow.dragging(true);
+    shadow.update(M.open, "g\u0000b", true);
+    shadow.persist();
+    expect(kept().tabs[0].tasks).toEqual(["g\u0000a"]); // (each move of the bar would write it all)
     shadow.dragging(false);
     shadow.persist();
-    expect(localStorage.getItem(M.KEY)).toContain("c1");
+    expect(kept().tabs[0].tasks).toEqual(["g\u0000a", "g\u0000b"]);
+  });
+
+  it("drops the keys of before once it keeps its own", () => {
+    const old = { tabs: [{ id: "s1", tasks: ["g\u0000a"] }], current: "s1" };
+    localStorage.setItem("ag-dashboard-screen-tabs", JSON.stringify(old));
+    shadow.start();
+    expect(M.shown(shadow.now())).toEqual(["g\u0000a"]);
+    shadow.persist();
+    expect(localStorage.getItem("ag-dashboard-screen-tabs")).toBeNull();
+    expect(kept().current).toBe("s1");
   });
 });
