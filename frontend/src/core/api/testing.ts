@@ -39,7 +39,7 @@ export const homeOf = (more: Partial<api.Home> = {}): api.Home => ({
   tasks: {},
   seen: null,
   harness_info: {},
-  harness_default: "claude",
+  harness_default: "h1",
   app_groups: {},
   cwd: "/",
   permission_modes: [],
@@ -95,7 +95,7 @@ export const actorOf = (channel: string, more: Partial<api.Actor> = {}): api.Act
 export const sessionOf = (more: Partial<api.Session> = {}): api.Session => ({
   session_id: "s1",
   gatherer: "g",
-  harness: "claude",
+  harness: "h1",
   cwd: "/w",
   permission_mode: "auto",
   created_at: "2026-10-01T00:00:00+00:00",
