@@ -202,10 +202,13 @@ class AvatarsTest(AvatarsBase):
             self.assertTrue(len(words) == 1 or words[1] in effects, name)
             used.update(words)
         self.assertEqual(used, moves | effects)                              # each drawn, each used
-        ink = re.search(r"const HUE_INK = \{(.*?)\};", page, re.S).group(1)
-        self.assertEqual(set(re.findall(r"(\w+): \[", ink)), set(pool.values()))   # every hue's words in its color
-        main = re.search(r"const HUE_MAIN = \{(.*?)\};", page, re.S).group(1)
-        self.assertEqual(set(re.findall(r"(\w+): \"", main)), set(pool.values()))   # and its thought's dots
+        with open(os.path.join(page_source.SRC, "core", "ui", "stage", "model.ts"), encoding="utf-8") as fh:
+            stage = fh.read()                                                # the stage Chat draws (core/ui/stage)
+        for src in (page, stage):
+            ink = re.search(r"const HUE_INK\b[^=]*= \{(.*?)\};", src, re.S).group(1)
+            self.assertEqual(set(re.findall(r"(\w+): \[", ink)), set(pool.values()))   # every hue's words in its color
+            main = re.search(r"const HUE_MAIN\b[^=]*= \{(.*?)\};", src, re.S).group(1)
+            self.assertEqual(set(re.findall(r"(\w+): \"", main)), set(pool.values()))   # and its thought's dots
 
     def test_the_drawn_avatars_each_say_four_lines_the_last_a_haiku(self):
         avatars.DIR = self.saved[1]
