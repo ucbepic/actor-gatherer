@@ -11,6 +11,17 @@
 .files .fl-talk { flex: 1; min-height: 0; position: relative; overflow: auto; padding: 6px 0 24px; font-size: var(--fs-ui); --lh: 20px; line-height: var(--lh); }
 .files .fl-grid:not(.open) .fl-talk { font-size: var(--fs-body); --lh: 21px; }
 .files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px 10px; }
+/* the turns as react-virtuoso lays them out (Turns.tsx): the box its scroller, each turn in an item box of its own, and
+   what was above and under them its header and footer. Virtuoso measures each box without its margins, so none sticks
+   out of one: the box's padding is its header's and footer's, a turn's top margin its item box's padding, the margins
+   that met between two turns -- or a turn and what is under it -- met as they did, each a pixel where it was */
+.files .fl-talk.fl-list { padding: 0; }
+.files .fl-top { display: flow-root; padding-top: 6px; }
+.files .fl-top > .fl-earlier { margin-bottom: 4px; }   /* and the turn's 2px: the 6px they had, met */
+.files .fl-item { display: flow-root; padding-top: 2px; }
+.files .fl-item > .fl-turn { margin-top: 0; margin-bottom: 0; }
+.files .fl-foot { display: flow-root; padding-bottom: 24px; }
+.files .fl-foot:empty { padding-top: 2px; }   /* the last turn's bottom margin */
 /* a turn opening (Pending.tsx's OpenedTurn): grown in from nothing, so what is under it -- the actor -- slides down to make
    room rather than jumping; the turn ag stores in its place goes on from where it was (--in, Pending.tsx's useGrowing) */
 .files .fl-turn.fl-in { animation: fl-turn-in .32s cubic-bezier(.4, .05, .25, 1) var(--in, 0ms) 1 backwards; interpolate-size: allow-keywords; }
@@ -344,7 +355,7 @@
 .files .fl-working > .fl-mini { display: none; }
 .files .fl-working.fl-finished { display: none; }   /* short of height only */
 .files .fl-mini img { display: block; width: 1.3em; height: 1.3em; }
-.files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
+.files :is(.fl-talk, .fl-foot) > .fl-status { margin: 4px 6px 0 8px; }
 /* short of height: the actor at work on one line -- its avatar small, as tall as the words, "Working…", then the times --
    in place of the two lines and the avatar under them (or the avatar done). Those put away, not display: none: laying the
    Chat out again -- the message box growing as it is typed in, say -- Chrome tries the frame at no height and at its
@@ -360,8 +371,9 @@
   .files .fl-working > .fl-times { order: 2; flex: 0 1 auto; }
   .files .fl-working > .fl-times::before { content: "· "; }
   .files .fl-working.fl-finished { display: flex; }
-  .files .fl-talk > .fl-status, .files .fl-talk > .fl-done { visibility: hidden; overflow: hidden; height: 0; margin: 0; }
-  .files .fl-talk { padding-bottom: 6px; } }   /* no avatar under the last line to leave room for */
+  .files :is(.fl-talk, .fl-foot) > :is(.fl-status, .fl-done) { visibility: hidden; overflow: hidden; height: 0; margin: 0; }
+  .files :is(.fl-talk, .fl-foot) { padding-bottom: 6px; }   /* no avatar under the last line to leave room for */
+  .files .fl-foot:has(> :first-child:is(.fl-status, .fl-done)) { padding-top: 2px; } }
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
 .files .fl-status > .buddy { margin: 2px 0 0 4px; }
@@ -405,7 +417,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 /* in Chat, the actor that arrives was just there, done, under the turn before (.fl-done's small avatar, 24px at 17px, 6px):
    the stage grows from it -- its character (64 of the 102 by 82 view box, at 8, 14; the stage 60px high, at 4px, 4px in
    .fl-status) laid over the small avatar at first -- rather than fading in from nothing */
-.files .fl-talk > .fl-status svg.stage.arriving { transform-origin: 0 0; animation: w-from-done .52s cubic-bezier(.4, .05, .25, 1) var(--z) 1 both; }
+.files :is(.fl-talk, .fl-foot) > .fl-status svg.stage.arriving { transform-origin: 0 0; animation: w-from-done .52s cubic-bezier(.4, .05, .25, 1) var(--z) 1 both; }
 @keyframes w-from-done { from { transform: translate(10px, -3.25px) scale(.5125); } to { transform: none; } }
 /* thinking (no call running): moving as its character does, slower; a thought by its head -- two puffs, then a cloud, grown in
    from --b, its dots hopping in the avatar's colour (--dot); popped away (--y) as a call begins */
@@ -838,16 +850,23 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 /* the list: no rules between rows; a timeline down the left, a dot for each task (green: the running
    task); what a row holds nested along a guide, smaller and quieter; when and how big, on hover */
 .hist .h-list { flex: 1; min-height: 0; overflow: auto; padding: 8px 0 28px; }
+/* the rows as react-virtuoso lays them out (HistoryView.tsx's Rows): the list's box its scroller, each row in an item box
+   of its own, the box's padding its header's and footer's. It puts only the rows in sight and a few screens around them
+   on the page, so a row is contained as content-visibility: auto had it in sight, not left out of the layout out of
+   sight, where Virtuoso would measure it at the size guessed for it */
+.hist .h-list.h-rows { padding: 0; }
+.hist .h-top { height: 8px; }
+.hist .h-foot { display: flow-root; padding-bottom: 28px; }
 .hist .h-row { --row-bg: var(--surface); position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 8px; align-items: start;
   padding: 8px 20px 8px calc(40px + var(--depth, 0) * 20px); background-color: var(--row-bg); cursor: default; user-select: none;
-  content-visibility: auto; contain-intrinsic-size: auto 46px; }
+  contain: layout style paint; }
 .hist .h-row:hover { --row-bg: color-mix(in srgb, var(--surface) 95%, var(--ink)); }
 .hist .h-row.some { --row-bg: color-mix(in srgb, var(--surface) 92%, var(--s1)); }
 .hist .h-row.on, .hist .h-row.on:hover { --row-bg: color-mix(in srgb, var(--surface) 83%, var(--s1)); }   /* selected; a part of it: half as strong */
 .hist .h-row::after { content: ""; position: absolute; left: 24px; top: 0; bottom: 0; width: 1px; background: var(--grid); }
-.hist .h-row:first-child::after { top: 15px; }
-.hist .h-row:last-of-type::after { bottom: calc(100% - 15px); }
-.hist .h-row:first-child:last-of-type::after { display: none; }
+.hist .h-row.first::after { top: 15px; }   /* the first row listed, and the last (HistoryView.tsx's edge) */
+.hist .h-row.last::after { bottom: calc(100% - 15px); }
+.hist .h-row.first.last::after { display: none; }
 .hist .h-row:not(.nested)::before { content: ""; position: absolute; left: 21px; top: 12px; width: 7px; height: 7px; border-radius: 50%; z-index: 1;
   background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--axis); }
 .hist .h-row.current::before { background: var(--good); box-shadow: none; }

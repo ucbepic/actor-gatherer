@@ -5,17 +5,29 @@
 // where it began to where it is; with ⌘ (Ctrl) they are added to what is selected already (a click on a selected row
 // takes it out), with shift, from the row last clicked. A row's twisty, or a double click, opens it; Esc, or a click
 // below the rows, clears it; ⌘A selects every row listed. Each row is drawn by its key, so a selection, a row opened and
-// the scroll stay as the history grows.
-import { memo, useEffect, useMemo, useRef, type CSSProperties } from "react";
+// the scroll stay as the history grows. The rows laid out by react-virtuoso (Rows): all of them listed, those in sight
+// and a few screens around them on the page.
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+  type MouseEvent,
+  type RefObject,
+} from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { Virtuoso } from "react-virtuoso";
 import { queryClient } from "../../core/api/query";
 import { ago, clock, compact, full, plural } from "../../core/format";
+import { Measured, OVERSCAN_PX } from "../../core/ui/lists";
 import { TYPES, wordless } from "../../core/model/items";
 import { key } from "../../core/model/keys";
 import { BUILD_MESSAGES, fetchFullText, fetchHits, fullTextKey, useAsked } from "./data";
 import { Side, useRecs, type SideProps } from "./Side";
-import { SHOWN, search, setGroup, showMore, tasksCame, toggleOpen, toggleType, useHist, useHistStore } from "./store";
+import { search, setGroup, tasksCame, toggleOpen, toggleType, useHist, useHistStore, type Hist } from "./store";
 import {
   buildTree,
   marked,
@@ -99,6 +111,8 @@ function Full({ gatherer, n }: { gatherer: string; n: HNode }) {
 
 interface RowProps {
   row: VisibleRow;
+  /** the first row listed, the last, or both: where the timeline down the left begins and ends */
+  edge: "first" | "last" | "only" | null;
   st: "none" | "some" | "all";
   open: boolean;
   hits: number;
@@ -118,7 +132,7 @@ const meta = (n: HNode, hits: number) =>
     .join(" · ");
 
 const Row = memo(
-  function Row({ row: { n, depth, key: k }, st, open, hits, hit, q, gatherer }: RowProps) {
+  function Row({ row: { n, depth, key: k }, edge, st, open, hits, hit, q, gatherer }: RowProps) {
     const hist = useHistStore();
     const what = n.kind === "message" ? (open ? "Hide full text" : "Show full text") : open ? "Fold" : "Open";
     const said = meta(n, hits);
@@ -126,7 +140,8 @@ const Row = memo(
       <div
         className={
           `h-row ${n.kind}${depth ? " nested" : ""}${n.current ? " current" : ""}` +
-          `${st === "all" ? " on" : st === "some" ? " some" : ""}${open ? " open" : ""}`
+          `${st === "all" ? " on" : st === "some" ? " some" : ""}${open ? " open" : ""}` +
+          (edge === "only" ? " first last" : edge ? ` ${edge}` : "")
         }
         style={{ "--depth": depth } as CSSProperties}
         data-key={k}
@@ -157,6 +172,7 @@ const Row = memo(
   },
   // drawn again only when what it shows changed: the history grown elsewhere leaves it be
   (a, b) =>
+    a.edge === b.edge &&
     a.st === b.st &&
     a.open === b.open &&
     a.hits === b.hits &&
@@ -347,8 +363,7 @@ function Bar({
 /** The view, for the actor `feed.h.key` (in its frame: mount.tsx). */
 export function History({ feed, more }: { feed: HistFeed; more(): unknown }) {
   const { h } = feed;
-  const s = useHist(),
-    st = useHistStore();
+  const s = useHist();
   const { tree, byId } = useMemo(() => buildTree(h), [h]);
   useTasksCame(h);
   const hasTasks = h.tasks.length > 0;
@@ -373,7 +388,6 @@ export function History({ feed, more }: { feed: HistFeed; more(): unknown }) {
   const list = useRef<HTMLDivElement>(null);
   const press = useSelecting({ list, flat, byId, tops, making: running });
   const q = s.q.trim();
-  const limited = rows.slice(0, s.limit);
   const side: SideProps = {
     h,
     home: feed.home,
@@ -387,48 +401,102 @@ export function History({ feed, more }: { feed: HistFeed; more(): unknown }) {
     <div className="h-grid">
       <div className="h-left">
         <Bar h={h} grouped={grouped} hasTasks={hasTasks} hits={hits && { size: hits.size, more: !!found.data?.more }} />
-        <div ref={list} className="h-list" data-keep={`hist-list:${h.key}`} {...press}>
-          {h.error ? (
-            <div className="h-note">{h.error}</div>
-          ) : !h.events.length ? (
-            <div className="h-note">No history yet.</div>
-          ) : hits && !rows.length ? (
-            <div className="h-note">{`Nothing in this history matches “${q}”.`}</div>
-          ) : (
-            <>
-              {limited.map((row) => {
-                const hitRows = hits ? row.n.rows.filter((r) => hits.has(r)) : [];
-                return (
-                  <Row
-                    key={row.key}
-                    row={row}
-                    st={selState(row.n, s.sel)}
-                    open={s.open.has(row.n.id)}
-                    hits={hitRows.length}
-                    hit={hitRows.length ? (hits!.get(hitRows[0]) ?? null) : null}
-                    q={q}
-                    gatherer={h.gatherer}
-                  />
-                );
-              })}
-              {rows.length > limited.length ? (
-                <button type="button" className="h-more" onClick={() => showMore(st)}>
-                  {`Show ${full(Math.min(SHOWN, rows.length - limited.length))} more of ${full(rows.length - limited.length)}`}
-                </button>
-              ) : null}
-              {h.more ? (
-                <button type="button" className="h-more" onClick={() => more()}>
-                  Load more
-                </button>
-              ) : null}
-            </>
-          )}
-        </div>
+        {h.error || !h.events.length || (hits && !rows.length) ? (
+          <div ref={list} className="h-list" data-keep={`hist-list:${h.key}`} {...press}>
+            <div className="h-note">
+              {h.error || (!h.events.length ? "No history yet." : `Nothing in this history matches “${q}”.`)}
+            </div>
+          </div>
+        ) : (
+          <Rows listRef={list} press={press} rows={rows} s={s} hits={hits} q={q} h={h} more={h.more ? more : null} />
+        )}
       </div>
       <Side {...side} />
     </div>
   );
 }
+
+/** The rows listed laid out by react-virtuoso: its scroller the list's box (.h-list), each row in an item box of its own,
+ * the list's padding its header and footer, and "Load more" -- the outline not all loaded -- in its footer. All the rows
+ * are in it, those in sight and OVERSCAN_PX above and below on the page; the first few hundred drawn at once as the view
+ * opens, before Virtuoso has measured its box. */
+function Rows({
+  listRef,
+  press,
+  rows,
+  s,
+  hits,
+  q,
+  h,
+  more,
+}: {
+  listRef: RefObject<HTMLDivElement | null>;
+  press: { onMouseDown(ev: MouseEvent<HTMLDivElement>): void; onDoubleClick(ev: MouseEvent<HTMLDivElement>): void };
+  rows: VisibleRow[];
+  s: Hist;
+  hits: ReadonlyMap<number, string> | null;
+  q: string;
+  h: Outline;
+  more: (() => unknown) | null;
+}) {
+  const last = rows.length - 1;
+  // the same from draw to draw: Virtuoso takes another as its scroller made again
+  const scroller = useCallback(
+    (n: HTMLElement | Window | null) => {
+      listRef.current = n instanceof HTMLDivElement ? n : null;
+    },
+    [listRef],
+  );
+  return (
+    <Measured>
+      <Virtuoso
+        className="h-list h-rows"
+        data-keep={`hist-list:${h.key}`}
+        {...press}
+        scrollerRef={scroller}
+        tabIndex={undefined} // no tab stop of its own, as the list had none
+        data={rows}
+        computeItemKey={rowKey}
+        itemContent={(i, row) => {
+          const hitRows = hits ? row.n.rows.filter((r) => hits.has(r)) : [];
+          return (
+            <Row
+              row={row}
+              edge={i === 0 ? (i === last ? "only" : "first") : i === last ? "last" : null}
+              st={selState(row.n, s.sel)}
+              open={s.open.has(row.n.id)}
+              hits={hitRows.length}
+              hit={hitRows.length ? (hits!.get(hitRows[0]) ?? null) : null}
+              q={q}
+              gatherer={h.gatherer}
+            />
+          );
+        }}
+        context={{ more }}
+        initialItemCount={Math.min(rows.length, ROWS_AT_FIRST)}
+        increaseViewportBy={OVERSCAN_PX}
+        components={ROWS_PARTS}
+      />
+    </Measured>
+  );
+}
+
+/** The rows put on the page as the view opens, before the list has measured its box: more than a tall screen holds. */
+const ROWS_AT_FIRST = 200;
+const rowKey = (_: number, row: VisibleRow) => row.key;
+
+const ROWS_PARTS = {
+  Header: () => <div className="h-top" />,
+  Footer: ({ context }: { context?: { more: (() => unknown) | null } }) => (
+    <div className="h-foot">
+      {context?.more ? (
+        <button type="button" className="h-more" onClick={() => context.more?.()}>
+          Load more
+        </button>
+      ) : null}
+    </div>
+  ),
+};
 
 /** Tasks come in while the reader looks: the list stays as it is, and Group by tasks pulses a few times. */
 function useTasksCame(h: Outline) {
