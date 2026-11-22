@@ -27,7 +27,7 @@ import { termOf } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
 import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
 import { herePane, newPane } from "./pane";
-import { clearPlan, closePlan, onlyPlan, tabPlan } from "./plan";
+import { clearPlan, closePlan, itemsPlan, onlyPlan, tabPlan } from "./plan";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
 import { shadow } from "./shadow";
@@ -715,6 +715,8 @@ function openNow(keep = () => false) {
     apps: panes.apps.filter((p) => !p.held).map((p) => ({ app: p.app.name, id: p.instance.id, g: p.instance.gatherer, size: p.size,
       task: state.home ? appPaneTask(p) : null })),
     appsOnly: appsOnlyKey(), focus: selectedTask(),
+    away: state.selected && isAway() ? { g: state.selected[0], c: state.selected[1], task: t(...state.selected) } : null,
+    at: panes.others.indexOf(focusedPane()),
   };
 }
 // A TAB SHOWN: its tasks in place of those shown, each as it was left -- worked out at once (features/layout/plan.ts's
@@ -805,13 +807,15 @@ function renderLayout(plan, firstKept = false) {
     const k0 = kept.find((x) => x.g === o.g && x.c === o.c);
     return { ...(k0 || {}), g: o.g, c: o.c, ...(o.view ? { view: o.view } : {}), size: (k0 && k0.size) || 1 };
   }) } }));
-  setAppsOnly(plan.appsOnly);
+  // this page's own pane out of sight, or in sight again, before anything is placed: a panel placed in sight is put in
+  // its task's arrangement (work.ts)
   const h = plan.here;
   if (!h && plan.away && state.selected && !isShell(state.selected[1])) putAway(state.selected);
+  if (h && h.shut) putAway([h.g, h.c], true);
+  else if (h && shadow.layout.away) backInSight();
+  setAppsOnly(plan.appsOnly);
   if (h) {
     if (h.size) panes.here.size = h.size;
-    if (h.shut) putAway([h.g, h.c], true);
-    else if (shadow.layout.away) shadow.update(model.setAway, null);
     if (!h.keep && !isAt(state.selected, h.g, h.c)) {
       if (h.view) setViewHere(h.view);
       select(h.g, h.c).catch(() => {});
@@ -874,23 +878,11 @@ function taskStates(k) {
 // TASK TABS (features/layout/tasks.ts). A task's tab shown: `items` of task `k` open, each in the view it showed, and
 // the task's other panels closed -- this page's own pane given another of the tab's actors, if it showed one not in it
 async function showTaskItems(k, items) {
-  const g = parseKey(k).group, want = new Set(items), mine = (pg, c) => pg === g && taskKey(pg, c) === k;
-  const views = (taskLayout(k) || {}).views || {}, actors = items.filter((c) => !isAppItem(c) && !isShell(c));
-  const open = (c) => openActors().some((s) => isAt(s, g, c));
-  for (const p of [...actorPanes()]) if (mine(p.g, p.c) && !want.has(p.c)) closePane(p);
-  shadow.update(model.unwantApps, (w) => entryTask(w) === k && !want.has(appItem(w.instance)));
-  renderApps();
-  if (state.selected && mine(...state.selected) && !want.has(state.selected[1])) {
-    const next = actors.find((c) => !open(c));
-    if (next) { focusPane(panes.here); await showIn(g, next, views[next] || null); }
-    else if (actorPanes().length) await closeHere();
-    else putAway(state.selected);                    // none to show in it: away while this tab shows
-  } else if (isAway() && want.has(state.selected[1])) backInSight();
-  for (const c of actors) if (!open(c) && allPanes().length < MAX_PANES) openBeside(g, c, views[c] || null);
-  const apps = items.filter(isAppItem).map((it) => appInfo(g, it.slice(APP_ITEM.length))).filter(Boolean)
-    .map((o) => ({ app: o.app.name, id: o.id, inst: o.inst }));
-  if (apps.length) await openTaskApps(g, null, k, apps, true);
-  placeWork();
+  const g = parseKey(k).group, views = (taskLayout(k) || {}).views || {};   // (features/layout/plan.ts's itemsPlan)
+  const apps = items.filter(isAppItem).map((it) => appInfo(g, it.slice(APP_ITEM.length))).filter(Boolean);
+  for (const o of apps) if (o.inst) instCache.set(o.id, o.inst);
+  renderLayout(itemsPlan(openNow(), k, g, items, views, apps.map((o) => ({ app: o.app.name, id: o.id, g })), MAX_PANES));
+  if (apps.length) await openTaskApps(g, null, k, apps.map((o) => ({ app: o.app.name, id: o.id, inst: o.inst })), true);
 }
 // a task's lead actor (a new tab of the task holds it)
 function taskLeadOf(k) {

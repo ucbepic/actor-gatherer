@@ -1,7 +1,7 @@
 // A screen tab's panels worked out at once (plan.ts): the first task with actors in the page's own pane, its others beside
 // it, each other task beside them in the order the page opened them, apps alone last, terminals kept, at most so many.
 import { describe, expect, it } from "vitest";
-import { clearPlan, closePlan, onlyPlan, tabPlan, type Open, type TaskFacts } from "./plan";
+import { clearPlan, closePlan, itemsPlan, onlyPlan, tabPlan, type Open, type TaskFacts } from "./plan";
 
 const task = (key: string, over: Partial<TaskFacts> = {}): TaskFacts => ({
   key,
@@ -148,5 +148,25 @@ describe("clearPlan and closePlan", () => {
     expect([plan.apps, plan.focus]).toEqual([[], { g: "g", c: "x" }]);
     const apps = onlyPlan({ ...open, apps: [...open.apps, { ...app("i5"), task: "g\u0000t5" }] }, "g\u0000t5");
     expect([apps.appsOnly, apps.here, apps.apps.map((a) => a.id)]).toEqual(["g\u0000t5", null, ["i5"]]);
+  });
+
+  it("a task's own tab shown: its panels not in it closed, the page's own pane away if none of it is left", () => {
+    const tab2 = itemsPlan(open, "g\u0000t1", "g", ["app:i1"], {}, [], 4);
+    expect([tab2.here?.c, tab2.away]).toEqual(["x", false]); // (the next pane's actor in the page's own)
+    const alone = itemsPlan({ ...open, others: [] }, "g\u0000t1", "g", ["app:i1"], {}, [], 4);
+    expect([alone.here, alone.away, alone.apps.map((a) => a.id)]).toEqual([null, true, ["i1", "i9"]]);
+    // back to its first tab: the page's own in sight again, b opened beside it in its view
+    const back = itemsPlan(
+      { ...open, here: null, away: { g: "g", c: "a", task: "g\u0000t1" }, others: [], at: -1 },
+      "g\u0000t1",
+      "g",
+      ["a", "b"],
+      { b: "history" },
+      [],
+      4,
+    );
+    expect(back.here).toMatchObject({ c: "a", keep: true });
+    expect(back.others).toEqual([{ g: "g", c: "b", view: "history" }]);
+    expect(back.focus).toEqual({ g: "g", c: "b" });
   });
 });
