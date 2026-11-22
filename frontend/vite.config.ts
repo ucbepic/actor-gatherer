@@ -19,8 +19,20 @@ const vendorInDev: Plugin = {
     ),
 };
 
+/** KaTeX's styles (core/ui/katex.ts) naming its fonts as woff2 only: every browser the page runs in reads woff2, so the
+ * woff and ttf copies they also name (40 more files) are left out of the build. Before Vite's own CSS step, which
+ * builds in each file a stylesheet names. */
+const katexWoff2: Plugin = {
+  name: "ag-katex-woff2",
+  enforce: "pre",
+  transform(code, id) {
+    if (!/[\\/]katex[\\/]dist[\\/]katex(\.min)?\.css$/.test(id)) return null;
+    return { code: code.replace(/,\s*url\([^)]*\.(?:woff|ttf)\)\s*format\("(?:woff|truetype)"\)/g, ""), map: null };
+  },
+};
+
 export default defineConfig({
-  plugins: [react(), vendorInDev],
+  plugins: [react(), vendorInDev, katexWoff2],
   build: { outDir: "../ag_dashboard/static", emptyOutDir: true },
   server: {
     host: "127.0.0.1", // as the dashboard's own address
