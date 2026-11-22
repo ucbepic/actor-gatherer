@@ -141,7 +141,7 @@ test("a conversation of thousands of turns: part of it on the page, the end foll
   await page.setViewportSize({ width: 1300, height: 900 });
 
   // the first turn picked, from the minimized pane's card: every turn from it on in the list, only part on the page
-  const row = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const row = page.locator("#agents .agent", { hasText: CLAUDE });
   await addNotepad(page, row);
   await page.locator("button[aria-label='Minimize the chat']:visible").first().click();
   const line = page.locator("#main > .chat.mini .mini-hist .mh-row").first();
