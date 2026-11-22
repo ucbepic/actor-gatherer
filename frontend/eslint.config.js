@@ -14,7 +14,8 @@ import tseslint from "typescript-eslint";
 const PAGE_LONG = ["src/features/layout/panes.js"];
 
 export default tseslint.config(
-  { ignores: ["node_modules/", "test-results/", "playwright-report/"] },
+  // (src/core/api/types.gen.ts: generated from the server's schema by scripts/gen-types.mjs, over max-lines by far)
+  { ignores: ["node_modules/", "test-results/", "playwright-report/", "src/core/api/types.gen.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ["src/**/*.{ts,tsx}"], ...reactHooks.configs.flat["recommended-latest"] },

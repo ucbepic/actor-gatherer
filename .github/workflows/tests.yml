@@ -1,5 +1,6 @@
-# Checks every pull request: the Python suite (tests/), and the dashboard's front end (frontend/: types, lint,
-# formatting, unit tests, and the browser tests on a home of recorded sessions, tests/web_home.py).
+# Checks every pull request: the Python suite (tests/), and the dashboard's front end (frontend/: its types of the
+# server's answers generated from the server's schema and not stale, types, lint, formatting, unit tests, and the browser
+# tests on a home of recorded sessions, tests/web_home.py).
 #
 # The browser tests' screenshots are kept per platform (frontend/e2e/*-snapshots/*-<platform>.png), and CI checks the
 # Linux ones. A change that changes how the page looks writes them anew with a run of this workflow on its branch with
@@ -43,11 +44,19 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5 # the server, whose schema the page's types of its answers are generated from
+        with:
+          python-version: "3.11"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - run: pip install -e "..[dashboard]"
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: The page's types of the server's answers are the server's schema's (src/core/api/types.gen.ts)
+        env:
+          AG_PYTHON: python
+        run: pnpm gen:types && git diff --exit-code -- src/core/api/types.gen.ts
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm lint:panels # the apps' panels: plain scripts outside this build (scripts/lint-panels.mjs)
