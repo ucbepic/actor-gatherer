@@ -13,9 +13,8 @@ import { markdown } from "./core/ui/md";
 export interface AgLegacy {
   /** The dashboard's panel opened or closed. */
   setAbout: (open: boolean) => void;
-  /** The page is a snapshot (its data inside it), or a pane's frame inside the page: neither has ag's settings. */
+  /** The page is a snapshot (its data inside it): it has no ag's settings. */
   snapshot: boolean;
-  pane: boolean;
 }
 
 const agNext = Object.freeze({

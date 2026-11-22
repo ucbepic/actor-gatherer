@@ -17,7 +17,7 @@ import {
 
 /** The view's frame for `f.key`, drawn now: its node, for the page to put where it goes. */
 export const drawTranscript = (f: TxFrame, name: string): HTMLDivElement =>
-  viewFrame("transcript", "term", name, <Transcript key={f.key} f={f} />);
+  viewFrame("transcript", "term", name, <Transcript key={f.key} f={f} />, f.key);
 
 /** The switch for the system messages and ag's notes, as a node (the view's tools, in the pane's head). */
 export const notesSwitchNode = (): HTMLLabelElement => nodeOf("label", { title: NOTES_TITLE }, <NotesSwitchBody />);

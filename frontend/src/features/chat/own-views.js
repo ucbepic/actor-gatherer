@@ -1,7 +1,8 @@
 import { SNAPSHOT } from "../../core/page/state.js";
 import {
-  ago, clock, compact, el, full, get, harnessBadge, harnessLogo, harnessName, itemType, selectedInfo, svgEl,
+  ago, clock, compact, el, full, get, harnessBadge, harnessLogo, harnessName, itemType, svgEl,
 } from "../../core/page/helpers.js";
+import { drawingPane, paneInfo } from "../page/pane-view.js";
 import { statusOf } from "../list/seen.js";
 import { askingNote, backgroundNote, errorNote } from "./chat.js";
 import { callsNow } from "../page/main-view.js";
@@ -38,7 +39,7 @@ export function start() {
     chatView: addChatView,
     el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
     contextItem: contextItemNode, columns: columnsNode, typeChips: typeChipsNode, itemType,
-    transcriptBlocks: (items, running) => transcriptBlockNodes(items, running, (selectedInfo() || {}).cwd || ""),
+    transcriptBlocks: (items, running) => transcriptBlockNodes(items, running, (paneInfo(drawingPane()) || {}).cwd || ""),
     foldedOutput: foldedOutputNode, notesSwitch: notesSwitchNode, sizeCard: (reads, hasReal) => sizeCardNode(callsNow(), reads, hasReal), contextCard: () => contextCardNode(callsNow()),
     statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote, askingNote, errorNote,
   });

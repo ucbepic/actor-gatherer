@@ -1,4 +1,4 @@
-import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state.js";
 import { ICONS, closeIcon, el, post, strokeIcon } from "../../core/page/helpers.js";
 import { setLive } from "../page/data.js";
 import { markSeen, seen, statusOf } from "../list/seen.js";
@@ -61,7 +61,7 @@ const inFront = (w) => pageInFront() && (w.a ? openActors().some((s) => isAt(s, 
 // What a home brought that wants the reader, and was not there before: popped up, and, the page not in front, said on
 // the computer.
 function heedHome() {
-  if (SNAPSHOT || PANE || !state.home) return;
+  if (SNAPSHOT || !state.home) return;
   const now = wanting(state.home), was = heedWas;
   heedWas = new Set(now.keys());
   if (was === null) return;
@@ -180,7 +180,7 @@ function drawHeed() {
 }
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
-  if (!PANE && !SNAPSHOT) {
+  if (!SNAPSHOT) {
     for (const id of ["notify-actors", "notify-system"]) document.getElementById(id)?.addEventListener("click", (ev) => {
       const b = ev.target.closest("[data-heed]");
       if (!b) return;

@@ -73,6 +73,9 @@ class Shadow {
     delete kept.lastActor;
     delete kept.away;
     delete kept.appsOnly;
+    delete kept.entered;
+    delete kept.laidOut;
+    delete kept.auto;
     const now = JSON.stringify(kept);
     if (now === this.persisted) return;
     this.persisted = now;

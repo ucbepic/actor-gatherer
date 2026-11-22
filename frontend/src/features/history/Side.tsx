@@ -24,6 +24,7 @@ import {
   setSaving,
   toggleAllRecs,
   useHist,
+  useHistStore,
 } from "./store";
 import type { HNode, Outline } from "./tree";
 
@@ -65,6 +66,7 @@ export const useRecs = (gatherer: string): Rec[] =>
   useQuery({ queryKey: extractsKey(gatherer), queryFn: () => [] as Rec[], enabled: false }, queryClient).data || [];
 
 function Actions({ h, icons }: Pick<SideProps, "h" | "icons">) {
+  const st = useHistStore();
   const sel = useHist((s) => s.sel),
     ask = useHist((s) => s.ask),
     busy = useHist((s) => s.busy),
@@ -86,7 +88,7 @@ function Actions({ h, icons }: Pick<SideProps, "h" | "icons">) {
             "Nothing selected"
           )}
         </span>
-        <button type="button" className="h-x" title="Close" aria-label="Close" onClick={closePanel}>
+        <button type="button" className="h-x" title="Close" aria-label="Close" onClick={() => closePanel(st)}>
           <StrokeIcon d={icons.x} size={16} />
         </button>
       </div>
@@ -97,7 +99,7 @@ function Actions({ h, icons }: Pick<SideProps, "h" | "icons">) {
         aria-label="Instructions"
         placeholder="Instructions (optional)"
         value={ask}
-        onChange={(ev) => setAsk(ev.currentTarget.value)}
+        onChange={(ev) => setAsk(st, ev.currentTarget.value)}
       />
       <div className="kinds">
         {Object.entries(KINDS)
@@ -108,7 +110,7 @@ function Actions({ h, icons }: Pick<SideProps, "h" | "icons">) {
               type="button"
               disabled={!n || busy}
               title={`${label} with the Gatherer's model`}
-              onClick={() => make(h.gatherer, k)}
+              onClick={() => make(st, h.gatherer, k)}
             >
               {label}
             </button>
@@ -120,7 +122,7 @@ function Actions({ h, icons }: Pick<SideProps, "h" | "icons">) {
           type="button"
           disabled={!n}
           title="Save the selected history as a Markdown transcript"
-          onClick={() => exportRows(h.gatherer, "md", saveFile)}
+          onClick={() => exportRows(st, h.gatherer, "md", saveFile)}
         >
           .md
         </button>
@@ -128,7 +130,7 @@ function Actions({ h, icons }: Pick<SideProps, "h" | "icons">) {
           type="button"
           disabled={!n}
           title="Save the selected events as JSON"
-          onClick={() => exportRows(h.gatherer, "json", saveFile)}
+          onClick={() => exportRows(st, h.gatherer, "json", saveFile)}
         >
           .json
         </button>
@@ -219,6 +221,7 @@ const Status = ({ cls, children }: { cls: string; children: ReactNode }) => (
 );
 
 function Record({ r, side }: { r: Rec; side: SideProps }) {
+  const st = useHistStore();
   const box = useRef<HTMLDetailsElement>(null);
   const sv = useHist((s) => (s.saving && s.saving.id === r.id ? s.saving : null));
   const opened = useHist((s) => s.recOpen) === r.id;
@@ -246,8 +249,8 @@ function Record({ r, side }: { r: Rec; side: SideProps }) {
         const e = side.byId.get(`m:${x}`)?.event;
         sel.set(x, e ? [e.channel, e.tokens] : [r.channels[0], 0]);
       }
-    setAsk(r.ask || "");
-    select(sel);
+    setAsk(st, r.ask || "");
+    select(st, sel);
   };
   return (
     <details ref={box} className="h-rec" id={`rec-${r.id}`}>
@@ -286,8 +289,8 @@ function Record({ r, side }: { r: Rec; side: SideProps }) {
             className={sv ? undefined : "primary"}
             title={`Save where ${savers.map((x) => harnessLabel(side.home, x)).join(" or ")} reads it. You'll preview each file first.`}
             onClick={() => {
-              if (sv) return setSaving(null);
-              setSaving({
+              if (sv) return setSaving(st, null);
+              setSaving(st, {
                 id: r.id,
                 harness: side.harness && savers.includes(side.harness) ? side.harness : savers[0],
                 target: "dir",
@@ -296,7 +299,7 @@ function Record({ r, side }: { r: Rec; side: SideProps }) {
                 err: "",
                 done: null,
               });
-              setTimeout(() => planSave(r));
+              setTimeout(() => planSave(st, r));
             }}
           >
             Save to…
@@ -312,7 +315,7 @@ function Record({ r, side }: { r: Rec; side: SideProps }) {
           Select again
         </button>
         {r.status === "failed" ? (
-          <button type="button" onClick={() => make(r.gatherer, r.kind, r)}>
+          <button type="button" onClick={() => make(st, r.gatherer, r.kind, r)}>
             Try again
           </button>
         ) : null}
@@ -332,6 +335,7 @@ function Record({ r, side }: { r: Rec; side: SideProps }) {
 }
 
 export function Side(props: SideProps) {
+  const st = useHistStore();
   const { h } = props;
   const panel = useHist((s) => s.panel),
     all = useHist((s) => s.allRecs),
@@ -352,7 +356,7 @@ export function Side(props: SideProps) {
         <Record key={r.id} r={r} side={props} />
       ))}
       {list.length > RECENT ? (
-        <button type="button" className="h-older" onClick={toggleAllRecs}>
+        <button type="button" className="h-older" onClick={() => toggleAllRecs(st)}>
           {all ? "Show fewer" : `Show ${list.length - RECENT} older`}
         </button>
       ) : null}

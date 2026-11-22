@@ -60,7 +60,7 @@ export interface SideProps {
   sel: TurnFile | null;
   folded: ReadonlySet<string>;
   /** how the panel is shown (side/store.ts), as the frame read it */
-  side: SideState;
+  side: Pick<SideState, "hiddenKinds" | "showTmp" | "showGit" | "bgOpen">;
   background: Task[];
   harnesses: Record<string, HarnessInfo>;
   icons: Record<string, string>;

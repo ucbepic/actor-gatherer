@@ -13,8 +13,8 @@ test("opens a second actor beside the first, and closes it", async ({ page }) =>
   await page.mouse.move(700, 700);
   await expect(page.locator("#actor-card")).toBeHidden();
   await expect(page).toHaveScreenshot("panes-two.png", { mask: masks(page) });
-  // each pane beside the first is the page again in a frame (until step A6), its × inside it
-  await panes.nth(1).frameLocator("iframe").locator("#pane-close").click();
+  // each pane beside the first is a pane of the page too, its × in its head
+  await panes.nth(1).locator(".pane-close").click();
   await expect(panes).toHaveCount(1);
   await expect(page).toHaveScreenshot("panes-one.png", { mask: masks(page) });
 });

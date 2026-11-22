@@ -99,7 +99,11 @@ export function OpenedTurn({ o, interrupting }: { o: Opening; interrupting: bool
               Not received by the session yet
               {asks ? ". Its terminal may be asking something first. " : null}
               {asks ? (
-                <button type="button" className="to-term" onClick={() => host.setChatView("terminal")}>
+                <button
+                  type="button"
+                  className="to-term"
+                  onClick={() => host.setChatView("terminal", feed.info.channel)}
+                >
                   Open the terminal
                 </button>
               ) : null}

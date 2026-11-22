@@ -5,7 +5,7 @@ import type { Home } from "../../core/api/types";
 import { plural } from "../../core/format";
 import { harnessLabel, harnessOf } from "../../core/model/harness";
 import type { Rec } from "./data";
-import { planSave, setSaving, useHist, writeSave, type Saving } from "./store";
+import { planSave, setSaving, useHist, useHistStore, writeSave, type Saving } from "./store";
 
 /** "claude": one made as a CLAUDE.md, before */
 const saveKind = (r: Rec) => (r.kind === "claude" ? "agents" : r.kind);
@@ -41,7 +41,8 @@ function Switch({
 /** Saving a record where a harness reads it: which harness, where to (this directory's sessions, or every session), then
  * what each file would get -- written only once the reader has seen it (history.py's plan and save). */
 export function SaveTo({ r, sv, home, cwd }: { r: Rec; sv: Saving; home: Home | null; cwd: string }) {
-  const homes = useHist((s) => s.homes);
+  const homes = useHist((s) => s.homes),
+    st = useHistStore();
   const hs = saversOf(home, r);
   const harness = hs.includes(sv.harness) ? sv.harness : hs[0];
   const says = ((harnessOf(home, harness) as { saves?: Saves } | null)?.saves || {})[saveKind(r)] || {};
@@ -53,8 +54,8 @@ export function SaveTo({ r, sv, home, cwd }: { r: Rec; sv: Saving; home: Home | 
   const where = says.where || "";
   const p = sv.plan;
   const change = (patch: Partial<Saving>, plan = true) => {
-    setSaving({ ...sv, harness, ...patch, plan: null, err: "" });
-    if (plan) void planSave(r);
+    setSaving(st, { ...sv, harness, ...patch, plan: null, err: "" });
+    if (plan) void planSave(st, r);
   };
   return (
     <div className="h-save">
@@ -93,7 +94,7 @@ export function SaveTo({ r, sv, home, cwd }: { r: Rec; sv: Saving; home: Home | 
             onKeyDown={(ev) => {
               if (ev.key !== "Enter") return;
               ev.preventDefault();
-              void planSave(r);
+              void planSave(st, r);
             }}
           />
           <datalist id={`dirs-${r.id}`}>
@@ -101,7 +102,7 @@ export function SaveTo({ r, sv, home, cwd }: { r: Rec; sv: Saving; home: Home | 
               <option key={d} value={d} />
             ))}
           </datalist>
-          <button type="button" onClick={() => planSave(r)}>
+          <button type="button" onClick={() => planSave(st, r)}>
             Preview
           </button>
         </div>
@@ -129,13 +130,13 @@ export function SaveTo({ r, sv, home, cwd }: { r: Rec; sv: Saving; home: Home | 
       {sv.done ? <div className="ok">{`Saved: ${sv.done.join(", ")}`}</div> : null}
       <div className="row">
         {p && !sv.done ? (
-          <button type="button" className="primary" onClick={() => writeSave(r)}>
+          <button type="button" className="primary" onClick={() => writeSave(st, r)}>
             {p.files.some((f) => f.action === "replace")
               ? "Replace and write"
               : `Write ${plural(p.files.length, "file")}`}
           </button>
         ) : null}
-        <button type="button" onClick={() => setSaving(null)}>
+        <button type="button" onClick={() => setSaving(st, null)}>
           {sv.done ? "Close" : "Cancel"}
         </button>
       </div>

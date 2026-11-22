@@ -1,7 +1,7 @@
 // Selecting the History's rows, as text is selected (HistoryView.tsx says how): the list's presses, and the keys while
 // it is on the page. While a drag goes on only what is selected changes; the panel follows once it ends.
 import { useEffect, useRef, type MouseEvent, type RefObject } from "react";
-import { select, toggleOpen, useHist } from "./store";
+import { select, toggleOpen, useHistStore } from "./store";
 import { nodeOfKey, rangeOf, withRows, type HNode, type Selection } from "./tree";
 
 interface Drag {
@@ -28,11 +28,22 @@ export interface Selecting {
   making: boolean;
 }
 
+// whether a key pressed on `t` is the History in `list`'s: pressed in its pane, or elsewhere with its pane in focus (none
+// in focus: the page's own pane, #pane-here)
+function keysOf(list: Element, t: Element | null): boolean {
+  const pane = list.closest(".pane"),
+    at = t?.closest?.(".pane") ?? null;
+  if (!pane || at) return !pane || at === pane;
+  const focused = document.querySelector(".pane.focused");
+  return focused ? focused === pane : pane.id === "pane-here";
+}
+
 /** what a press on starts no selection: a row's twisty, its whole text (to select words in), a link, a button */
 const OWN = ".h-tw, .h-full, a, button";
 const EDGE = 36;
 
 export function useSelecting(now: Selecting) {
+  const st = useHistStore();
   const at = useRef(now);
   useEffect(() => {
     at.current = now;
@@ -45,7 +56,7 @@ export function useSelecting(now: Selecting) {
     d.at = k;
     if (k !== d.from) d.moved = true;
     const { flat, byId } = at.current;
-    useHist.setState({ sel: withRows(rangeOf(flat, d.anchor, k, byId), d.base, byId) });
+    st.setState({ sel: withRows(rangeOf(flat, d.anchor, k, byId), d.base, byId) });
   };
   const rowAt = (x: number, y: number) => {
     const under = document.elementFromPoint(x, y);
@@ -81,7 +92,7 @@ export function useSelecting(now: Selecting) {
     document.removeEventListener("mouseup", up);
     if (!d) return;
     drag.current = null;
-    let sel = useHist.getState().sel;
+    let sel = st.getState().sel;
     if (d.add && d.wasOn && !d.moved) {
       // ⌘-click on a selected row: out of the selection
       const n = nodeOfKey(at.current.byId, d.from),
@@ -89,37 +100,39 @@ export function useSelecting(now: Selecting) {
       if (n) for (const r of n.rows) out.delete(r);
       sel = out;
     }
-    select(sel, at.current.making, d.extend ? undefined : d.from);
+    select(st, sel, at.current.making, d.extend ? undefined : d.from);
   };
 
-  // Esc clears what is selected, ⌘A selects every row listed: while the list is on the page, not typed in a box
+  // Esc clears what is selected, ⌘A selects every row listed: while the list is on the page, not typed in a box -- the
+  // keys of its pane's (pressed in it, or the pane in focus; none in focus, the page's own)
   useEffect(() => {
     const keys = (ev: KeyboardEvent) => {
       const list = at.current.list.current,
         t = ev.target as Element | null;
       if (!list || !list.isConnected || t?.closest?.("input, textarea, select, [contenteditable]")) return;
-      const { sel } = useHist.getState();
+      if (!keysOf(list, t)) return;
+      const { sel } = st.getState();
       if (ev.key === "Escape" && sel.size) {
         ev.preventDefault();
-        select(new Map(), at.current.making);
+        select(st, new Map(), at.current.making);
       } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "a" && at.current.tops.length) {
         ev.preventDefault();
-        select(withRows(at.current.tops, new Map(), at.current.byId), at.current.making);
+        select(st, withRows(at.current.tops, new Map(), at.current.byId), at.current.making);
       }
     };
     document.addEventListener("keydown", keys);
     return () => document.removeEventListener("keydown", keys);
-  }, []);
+  }, [st]);
 
   return {
     onMouseDown(ev: MouseEvent<HTMLDivElement>) {
       if (ev.button !== 0) return;
       const t = ev.target as Element,
         row = t.closest(".h-row") as HTMLElement | null;
-      const { sel, last } = useHist.getState();
+      const { sel, last } = st.getState();
       if (!row) {
         // below the rows
-        if (!t.closest("button, a") && sel.size) select(new Map(), at.current.making);
+        if (!t.closest("button, a") && sel.size) select(st, new Map(), at.current.making);
         return;
       }
       if (t.closest(OWN)) return;
@@ -147,7 +160,7 @@ export function useSelecting(now: Selecting) {
     onDoubleClick(ev: MouseEvent<HTMLDivElement>) {
       const t = ev.target as Element,
         row = t.closest(".h-row") as HTMLElement | null;
-      if (row && !t.closest(OWN)) toggleOpen(row.dataset.key!.replace(/\/h$/, ""));
+      if (row && !t.closest(OWN)) toggleOpen(st, row.dataset.key!.replace(/\/h$/, ""));
     },
   };
 }

@@ -13,8 +13,8 @@ import { addNotepad, taskHome, taskRow } from "./task-home";
 const box = async (l: Locator) => (await l.boundingBox())!;
 const notes = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]");
 const other = (page: Page) => page.locator("#panes > .pane").nth(1);
-const minimize = (where: Page | ReturnType<Page["frameLocator"]>) =>
-  where.locator("button[aria-label='Minimize the chat']:visible").first();
+const here = (page: Page) => page.locator("#pane-here");
+const minimize = (pane: Locator) => pane.locator("button[aria-label='Minimize the chat']:visible").first();
 
 test("two panes under an app: minimized together by either's button, their row only as tall as their message boxes; shown whole together", async ({
   page,
@@ -25,15 +25,15 @@ test("two panes under an app: minimized together by either's button, their row o
   await expect(other(page)).toHaveCount(1);
   await addNotepad(page, taskRow(page)); // Notepad above both
   await expect(notes(page)).toHaveCount(1);
-  const frame = other(page).frameLocator("iframe");
+  const frame = other(page);
   const claudeMini = page.locator("#main > .chat.mini"),
-    codexMini = frame.locator("#main > .chat.mini");
+    codexMini = frame.locator("main > .chat.mini");
   const tall = (await box(notes(page))).height;
-  await minimize(page).click(); // Claude's: Codex's beside it too -- no blank above either message box
+  await minimize(here(page)).click(); // Claude's: Codex's beside it too -- no blank above either message box
   await expect(claudeMini).toHaveCount(1);
   await expect(codexMini).toHaveCount(1);
   await expect.poll(async () => (await box(notes(page))).height).toBeGreaterThan(tall + 200);
-  await frame.locator("#main > .chat.mini .mini-hist .mh-row").first().click(); // Codex's shown whole: Claude's too
+  await frame.locator("main > .chat.mini .mini-hist .mh-row").first().click(); // Codex's shown whole: Claude's too
   await expect(codexMini).toHaveCount(0);
   await expect(claudeMini).toHaveCount(0);
   await expect.poll(async () => (await box(notes(page))).height).toBeLessThan(tall + 50);
@@ -49,7 +49,7 @@ test("a minimized pane moved beside its app is whole; moved back under it, minim
   await addNotepad(page, claude);
   await expect(notes(page)).toHaveCount(1);
   const mini = page.locator("#main > .chat.mini");
-  await minimize(page).click();
+  await minimize(here(page)).click();
   await expect(mini).toHaveCount(1);
   const menu = async (name: string) => {
     await (await panelMenu(page, notes(page))).getByRole("menuitem", { name }).click(); // Notepad's, from its task's card
@@ -57,7 +57,7 @@ test("a minimized pane moved beside its app is whole; moved back under it, minim
   };
   await menu("To the right"); // side by side: nothing above Claude's pane
   await expect(mini).toHaveCount(0);
-  await expect(minimize(page)).toHaveCount(0); // nor offered
+  await expect(minimize(here(page))).toHaveCount(0); // nor offered
   await menu("To the top"); // above it again
   await expect(mini).toHaveCount(1);
 });
@@ -175,8 +175,8 @@ test("a task of one pane under another task in the tab: minimized by the line be
     bar = page.locator(".lay-bar[data-dir=col]");
   await expect.poll(async () => (await box(pane)).y > (await box(other(page))).y + 100).toBe(true);
   await expect(bar).toHaveCount(1);
-  await expect(minimize(page)).toHaveCount(1); // (its own button offered too: something above it)
-  const codex = other(page).frameLocator("iframe");
+  await expect(minimize(here(page))).toHaveCount(1); // (its own button offered too: something above it)
+  const codex = other(page);
   await expect(minimize(codex)).toHaveCount(1); // (and Codex's, above it)
   const bottom = (await box(pane)).y + (await box(pane)).height,
     b = await box(bar),
@@ -214,10 +214,10 @@ test("two panes of a task one above the other: either minimized, the other then 
   await page.locator(".row-menu[role=menu]").getByRole("menuitem", { name: "To the bottom" }).click();
   const pane = page.locator("#pane-here"),
     mini = page.locator("#main > .chat.mini"),
-    codex = other(page).frameLocator("iframe");
+    codex = other(page);
   await expect.poll(async () => (await box(pane)).y > (await box(other(page))).y + 100).toBe(true);
   await expect(minimize(codex)).toHaveCount(1);
-  await minimize(page).click(); // Claude's: Codex's taking the room
+  await minimize(here(page)).click(); // Claude's: Codex's taking the room
   await expect(mini).toHaveCount(1);
   await expect.poll(async () => (await box(other(page))).height).toBeGreaterThan(500);
   await expect(minimize(codex)).toHaveCount(0); // nothing whole left under or over Codex's to take it: not offered

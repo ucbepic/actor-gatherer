@@ -11,7 +11,7 @@ import { ChatContext } from "./context";
 import { drawn, listenForPulls } from "./pull";
 import { commandsAfresh } from "./side/Side";
 import { sideFolded } from "./side/store";
-import { TURNS_SHOWN, useOnPage, useTurns } from "./store";
+import { TURNS_SHOWN, foldsOf, useOnPage } from "./store";
 import { feedOf } from "./feed";
 import type { ChatHost, PageFeed } from "./types";
 import { pickedOf, turnsOf } from "./view";
@@ -44,24 +44,28 @@ export function drawChat(page: PageFeed, host: ChatHost, name = "Chat"): HTMLDiv
     f.root.unmount();
     frames.delete(k);
   }
-  useOnPage.setState({ key: feed.key });
-  useTurns.getState().forFiles(feed.files);
+  // on the page now, with the other panes' frames still there (one given another actor since: off it)
+  const was = useOnPage.getState().keys;
+  if (!was.has(feed.key) || [...was].some((k) => !frames.get(k)?.node.isConnected))
+    useOnPage.setState({ keys: new Set([...was].filter((k) => frames.get(k)?.node.isConnected).concat(feed.key)) });
+  const folds = foldsOf(feed.key).getState();
+  folds.forFiles(feed.files);
   const turns = turnsOf(feed);
   if (feed.afresh) commandsAfresh(); // its view opened again: each turn's commands at their end again as it shows
   if (turns.length) {
-    if (feed.afresh) useTurns.getState().setShown(null); // and the turn shown brought into view again
+    if (feed.afresh) folds.setShown(null); // and the turn shown brought into view again
     // the first turn drawn: the latest few, at first; then where the reader pulled it to, or the turn they picked. Kept
     // as the conversation grows: a new turn is drawn at the end, none taken from the top.
-    const first = useTurns.getState().first ?? turns.length - TURNS_SHOWN;
-    useTurns.getState().setFirst(Math.max(0, Math.min(pickedOf(feed, turns) ?? 0, first)));
+    const first = foldsOf(feed.key).getState().first ?? turns.length - TURNS_SHOWN;
+    folds.setFirst(Math.max(0, Math.min(pickedOf(feed, turns) ?? 0, first)));
   }
   const node = frame.node;
   Object.assign(node, { className: "chat-frame files", id: "chat-list" });
   Object.assign(node.dataset, { keep: "chat-list", follow: "1", sig: encodeURIComponent(feed.key) });
   node.setAttribute("role", "log");
   node.setAttribute("aria-label", `Chat history, ${name}`);
-  drawn.feed = feed;
-  const chat = { feed, host, folds: useTurns.getState(), sideFolded: sideFolded() };
+  drawn.set(feed.key, feed);
+  const chat = { feed, host, folds: foldsOf(feed.key).getState(), sideFolded: sideFolded(feed.key) };
   flushSync(() =>
     frame.root.render(
       <ChatContext value={chat}>

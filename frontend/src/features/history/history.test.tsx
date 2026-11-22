@@ -8,7 +8,7 @@ import { key } from "../../core/model/keys";
 import { sizesForTests } from "../../core/ui/lists";
 import { loadOutline, outlineKey, outlineOf, setHistHost, useAsked } from "./data";
 import { drawHistory } from "./mount";
-import { useHist } from "./store";
+import { histOf } from "./store";
 import {
   buildTree,
   marked,
@@ -144,7 +144,7 @@ const press = (row: Element, opts: MouseEventInit = {}) => {
 afterEach(() => {
   document.body.replaceChildren();
   queryClient.clear();
-  useHist.setState({
+  histOf(ACTOR).setState({
     sel: new Map(),
     open: new Set(),
     last: null,
@@ -188,7 +188,36 @@ describe("the view, drawn by its mount", () => {
     act(() => {
       fireEvent.keyDown(document.body, { key: "a", metaKey: true });
     });
-    expect(useHist.getState().sel.size).toBe(5);
+    expect(histOf(ACTOR).getState().sel.size).toBe(5);
+  });
+
+  it("keeps each actor's selection apart: two panes' History, each its own rows picked and its own panel", () => {
+    const OTHER = key("demo", "c2");
+    queryClient.setQueryData(outlineKey(OTHER), outline({ key: OTHER, channel: "c2" }));
+    const node = drawn(),
+      other = drawHistory({ ...page, actor: OTHER }, "History");
+    const panes = [node, other].map((n) => {
+      const pane = Object.assign(document.createElement("section"), { className: "pane" });
+      pane.append(n);
+      return pane;
+    });
+    panes[0].id = "pane-here";
+    document.body.append(...panes);
+    expect(other).not.toBe(node); // a frame each
+    act(() => press(rows(node)[0]));
+    expect(histOf(ACTOR).getState().sel.size).toBe(3);
+    expect(histOf(OTHER).getState().sel.size).toBe(0); // not picked in the other's
+    expect(node.querySelector(".h-side.open")).not.toBeNull();
+    expect(other.querySelector(".h-side.closed")).not.toBeNull();
+    act(() => press(rows(other)[1]));
+    expect([histOf(ACTOR).getState().sel.size, histOf(OTHER).getState().sel.size]).toEqual([3, 2]);
+    // ⌘A in the pane in focus: its own rows alone
+    panes[1].classList.add("focused");
+    act(() => {
+      fireEvent.keyDown(document.body, { key: "a", metaKey: true });
+    });
+    expect([histOf(ACTOR).getState().sel.size, histOf(OTHER).getState().sel.size]).toEqual([3, 5]);
+    histOf(OTHER).setState({ sel: new Map(), panel: false, last: null });
   });
 
   it("opens a turn to its messages, and a message to its whole text, fetched once", async () => {
@@ -232,7 +261,7 @@ describe("a long history", () => {
       act(() => {
         fireEvent.keyDown(document.body, { key: "a", metaKey: true });
       });
-      expect(useHist.getState().sel.size).toBe(6000);
+      expect(histOf(ACTOR).getState().sel.size).toBe(6000);
     } finally {
       sizesForTests.now = tall;
     }
@@ -290,7 +319,8 @@ describe("the outline", () => {
       "/api/outline after=0",
       "/api/outline after=0",
     ]);
-    expect(useAsked.getState()).toMatchObject({ askedFor: ACTOR, built: { for: ACTOR, started: true } });
+    expect(useAsked.getState().asked.has(ACTOR)).toBe(true);
+    expect(useAsked.getState().built[ACTOR]).toEqual({ started: true });
     setHistHost({ shown: () => false, paused: () => false });
   });
 });

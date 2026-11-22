@@ -46,13 +46,14 @@ describe("the Terminal view", () => {
     expect(cover(node)!.querySelector(".desc")!.textContent).toBe("Open in another process.");
   });
 
-  it("drops another session's terminal, and has none where the system has no pseudo-terminals", () => {
+  it("draws each session's terminal in a frame of its own, and none where the system has no pseudo-terminals", () => {
     const first = xtermNode(),
       second = xtermNode();
     const node = drawTerminal(frame(), first, "Terminal");
-    drawTerminal(frame({ key: key("demo", "c2") }), second, "Terminal");
-    expect(node.querySelectorAll(".xterm-host")).toHaveLength(1);
-    expect(node.firstChild).toBe(second);
+    const other = drawTerminal(frame({ key: key("demo", "c2") }), second, "Terminal");
+    expect(other).not.toBe(node); // (two panes, each its own)
+    expect([...node.querySelectorAll(".xterm-host")]).toEqual([first]);
+    expect(other.firstChild).toBe(second);
     drawTerminal(frame({ none: true }), null, "Terminal");
     expect(node.querySelector(".xterm-host")).toBeNull();
     expect(node.textContent).toBe("Terminals need a Unix pseudo-terminal, which this system doesn't have.");

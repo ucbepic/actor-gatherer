@@ -13,7 +13,9 @@ import {
   pullEarlier,
   reachedTop,
 } from "./pull";
-import { useTurns } from "./store";
+import { foldsOf } from "./store";
+
+const folds = foldsOf("g\u0000a");
 
 let talk: HTMLElement, redraws: number, unsubscribe: () => void;
 
@@ -21,12 +23,13 @@ beforeAll(() => listenForPulls());
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(1_000_000);
-  document.body.innerHTML = '<div id="main"><div class="fl-talk"><button>a turn</button><input></div></div>';
+  document.body.innerHTML =
+    '<section class="pane"><div class="chat-frame files" data-sig="g%00a"><div class="fl-talk"><button>a turn</button><input></div></div></section>';
   talk = document.querySelector(".fl-talk")!;
-  useTurns.getState().forFiles({});
-  useTurns.getState().setFirst(10);
+  folds.getState().forFiles({});
+  folds.getState().setFirst(10);
   redraws = 0; // the turns drawn again: the first one drawn changed
-  unsubscribe = useTurns.subscribe((st, was) => {
+  unsubscribe = folds.subscribe((st, was) => {
     if (st.first !== was.first) redraws++;
   });
   pullEarlier(talk, 0); // at the top only now
@@ -36,7 +39,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 afterAll(() => {
-  drawn.feed = null;
+  drawn.clear();
 });
 
 const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
@@ -44,18 +47,18 @@ const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
 describe("pullEarlier", () => {
   it("draws earlier turns for a pull up past the top, a while after it got there", () => {
     pullEarlier(talk, 200);
-    expect(useTurns.getState().first).toBe(10); // too soon: what is drawn ends there
+    expect(folds.getState().first).toBe(10); // too soon: what is drawn ends there
     later(PULL_WAIT_MS);
     pullEarlier(talk, PULL_PX - 1);
-    expect(useTurns.getState().first).toBe(10); // a jolt
+    expect(folds.getState().first).toBe(10); // a jolt
     pullEarlier(talk, 1);
-    expect(useTurns.getState().first).toBe(5);
+    expect(folds.getState().first).toBe(5);
     expect(redraws).toBe(1);
     // and again: a while after the last
     pullEarlier(talk, 100);
     later(PULL_WAIT_MS);
     pullEarlier(talk, 100);
-    expect(useTurns.getState().first).toBe(0);
+    expect(folds.getState().first).toBe(0);
   });
 
   it("does nothing scrolled down from the top, or with every turn drawn", () => {
@@ -64,8 +67,8 @@ describe("pullEarlier", () => {
     pullEarlier(talk, 500);
     talk.scrollTop = 0;
     pullEarlier(talk, 500); // at the top again only now
-    expect(useTurns.getState().first).toBe(10);
-    useTurns.getState().setFirst(0);
+    expect(folds.getState().first).toBe(10);
+    folds.getState().setFirst(0);
     redraws = 0; // every turn drawn: no pull draws more
     later(PULL_WAIT_MS);
     pullEarlier(talk, 500);
@@ -75,13 +78,13 @@ describe("pullEarlier", () => {
   it("hears the wheel, and ↑, Page Up or Home with the focus in the conversation, not in a box", () => {
     later(PULL_WAIT_MS);
     talk.dispatchEvent(new WheelEvent("wheel", { deltaY: -3, deltaMode: 1, bubbles: true })); // lines: 60px
-    expect(useTurns.getState().first).toBe(5);
+    expect(folds.getState().first).toBe(5);
     talk.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
     later(PULL_WAIT_MS);
     talk.querySelector("input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
-    expect(useTurns.getState().first).toBe(5);
+    expect(folds.getState().first).toBe(5);
     talk.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp", bubbles: true }));
-    expect(useTurns.getState().first).toBe(0);
+    expect(folds.getState().first).toBe(0);
   });
 });
 
@@ -91,11 +94,11 @@ describe("reachedTop", () => {
     reachedTop(true);
     later(PULL_WAIT_MS - 1);
     pullEarlier(talk, 100);
-    expect(useTurns.getState().first).toBe(10); // too soon
+    expect(folds.getState().first).toBe(10); // too soon
     reachedTop(true); // told again: still from when it got there
     later(1);
     pullEarlier(talk, 100);
-    expect(useTurns.getState().first).toBe(5);
+    expect(folds.getState().first).toBe(5);
   });
 });
 
@@ -122,7 +125,7 @@ describe("a turn held", () => {
     turnAt(10, 30);
     later(PULL_WAIT_MS);
     pullEarlier(talk, 100);
-    expect(useTurns.getState().first).toBe(5);
+    expect(folds.getState().first).toBe(5);
     // Virtuoso puts them before it by the height it guesses (40px each), then draws them at theirs (60px)
     talk.scrollTop = 200;
     turnAt(10, 330);

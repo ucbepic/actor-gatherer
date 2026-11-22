@@ -6,7 +6,7 @@ import { Markdown } from "../../core/ui/Markdown";
 import { unplanned } from "../../core/ui/md";
 import { useChat } from "./context";
 import { CallLabel, CallView } from "./side/CallView";
-import { useTurns } from "./store";
+import { foldsOf } from "./store";
 import type { Reply as ReplyData, Turn } from "./types";
 import { currentOf } from "./view";
 
@@ -25,7 +25,7 @@ export const drawn = (r: ReplyData): boolean =>
 /** A message, or a run of thinking; `main`, the turn's last message: shown whole until a click folds it, which is kept
  * (store.ts's `closed`). Its id keeps its place in the turn: the last, once a message follows it, starts folded. */
 export function Reply({ r, i, n, main = false }: { r: ReplyData; i: number; n: number; main?: boolean }) {
-  const { folds } = useChat();
+  const { feed, folds } = useChat();
   const id = `fl-${main ? "m" : "r"}-${n}-${i}`;
   if (noted(r.kind)) return <Noted r={r} id={id} />;
   const thought = r.kind !== "text",
@@ -35,7 +35,7 @@ export function Reply({ r, i, n, main = false }: { r: ReplyData; i: number; n: n
       className={"fl-reply" + (main ? " main" : "") + (thought ? " thought" : "")}
       id={id}
       open={main && !folds.closed.has(id)}
-      onToggle={main ? (ev) => useTurns.getState().fold(id, ev.currentTarget.open) : undefined}
+      onToggle={main ? (ev) => foldsOf(feed.key).getState().fold(id, ev.currentTarget.open) : undefined}
     >
       <summary title={thought ? "Fold or show what it thought" : "Fold or show the whole message"}>
         <span className="dot">●</span>

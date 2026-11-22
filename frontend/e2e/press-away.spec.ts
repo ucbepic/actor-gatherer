@@ -1,6 +1,6 @@
 // What floats over the page and closes on a press elsewhere -- Settings, a row's drop-down -- closes on a press in a frame
 // too, which the page itself never hears (features/layout/panes.js's pressedAway): in an app's panel (told by app_kit's SDK, also a
-// press the panel's own code stops), in another actor's pane.
+// press the panel's own code stops); and on a press in another actor's pane, a part of the page.
 import type { Page } from "@playwright/test";
 import { expect, test } from "./test";
 import { CLAUDE, CODEX, open } from "./home";
@@ -67,7 +67,7 @@ test("Settings closes on a press in another actor's pane", async ({ page }) => {
   await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
   const codex = page.locator("#panes > .pane").nth(1);
   await expect(codex).toHaveCount(1);
-  const chat = codex.frameLocator("iframe").locator("#main");
+  const chat = codex.locator("main");
   await expect(chat).toBeVisible();
   await page.locator("#about-btn").click();
   await expect(page.locator("#about")).toBeVisible();

@@ -8,6 +8,6 @@ import { mountSettings } from "./features/settings/mount";
 
 const page = window.agLegacy;
 const cfg = document.getElementById("cfg");
-if (page && cfg && !page.snapshot && !page.pane) {
+if (page && cfg && !page.snapshot) {
   mountSettings(cfg, { open: () => page.setAbout(true), close: () => page.setAbout(false) });
 }

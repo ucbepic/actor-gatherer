@@ -14,7 +14,8 @@ import { AskingCard, askingWhat } from "./Asking";
 export interface CardsHost {
   /** the page's icons: SVG paths in a 16x16 box */
   icons: Record<string, string>;
-  setChatView(id: string): unknown;
+  /** the pane showing the actor of `channel` showing view `id` */
+  setChatView(id: string, channel: string): unknown;
   /** what a permission is for, after "asks to", as its harness reads the call */
   permissionVerb(ask: Ask): string;
   /** the call a permission is asked for, as Chat shows a call (the old page's node) */

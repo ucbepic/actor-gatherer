@@ -6,7 +6,7 @@
 // it changes -- each actor's its own, so several can be shown at once.
 import { create } from "zustand";
 import { viewOf } from "./data";
-import { useOnPage, useTurns } from "./store";
+import { foldsOf, onPage } from "./store";
 import { AT_WORK, cidsOf } from "./view";
 import type { ChatView } from "./types";
 
@@ -68,8 +68,8 @@ export const pickTurn = (actor: string, n: number | null): void => {
 /** A turn picked in the conversation shown (its files come with it): the file picked in the turn before let go of, and
  * the turn drawn if it is above the first drawn -- then shown, its files and commands at the left. */
 export function showTurn(actor: string, n: number | null): void {
-  if (useOnPage.getState().key === actor) {
-    const t = useTurns.getState();
+  if (onPage(actor)) {
+    const t = foldsOf(actor).getState();
     t.pick(null);
     if (n !== null && t.first !== null && n < t.first) t.setFirst(n);
   }
