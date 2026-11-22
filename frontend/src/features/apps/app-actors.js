@@ -1,5 +1,5 @@
-import { SNAPSHOT } from "../../core/page/state.js";
-import { el, harnessBadge, harnessLogo } from "../../core/page/helpers.js";
+import { SNAPSHOT } from "../../core/page/state";
+import { el, harnessBadge, harnessLogo } from "../../core/page/helpers";
 import * as appHost from "./host";
 
 // The actor's avatar (avatars.py), its harness's badge small at the corner; an actor with none (no

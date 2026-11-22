@@ -4,9 +4,9 @@
 import { describe, expect, it } from "vitest";
 
 // @ts-expect-error -- a plain module of the panel's, with no types
-const d = await import("../../../../ag_apps/notes/panel/doc.js");
+const d = await import("../../../../ag_apps/notes/panel/doc");
 // @ts-expect-error -- the bundle the panel imports (assets/src/notes)
-const pm = await import("../../../../ag_apps/notes/panel/vendor/prosemirror.js");
+const pm = await import("../../../../ag_apps/notes/panel/vendor/prosemirror");
 
 type Block = { id: string; type: string; text?: string; indent?: number; checked?: boolean };
 const line = (id: string, text = "", type = "text", more: Partial<Block> = {}): Block => ({ id, type, text, ...more });

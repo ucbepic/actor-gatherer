@@ -1,5 +1,5 @@
-import { SNAPSHOT, state } from "./state.js";
-import { tildePath } from "./code.js";
+import { SNAPSHOT, state } from "./state";
+import { tildePath } from "./code";
 import { isShell, key, parse as parseKey, taskId, taskNumber } from "../model/keys";
 import { closable as closableIn, sessionStatus } from "../model/session";
 import { escapeHtml } from "../ui/html";

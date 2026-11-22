@@ -1,11 +1,11 @@
-import { SNAPSHOT, state } from "../../core/page/state.js";
-import { ICONS, hasChat } from "../../core/page/helpers.js";
-import { refresh } from "../page/data.js";
-import { linkClicked } from "../layout/panes.js";
-import { paneInfo, paneWith } from "../page/pane-view.js";
-import { readOnlyWhy } from "../chat/chat.js";
-import { addChatView } from "../chat/views.js";
-import { shownGone } from "./shell.js";
+import { SNAPSHOT, state } from "../../core/page/state";
+import { ICONS, hasChat } from "../../core/page/helpers";
+import { refresh } from "../page/data";
+import { linkClicked } from "../layout/panes";
+import { paneInfo, paneWith } from "../page/pane-view";
+import { readOnlyWhy } from "../chat/chat";
+import { addChatView } from "../chat/views";
+import { shownGone } from "./shell";
 import {
   eachTerm, fullscreenFor as fullscreenIn, setTermHost, term, termFor, termListen, termOf, termOpen, termPlaced, termWebgl,
   xtermTheme,

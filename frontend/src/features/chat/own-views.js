@@ -1,17 +1,17 @@
-import { SNAPSHOT } from "../../core/page/state.js";
+import { SNAPSHOT } from "../../core/page/state";
 import {
   ago, clock, compact, el, full, get, harnessBadge, harnessLogo, harnessName, itemType, svgEl,
-} from "../../core/page/helpers.js";
-import { drawingPane, paneInfo } from "../page/pane-view.js";
+} from "../../core/page/helpers";
+import { drawingPane, paneInfo } from "../page/pane-view";
 import { statusOf } from "../list/seen";
-import { askingNote, backgroundNote, errorNote } from "./chat.js";
-import { callsNow } from "../page/main-view.js";
+import { askingNote, backgroundNote, errorNote } from "./chat";
+import { callsNow } from "../page/main-view";
 import { columnsNode, contextCardNode, contextItemNode, sizeCardNode, typeChipsNode } from "../details/mount";
 import { foldedOutputNode, notesSwitchNode, transcriptBlockNodes } from "../transcript/mount";
 import { markdown } from "../../core/ui/md";
 import { firstLine, plural } from "../../core/format";
-import { addChatView } from "./views.js";
-import { actorLogo } from "../apps/app-actors.js";
+import { addChatView } from "./views";
+import { actorLogo } from "../apps/app-actors";
 
 // ------------------------------------------------------------------ the reader's own views
 // What a view gets to draw with -- and, for one in a file of its own, how it adds itself.

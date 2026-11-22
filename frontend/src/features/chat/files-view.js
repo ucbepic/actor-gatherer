@@ -1,16 +1,16 @@
-import { SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state";
 import {
   BESIDE_KEY, ICONS, atRest, atWork, bareAvatar, el, greeting, hueInk, key, strokeIcon,
-} from "../../core/page/helpers.js";
-import { earlierTurns, fitBox, loadChat, refresh, render, setLive } from "../page/data.js";
+} from "../../core/page/helpers";
+import { earlierTurns, fitBox, loadChat, refresh, render, setLive } from "../page/data";
 import { MANAGER, crewFace, envelope } from "../list/list";
-import { DETAILS_TIP, dashboardCommand, setDetails } from "../page/main-view.js";
-import { chatToEnd, permissionVerb, permissionView } from "./chat.js";
-import { fullscreenFor, termOf } from "../terminal/terminal.js";
-import { allPanes, paneInfo, paneKey, paneOf, paneWith } from "../page/pane-view.js";
-import { CHAT_FEEDS, CHAT_VIEWS, addChatView, chatView, offeredViews, setChatView } from "./views.js";
-import { MIN_TIP, canMinimize, chatMin, setChatMin, topShown } from "../layout/top.js";
-import { appWordsOf } from "../apps/app-actors.js";
+import { DETAILS_TIP, dashboardCommand, setDetails } from "../page/main-view";
+import { chatToEnd, permissionVerb, permissionView } from "./chat";
+import { fullscreenFor, termOf } from "../terminal/terminal";
+import { allPanes, paneInfo, paneKey, paneOf, paneWith } from "../page/pane-view";
+import { CHAT_FEEDS, CHAT_VIEWS, addChatView, chatView, offeredViews, setChatView } from "./views";
+import { MIN_TIP, canMinimize, chatMin, setChatMin, topShown } from "../layout/top";
+import { appWordsOf } from "../apps/app-actors";
 import { drawChat } from "./mount";
 import { drawComposer, ownBox } from "./Composer";
 import { callLabelNode, callViewNode } from "./side/nodes";
