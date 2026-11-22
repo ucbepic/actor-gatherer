@@ -34,7 +34,7 @@ async function claudeAndNotepad(page: Page) {
   const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   await expect(notes).toHaveCount(1);
   return { claude, notes, here: page.locator("#pane-here") };
 }
@@ -171,7 +171,7 @@ test("the apps' panels kept in this browser all come back, the page loaded again
   const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   await expect(notes).toHaveCount(1);
   // the home held back: the apps known first, their panels opened again before any task is
   await page.route("**/api/home", async (route) => {

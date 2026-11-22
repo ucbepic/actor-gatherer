@@ -18,7 +18,7 @@ const beside = process.platform === "darwin" ? "Meta" : "Control";
 const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const mark = (page: Page, text: string) => row(page, text).locator(".tab-no");
 const tabs = (page: Page) => page.locator(".lay-tabs:visible .lay-tab");
-const notes = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]");
+const notes = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])"); // in sight (one kept for another tab: hidden)
 const frame = (page: Page) => page.locator("#panes > .pane").nth(1);
 const lone = (page: Page) => page.locator("#agents .agent.app-row");
 const box = async (l: Locator) => (await l.boundingBox())!;

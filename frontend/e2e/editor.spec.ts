@@ -161,7 +161,7 @@ test("the file open in a LaTeX editor stays open, at its place, when the reader 
   );
   await expect(panel.locator(".cm-line", { hasText: "x250 = 250" })).toBeVisible();
   await page.waitForTimeout(500); // its place kept (a moment after it moves)
-  await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task: the Editor's panel goes
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: ["Alt"] }); // another task in its place (⌥): the Editor's panel goes, made anew on the way back
   await expect(editorPane(page, "latex")).toHaveCount(0);
   await task.click(); // back
   await expect(editorPane(page, "latex")).toHaveCount(1);
@@ -171,7 +171,7 @@ test("the file open in a LaTeX editor stays open, at its place, when the reader 
     "(st => [st.doc.lineAt(st.selection.main.head).number, st.selection.main.head - st.doc.line(250).from])(ed.s.view.state)",
   );
   expect(at).toEqual([250, 3]);
-  await page.locator("#agents .agent", { hasText: CODEX }).click(); // away again, and the file deleted meanwhile
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: ["Alt"] }); // away again, and the file deleted meanwhile
   await expect(editorPane(page, "latex")).toHaveCount(0);
   fs.rmSync(path.join(repo, "long.py"));
   await task.click(); // back: its folder alone, no error
@@ -196,7 +196,7 @@ test("left while typing in a LaTeX editor's file, the cursor is back where it wa
   const frame = () => page.frames().find((f) => /^http:\/\/latex\.localhost:\d+\//.test(f.url()))!;
   const line250 = () => frame().evaluate("ed.s.view.state.doc.line(250).text");
   const away = async () => {
-    await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task: the Editor's panel goes
+    await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: ["Alt"] }); // another task in its place (⌥): the Editor's panel goes, made anew on the way back
     await expect(editorPane(page, "latex")).toHaveCount(0);
     await task.click(); // back
     await expect(editorPane(page, "latex")).toHaveCount(1);
@@ -247,7 +247,7 @@ test("the preview comes back as it was left: its tab, its output's scroll, its P
   const task = page.locator(`#agents .agent[data-key="${await actor.getAttribute("data-key")}"]`); // the Editor's task
   const panel = editorPanel(page, "latex");
   const away = async (meanwhile = () => {}) => {
-    await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task: the Editor's panel goes
+    await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: ["Alt"] }); // another task in its place (⌥): the Editor's panel goes, made anew on the way back
     await expect(editorPane(page, "latex")).toHaveCount(0);
     meanwhile();
     await task.click(); // back
@@ -509,7 +509,7 @@ test("a broken LaTeX build lists its problems, each opening its file at its line
   await panel.locator(".pv-edge").hover(); // over a result, its head is tucked away above it until the pointer comes
   await tab.click();
   await page.waitForTimeout(500); // kept a moment after it moves
-  await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task: the Editor's panel goes
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: ["Alt"] }); // another task in its place (⌥): the Editor's panel goes, made anew on the way back
   await expect(editorPane(page, "latex")).toHaveCount(0);
   await task.click();
   await expect(panel.locator(".ed-pv")).toBeVisible();

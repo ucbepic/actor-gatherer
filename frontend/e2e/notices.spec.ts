@@ -159,7 +159,7 @@ test("a task shows its app's notification as its state, where it ranks first", a
   const task = page.locator("#agents .agent.task");
   await expect(task).toHaveCount(1);
   await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task shown: its panel put away
-  await expect(page.locator("#top-row > .app-pane[data-app=notepad]")).toHaveCount(0);
+  await expect(page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])")).toHaveCount(0); // (kept for its tab, out of sight)
   await expect(task.locator(":scope > .a-main > .dot.notified")).toHaveCount(0);
   await notify(page, instance, { title: "Your turn" });
   await expect(task.locator(":scope > .a-main > .dot.notified")).toHaveCount(1);

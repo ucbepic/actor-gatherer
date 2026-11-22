@@ -126,7 +126,7 @@ test("an app's panel closed in a task stays closed when the task is opened again
   const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude); // Claude and Notepad: one task, its row Claude's
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   await expect(notes).toHaveCount(1);
   await expect(taskRow(page)).toHaveCount(1);
   await page.locator("#agents .agent", { hasText: CODEX }).click(); // another task: Claude's Notepad goes with its own
@@ -172,7 +172,7 @@ test("an app added to an actor on its own makes a task of the two: its card list
   const claude = page.locator("#agents .agent:not(.task)", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   await expect(notes).toHaveCount(1);
   const row = taskRow(page);
   await expect(row).toHaveCount(1);
@@ -209,7 +209,7 @@ test("a task's card lists its apps: one selected by a click, taken out by its ×
   await open(page);
   const row = taskRow(page);
   await addNotepad(page, row);
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   await expect(notes).toHaveCount(1);
   await closePanel(page, notes);
   await expect(notes).toHaveCount(0);
@@ -309,7 +309,7 @@ test("⌘/Ctrl+click on a task opens it whole beside the one shown: its actor an
   await open(page);
   const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   const codex = page.locator("#agents .agent", { hasText: CODEX });
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   const panes = page.locator("#panes > .pane");
   await codex.click();
   await addNotepad(page, codex);
@@ -336,7 +336,7 @@ test("the actor the page opens on, given an app since, gets it once clicked, and
     data: { app: "notepad", gatherer: GATHERER, folder: "/w/opened-on", channel },
   });
   expect(opened.ok()).toBe(true); // opened by the actor: in its task (its stream held back: the page not told yet)
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   await expect(notes).toHaveCount(0);
   await shown.click(); // laid out now: its app with it
   await expect(notes).toHaveCount(1);
@@ -355,7 +355,7 @@ test("an app is selected as an actor is: one thing selected, the panes below lef
   await open(page);
   const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   const codex = page.locator("#agents .agent", { hasText: CODEX });
-  const notes = page.locator("#top-row > .app-pane[data-app=notepad]");
+  const notes = page.locator("#top-row > .app-pane[data-app=notepad]:not([hidden])");
   const panes = page.locator("#panes > .pane");
   await claude.click();
   await addNotepad(page, claude);

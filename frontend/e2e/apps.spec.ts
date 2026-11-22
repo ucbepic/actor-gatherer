@@ -228,11 +228,11 @@ test("an app opened shows the actor it is attached to below it", async ({ page }
   await expect(there.frameLocator("iframe").locator("#agents")).toHaveText(CODEX_CHANNEL);
   await closePanel(page, there);
   // opened again: its agent shown below, in the pane in focus -- another task than Claude's, so Claude's Notes, whose
-  // panel asked, goes with that task (features/layout/panes.js's enterTask), its frame gone before the answer
+  // panel asked, goes out of sight with that task (kept for its tab: features/layout/panes.js's keepForTab)
   await raise().catch(() => null);
   await expect(there).toHaveCount(1);
   await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CODEX })).toHaveCount(1);
-  await expect(page.locator("#top-row > .app-pane")).toHaveCount(1);
+  await expect(page.locator("#top-row > .app-pane:not([hidden])")).toHaveCount(1);
   await attachTo(page, GATHERER, theirs, CODEX_CHANNEL, false); // detached again
   await expect(there.frameLocator("iframe").locator("#agents")).toHaveText("none");
 });
