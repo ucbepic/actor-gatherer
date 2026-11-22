@@ -123,14 +123,7 @@ export interface PanesPart {
   pickBeside(gname: string, c: string, ev: AnyEvent): void;
   placeIfShown(): void;
   popButton(): HTMLElement | null;
-  railNewBox(
-    g: Gatherer | null,
-    hs: string[],
-    harness: string,
-    cwd: string,
-    error: string,
-    alone: boolean,
-  ): object;
+  railNewBox(g: Gatherer | null, hs: string[], harness: string, cwd: string, error: string, alone: boolean): object;
   rekeyTask(was: string, now: string): void;
   rememberTask(k: string): void;
   retarget(p: ActorPane, g: string, c: string): void;

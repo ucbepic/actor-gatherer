@@ -3,7 +3,7 @@
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
 the views share, in `core/ui/`; Chat; the list, all of it TypeScript; Details, Transcript, Messages, History and
 Terminal's frame); A6 begun (the layout model, steps 1-4c-3c, all of it: the model the page's source, rendered; the panes as parts of
-one page; the page's pop-ups on Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
+one page; the page's pop-ups on Radix; the layout in TypeScript). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
 
@@ -603,7 +603,7 @@ page drew. Now each actor's pane is a part of the one page:
   place kept by `keepingPlace(draw, p)`), data.js's `loadAgent(p)`, `takeAgent(agent, p)`, `loadChat(p)` and
   `mainSignature(p)` (render() draws each pane whose signature moved), Chat's card (`chatCard(p, info)`), views
   (`chatView(p)`, `setChatView(p, id)`, the feeds' `load(p)`/`data(p)`), files feed (`loadFiles(p)`, `setFilesTurn(p,
-  n)`, `foldSide(p, fold)`, `barActs(p)`), a minimized pane (top.js's `chatMin(p)`, `setChatMin(p, on)`, `minRedraw(p)`;
+  n)`, `foldSide(p, fold)`, `barActs(p)`), a minimized pane (top.ts's `chatMin(p)`, `setChatMin(p, on)`, `minRedraw(p)`;
   mini-history.js's lines and its one card, for the pane hovered), the shell's pane, Details, History, Esc
   (`escapeShown(p)`, `interrupt(p, info)`), the links clicked in a pane (`linkClicked(href, ev, path, p)`). Nothing in a
   view reads `state.selected`; a list module calling with no pane (`select`'s `loadChat()`, `chatToEnd()`, `showKept`)
@@ -636,8 +636,46 @@ menu (`popMenu`'s: its heading, its choices) as Radix's DropdownMenu, a box -- t
 Popover; both placed by Radix under the button (beside it from the rail), flipped above where there is no room, closed
 by the button pressed again, a press elsewhere, Esc (the focus back on the button), the page resizing or the page or a
 box holding the button scrolling. `openPop(key, button, what)`, `popMenu`, `closePop` and `rowPop` keep their roles, as
-the list's modules still call them; `placePop` went. Vitest: `Pops.test.tsx`. Left: the forms in the boxes are still
-built by the old page (`el`), and the branch picker (`openBranchMenu`, `openBranchDialog`) is still drawn by hand.
+the list's modules still call them; `placePop` went. Vitest: `Pops.test.tsx`. The forms in the boxes are React's
+(`StartBoxes.tsx`: `railNewBox`, `appStartBox`, the new-tab page's `DirBox`, the folders a click away, `FolderPicks`),
+each told the pop-up it is in (`usePop`) so it closes that one alone once it has started (`closePopIf`); the branch
+picker is Radix's too (`Branches.tsx`): its drop-down of a group's sources a DropdownMenu hung from the button that
+opened it, its popup a Dialog in the page's `<dialog>` look (`.br-dialog`) on Manage groups' backdrop (`.mg-dim`), its
+state a store (`usePicker`).
+
+**The layout in TypeScript (built).** The layout's last hand-written JavaScript -- `panes.js` (2,373 lines),
+`new-tab.js`, `top.js` -- is typed modules of `features/layout/`, each under max-lines (panes.js left the long files'
+list), the pure ones tested:
+- *What is open* (`open.ts`): the actors in the panes, the one in focus and the app selected (the store's `focus` and
+  `lastActor`), each panel's task (`taskKey`, `appPaneTask`), the task of apps alone, the task entered, the tasks laid
+  out, the page's own pane out of sight (`away`), the panels shown (`shownPanels`) and what is open as a plan reads it
+  (`openNow`). *What each task was left with* (`remember.ts`: `rememberTask`, `taskLayout`, `taskAppsFound`,
+  `taskFacts`, `keysNow`), its decisions pure (`facts.ts`'s `factsOf`, `taskKeysNow`; Vitest: `facts.test.ts`).
+- *Changes to what a tab shows*: an actor shown, in the pane in focus or beside it, through the screen tabs (`show.ts`:
+  `pick`, `show`, `openBeside`, `viaTabs`); a task entered, opened beside, left alone, closed here, a tab's tasks shown
+  (`enter.ts`), each a plan (`plan.ts`) rendered by `render.ts` (`renderLayout`; the panes beside made to match the
+  store, `renderPanes`; the page's own pane closed, `closeHerePane`).
+- *The work area* (`work-area.ts`: `startPlacing`, `placeWork`, what a block is called, its faces, a task's states in
+  its tab), a panel moved (`moves.ts`; its menu's choices pure, `move-choices.ts`), the panes' heads (`heads.ts`), the
+  apps' panels (`app-panels.ts`: rendered from the store, held for a tab left or an agent at work), what a panel is given
+  (`app-hooks.ts`; what it is told of an actor's question and the media type of an intent pure, `app-said.ts`), links
+  clicked in a pane (`pane-links.ts`; which the page takes pure, `link-rules.ts`).
+- *Starting* (`starts.ts`: the list's "+", the rail's "+ actor" and "+ ⋯", what each start does; what starts where pure,
+  `start-rules.ts`; a coordinator agent, `crew.ts`), the list's form for a new actor (`new-form.ts`), the pop-ups
+  (`popups.ts` over `Pops.tsx`), a minimized pane (`top.ts`), a new tab's page (`new-tab.ts`, drawn by React in
+  `NewTab.tsx`: drawn afresh each time it comes in sight, its message box from the tab's draft, its chips and apps again
+  as the home changes).
+- `panes.ts` is the facade the old page's modules and the list import, under the names they used. What a minimized
+  pane draws in Chat's card (its footer, a shell's strip) is still built as nodes (top.ts): Chat's card patches it in.
+- *The link*: a feature's TypeScript imports only `core/` and its own folder, so what the layout takes of the page around
+  it -- the old page's state, helpers, data and panes' views, Chat's, the list's, the apps' host and links, the
+  terminal's -- is typed in `features/layout/link.ts` (`LayoutPage`, its own types in `types.ts`) and handed over by
+  `src/links/layout.ts`, an app-level TypeScript file (`src/links/` is app-level for ESLint's boundaries) called once from
+  page.js before any module starts. The other features' TypeScript modules are checked there against what the layout
+  says it reads of them (where the list's types are narrower than what the layout hands it, the adapter says so: its
+  `openTask`); the old page's plain-JS modules come through `links/plain.js`, untyped (`plain.d.ts`), each to be imported
+  by layout.ts itself as it becomes TypeScript. Vitest: `facts`, `move-choices`, `start-rules`, `branch-model`,
+  `link-rules`, `app-said`, `Pops`.
 
 The layout slice comes first, in four steps, each with every test passing:
 1. *The model* (built): `features/layout/model.ts`, one `Layout` value -- the screen tabs, the tab shown, what each
@@ -715,7 +753,7 @@ The layout slice comes first, in four steps, each with every test passing:
      tasks beside follow; and the model holds each task's items open as last placed (`items`, `open`: `noteOpen`, at
      each placing), which `keysNow` reads in place of what it kept of each task itself (`heldSeen`) and of the panels.
    - 4c-3c, last part (built): a task clicked in the list (features/list/task-acts.ts's `openTask`, through link.ts) is
-     one plan too -- panes.js's `openTaskHere`: the task's facts as it was left (`taskFacts`, the actor asked for first),
+     one plan too -- `openTaskHere` (enter.ts): the task's facts as it was left (`taskFacts`, the actor asked for first),
      `tabPlan` of that task alone, rendered -- so every change to what a tab shows is a plan of the model's, rendered by
      `renderLayout`. With that, two full browser runs with the check on (`AG_LAYOUT_STRICT`) found no difference between
      the model and the page, and `shadow.ts` became the layout's store: the one layout value, changed only by the
