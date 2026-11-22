@@ -532,6 +532,21 @@ export function renameTaskTab(l: Layout, key: string, id: string, name: string):
 // ---- kept in this browser: one key (KEY), or, before it, the six keys of before -- read once, then dropped
 
 /** The keys of before this file's KEY: what it holds now. */
+/** What the layout holds of this page alone, not kept in this browser: the focus, the page's own pane out of sight, the
+ * task of apps alone shown, the task last entered, the tasks laid out here, the one the page opened on, each task's items
+ * open. */
+export const PAGE_ONLY = [
+  "focus",
+  "lastActor",
+  "away",
+  "appsOnly",
+  "entered",
+  "laidOut",
+  "auto",
+  "items",
+  "open",
+] as const satisfies readonly (keyof Layout)[];
+
 export const OLD_KEYS = [
   "ag-dashboard-screen-tabs",
   "ag-dashboard-task-layouts-2",

@@ -197,23 +197,12 @@ export class Tabs {
   // the tab shown kept as it is now, once started: its tasks, their arrangement, the one in focus (a reload shows it so)
   private note(): void {
     if (!this.started || this.switching) return;
-    shadow.later(
-      () =>
-        this.switching
-          ? null
-          : {
-              current: this.current,
-              shown: this.hooks.shown(),
-              tabs: this.tabs.map((t) => ({ id: t.id, tasks: this.tasksOf(t) })),
-            },
-      this.hooks.canon,
-    );
     const tab = this.tab(),
       screen = this.hooks.screen(),
       focus = this.hooks.focus();
     if (JSON.stringify([screen, focus]) !== JSON.stringify([tab.screen, tab.focus]))
       shadow.update(M.noted, screen, focus);
-    this.save(); // (the tasks shown too: the page tells the model of them as it changes them)
+    this.save(); // (the tasks shown too: the page changes them by the model's rules)
   }
   /** The tab shown's panels placed (work.ts): its map, kept with it -- drawn again only if it looks different (a bar
    * dragged moves its boxes a pixel now and then); none taken while a tab is being shown. */
@@ -250,7 +239,7 @@ export class Tabs {
 
   /** ⌥+click: the task out of any other tab (one left with none closed, unless named), to be the tab shown's alone. */
   take(task: string): void {
-    shadow.tell("take", M.take, task);
+    shadow.update(M.take, task);
     this.save();
     this.hooks.changed();
   }
@@ -259,7 +248,7 @@ export class Tabs {
    * still there till what is shown next replaces them (blank: closed at once). */
   fresh(id = newId()): void {
     this.leave();
-    shadow.tell("fresh", M.fresh, id);
+    shadow.update(M.fresh, id);
     this.hooks.setScreen(null);
     this.save();
     this.hooks.changed();
@@ -277,7 +266,7 @@ export class Tabs {
     if (this.switching) await this.settling; // one at a time
     if (id === this.current || !this.tabs.some((t) => t.id === id)) return;
     this.leave();
-    shadow.tell("show", M.show, id, focus);
+    shadow.update(M.show, id, focus);
     await this.enter();
   }
   // the tab now shown (the model's), its panes opened: its tasks, as they were left -- one showing nothing (a new tab
@@ -323,7 +312,7 @@ export class Tabs {
     if (this.tabs.length < 2) return;
     const shown = id === this.current;
     if (shown) this.leave();
-    shadow.tell("close", M.close, id);
+    shadow.update(M.close, id);
     if (shown) await this.enter();
     this.save();
     this.hooks.changed();
@@ -336,7 +325,7 @@ export class Tabs {
     const tab = this.tab();
     if (!this.hooks.shown().length && !tab.tasks.length && !tab.name && !tab.draft && !tab.page) return;
     this.leave();
-    shadow.tell("closeShown", M.closeShown);
+    shadow.update(M.closeShown);
     this.hooks.setScreen(null);
     this.save();
     await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
@@ -351,7 +340,7 @@ export class Tabs {
     const rest = this.tasksOf(tab).filter((k) => k !== task);
     if (tab.id === this.current) return rest.length ? here() : this.closeShown();
     if (!rest.length) return this.close(tab.id);
-    shadow.tell("closed", M.closed, task);
+    shadow.update(M.closed, task);
     this.save();
     this.hooks.changed();
   }
@@ -371,7 +360,7 @@ export class Tabs {
     const tab = this.tab(),
       empty = !this.hooks.shown().length && !tab.tasks.length && !tab.draft && !tab.page;
     if (!empty) this.fresh();
-    shadow.tell("page", M.setPage, page);
+    shadow.update(M.setPage, page);
     this.save();
     if (empty) return this.hooks.changed();
     await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
@@ -381,7 +370,7 @@ export class Tabs {
   setDraft(text: string, id = this.current): void {
     const t = this.tabs.find((x) => x.id === id);
     if (!t || (t.draft || "") === text) return;
-    shadow.tell("setDraft", M.setDraft, text, id);
+    shadow.update(M.setDraft, text, id);
     this.save();
   }
 
@@ -395,7 +384,7 @@ export class Tabs {
   merge(id: string): string[] {
     const tasks = this.held(id);
     if (!tasks.length) return [];
-    shadow.tell("merge", M.merged, id);
+    shadow.update(M.merged, id);
     this.save();
     this.hooks.changed();
     return tasks;
@@ -411,7 +400,7 @@ export class Tabs {
    * or, none, in a new tab: after the tab shown, or (`last`) at the bar's end. Not shown: shown, the tab opens it again
    * as it was. */
   put(task: string, to: string | null, last = false): void {
-    shadow.tell("put", M.put, task, to, last, newId());
+    shadow.update(M.put, task, to, last, newId());
     this.save();
     this.hooks.changed();
   }
@@ -423,7 +412,7 @@ export class Tabs {
   /** Tab `id` put at place `at` (from 0) among the others: the bar's order, and so the list's numbers, changed. */
   move(id: string, at: number): void {
     const was = this.tabs.map((t) => t.id).join(" ");
-    shadow.tell("move", M.move, id, at);
+    shadow.update(M.move, id, at);
     if (this.tabs.map((t) => t.id).join(" ") === was) return;
     this.save();
     this.list.dataset.sig = "";
@@ -441,7 +430,7 @@ export class Tabs {
 
   rename(id: string, name: string): void {
     if (!this.tabs.some((t) => t.id === id)) return;
-    shadow.tell("rename", M.rename, id, name.trim());
+    shadow.update(M.rename, id, name.trim());
     this.save();
     this.draw();
   }

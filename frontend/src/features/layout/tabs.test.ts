@@ -27,7 +27,7 @@ function setShown(list: string[]) {
 // what a page just loaded opens on by itself (its first actor): shown, the model told as the page tells it (opened)
 function openedOn(list: string[]) {
   shown = list;
-  for (const k of list) shadow.tell("auto", M.opened, k);
+  for (const k of list) shadow.update(M.opened, k);
 }
 // a page loaded: the model read from what this browser keeps, the page showing what it opened on by itself (`shown`) --
 // in the tab shown only if it holds nothing, as the page's first actor is (model.ts's opened)

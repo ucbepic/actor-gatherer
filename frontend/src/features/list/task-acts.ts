@@ -199,19 +199,14 @@ export async function openTask(gname: string, id: number, focus: string | null =
     return;
   }
   if (!there && besideKey(ev) && !snap()) return P.openTaskBeside(gname, k, first); // the whole task, beside
-  if (mine && !blank) {
-    // shown already: as it is, once laid out
+  if (mine && !blank && (focus || laid)) {
+    // shown already, laid out: as it is -- `focus`, if asked for, shown in the pane in focus
     if (focus) await P.show(gname, focus, null, wait);
-    else if (!laid) await P.show(gname, shut || sel![1], null, wait, !!shut); // shown by chance (as the page opened): laid out now (enterTask)
-    if (!shut) return;
-  } else await P.show(gname, first, null, wait, !!shut);
-  const back =
-    !focus &&
-    was &&
-    ok(was.focus) &&
-    was.focus !== first &&
-    P.actorPanes().find((p) => P.isAt([p.g, p.c], gname, was.focus!));
-  if (back) P.focusPane(back);
+    return;
+  }
+  // as it was left, in place of what is shown -- or, shown by chance (as the page opened on it), laid out now: one plan
+  // (panes.js's openTaskHere), the actor in focus then in focus again
+  await P.openTaskHere(k, focus, wait);
   if (!focus && was && (was.focusApp || shut)) {
     // an app selected in it when it was left: selected again (its actor's pane closed: one of its apps)
     await P.taskAppsOpening;
