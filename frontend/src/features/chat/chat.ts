@@ -40,9 +40,12 @@ import {
 /** Why an actor cannot be messaged from here at all, said the same in every view. */
 export const readOnlyWhy = (): string => readOnlyWords(P().runnableNames("and"));
 
-/** What a view made, as nodes. */
+/** What a view made, as nodes: a text as its text, nothing left out. */
 const nodesOf = (m: Made): Node[] =>
-  (m ? (Array.isArray(m) ? [...m] : [m as Node]) : []).filter((n) => n instanceof Node);
+  ([] as unknown[])
+    .concat(m || [])
+    .filter((n) => n !== null && n !== undefined)
+    .map((n) => (n instanceof Node ? n : document.createTextNode(String(n))));
 
 const div = (cls: string, text: string): HTMLDivElement => {
   const n = document.createElement("div");
