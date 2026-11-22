@@ -745,7 +745,8 @@ async function enterTasks(keys, focus) {
 // -- the one whose pane the reader closed (`shut`, its apps beside), else the first of its actors then, else the one in
 // focus then, else its lead; an actor alone, itself; apps alone, none -- its others, its views, its apps (as the page knows
 // them now: openTaskApps), the actor and the app in focus then. None: a task gone.
-function taskFacts(k) {
+// `focus`: the actor it opens first, asked for (the list's openTask): none of what was in focus then.
+function taskFacts(k, focus = null) {
   const { group: g, id } = parseKey(k), gg = gathererNamed(g);
   if (!gg || id === undefined) return null;
   const was = taskLayout(k), n = taskNumber(id);
@@ -760,14 +761,15 @@ function taskFacts(k) {
   if (n !== null) {
     if (!taskById(g, n)) return null;
     const ok = (c) => !!c && taskActors(gg, n).some((a) => a.channel === c);
-    const shut = was && ok(was.shut) && !was.actors.some(ok) && (was.apps || []).length ? was.shut : null;
-    const first = shut || (was && ok(was.actors[0]) ? was.actors[0] : null) || (was && ok(was.focus) ? was.focus : null)
+    const asked = ok(focus) ? focus : null;
+    const shut = !asked && was && ok(was.shut) && !was.actors.some(ok) && (was.apps || []).length ? was.shut : null;
+    const first = asked || shut || (was && ok(was.actors[0]) ? was.actors[0] : null) || (was && ok(was.focus) ? was.focus : null)
       || (taskLead(gg, n) || {}).channel || null;
     const apps = appsOf(first);
     const rest = (was ? was.actors : taskOrder(g, k)).filter((c, i, them) => c !== first && them.indexOf(c) === i && open(c));
     return { key: k, g, first, rest, shut: !!shut, views: (was && was.views) || {}, apps,
-      back: first && was && ok(was.focus) && was.focus !== first ? was.focus : null,
-      focusApp: (was && was.focusApp) || ((shut || !first) && apps.length ? apps[0].id : null), mine: !!first && mine };
+      back: !asked && first && was && ok(was.focus) && was.focus !== first ? was.focus : null,
+      focusApp: asked ? null : (was && was.focusApp) || ((shut || !first) && apps.length ? apps[0].id : null), mine: !!first && mine };
   }
   if (isAppItem(id)) {
     if (!appInfo(g, id.slice(APP_ITEM.length))) return null;
@@ -777,6 +779,20 @@ function taskFacts(k) {
   const rest = (was ? was.actors : []).filter((c, i, them) => c !== id && them.indexOf(c) === i && open(c));
   return { key: k, g, first: id, rest, shut: false, views: (was && was.views) || {}, apps: appsOf(id), back: null,
     focusApp: null, mine: mine && isAt(state.selected, g, id) };
+}
+// A TASK OPENED by a click on it in the list (features/list/task-acts.ts's openTask), not shown as it is already: shown as
+// it was left, in place of what is shown -- worked out at once (features/layout/plan.ts's tabPlan, of that task alone:
+// `focus`, else the actor it opens first, in this page's own pane, the others beside it, its apps above, terminals kept)
+// and rendered (renderLayout); the task left kept as it is first (rememberTask). `wait` false: done once the panes are
+// open, what this page's own shows (its Chat) still loading.
+async function openTaskHere(k, focus = null, wait = true) {
+  const f = taskFacts(k, focus);
+  if (!f || !f.first) return;
+  const sel = focusedActor(), from = appsOnlyKey() || (sel && taskKey(sel[0], sel[1])) || (state.selected && taskKey(...state.selected));
+  if (from && from !== k && tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
+  const loading = renderLayout(tabPlan([f], k, openNow((t) => t === k), MAX_PANES), f.mine || from === k);
+  taskAppsOpening = openTaskApps(f.g, f.first, k, (taskLayout(k) || {}).apps || null);   // its apps not known yet, once read
+  if (wait && loading) await loading;
 }
 // THE RENDERER: the page made to match a tab's plan (features/layout/plan.ts) -- the model first (the tab's tasks, the
 // panes beside, the apps' panels, the task of apps alone, this page's own pane out of sight or not), then the page: its
@@ -2298,7 +2314,7 @@ export {
   appsOnlyLeft, appsSelected, branchChip, byLabel, closeAppPane, closeHere, closeHerePane, closePane, closePop,
   closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, focusedPane, folderPicks, holdAppPane, isAt,
   isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, opensWithAgent, paneNote,
-  paneGiven, paneSig, pick, pickBeside, placeIfShown, placeWork, popButton, popMenu,
+  openTaskHere, paneGiven, paneSig, pick, pickBeside, placeIfShown, placeWork, popButton, popMenu,
   cardStart, cardStartPress, railNewBox, rekeyTask, retarget, rememberTask, restoreAppPanes, restorePanes, rowPop, saveAppPanes,
   savePanes, selectAppPane, selectedTask, setAutoShown, show, showActorsApp, shownPanels, startMenu, startCwd, closePops,
   startPlacing, startSession, startShell, startTabs, startWithApp, startable, swapAppPane, taskAppsOpening, taskKey,
