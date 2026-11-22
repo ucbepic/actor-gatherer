@@ -1,4 +1,4 @@
-import { el } from "./helpers.js";
+import { el } from "./helpers";
 import { startClocks } from "../ui/clocks";
 import { ansiHtml, codeClick, guessWeb, hlLines, hlPart, langOfPath, outputHtml, shellHtml, tildePath } from "../ui/highlight";
 

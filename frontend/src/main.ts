@@ -3,7 +3,7 @@
 // comes first: the page's modules call it as they start.
 import "./bridge";
 import "./styles";
-import "./page.js";
+import "./page";
 import { mountSettings } from "./features/settings/mount";
 
 const page = window.agLegacy;

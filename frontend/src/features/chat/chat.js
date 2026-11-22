@@ -1,17 +1,17 @@
-import { SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state";
 import {
   ICONS, ago, el, harnessName, hasChat, parseKey, post, runnableNames, signature,
-} from "../../core/page/helpers.js";
-import { drafts, fitBox, keepDraft, setLive } from "../page/data.js";
+} from "../../core/page/helpers";
+import { drafts, fitBox, keepDraft, setLive } from "../page/data";
 import { turnStatus } from "../list/seen";
-import { DETAILS_TIP, drawPane, renderPane, setDetails } from "../page/main-view.js";
+import { DETAILS_TIP, drawPane, renderPane, setDetails } from "../page/main-view";
 import { permissionNode, summary } from "../transcript/calls";
 import { plural } from "../../core/format";
-import { CHAT_VIEWS, chatFeed, chatView, offeredViews, setChatView } from "./views.js";
-import { CHAT_HOST, boxedFor, sendFrom, setFilesTurn } from "./files-view.js";
-import { paneKey } from "../page/pane-view.js";
-import { MINI_VIEW, MIN_TIP, canMinimize, chatMin, setChatMin } from "../layout/top.js";
-import { agDashboard } from "./own-views.js";
+import { CHAT_VIEWS, chatFeed, chatView, offeredViews, setChatView } from "./views";
+import { CHAT_HOST, boxedFor, sendFrom, setFilesTurn } from "./files-view";
+import { paneKey } from "../page/pane-view";
+import { MINI_VIEW, MIN_TIP, canMinimize, chatMin, setChatMin } from "../layout/top";
+import { agDashboard } from "./own-views";
 import { TASK_KINDS } from "./side/marks";
 import { askKey, askWhere as askWhereOf } from "./asking/ask";
 import { chatOf } from "./actors";

@@ -1,5 +1,5 @@
-import { SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { gathererNamed, key } from "../../core/page/helpers.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state";
+import { gathererNamed, key } from "../../core/page/helpers";
 
 // ------------------------------------------------------------------ an actor's pane
 // Each actor's pane is a part of this page (features/layout/pane.ts: its head and its main view), drawn from the page's

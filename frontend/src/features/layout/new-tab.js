@@ -1,6 +1,6 @@
-import { SNAPSHOT, state } from "../../core/page/state.js";
-import { ICONS, el, harnessBadge, harnessInfo, harnessName, key, post, strokeIcon } from "../../core/page/helpers.js";
-import { drafts, fitBox, keepDraft, setLive } from "../page/data.js";
+import { SNAPSHOT, state } from "../../core/page/state";
+import { ICONS, el, harnessBadge, harnessInfo, harnessName, key, post, strokeIcon } from "../../core/page/helpers";
+import { drafts, fitBox, keepDraft, setLive } from "../page/data";
 import {
   aimStart, appInfo, appItem, byName, folderById, folderPost, kidFolders, openUp, readApps, selectApp, shownClosed,
   startIn, titleOf,
@@ -9,11 +9,11 @@ import { aloneUnder, everyActor } from "../list/group-moves";
 import {
   appMarkImg, byLabel, closePop, folderPicks, noHarness, openApp, openPop, opensWithAgent, popMenu, rowPop, startCwd, startSession,
   startShell, startWithApp, startable, workPlacer,
-} from "./panes.js";
-import { drawAppsPage, openAppsPage } from "../apps/apps-page.js";
-import { drawPane } from "../page/main-view.js";
-import { paneOf } from "../page/pane-view.js";
-import { tildePath } from "../../core/page/code.js";
+} from "./panes";
+import { drawAppsPage, openAppsPage } from "../apps/apps-page";
+import { drawPane } from "../page/main-view";
+import { paneOf } from "../page/pane-view";
+import { tildePath } from "../../core/page/code";
 import * as appHost from "../apps/host";
 import * as prefs from "../../core/prefs";
 

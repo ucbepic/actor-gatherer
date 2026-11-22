@@ -1,14 +1,14 @@
-import { SNAPSHOT } from "../../core/page/state.js";
+import { SNAPSHOT } from "../../core/page/state";
 import {
   HUE_INK, ICONS, ago, bareAvatar, buddy, doneCheck, el, full, harnessName, lasting, restDelay, strokeIcon,
-} from "../../core/page/helpers.js";
+} from "../../core/page/helpers";
 import { statusOf } from "../list/seen";
-import { drawPane } from "../page/main-view.js";
-import { paneAt, paneInfo, paneKey } from "../page/pane-view.js";
+import { drawPane } from "../page/main-view";
+import { paneAt, paneInfo, paneKey } from "../page/pane-view";
 import { str } from "../../core/model/items";
 import { firstLine, plural } from "../../core/format";
-import { callLabel, callView, chatViewOf, foldSide, mySends, setFilesTurn, viewAtWork } from "./files-view.js";
-import { ME_MARKS, chatMin, meMark, setChatMin } from "../layout/top.js";
+import { callLabel, callView, chatViewOf, foldSide, mySends, setFilesTurn, viewAtWork } from "./files-view";
+import { ME_MARKS, chatMin, meMark, setChatMin } from "../layout/top";
 import { markdown, unplanned } from "../../core/ui/md";
 import { cidsOf } from "./view";
 import { loadFiles } from "./files";

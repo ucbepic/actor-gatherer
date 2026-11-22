@@ -1,11 +1,11 @@
-import { panes, state } from "../../core/page/state.js";
-import { ICONS, el, signature, strokeIcon } from "../../core/page/helpers.js";
-import { render } from "../page/data.js";
-import { connect } from "../settings/panel.js";
+import { panes, state } from "../../core/page/state";
+import { ICONS, el, signature, strokeIcon } from "../../core/page/helpers";
+import { render } from "../page/data";
+import { connect } from "../settings/panel";
 import { closeShell, firstAgent, isHidden } from "../list/list";
 import { select } from "../list/modes";
-import { closeHere, closePane, savePanes } from "../layout/panes.js";
-import { termFor, termListen, termWebgl } from "./terminal.js";
+import { closeHere, closePane, savePanes } from "../layout/panes";
+import { termFor, termListen, termWebgl } from "./terminal";
 
 // ------------------------------------------------------------------ a shell
 // A shell (isShell) in its pane: its terminal, drawn as a session's is (`term`), and nothing else -- no views, no details,

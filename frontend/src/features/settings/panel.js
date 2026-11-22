@@ -1,11 +1,11 @@
-import { SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { isShell } from "../../core/page/helpers.js";
-import { fitBox, loadAgent, loadChat, render, setAbout, setLive, takeAgent } from "../page/data.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state";
+import { isShell } from "../../core/page/helpers";
+import { fitBox, loadAgent, loadChat, render, setAbout, setLive, takeAgent } from "../page/data";
 import { takeHome } from "../list/seen";
 import { firstAgent } from "../list/list";
-import { actorPanes, isAt, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes.js";
-import { takeChatView } from "../chat/files-view.js";
-import { allPanes } from "../page/pane-view.js";
+import { actorPanes, isAt, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes";
+import { takeChatView } from "../chat/files-view";
+import { allPanes } from "../page/pane-view";
 import { stream } from "../../core/api/stream";
 
 // ------------------------------------------------------------------ ag's settings

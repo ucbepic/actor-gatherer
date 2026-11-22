@@ -9,8 +9,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONT = os.path.join(ROOT, "frontend")
 SRC = os.path.join(FRONT, "src")
 MODULE = '<script type="module" src="/src/main.ts"></script>'
-# an import of a module of the script or a stylesheet: `import "./x.js";` or `... from "../y/z.js";`
-IMPORT = re.compile(r"""(?:^import\s+|\bfrom\s+)["'](\.{1,2}/[^"']+\.(?:js|css))["']""", re.M)
+# an import of a module or a stylesheet, relative: `import "./x.css";`, `... from "../y/z";` (written without its
+# extension, as Vite finds it: z.js, z.ts or z.tsx) or `... from "./w.js"`
+IMPORT = re.compile(r"""(?:^import\s+|\bfrom\s+)["'](\.{1,2}/[^"']+)["']""", re.M)
+EXTENSIONS = (".js", ".ts", ".tsx")
 
 
 def _read(path: str) -> str:
@@ -18,8 +20,16 @@ def _read(path: str) -> str:
         return fh.read()
 
 
+def _found(path: str):
+    """The file an import names: itself if it has its extension, else the one Vite would take; None if none is there."""
+    if os.path.splitext(path)[1] in EXTENSIONS + (".css",):
+        return path if os.path.exists(path) else None
+    return next((path + ext for ext in EXTENSIONS if os.path.exists(path + ext)), None)
+
+
 def _imports(path: str) -> list:
-    return [os.path.normpath(os.path.join(os.path.dirname(path), m)) for m in IMPORT.findall(_read(path))]
+    found = (_found(os.path.normpath(os.path.join(os.path.dirname(path), m))) for m in IMPORT.findall(_read(path)))
+    return [p for p in found if p]
 
 
 def script_files() -> list:
