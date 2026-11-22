@@ -5,6 +5,7 @@ import {
   appsPlan,
   clearPlan,
   closePlan,
+  enterPlan,
   herePlan,
   itemsPlan,
   onlyPlan,
@@ -197,5 +198,11 @@ describe("clearPlan and closePlan", () => {
       ["shell:1"],
       ["i1"],
     ]);
+  });
+
+  it("another task entered by a click: the others' panels closed, the page's own in focus for its actor", () => {
+    const plan = enterPlan(open, "g\u0000x");
+    expect([plan.others.map((o) => o.c), plan.apps, plan.focus]).toEqual([["x", "shell:1"], [], { g: "g", c: "a" }]);
+    expect(plan.here).toMatchObject({ c: "a", keep: true });
   });
 });

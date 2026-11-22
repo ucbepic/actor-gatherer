@@ -307,6 +307,7 @@ export function herePlan(now: Open): Plan {
  * the page's own out of sight while its apps alone show; its panels open already kept (the rest come as the page opens
  * them: openTaskApps). */
 export function appsPlan(now: Open, k: string): Plan {
+  // (the page's own pane is left as it is: out of sight while the task's apps alone show)
   return {
     order: [],
     appsOnly: k,
@@ -314,6 +315,23 @@ export function appsPlan(now: Open, k: string): Plan {
     others: now.others.filter((o) => isShell(o.c)).map(bare),
     apps: now.apps.filter((a) => a.task === k).map(appOf),
     focus: null,
+    left: 0,
+  };
+}
+
+/** Another task `k` entered by a click (an actor of it shown in the pane in focus: features/layout/panes.js's show): the
+ * panes and panels of the others closed (terminals kept), out of apps alone, k's open already kept, the page's own pane
+ * in focus if it shows another task's actor (k's actor is shown in it next); the rest of k laid out after (layOutTask). */
+export function enterPlan(now: Open, k: string): Plan {
+  const here = now.here ? { g: now.here.g, c: now.here.c, view: null, shut: false, keep: true } : null,
+    sel = now.here ?? now.away ?? null;
+  return {
+    order: [],
+    appsOnly: null,
+    here,
+    others: now.others.filter((o) => isShell(o.c) || o.task === k).map(bare),
+    apps: now.apps.filter((a) => a.task === k).map(appOf),
+    focus: sel && sel.task !== k ? { g: sel.g, c: sel.c } : null,
     left: 0,
   };
 }
