@@ -2,8 +2,8 @@
 
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
 the views share, in `core/ui/`; Chat; the list; Details, Transcript, Messages, History and Terminal's frame); A6 begun
-(the layout model, steps 1-4c-3b and the first two parts of 4c-3c; the panes as parts of one page; the page's pop-ups on
-Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
+(the layout model, steps 1-4c-3b and the first three parts of 4c-3c; the panes as parts of one page; the page's pop-ups
+on Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
 
@@ -633,11 +633,20 @@ The layout slice comes first, in four steps, each with every test passing:
      (`renderPanes`, `renderApps`), the focus -- in place of `enterTasks` entering the tasks one by one through
      `openTask`, `show` and `openTaskBeside`. The apps the page did not know yet are opened once read, if the tab is still
      the one shown.
-   - 4c-3c, left: the clicks on a task -- `enterTask`, `enterAppTask`, `openTaskBeside`, `onlyTask`, `closeTaskHere`,
-     `clearWork`, `showTaskItems`, and the list's `openTask` (features/list/list.js, being rewritten) -- still open and
-     close the panes one by one and tell the model; each becomes a plan of its own rendered by `renderLayout`. Then the
-     model holds each task's open items itself (what `keysNow` reads off the panels now), and `shadow.ts` becomes the
-     layout's store, its check against the page (`AG_LAYOUT_STRICT`) going with the tells.
+   - 4c-3c, third part (built): the page's other changes to what a tab shows are plans too, each pure and tested in
+     `plan.test.ts`, made from what is open (`openNow`: each panel with its task, the pane in focus, the page's own out
+     of sight) and rendered by `renderLayout`: a task closed here (`closePlan`, its card head's ×), a new tab
+     (`clearPlan`), a task left alone (`onlyPlan`, ⌥+click), a task's own tab shown (`itemsPlan`), the page's own pane
+     closed (`herePlan`), a task of apps alone entered (`appsPlan`), another task entered by a click (`enterPlan`: the
+     others' panels closed; its actor shown and the rest of it laid out after, through `openBeside`). `renderLayout`
+     puts the page's own pane out of sight, or back in sight, before anything is placed -- placed in sight a moment, its
+     actor would be put in its task's arrangement.
+   - 4c-3c, left: opening a task beside (`openTaskBeside`, `outOfAppsOnly`, and the rest of a task laid out:
+     `layOutTask`) still opens its panes one by one through `openBeside` -- each the model's `wantPane` rendered by
+     `renderPanes` -- not as one plan; the list's `openTask` moves when the list's rewrite (list.ts, its typed link to
+     panes.js) is on main. Then the model holds each task's open items itself (what `keysNow` reads off the panels now),
+     and `shadow.ts` becomes the layout's store: its tells, its check against the page (`AG_LAYOUT_STRICT`) and the
+     check's workarounds (`keysWith`, `waitWhile`, `appsWith`, `panesWith`) go.
 
 ### Track B: the server
 
