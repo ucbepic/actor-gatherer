@@ -11,8 +11,8 @@ import { cwdOf } from "./start-rules";
 import { startable, startCwd } from "./starts";
 import type { Actor, Gatherer } from "./types";
 
-export const CREW_START = "crew",
-  CREW_GROUP = "Coordinator agent";
+const CREW_START = "crew";
+export const CREW_GROUP = "Coordinator agent";
 
 /** The directory a coordinator agent over `node` starts in: that of the actor latest at work under it. */
 function crewCwd(node: string, g: Gatherer | null): string {

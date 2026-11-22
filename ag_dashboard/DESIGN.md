@@ -675,7 +675,8 @@ list), the pure ones tested:
   says it reads of them (where the list's types are narrower than what the layout hands it, the adapter says so: its
   `openTask`); the old page's plain-JS modules come through `links/plain.js`, untyped (`plain.d.ts`), each to be imported
   by layout.ts itself as it becomes TypeScript. Vitest: `facts`, `move-choices`, `start-rules`, `branch-model`,
-  `link-rules`, `app-said`, `Pops`.
+  `link-rules`, `app-said`, `Pops`, `StartBoxes`, `Branches`; the branch picker in a browser: `branches.spec.ts`. No spec
+  changed: the DOM, classes, roles and labels are as they were.
 
 The layout slice comes first, in four steps, each with every test passing:
 1. *The model* (built): `features/layout/model.ts`, one `Layout` value -- the screen tabs, the tab shown, what each

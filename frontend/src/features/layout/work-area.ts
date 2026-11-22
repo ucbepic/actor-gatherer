@@ -192,7 +192,7 @@ function blockAbout(k: string): string {
 /** A TASK'S STATES, for its face in its screen tab (tabs.ts marks the most pressing): each of its actors' (statusOf), its
  * lead's first, and its apps' notifications not seen -- each as a mark (tabs.ts's MARKS: a turn, a build, a start all
  * "working"; idle, closed none) and its word as the list says it. */
-export const TAB_MARK: Readonly<Record<string, string>> = {
+const TAB_MARK: Readonly<Record<string, string>> = {
   asking: "asking",
   error: "error",
   failed: "error",

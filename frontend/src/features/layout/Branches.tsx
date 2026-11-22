@@ -115,7 +115,7 @@ export async function openBranchMenu(g: Gatherer, button: HTMLElement): Promise<
 /** The popup: the source (chosen in the drop-down, or here -- among the gatherer's, the repositories its actors work in,
  * or a folder or GitHub repository typed), where the branch comes from and where its changes go, whether each change
  * waits for approval (the last choice, kept in this browser), and the harness that starts it. */
-export function openBranchDialog(g: Gatherer, project: string | null): void {
+function openBranchDialog(g: Gatherer, project: string | null): void {
   draw();
   usePicker.setState({
     approve: prefs.flag(BRANCH_APPROVE_KEY),

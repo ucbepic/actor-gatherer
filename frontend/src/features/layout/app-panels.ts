@@ -41,7 +41,7 @@ export const appMarkNode = (a: AppManifest): HTMLElement =>
 export const instOf = (o: AppItem | null | undefined): Instance | null => (o?.inst as Instance | null) || null;
 const topRowEl = () => document.getElementById("top-row")!;
 /** The apps' panels' widths, and the work area placed. */
-export function topLayout(): void {
+function topLayout(): void {
   for (const p of panes.apps) p.node.style.flexGrow = String(p.size);
   placeWork();
 }
@@ -93,7 +93,7 @@ export function swapAppPane(p: AppPanel, inst: Instance): AppPanel | null {
 }
 /** A panel held out of sight shown (wanted again: renderApps), or one shown held (no longer wanted while it is needed:
  * appsAtWork). */
-export function holdAppPane(p: AppPanel, held: boolean): void {
+function holdAppPane(p: AppPanel, held: boolean): void {
   p.held = held;
   if (!held) p.kept = null;
   if (held) unselectApp(p.instance.id);

@@ -51,7 +51,7 @@ export function paneMinimized(node: HTMLElement): void {
  * its feed has loaded, which a busy page or server can hold up for seconds, the pane placed whole meanwhile with its
  * minimized strip in it. Minimized, drawn once loaded: its strip drawn at once would grow as its last lines come, and the
  * line above it move under a pointer about to press it. */
-export async function minRedraw(p: Pane): Promise<void> {
+async function minRedraw(p: Pane): Promise<void> {
   if (chatMin(p) && p.files && L.chat.chatOf(p.files.key).picked !== null) L.chat.showTurn(p.files.key, null);
   topMount();
   if (!chatMin(p)) L.mainView.drawPane(p);

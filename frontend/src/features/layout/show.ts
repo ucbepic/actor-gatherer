@@ -187,7 +187,7 @@ export async function startTabs(): Promise<void> {
   if (await workPlacer.tabs.start()) setAutoShown(null);
 }
 /** Task `k`'s panel in focus, if one is shown: its actor's pane (this page's own first), else its app's panel selected. */
-export function focusTask(k: string | null): void {
+function focusTask(k: string | null): void {
   if (!k || selectedTask() === k) return;
   const mine = (g: string, c: string) => taskKey(g, c) === k;
   if (!appsOnlyKey() && state.selected && !isAway() && mine(...state.selected)) return focusPane(panes.here);

@@ -38,7 +38,7 @@ export const noHarness = (): string =>
 export const tooledOf = (hs: string[]): string[] => hs.filter((h) => L.helpers.harnessInfo(h)?.mcp);
 /** The apps offered (each once, by its label), and those that open with an agent of their own (which the list's form for
  * a new actor also offers on each harness). */
-export const openableApps = () => (snap() ? [] : L.appHost.found()).filter((a) => !a.failed).sort(byLabel);
+const openableApps = () => (snap() ? [] : L.appHost.found()).filter((a) => !a.failed).sort(byLabel);
 export const startingApps = () => openableApps().filter(withAgentChosen);
 const where = (g: Gatherer) => {
   const cwd = startCwd(g);
@@ -95,7 +95,7 @@ export function startMenu(g: Gatherer, folder: Folder | null = null) {
 }
 /** The "+ more" drop-down's starts: what each is (an app by its name and mark alone, no description under it; a branch and
  * a terminal say where they work), and what choosing it does. `key`: its button's data-pop. */
-export function moreStarts(g: Gatherer, hs: string[], dir: string | null, key = `more:${g.name}`): PopItem[] {
+function moreStarts(g: Gatherer, hs: string[], dir: string | null, key = `more:${g.name}`): PopItem[] {
   const there = dir ? `in ${dir}` : "in a directory you choose";
   const tooled = tooledOf(hs);
   const icons = L.helpers.ICONS;

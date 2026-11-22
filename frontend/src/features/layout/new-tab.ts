@@ -24,8 +24,8 @@ import type { Actors, AppManifest, Gatherer } from "./types";
 import { workPlacer } from "./work-area";
 
 export { drawNewTab, refreshNewTab } from "./NewTab";
-export const START_PLACE_KEY = "ag-dashboard-start-place",
-  START_HARNESS_KEY = "ag-dashboard-start-harness";
+const START_PLACE_KEY = "ag-dashboard-start-place";
+export const START_HARNESS_KEY = "ag-dashboard-start-harness";
 /** A place things start in: a group (and a folder of it), or on its own. */
 export type Place = { alone: true } | { alone?: false; g: string; folder: number | null };
 
@@ -193,7 +193,7 @@ export async function ntSend(): Promise<void> {
 }
 
 /** The keys: the page's, or the ag app's menu's. */
-export function tabKey(what: string): void {
+function tabKey(what: string): void {
   if (!workPlacer || snap()) return;
   if (what === "closeTab") {
     void workPlacer.tabs.closeShown();
@@ -205,7 +205,7 @@ export function tabKey(what: string): void {
   else void workPlacer.tabs.blank();
 }
 /** Whether this runs on a Mac (the page's own keys, ⌃T and ⌃W, are a Mac's only). */
-export const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 /** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
 export function start(): void {
   if (!snap() && IS_MAC)

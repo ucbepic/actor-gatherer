@@ -54,7 +54,7 @@ const onEnter = (go: () => void) => (ev: KeyboardEvent) => {
 
 /** The folders `g`'s actors work in, newest first, under a box's folder box (holding `dir` to start with): another a
  * click away. None: nothing. */
-export function FolderPicks(props: { g: Actors; dir: string; label?: string; onPick: (d: string) => void }) {
+function FolderPicks(props: { g: Actors; dir: string; label?: string; onPick: (d: string) => void }) {
   const folders = folderPicks(foldersOf(props.g, home()), props.dir);
   if (!folders.length) return null;
   return (
