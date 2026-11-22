@@ -123,6 +123,30 @@ export function AtRest({ info, turn }: { info: StageActor; turn: number | null |
   );
 }
 
+/** The actor's icon, its turn (`turn`) over, small and still: its done avatar, a green check at its corner (`.mk.ok`) --
+ * grown in if the page saw the turn end (one reaction per actor, as AtRest's); no avatar, the check alone. */
+export function DoneIcon({
+  info,
+  turn,
+  className,
+}: {
+  info: StageActor;
+  turn: number | null | undefined;
+  className: string;
+}) {
+  const src = bareAvatar(info);
+  const sig = JSON.stringify([src, turn]);
+  const r = useKept(sig, () => restDelay(info, turn));
+  return (
+    <span key={sig} className={`${className}${src ? " me" : ""} at-rest`} style={{ "--r": r } as CSSProperties}>
+      {src ? <img src={src} alt="" draggable="false" /> : null}
+      <span className="mk ok">
+        <DoneCheck />
+      </span>
+    </span>
+  );
+}
+
 /** The actor before its first message: its avatar waving hello, on the stage; or, the setting "Simple", its one motion.
  * Its first turn's actor then arrives on the stage. An actor with no avatar: none. */
 export function Greeting({ info, mode }: { info: StageActor; mode: string }) {

@@ -9,7 +9,7 @@ import type { ChatView } from "../features/chat/views";
 export declare const state: {
   readonly SNAPSHOT: { avatars?: Record<string, string> } | null;
   readonly state: {
-    home: (Home & { terminals?: boolean; gatherers: { name: string; agents: Actor[] }[] }) | null;
+    home: (Omit<Home, "gatherers"> & { terminals?: boolean; gatherers: { name: string; agents: Actor[] }[] }) | null;
     selected: [string, string] | null;
     paused: boolean;
     stream: { readyState: number } | null;

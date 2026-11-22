@@ -12,9 +12,8 @@ import { CHAT_HOST } from "./host";
 import { P, type Pane, type PaneFiles } from "./link";
 import { drawChat } from "./mount";
 import { FILE_KINDS } from "./side/marks";
-import { callLabelNode, callViewNode } from "./side/nodes";
 import { useSide } from "./side/store";
-import type { Actor, CallRun, ChatView, MySend, PageFeed } from "./types";
+import type { Actor, ChatView, MySend, PageFeed } from "./types";
 import { CHAT_FEEDS, CHAT_VIEWS, addChatView, type ViewCtx } from "./views";
 
 /** The actor a pane shows (the page's own, by default), by its key. */
@@ -160,12 +159,6 @@ function talkFeed(p: Pane, ctx: ViewCtx, afresh: boolean): PageFeed {
     cwd: info.cwd || cwdOfSession(info) || "",
   };
 }
-
-/** A call's line, and a call opened, as Chat shows them (side/CallView.tsx), for the old page's drawing of them (a
- * minimized pane's history): the same nodes, drawn once -- pane `p`'s paths. */
-const callPaths = (p: Pane) => ({ cwd: P().paneInfo(p)?.cwd || "", home: p.files?.data?.home || "" });
-export const callLabel = (c: CallRun, n: number) => callLabelNode(c, n);
-export const callView = (p: Pane, call: unknown, ran: Partial<CallRun> = {}) => callViewNode(call, ran, callPaths(p));
 
 /** The Chat view's frame for the actor a pane shows: React's (mount.tsx), the same node from draw to draw. */
 function filesMount(ctx: ViewCtx): HTMLDivElement {

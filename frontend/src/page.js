@@ -27,9 +27,13 @@ import { start as startChatOwnViews } from "./features/chat/own-views";
 import { start as startPageStart } from "./features/page/start";
 import { linkList } from "./list-link";
 import { linkChat } from "./links/chat";
+import { linkHistory } from "./links/history";
+import { linkTerminal } from "./links/terminal";
 
 linkList(); // the list (TypeScript) handed the old page's modules it calls
 linkChat(); // Chat (TypeScript) handed what it takes of the page and the other features
+linkTerminal(); // and the terminal
+linkHistory(); // and History
 startPageData();
 startSettingsPanel();
 startListSeen();
