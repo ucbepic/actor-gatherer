@@ -6,7 +6,7 @@
 // cursor and the view kept where they were; with something unsaved here, the reader chooses -- Reload (theirs dropped)
 // or Keep mine (saved over the change) -- and no save goes over the change until they do.
 import { el, get, ICONS, MAC, post, strokeIcon } from "./page.js";
-import { ed, edAddedHead, edAutoLater, edBase, edByChip, edChangedChip, edEntry, edHead, edOpen,
+import { ed, edAddedHead, edAddedLead, edAutoLater, edBase, edByChip, edChangedChip, edEntry, edHead, edOpen,
   edRel, edSave, edSetAuto, edSetWrap, edView, edWriters } from "./editor.js";
 import { edRecentFetch } from "./recent.js";
 
@@ -132,11 +132,12 @@ function edPlainStatus(s) {
   if (s.saving) return [["", "Saving…"], null];
   return [st.dirty ? (ed.auto ? ["", "Saving…"] : ["warn", "Unsaved"]) : ["ok", "Saved"], null];
 }
-// The header of a file open plain (edHead's): its path, its status (and the reader's choice, changed on disk under their
-// unsaved edits), the actors that changed it lately, wrap, Auto-save, the app's own, Save.
+// The header of a file open plain (edHead's): the app's own first, its path, its status (and the reader's choice, changed
+// on disk under their unsaved edits), the actors that changed it lately, wrap, Auto-save, the app's own, Save.
 function edPlainHead(s) {
   const st = s.state, [[cls, said], choice] = edPlainStatus(s), writers = edWriters(edEntry(ed.file));
   return [
+    ...edAddedLead(s),
     el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
     el("span", { class: `ed-status ${cls}`, role: "status", text: said }), choice,
     edByChip(writers), s.stale ? null : edChangedChip(s, writers),
