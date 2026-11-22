@@ -6,7 +6,7 @@ e2e/**/*-snapshots/
 # The page's script and styles from before its views were rewritten (src/page.js's modules, src/styles.ts's
 # sheets): their lines as page.html had them, so a branch that changed them before they moved still merges onto
 # them. Formatted in a change of its own, once no such branch is open.
-src/core/page/
+src/core/page/base.css
 src/features/*/*.js
 src/features/apps/app-panes.css
 src/features/chat/chat.css
