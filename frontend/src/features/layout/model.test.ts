@@ -4,6 +4,7 @@ import {
   closed,
   isLaidOut,
   layOut,
+  noteOpen,
   setAuto,
   setEntered,
   closeShown,
@@ -193,6 +194,8 @@ describe("the migration from the six keys", () => {
       entered: null,
       laidOut: [],
       auto: null,
+      items: {},
+      open: [],
     });
     expect(load((k) => (k === "ag-dashboard-layout" ? "{broken" : (old[k] ?? null))).tasks["g\u0000t1"]).toBeTruthy();
   });
@@ -271,5 +274,21 @@ describe("the migration from the six keys", () => {
       laidOut: [],
       auto: null,
     });
+  });
+
+  it("keeps each task's items open as placed: a task in a tab, its items as they were once it is gone from the page", () => {
+    let l: Layout = {
+      ...two(),
+      tabs: [{ id: "a", name: "", tasks: ["g\u0000t1", "g\u0000c9"], screen: null, focus: null }],
+    };
+    l = noteOpen(l, { "g\u0000t1": ["c1", "c2"] }, ["c1", "c2"]);
+    expect([l.items, l.open]).toEqual([{ "g\u0000t1": ["c1", "c2"] }, ["c1", "c2"]]);
+    // c2 taken out of the task: shown as its own now -- t1 still in the tab keeps it as it was there
+    l = noteOpen(l, { "g\u0000c2": ["c2"] }, ["c1", "c2"]);
+    expect(l.items).toEqual({ "g\u0000t1": ["c1", "c2"], "g\u0000c2": ["c2"] });
+    expect(noteOpen(l, { "g\u0000c2": ["c2"] }, ["c1", "c2"])).toBe(l); // nothing new: the same
+    // a task in no tab: let go of
+    l = noteOpen({ ...l, tabs: [{ ...l.tabs[0], tasks: [] }] }, {}, []);
+    expect(l.items).toEqual({});
   });
 });

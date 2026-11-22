@@ -98,6 +98,11 @@ export interface Layout {
   entered?: string | null;
   laidOut?: string[];
   auto?: string | null;
+  /** Each task's items open (their panels shown) as last placed, and every item open then: a task that lost an item since
+   * (taken out of it, or the task gone) is read as its own and that item's own (shadow.ts's keys). This page's only:
+   * not kept. */
+  items?: Record<string, string[]>;
+  open?: string[];
 }
 
 export const KEY = "ag-dashboard-layout";
@@ -304,6 +309,16 @@ export function layOut(l: Layout, key: string, on = true): Layout {
 }
 /** Task `key` the one the page opened on by itself (none: it is no longer). */
 export const setAuto = (l: Layout, key: string | null): Layout => ({ ...l, auto: key });
+/** The items open as placed now: `byTask`, each task shown's, and `open`, every one -- each task's kept while a tab holds
+ * it (one gone from the page, its items as they were). */
+export function noteOpen(l: Layout, byTask: Record<string, string[]>, open: string[]): Layout {
+  const inTabs = new Set(l.tabs.flatMap((t) => t.tasks));
+  const was = Object.entries(l.items || {}).filter(([k]) => inTabs.has(k) && !(k in byTask));
+  const items = { ...Object.fromEntries(was), ...byTask };
+  if (JSON.stringify(items) === JSON.stringify(l.items || {}) && JSON.stringify(open) === JSON.stringify(l.open || []))
+    return l;
+  return { ...l, items, open };
+}
 
 /** Item `item` in focus: an actor's pane (`actor`), or an app's panel selected. */
 export const focusOn = (l: Layout, item: string | null, actor: boolean): Layout =>
@@ -548,6 +563,8 @@ export function load(get: (k: string) => string | null): Layout {
       entered: null,
       laidOut: [],
       auto: null,
+      items: {},
+      open: [],
     };
   return migrate(get);
 }

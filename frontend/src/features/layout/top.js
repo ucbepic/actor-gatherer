@@ -44,10 +44,14 @@ function setChatMin(p, on) {
   if (workPlacer) workPlacer.setMin(p.node, on);    // drawn so as it is placed (minChanged, features/layout/panes.js)
 }
 // Pane `p` minimized or shown again: its counts are the latest turn's, from the files' feed (chatFeed) -- then, shown
-// again, its view's own feed.
+// again, its view's own feed. Shown whole again, drawn so at once, with what it has, then again once loaded: not only
+// once its feed has loaded, which a busy page or server can hold up for seconds, the pane placed whole meanwhile with its
+// minimized strip in it. Minimized, drawn once loaded: its strip drawn at once would grow as its last lines come, and
+// the line above it move under a pointer about to press it.
 async function minRedraw(p) {
   if (chatMin(p) && p.files && chatOf(p.files.key).picked !== null) showTurn(p.files.key, null);
   topMount();
+  if (!chatMin(p)) drawPane(p);
   await loadChat(p);
   drawPane(p);
   if (!chatMin(p)) chatToEnd(p);

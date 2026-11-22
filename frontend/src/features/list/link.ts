@@ -47,12 +47,11 @@ export interface PageState {
   agentVersion?: number;
 }
 
-/** An actor's pane beside this page's own (panes.js's), and an app's panel above them. */
+/** An actor's pane beside this page's own (panes.js's: a part of the page), and an app's panel above them. */
 export interface ActorPane {
   g: string;
   c: string;
   view?: string;
-  call(what: string, ...args: unknown[]): void;
 }
 export interface AppPane {
   g: string;
@@ -116,6 +115,8 @@ export interface PanesPart {
   openPop(key: string, button: HTMLElement, box: HTMLElement): void;
   openTaskBeside(gname: string, k: string, first: string): Promise<void>;
   paneNote(text: string): void;
+  /** pane `p` drawn for the actor it is given now: its calls and view loaded */
+  paneGiven(p: ActorPane): Promise<void>;
   pick(gname: string, c: string, ev?: AnyEvent | Record<string, never>): Promise<void>;
   pickBeside(gname: string, c: string, ev: AnyEvent): void;
   placeIfShown(): void;

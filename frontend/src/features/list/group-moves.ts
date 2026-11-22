@@ -281,7 +281,7 @@ async function followMoved(
   for (const p of P.actorPanes())
     if (p.g === from && gone.has(p.c)) {
       P.retarget(p, to, p.c);
-      p.call("select", to, p.c, p.view);
+      void P.paneGiven(p); // drawn for it there (its calls and view loaded again)
     }
   P.savePanes();
   L.panel.connect();
