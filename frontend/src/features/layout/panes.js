@@ -182,9 +182,12 @@ function enterAppTask(g, k) {
   if (from && tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
   setTaskNow(k);
   tasksLaidOut.add(k);
-  renderLayout(appsPlan(openNow(), k));              // (features/layout/plan.ts's appsPlan)
-  const was = taskLayout(k);
-  taskAppsOpening = openTaskApps(g, null, k, was ? was.apps : null);   // its apps, as it was left
+  const was = taskLayout(k), gg = gathererNamed(g);
+  // its apps the page knows, opened with it (features/layout/plan.ts's appsPlan); the rest once read (openTaskApps)
+  const known = gg ? taskAppsFound(g, gg, null, k, was ? was.apps : null).found.filter((a) => a.inst) : [];
+  for (const a of known) instCache.set(a.id, a.inst);
+  renderLayout(appsPlan(openNow(), k, known.map((a) => ({ app: a.app, id: a.id, g, ...(+a.size > 0 ? { size: +a.size } : {}) }))));
+  taskAppsOpening = openTaskApps(g, null, k, was ? was.apps : null);   // as it was left
 }
 // The tasks laid out in this page (entered, or opened at first by openTask): a task shown, laid out, stays as it is -- the
 // layout model's (model.ts's laidOut), read and written as a set (the list's openTask too)
@@ -779,7 +782,12 @@ function taskFacts(k) {
 // panes beside, the apps' panels, the task of apps alone, this page's own pane out of sight or not), then the page: its
 // own pane given its actor (the list's select), the panes and panels opened and closed to match (renderPanes,
 // renderApps), what is in focus. `kept`: the first task's actor in this page's own pane already (the page opened on it).
+let laying = false;                                  // a plan being rendered
 function renderLayout(plan, firstKept = false) {
+  laying = true;
+  try { return layOut(plan, firstKept); } finally { laying = false; }
+}
+function layOut(plan, firstKept) {
   plan.order.forEach((k, i) => { if (i || !firstKept) shadow.tell(i ? "beside" : "enter", model.open, k, i > 0); });
   for (const k of plan.order) tasksLaidOut.add(k);
   if (plan.order.length) setTaskNow(plan.order[0]);
@@ -1313,8 +1321,9 @@ function appClosed(id) {
 // a task of apps only shown, its last panel gone: out of apps only -- under screen tabs the tab is left showing nothing
 // (its new-tab page), this page's own actor not brought back into it: that actor's task was left when the apps were
 // entered (it is another tab's, or ⌥ replaced it), and one task is never in two tabs
+// (not while a plan is rendered: the task of apps alone it shows is its own, its panels still opening)
 function appsOnlyLeft() {
-  if (!appsOnlyKey() || panes.apps.some((q) => !q.held)) return;
+  if (laying || !appsOnlyKey() || panes.apps.some((q) => !q.held)) return;
   setAppsOnly(null);
   if (workPlacer && state.selected && !isShell(state.selected[1]) && !isAway()) putAway(state.selected);
 }

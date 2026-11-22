@@ -304,16 +304,18 @@ export function herePlan(now: Open): Plan {
 }
 
 /** Task `k` of apps alone entered (an app alone, or a task holding no actor): every actor's pane closed (terminals kept),
- * the page's own out of sight while its apps alone show; its panels open already kept (the rest come as the page opens
- * them: openTaskApps). */
-export function appsPlan(now: Open, k: string): Plan {
+ * the page's own out of sight while its apps alone show; its panels open already kept, and those of its apps the page
+ * knows (`known`) opened (the rest come as the page opens them: openTaskApps). */
+export function appsPlan(now: Open, k: string, known: AppWant[] = []): Plan {
   // (the page's own pane is left as it is: out of sight while the task's apps alone show)
+  const apps = now.apps.filter((a) => a.task === k).map(appOf);
+  for (const a of known) if (!apps.some((x) => x.id === a.id)) apps.push(a);
   return {
     order: [],
     appsOnly: k,
     here: null,
     others: now.others.filter((o) => isShell(o.c)).map(bare),
-    apps: now.apps.filter((a) => a.task === k).map(appOf),
+    apps,
     focus: null,
     left: 0,
   };
