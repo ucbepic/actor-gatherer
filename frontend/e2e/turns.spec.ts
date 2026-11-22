@@ -7,10 +7,10 @@ import { CLAUDE, CODEX, masks, openActor } from "./home";
 
 const talk = (page: Page) => page.locator("#main .fl-talk");
 const turn = (page: Page, n: number) => page.locator(`#main #fl-turn-${n}`);
-/** The turns drawn, by their numbers. */
+/** The turns drawn, by their numbers: each in its item box of the list (react-virtuoso's). */
 const drawn = (page: Page) =>
   talk(page)
-    .locator(":scope > .fl-turn")
+    .locator(".fl-item > .fl-turn")
     .evaluateAll((ns) => ns.map((n) => Number(n.id.replace("fl-turn-", ""))));
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
 
@@ -197,7 +197,7 @@ test("joins what was written mid-turn under the turn's message", async ({ page }
 
 test("shows the latest turn over: the actor done under it", async ({ page }) => {
   await openActor(page, CLAUDE);
-  await expect(talk(page).locator(":scope > .fl-done .done img")).toHaveCount(1);
+  await expect(talk(page).locator(".fl-foot > .fl-done .done img")).toHaveCount(1);
   await expect(talk(page).locator(".fl-turn.on .fl-finished .now")).toHaveText("Done");
   await expect(talk(page).locator(".fl-turn.on .fl-stopped")).toHaveCount(0);
 });
@@ -216,7 +216,7 @@ test("shows the actor at work once the stream says so, while its conversation's 
   held = true;
   chat.again();
   await expect(talk(page).locator(".fl-working:not(.fl-finished) .now")).toHaveText("Working…", { timeout: 10_000 });
-  await expect(talk(page).locator(":scope > .fl-done")).toHaveCount(0);
+  await expect(talk(page).locator(".fl-foot > .fl-done")).toHaveCount(0);
 });
 
 test("draws the actor's first turn once stored, where the actor waved hello", async ({ page }) => {

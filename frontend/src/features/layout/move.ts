@@ -33,7 +33,20 @@ export class Mover {
   constructor(
     private readonly work: HTMLElement,
     private readonly hooks: MoveHooks,
-  ) {}
+  ) {
+    // The drag over the work area before its cover is up -- the cover's timer run after other work the page had waiting,
+    // a list measuring what it just drew: up now, so the drag's next events reach it. A browser sends a drag's events
+    // only as it moves over a new element, or every few frames while it stays: a drag moved on before the cover came,
+    // and stopped, would have none over the cover to show where it goes, nor a drop.
+    for (const type of ["dragenter", "dragover"])
+      work.addEventListener(
+        type,
+        () => {
+          if (this.id && !this.cover) this.show();
+        },
+        true,
+      );
+  }
 
   /** The panel `id` picked up: false if it has nowhere to go. */
   start(id: string): boolean {

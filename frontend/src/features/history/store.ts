@@ -1,8 +1,8 @@
-// The History view's own state: how its list is shown (grouped by tasks or not, the rows opened, the search typed, how
-// many rows), what is selected -- rows of the gatherer's database -- and the panel at the right: what to ask the
-// Gatherer's model, the record opened, a record being saved. Each actor's its own (`histOf`: every pane showing History
-// shows its own actor's), the view drawn inside its actor's (`HistContext`, mount.tsx); the message types listed are the
-// reader's, every actor's. Each action what a click or a key does, in the History it is given.
+// The History view's own state: how its list is shown (grouped by tasks or not, the rows opened, the search typed), what
+// is selected -- rows of the gatherer's database -- and the panel at the right: what to ask the Gatherer's model, the
+// record opened, a record being saved. Each actor's its own (`histOf`: every pane showing History shows its own
+// actor's), the view drawn inside its actor's (`HistContext`, mount.tsx); the message types listed are the reader's,
+// every actor's. Each action what a click or a key does, in the History it is given.
 import { createContext, useContext } from "react";
 import { createStore, useStore, type StoreApi } from "zustand";
 import { post } from "../../core/api/client";
@@ -10,8 +10,6 @@ import * as prefs from "../../core/prefs";
 import { loadExtracts, pollExtracts, setExtracts, useAsked, type Rec } from "./data";
 import { ranges, type Selection } from "./tree";
 
-/** the rows drawn before "show more" */
-export const SHOWN = 2000;
 /** the time a search waits for the typing to stop */
 const SEARCH_MS = 250;
 
@@ -36,7 +34,7 @@ export interface Saving {
   done: string[] | null;
 }
 
-interface Hist {
+export interface Hist {
   /** the gatherer whose rows these are */
   gatherer: string | null;
   /** the actor the view last showed */
@@ -55,7 +53,6 @@ interface Hist {
   sel: Selection;
   /** the row clicked last: a shift-click selects from it */
   last: string | null;
-  limit: number;
   /** the panel at the right shown; all records listed, not only the latest */
   panel: boolean;
   allRecs: boolean;
@@ -88,7 +85,6 @@ const fresh = (): Hist => ({
   open: new Set(),
   sel: new Map(),
   last: null,
-  limit: SHOWN,
   panel: false,
   allRecs: false,
   recOpen: null,
@@ -133,7 +129,7 @@ export function showing(actor: string, gatherer: string): void {
 }
 
 export function setGroup(st: HistStore, on: boolean): void {
-  st.setState({ group: on, stay: null, limit: SHOWN });
+  st.setState({ group: on, stay: null });
 }
 
 /** Tasks came in for `key` while it was shown ungrouped by choice of none: kept so, and the box pulsing a while. */
@@ -169,11 +165,9 @@ export function search(st: HistStore, q: string): void {
   clearTimeout(searching.get(st));
   searching.set(
     st,
-    setTimeout(() => st.setState({ query: q.trim(), limit: SHOWN }), SEARCH_MS),
+    setTimeout(() => st.setState({ query: q.trim() }), SEARCH_MS),
   );
 }
-
-export const showMore = (st: HistStore) => st.setState({ limit: st.getState().limit + SHOWN });
 
 /** What is selected now; the panel shown while anything is, and while a record it asked for is being made or opened. */
 export function select(st: HistStore, sel: Selection, making = false, last?: string | null): void {

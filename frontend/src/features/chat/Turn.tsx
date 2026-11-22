@@ -15,7 +15,7 @@ import { drawn, LastCall, Reply } from "./Reply";
 import { foldsOf } from "./store";
 import type { Reply as ReplyData, Stopped, Turn as TurnData } from "./types";
 import { pickedOf, turnsOf } from "./view";
-import { Done, Finished, Status, StoppedLine, Working } from "./Working";
+import { Finished, StoppedLine, Working } from "./Working";
 
 /** The earlier messages shown before the latest of a turn's; more fold behind its +. */
 const MINOR_SHOWN = 2;
@@ -89,131 +89,127 @@ export function Turn({ t, place }: { t: TurnData; place: TurnPlace }) {
   // the latest, drawn in the place of the turn opening it was a moment ago: growing in on from where that one was
   const grow = useGrowing(latest ? seenKey(feed, t.cid, t.text) : "");
   return (
-    <>
-      <div
-        className={
-          "fl-turn" +
-          (on ? " on" : "") +
-          (whole ? "" : " folded") +
-          (whole && !atFirst ? " shown" : "") +
-          (grow ? " fl-in" : "")
-        }
-        style={grow ?? undefined}
-        id={`fl-turn-${t.n}`}
-      >
-        <div className="fl-head">
-          <Bubble
-            text={t.text}
-            kind={t.kind}
-            title={titled(null)}
-            button={earlier}
-            expanded={whole}
-            onClick={click}
-            wrap={bashOutput(t)}
-            end={
-              <>
-                {held ? (
-                  <span
-                    className="fl-count"
-                    title={`${plural(said.length, "message")} from the agent, ${plural(t.calls || 0, "command")}`}
-                  >
-                    {plural(held, "message")}
-                  </span>
-                ) : null}
-                {earlier ? (
-                  <span className="fold-mark" aria-hidden="true">
-                    <StrokeIcon d={host.icons.chevron} size={14} />
-                  </span>
-                ) : null}
-              </>
-            }
-          />
-          <span className="fl-btns">
-            <button
-              type="button"
-              className="fl-side-btn"
-              aria-pressed={showing ? "true" : "false"}
-              title={sideTip}
-              aria-label={sideTip}
-              onClick={side}
-            >
-              <StrokeIcon d={host.icons.sidebar} size={14} />
-            </button>
-          </span>
-        </div>
-        {(t.more || []).map((m, i) => (
-          <Bubble
-            key={i}
-            text={m.text}
-            kind={m.kind}
-            joined
-            title={titled("Sent while the agent was working")}
-            button={earlier}
-            expanded={whole}
-            onClick={click}
-          />
-        ))}
-        {!whole ? null : (
-          <>
-            {before.length ? (
-              <div className="fl-minor">
-                {extra ? (
-                  <button
-                    type="button"
-                    className="fl-more"
-                    aria-expanded={hidden ? "false" : "true"}
-                    title={hidden ? "Show all earlier messages" : "Fold earlier messages"}
-                    onClick={() => foldsOf(feed.key).getState().toggleOpened(t.n)}
-                  >
-                    <span className="sg" aria-hidden="true">
-                      {hidden ? "+" : "−"}
-                    </span>
-                    {plural(extra, "earlier message")}
-                  </button>
-                ) : null}
-                {before.slice(hidden).map(([r, i]) => (
-                  <Reply key={`r${i}`} r={r} i={i} n={t.n} />
-                ))}
-              </div>
-            ) : null}
-            {(t.sent || []).map((m, i) => (
-              <SentBubble key={i} m={m} />
-            ))}
-            {lastText < 0 ? null : (
-              <Reply key={`m${said[lastText][1]}`} r={said[lastText][0]} i={said[lastText][1]} n={t.n} main />
-            )}
-            {after.length ? (
-              <div className="fl-minor">
-                {after.map(([r, i]) => (
-                  <Reply key={`r${i}`} r={r} i={i} n={t.n} />
-                ))}
-              </div>
-            ) : null}
-            {t.last ? (
-              <div className="fl-minor">
-                <LastCall t={t} live={live} />
-              </div>
-            ) : null}
-            {live ? (
-              <Working
-                last={place.failing ? place.failing.at : Math.max(info.last || 0, from || 0) || null}
-                at={from}
-                now={place.now}
-                retrying={!!place.failing}
-              />
-            ) : (
-              <StoppedLine
-                t={place.stopped === (t.stopped ?? null) ? t : { ...t, stopped: place.stopped }}
-                latest={latest}
-              />
-            )}
-            {done ? <Finished t={t} /> : null}
-            {waits ? <Pending w={waits} /> : null}
-          </>
-        )}
+    <div
+      className={
+        "fl-turn" +
+        (on ? " on" : "") +
+        (whole ? "" : " folded") +
+        (whole && !atFirst ? " shown" : "") +
+        (grow ? " fl-in" : "")
+      }
+      style={grow ?? undefined}
+      id={`fl-turn-${t.n}`}
+    >
+      <div className="fl-head">
+        <Bubble
+          text={t.text}
+          kind={t.kind}
+          title={titled(null)}
+          button={earlier}
+          expanded={whole}
+          onClick={click}
+          wrap={bashOutput(t)}
+          end={
+            <>
+              {held ? (
+                <span
+                  className="fl-count"
+                  title={`${plural(said.length, "message")} from the agent, ${plural(t.calls || 0, "command")}`}
+                >
+                  {plural(held, "message")}
+                </span>
+              ) : null}
+              {earlier ? (
+                <span className="fold-mark" aria-hidden="true">
+                  <StrokeIcon d={host.icons.chevron} size={14} />
+                </span>
+              ) : null}
+            </>
+          }
+        />
+        <span className="fl-btns">
+          <button
+            type="button"
+            className="fl-side-btn"
+            aria-pressed={showing ? "true" : "false"}
+            title={sideTip}
+            aria-label={sideTip}
+            onClick={side}
+          >
+            <StrokeIcon d={host.icons.sidebar} size={14} />
+          </button>
+        </span>
       </div>
-      {/* under the latest turn's box: the actor at work; or, its turn over, the actor done */}
-      {live ? <Status work={t.work} now={place.now} /> : done ? <Done t={t} /> : null}
-    </>
+      {(t.more || []).map((m, i) => (
+        <Bubble
+          key={i}
+          text={m.text}
+          kind={m.kind}
+          joined
+          title={titled("Sent while the agent was working")}
+          button={earlier}
+          expanded={whole}
+          onClick={click}
+        />
+      ))}
+      {!whole ? null : (
+        <>
+          {before.length ? (
+            <div className="fl-minor">
+              {extra ? (
+                <button
+                  type="button"
+                  className="fl-more"
+                  aria-expanded={hidden ? "false" : "true"}
+                  title={hidden ? "Show all earlier messages" : "Fold earlier messages"}
+                  onClick={() => foldsOf(feed.key).getState().toggleOpened(t.n)}
+                >
+                  <span className="sg" aria-hidden="true">
+                    {hidden ? "+" : "−"}
+                  </span>
+                  {plural(extra, "earlier message")}
+                </button>
+              ) : null}
+              {before.slice(hidden).map(([r, i]) => (
+                <Reply key={`r${i}`} r={r} i={i} n={t.n} />
+              ))}
+            </div>
+          ) : null}
+          {(t.sent || []).map((m, i) => (
+            <SentBubble key={i} m={m} />
+          ))}
+          {lastText < 0 ? null : (
+            <Reply key={`m${said[lastText][1]}`} r={said[lastText][0]} i={said[lastText][1]} n={t.n} main />
+          )}
+          {after.length ? (
+            <div className="fl-minor">
+              {after.map(([r, i]) => (
+                <Reply key={`r${i}`} r={r} i={i} n={t.n} />
+              ))}
+            </div>
+          ) : null}
+          {t.last ? (
+            <div className="fl-minor">
+              <LastCall t={t} live={live} />
+            </div>
+          ) : null}
+          {live ? (
+            <Working
+              last={place.failing ? place.failing.at : Math.max(info.last || 0, from || 0) || null}
+              at={from}
+              now={place.now}
+              retrying={!!place.failing}
+            />
+          ) : (
+            <StoppedLine
+              t={place.stopped === (t.stopped ?? null) ? t : { ...t, stopped: place.stopped }}
+              latest={latest}
+            />
+          )}
+          {done ? <Finished t={t} /> : null}
+          {waits ? <Pending w={waits} /> : null}
+        </>
+      )}
+    </div>
   );
 }
