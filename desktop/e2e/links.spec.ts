@@ -144,7 +144,7 @@ test("a link opens a Browser in the actor's task, then new tabs of it, each a na
     const sent = () => app.evaluate(() => (globalThis as { sent?: string[] }).sent || []);
     const page = await app.firstWindow();
     await page.waitForURL(`http://127.0.0.1:${port}/`, { timeout: 60_000 });
-    await page.locator(`#agents button.agent[data-key$="${agent}"]`).click();
+    await page.locator(`#agents .agent[data-key$="${agent}"]`).click();
     const panels = page.locator("#top-row .app-pane[data-app=browser]");
     await expect(panels).toHaveCount(0);
 

@@ -1,7 +1,7 @@
 // THE HOVER CARD's parts (Card.tsx, CardTask.tsx, CardFolder.tsx): what it is drawn from and what it calls of the page
 // (CardHost), and what each kind of card has -- a row's status, a card's own button, the tab it is open in, its name box.
 import { useCallback, type MouseEvent, type ReactNode } from "react";
-import type { ListHost, PageParts } from "./host";
+import type { AddItem, ListHost, PageParts } from "./host";
 import type { TabAt } from "./rows";
 import type { Actor, AppItem, Folder, Gatherer, ListCtx, Task } from "./types";
 
@@ -58,7 +58,7 @@ export interface Notice {
   at?: number;
 }
 
-/** What a card calls of the page around it (features/list/modes.js's CARD_HOST). */
+/** What a card calls of the page around it (card.ts's CARD_HOST). */
 export interface CardHost
   extends
     PageParts,
@@ -76,9 +76,10 @@ export interface CardHost
   takeOut(gname: string, k: string): void;
   openNotice(gname: string, id: string, n: Notice): void;
   dismissNotice(gname: string, id: string, n: Notice): void;
-  /** "+" adding to a task: its menu's key and title (none: nothing to add), and its menu opened from `button` */
+  /** "+" adding to a task: its menu's key and title (none: nothing to add), what its menu holds, and it closed */
   adds(g: Gatherer, k: string, label: string): { key: string; title: string } | null;
-  openAdd(g: Gatherer, k: string, label: string, button: HTMLElement): void;
+  addMenu(g: Gatherer, k: string): { where: string; items: AddItem[] } | null;
+  addClosed(): void;
   /** a card's "+ actor" and "+ ⋯": what each says, and a press */
   startInfo(which: "new" | "more", g: Gatherer, f: Folder | null): StartInfo | null;
   startPress(which: "new" | "more", g: Gatherer, f: Folder | null, button: HTMLElement): void;

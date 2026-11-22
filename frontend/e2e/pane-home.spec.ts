@@ -9,13 +9,13 @@ const beside = process.platform === "darwin" ? "Meta" : "Control";
 
 test("a pane opened beside draws its Chat from the page's home, with no read of its own", async ({ page }) => {
   await open(page);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
   await expect(page.locator("#pane-here #main")).toContainText("Ahoy, Bob!"); // the page's own actor drawn: its home read
   const asked: string[] = [];
   await page.route("**/api/home", (route) => {
     asked.push(route.request().frame().url()); // held: never answered
   });
-  await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] });
   const pane = page.locator("#panes > .pane").nth(1);
   await expect(pane).toHaveCount(1);
   await expect(pane.locator("main")).toContainText(CODEX, { timeout: 5000 });
@@ -24,13 +24,13 @@ test("a pane opened beside draws its Chat from the page's home, with no read of 
 
 test("a pane opened beside is a part of the page: no frame, no second load of the page", async ({ page }) => {
   await open(page);
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
   await expect(page.locator("#pane-here #main")).toContainText("Ahoy, Bob!");
   const documents: string[] = [];
   page.on("request", (r) => {
     if (r.resourceType() === "document") documents.push(r.url());
   });
-  await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] });
   const pane = page.locator("#panes > .pane").nth(1);
   await expect(pane.locator("main")).toContainText(CODEX, { timeout: 5000 });
   await expect(pane.locator("iframe")).toHaveCount(0);

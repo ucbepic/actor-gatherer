@@ -68,7 +68,7 @@ export async function panelMenu(page: Page, pane: Locator): Promise<Locator> {
   const id = new URL(src).searchParams.get("instance") || "";
   let row = page.locator(`#agents .app-row[data-instance="${id}"]`);
   if (!(await row.count())) {
-    const tasks = page.locator("#agents button.agent.task");
+    const tasks = page.locator("#agents .agent.task");
     for (let i = 0; i < (await tasks.count()); i++) {
       await page.mouse.move(0, 0); // the pointer come from off the list: the card shown afresh
       await tasks.nth(i).hover();

@@ -6,17 +6,17 @@ import {
 } from "../../core/page/helpers.js";
 import { loadAgent, loadChat, loadHome, setAbout, setLive } from "../page/data.js";
 import { connect } from "../settings/panel.js";
-import { markSeen, statusOf } from "../list/seen.js";
+import { markSeen, statusOf } from "../list/seen";
 import {
   APP_ITEM, MANAGER, actorOf, actorTitle, actorsWithin, aimStart, appInfo, appItem, appMarkOf, appShown, appStatusOf,
   appTaskOf, appsKnown, collapsed, crewAt, crewFace, crewHidden, crewHideKey, crewPlace, fileStarted,
   gathererApps, groupCrew, isAppItem, isCoordinator, listDrag, openTask, readApps, renderAgents, retask, savedAs,
   selectApp, setCrewHidden, shellFolder, shellLogo, showItemsTask, startIn, taskActors, taskApps, taskById, taskLead,
   taskMembers, taskName, taskOf, titleOf, within,
-} from "../list/list.js";
-import { GF, gfOf } from "../list/gatherer-folders.js";
-import { ALONE_NEW, everyActor } from "../list/group-moves.js";
-import { cardRelease, listMode, select, setListMode } from "../list/modes.js";
+} from "../list/list";
+import { GF, gfOf } from "../list/gatherer-folders";
+import { ALONE_NEW, everyActor } from "../list/group-moves";
+import { cardRelease, listMode, select, setListMode } from "../list/modes";
 import { drawNewTab, keptHarness, keptStart } from "./new-tab.js";
 import { drawPane } from "../page/main-view.js";
 import { askKey, askWhere } from "../chat/chat.js";

@@ -1,9 +1,8 @@
-// What the list in React (AgentList.tsx) calls of the page around it (features/list/list.js's LIST_HOST), until those parts
-// move too: what a press, a key or a drag on a row does, the words the page says things in, and the parts of a row the
-// page still builds -- its start buttons and menus, an actor's face, its branch -- which the list puts in its own
-// elements as they are.
+// What the list in React (AgentList.tsx) calls of the page around it (list-host.ts's LIST_HOST): what a press, a key or a
+// drag on a row does, the words the page says things in, and the parts of a row the page still builds -- its start
+// buttons' menus, a harness's mark, its branch, the form for a new actor -- which the list puts in its own elements as
+// they are.
 import type { MouseEvent, KeyboardEvent, DragEvent } from "react";
-import type { ListModel } from "./rows";
 import type { Actor, AppItem, Folder, Gatherer, Shell, Status } from "./types";
 
 /** An event of the list's (React's) or the page's own: what the page's handlers read of it. */
@@ -54,6 +53,22 @@ export interface StartMenu extends MenuInfo {
 export interface AddInfo {
   title: string;
 }
+/** The list's own buttons, as its shape is now: folded to the rail or not, over the whole page, hidden; in a pane's
+ * frame (no list to hide). */
+export interface ListButtonsInfo {
+  mode: "list" | "folded" | "full";
+  hidden: boolean;
+  pane: boolean;
+}
+/** The head's "+" for an actor on its own: why it can't start one (""), something starting (`off`), it starting
+ * (`busy`), its box open (`open`). */
+export interface AloneNewInfo {
+  why: string;
+  off: boolean;
+  busy: boolean;
+  open: boolean;
+}
+
 /** An item of its menu: a new agent on a harness, or an app. */
 export interface AddItem {
   mark: Node | null;
@@ -95,12 +110,19 @@ export interface ListHost extends PageParts {
   taskKind(kind: string | undefined): string;
   shellPath(s: Shell): string;
 
+  // -- the list's head (Head.tsx): the drop outside every group, a new group, an actor on its own, the list's buttons
+  outsideCan(): boolean;
+  outsideDrop(): void;
+  newGroup(): void;
+  aloneNew(): AloneNewInfo | null;
+  aloneNewPress(button: HTMLElement): void;
+  listButtons(): ListButtonsInfo;
+  setListMode(mode: ListButtonsInfo["mode"]): void;
+  setListHidden(on: boolean): void;
+  /** a stroke icon's path (ICONS) */
+  iconPath(name: string): string;
+
   // -- the page's own drawing, put in the list's elements as it builds it, afresh at each draw
-  /** the list's head: its title, the drop outside every group, a new group, an actor on its own, the coordinator
-   * agent over everything, the list's own buttons */
-  head(model: ListModel): Node[];
-  /** a folder of gatherers' buttons */
-  gfActs(f: Folder, crew: boolean): Node[];
   /** the form for a new actor, under a gatherer's row; what it shows, in a word (made again when that changes) */
   newForm(): Node;
   formAt(): string;

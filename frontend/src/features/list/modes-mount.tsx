@@ -1,6 +1,7 @@
-// THE LIST'S OTHER SHAPES, as the page around them draws them (features/list/modes.js, group-moves.js): the top bar's
-// counts, the rail, the monitor over the whole page, the hover card, Manage groups -- each drawn into its box at once, from its view-model, so what the page does next (its
-// place measured, its cards watched) finds it drawn.
+// THE LIST'S OTHER SHAPES, as the page around them draws them (modes.ts, monitor.ts, card.ts, manage.ts): the top bar's
+// counts, the rail, the monitor over the whole page, the hover card, Manage groups, the list's own buttons over the rail
+// and in the top bar -- each drawn into its box at once, from its view-model, so what the page does next (its place
+// measured, its cards watched) finds it drawn.
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { Card, type CardHost, type CardModel } from "./Card";
@@ -11,6 +12,8 @@ import { Monitor, type MonitorHost } from "./Monitor";
 import { Rail, type RailHost } from "./Rail";
 import type { RailModel } from "./rail-model";
 import { TotalsChips, totalsSaid } from "./Totals";
+import type { ListButtonsInfo } from "./host";
+import { FullButton, ListButtons, type ButtonsHost } from "./ListButtons";
 
 const roots = new Map<HTMLElement, Root>();
 let drawing = 0;
@@ -72,6 +75,15 @@ export function drawListDialogs(m: DialogsModel, host: DialogsHost): void {
   }
   const box = dialogsBox;
   draw(() => rootOf(box).render(<ListDialogs m={m} host={host} />));
+}
+
+/** The list's own buttons drawn into `box` (over the rail), as its shape is now. */
+export function drawListButtons(box: HTMLElement, info: ListButtonsInfo, host: ButtonsHost): void {
+  draw(() => rootOf(box).render(<ListButtons info={info} host={host} />));
+}
+/** Every actor over the whole page, or back: its button drawn into `box` (the top bar's). */
+export function drawFullButton(box: HTMLElement, full: boolean, set: (full: boolean) => void): void {
+  draw(() => rootOf(box).render(<FullButton full={full} set={set} />));
 }
 
 /** What is drawn in `box` gone: left, nothing of it kept but what the page read. */

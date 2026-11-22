@@ -204,8 +204,8 @@ test("a link to an app another task holds shows that task, as the app's row woul
   await openActor(page, CLAUDE);
   await expect(notepad(page)).toHaveCount(0); // Codex's, not Claude's
   await (await says(page, "said-9", "In [note 2](ag://notepad/note/2).")).click();
-  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CODEX })).toHaveCount(1);
-  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CLAUDE })).toHaveCount(0);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CODEX })).toHaveCount(1);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CLAUDE })).toHaveCount(0);
   const panel = notepad(page).filter({ visible: true });
   await expect(panel).toHaveCount(1);
   expect(new URL((await panel.locator("iframe").getAttribute("src")) || "").searchParams.get("instance")).toBe(pad);

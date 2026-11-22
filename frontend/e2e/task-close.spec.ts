@@ -1,4 +1,4 @@
-// A TASK SAVED AND CLOSED (features/list/list.js's taskSaveButton, taskCloseButton): its bookmark saves every actor in it; its
+// A TASK SAVED AND CLOSED (features/list/RowViews.tsx's taskSaveButton, taskCloseButton): its bookmark saves every actor in it; its
 // × closes them and puts its apps to sleep (kept, in the task: app_host.py's `sleep_instance`), opened again as it was --
 // from its row in the list, or its tile in the folded rail; in its card, each actor's and each app's own close (an app's
 // closing it for good: closeApp), and "take out" a mark of its own. An app on its own: closed from its card or its tile.
@@ -143,7 +143,7 @@ test("in a task's card an app has its own close: the app closed for good, out of
   await expect(notepad(page)).toHaveCount(0);
   await expect.poll(() => instances(page)).toBe(0);
   await expect(card.locator(".c-app-row")).toHaveCount(0);
-  await expect(page.locator("#agents button.agent.app-row")).toHaveCount(0); // closed: not a row of its own either
+  await expect(page.locator("#agents .agent.app-row")).toHaveCount(0); // closed: not a row of its own either
   await expect(row.locator(".t-faces .t-app")).toHaveCount(0);
 });
 
@@ -158,7 +158,7 @@ test("an app on its own is closed from its card's × or its tile's × in the fol
     await expect(notepad(page)).toHaveCount(1);
   };
   await notepadAlone();
-  const row = page.locator("#agents button.agent.app-row");
+  const row = page.locator("#agents .agent.app-row");
   await expect(row).toHaveCount(1);
   await (await cardOf(page, row)).locator(".c-acts .act.close").click();
   await expect(row).toHaveCount(0);

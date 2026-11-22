@@ -42,7 +42,7 @@ test("an app opens above the panes, with no agent attached, its panel on an orig
   // the actor in focus not attached: attaching puts the two in one task (task_links.py), and opening an app from the
   // gatherer's menu puts it in none
   await expect(panel.locator("#agents")).toHaveText("none");
-  await expect(page.locator("#agents button.agent.task")).toHaveCount(0);
+  await expect(page.locator("#agents .agent.task")).toHaveCount(0);
   await expect(panel.locator("#focus")).toHaveText(CLAUDE_CHANNEL);
   await expect(panel.locator("#theme")).toHaveText(/^(light|dark)$/);
   // the panel can't reach the dashboard's page or its routes: another origin
@@ -60,7 +60,7 @@ test("an app opens above the panes, with no agent attached, its panel on an orig
   // its tab left showing nothing, its new-tab page: Claude, the first tab's, not brought into it (one task, one tab)
   await expect(page.locator(".work > .lay-empty.nt:not([hidden])")).toBeVisible();
   await expect(page.locator("#pane-here")).toBeHidden();
-  await expect(page.locator("#agents button.agent", { hasText: CLAUDE }).locator(".tab-no")).toHaveText("1");
+  await expect(page.locator("#agents .agent", { hasText: CLAUDE }).locator(".tab-no")).toHaveText("1");
 });
 
 test("a note the user adds in the panel is stored, comes back as an event, and is told to the agents", async ({
@@ -132,7 +132,7 @@ test("an intent opens the app that takes it and tells its panel; one no app take
 test("the panel follows the actor in focus, and the agents attached to it", async ({ page }) => {
   await openActor(page, CLAUDE);
   const { panel, instance } = await openNotepad(page); // in a tab of its own, Claude's left in the first
-  await page.locator("#agents button.agent", { hasText: CODEX }).click({ modifiers: [beside] });
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] });
   await expect(page.locator("#pane-here")).toBeVisible(); // Codex under it, in this page's own pane
   await expect(page.locator("#panes > .pane")).toHaveCount(1);
   await expect(panel.locator("#focus")).toHaveText(CODEX_CHANNEL); // the actor's pane in focus now
@@ -206,7 +206,7 @@ test("an app's panel is kept in this browser", async ({ page }) => {
   // its tab shown as it was left, the app alone: the actor the page opens on by itself not put beside it
   await expect(page.locator("#pane-here")).toBeHidden();
   await expect(page.locator(".lay-tabs:visible .lay-tab")).toHaveCount(2);
-  await expect(page.locator("#agents button.agent", { hasText: CODEX }).locator(".tab-no")).toHaveCount(0);
+  await expect(page.locator("#agents .agent", { hasText: CODEX }).locator(".tab-no")).toHaveCount(0);
 });
 
 test("an app opened shows the actor it is attached to below it", async ({ page }) => {
@@ -222,7 +222,7 @@ test("an app opened shows the actor it is attached to below it", async ({ page }
   await raise(); // its own instance, no agent attached: the panes as they were
   const there = page.locator("#top-row > .app-pane[aria-label='Notepad · attached']");
   await expect(there).toHaveCount(1);
-  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CLAUDE })).toHaveCount(1);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CLAUDE })).toHaveCount(1);
   const theirs = await instanceOf(there);
   await attachTo(page, GATHERER, theirs, CODEX_CHANNEL); // Codex attached to it
   await expect(there.frameLocator("iframe").locator("#agents")).toHaveText(CODEX_CHANNEL);
@@ -231,7 +231,7 @@ test("an app opened shows the actor it is attached to below it", async ({ page }
   // panel asked, goes with that task (features/layout/panes.js's enterTask), its frame gone before the answer
   await raise().catch(() => null);
   await expect(there).toHaveCount(1);
-  await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CODEX })).toHaveCount(1);
+  await expect(page.locator("#agents .agent:has(> .a-main[aria-current=true])", { hasText: CODEX })).toHaveCount(1);
   await expect(page.locator("#top-row > .app-pane")).toHaveCount(1);
   await attachTo(page, GATHERER, theirs, CODEX_CHANNEL, false); // detached again
   await expect(there.frameLocator("iframe").locator("#agents")).toHaveText("none");

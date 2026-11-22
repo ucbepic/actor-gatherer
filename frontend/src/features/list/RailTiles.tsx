@@ -1,7 +1,9 @@
 // THE RAIL'S TILES (rail-model.ts's RTile): an actor's -- its avatar, its status's dot at its corner, its name in small
 // under it, its bookmark and × over its corners while hovered -- a task's (its lead's face, how many it holds, its apps'
 // mark) and an app's in no task. Pressed: shown (Shift+click selects an actor with others); dragged: put in a folder, or
-// (a task's, an app's) another item dropped on it put in its task.
+// (a task's, an app's) another item dropped on it put in its task. A tile is a box (`.r-actor`, what is dragged and
+// dropped on) holding its main button (`.r-main`: its picture and name) and, beside it, its own buttons -- bookmark, ×,
+// a selected actor's check -- as a list's row does: no button inside another.
 import type { MouseEvent } from "react";
 import { Html } from "../../core/ui/PageNode";
 import { titleOf } from "./groups";
@@ -28,38 +30,44 @@ export function ActorTile({ n, host }: { n: RActor; host: RailHost }) {
       () => host.closeActor(g, a, n.close!),
     );
   return (
-    <button
+    <div
       className={"r-actor" + (n.picked ? " picked" : "")}
-      type="button"
       data-card={n.card}
-      aria-current={n.current ? "true" : "false"}
       data-open={n.open ? "true" : undefined}
-      aria-label={`${nm.text}, in ${t}: ${label}`}
-      // where there is no hovering (a touch screen), the card's words as its title
-      title={host.hovers() ? undefined : `${nm.text}\n${label} · ${host.ago(a.last)} · ${t}`}
-      onClick={(ev: MouseEvent) => {
-        host.cardHide(ev);
-        if (ev.shiftKey && !snap && !n.coordinator) {
-          ev.preventDefault();
-          host.togglePick(g, a);
-          return;
-        }
-        host.pick(g.name, a.channel, ev);
-      }}
-      onContextMenu={(ev) => host.pickBeside(g.name, a.channel, ev)}
+      data-current={n.current ? "true" : undefined}
       {...drag}
     >
-      <span className="r-pic">
-        <Face host={host} a={a} check={n.checked ? <PickCheck host={host} g={g} a={a} /> : null} />
-        <i className={`rd ${cls}`} aria-hidden="true" style={spin} />
-      </span>
-      <span className={"r-name" + (nm.cls === "none" ? " none" : "")} aria-hidden="true">
-        {nm.text}
-      </span>
+      <button
+        className="r-main"
+        type="button"
+        aria-current={n.current ? "true" : "false"}
+        aria-label={`${nm.text}, in ${t}: ${label}`}
+        // where there is no hovering (a touch screen), the card's words as its title
+        title={host.hovers() ? undefined : `${nm.text}\n${label} · ${host.ago(a.last)} · ${t}`}
+        onClick={(ev: MouseEvent) => {
+          host.cardHide(ev);
+          if (ev.shiftKey && !snap && !n.coordinator) {
+            ev.preventDefault();
+            host.togglePick(g, a);
+            return;
+          }
+          host.pick(g.name, a.channel, ev);
+        }}
+        onContextMenu={(ev) => host.pickBeside(g.name, a.channel, ev)}
+      >
+        <span className="r-pic">
+          <Face host={host} a={a} />
+          <i className={`rd ${cls}`} aria-hidden="true" style={spin} />
+        </span>
+        <span className={"r-name" + (nm.cls === "none" ? " none" : "")} aria-hidden="true">
+          {nm.text}
+        </span>
+      </button>
       {/* the list's bookmark and ×, in the corners over its avatar: shown while hovered, in focus or the one shown */}
       {actorSave(host, g, a, n.saved)}
       {close || null}
-    </button>
+      {n.checked ? <PickCheck host={host} g={g} a={a} name={nm.text} /> : null}
+    </div>
   );
 }
 
@@ -79,35 +87,40 @@ export function TaskTile({ n, host }: { n: RTask; host: RailHost }) {
   const gt = titleOf(host.ctx, g);
   const drag = n.first ? { ...drags(host, (ev) => host.dragItems(ev, g, n.items)), ...joins(host, g, n.first) } : {};
   return (
-    <button
+    <div
       className="r-actor r-task"
-      type="button"
       data-card={n.card}
-      aria-current={n.current ? "true" : "false"}
       data-open={n.open ? "true" : undefined}
-      aria-label={`${n.name}, a task of ${n.what || "nothing"}, in ${gt}: ${label}`}
-      title={host.hovers() ? undefined : `${n.name}\n${n.what} · ${label} · ${gt}`}
-      onClick={(ev) => {
-        host.cardHide(ev);
-        host.openTask(g.name, t.id, ev);
-      }}
+      data-current={n.current ? "true" : undefined}
       {...drag}
     >
-      <span className="r-pic">
-        <span className="logo r-group">
-          {n.face ? <Face host={host} a={n.face} /> : n.faceApp ? <Html node={host.appFace(n.faceApp)} /> : null}
-        </span>
-        {n.n > 1 ? (
-          <span className="r-many" aria-hidden="true">
-            {String(n.n)}
+      <button
+        className="r-main"
+        type="button"
+        aria-current={n.current ? "true" : "false"}
+        aria-label={`${n.name}, a task of ${n.what || "nothing"}, in ${gt}: ${label}`}
+        title={host.hovers() ? undefined : `${n.name}\n${n.what} · ${label} · ${gt}`}
+        onClick={(ev) => {
+          host.cardHide(ev);
+          host.openTask(g.name, t.id, ev);
+        }}
+      >
+        <span className="r-pic">
+          <span className="logo r-group">
+            {n.face ? <Face host={host} a={n.face} /> : n.faceApp ? <Html node={host.appFace(n.faceApp)} /> : null}
           </span>
-        ) : null}
-        {n.dot ? <i className={`rd ${cls}`} aria-hidden="true" style={spin} /> : null}
-        {n.apps.length ? <RailApps host={host} apps={n.apps} /> : null}
-      </span>
-      <span className="r-name" aria-hidden="true">
-        {n.name}
-      </span>
+          {n.n > 1 ? (
+            <span className="r-many" aria-hidden="true">
+              {String(n.n)}
+            </span>
+          ) : null}
+          {n.dot ? <i className={`rd ${cls}`} aria-hidden="true" style={spin} /> : null}
+          {n.apps.length ? <RailApps host={host} apps={n.apps} /> : null}
+        </span>
+        <span className="r-name" aria-hidden="true">
+          {n.name}
+        </span>
+      </button>
       {n.members > 0
         ? saveButton(
             host,
@@ -122,7 +135,7 @@ export function TaskTile({ n, host }: { n: RTask; host: RailHost }) {
             host.closeTask(g.name, t.id),
           )
         : null}
-    </button>
+    </div>
   );
 }
 
@@ -130,32 +143,37 @@ export function AppTile({ n, host }: { n: RApp; host: RailHost }) {
   const { g, o, told } = n;
   const gt = titleOf(host.ctx, g);
   return (
-    <button
+    <div
       className="r-actor r-app"
-      type="button"
-      aria-current={n.chosen ? "true" : "false"}
       data-key={`${g.name}/${n.item}`}
       data-open={n.shown ? "true" : undefined}
+      data-current={n.chosen ? "true" : undefined}
       data-card={n.card}
-      aria-label={`${appTitle(o)}, an app, in ${gt}${told ? `: ${told[1]}` : ""}`}
-      title={host.hovers() ? undefined : `${appTitle(o)} · ${gt}`}
-      onClick={(ev) => {
-        host.cardHide(ev);
-        host.selectApp(g.name, o, ev);
-      }}
       {...drags(host, (ev) => host.dragItems(ev, g, [n.item]))}
       {...joins(host, g, n.item)}
     >
-      <span className="r-pic">
-        <Html node={host.appFace(o)} />
-        {told ? <i className={`rd ${told[0]}`} aria-hidden="true" /> : null}
-      </span>
-      <span className="r-name" aria-hidden="true">
-        {o.title || o.app.label}
-      </span>
+      <button
+        className="r-main"
+        type="button"
+        aria-current={n.chosen ? "true" : "false"}
+        aria-label={`${appTitle(o)}, an app, in ${gt}${told ? `: ${told[1]}` : ""}`}
+        title={host.hovers() ? undefined : `${appTitle(o)} · ${gt}`}
+        onClick={(ev) => {
+          host.cardHide(ev);
+          host.selectApp(g.name, o, ev);
+        }}
+      >
+        <span className="r-pic">
+          <Html node={host.appFace(o)} />
+          {told ? <i className={`rd ${told[0]}`} aria-hidden="true" /> : null}
+        </span>
+        <span className="r-name" aria-hidden="true">
+          {o.title || o.app.label}
+        </span>
+      </button>
       {host.snapshot
         ? null
         : closeButton(host, `Close ${o.app.label}`, `Close ${o.app.label}`, () => host.closeApp(g.name, o))}
-    </button>
+    </div>
   );
 }

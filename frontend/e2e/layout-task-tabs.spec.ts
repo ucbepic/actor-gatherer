@@ -15,7 +15,7 @@ const chips = (page: Page) => page.locator(".lay-strip:visible .lay-ttab");
 // Claude and its Notepad, one task; Notepad moved to a new tab of it from its menu (its row in the task's card)
 async function notepadInItsOwnTab(page: Page) {
   await open(page);
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  const claude = page.locator("#agents .agent", { hasText: CLAUDE });
   await claude.click();
   await addNotepad(page, claude);
   await expect(notes(page)).toHaveCount(1);
@@ -40,7 +40,7 @@ test("a panel moved to a new tab of its task: that tab shown, holding it alone; 
   await expect(notes(page)).toHaveCount(0); // Tab 1: Claude's pane alone
   await expect(here(page)).toBeVisible();
   await page.reload(); // kept in this browser (the page opens on its first actor: Claude's row clicked)
-  await page.locator("#agents button.agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
   await expect(chips(page)).toHaveCount(2);
   await expect(chips(page).nth(0)).toHaveAttribute("aria-selected", "true");
 });

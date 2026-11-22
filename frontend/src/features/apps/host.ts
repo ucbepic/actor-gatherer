@@ -202,7 +202,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
 }
 
 /** What a pane is called (its label, as a head named it before panes had none): the app, then the user's name for it,
- * else its own title (not the app's name again), else its folder's name -- as the list names it (features/list/list.js's
+ * else its own title (not the app's name again), else its folder's name -- as the list names it (features/list/list.ts's
  * appShown). */
 export function paneName(app: AppInfo, i: Instance): string {
   const title = i.title !== app.label ? i.title : "";

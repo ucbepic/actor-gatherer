@@ -3,7 +3,7 @@ import {
   ICONS, ago, el, harnessName, hasChat, parseKey, post, runnableNames, signature,
 } from "../../core/page/helpers.js";
 import { drafts, fitBox, keepDraft, setLive } from "../page/data.js";
-import { turnStatus } from "../list/seen.js";
+import { turnStatus } from "../list/seen";
 import { DETAILS_TIP, drawPane, renderPane, setDetails } from "../page/main-view.js";
 import { permissionNode, summary } from "../transcript/calls";
 import { plural } from "../../core/format";

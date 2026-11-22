@@ -41,7 +41,7 @@ async function actorAtWork(page: Page, asking: boolean) {
   await openActor(page, CLAUDE);
   await expect.poll(() => homes.sent()).toBe(true);
   homes.again();
-  const dot = page.locator("#agents button.agent", { hasText: CLAUDE }).locator(":scope > .dot");
+  const dot = page.locator("#agents .agent", { hasText: CLAUDE }).locator(":scope > .a-main > .dot");
   await expect(dot).toHaveAttribute("aria-label", asking ? "Waiting for you" : "Running");
   return keys;
 }

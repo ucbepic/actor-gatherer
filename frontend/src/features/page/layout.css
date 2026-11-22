@@ -56,13 +56,16 @@ aside h2 { font-size: var(--fs-label); text-transform: uppercase; letter-spacing
 .agent-group { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 18px 2px 40px; }
 button.agent-group { display: block; width: 100%; text-align: left; background: none; border: 0; cursor: pointer; font-family: inherit; }
 button.agent-group:hover { color: var(--ink-2); }
-.agent { display: grid; grid-template-columns: 10px minmax(0, 1fr) 28px; gap: 9px; text-align: left; border: 0; border-radius: 8px;
-  background: none; padding: 8px 10px; margin: 2px 8px; width: calc(100% - 16px); cursor: pointer; color: var(--ink); }
+/* a row (features/list/RowViews.tsx): its box -- what is hovered, shown, dragged and dropped on -- and in it its main
+   button, the whole box, laying out its state, its name and its face; its own buttons beside that one, not in it */
+.agent { border-radius: 8px; margin: 2px 8px; width: calc(100% - 16px); color: var(--ink); }
+.agent > .a-main { display: grid; grid-template-columns: 10px minmax(0, 1fr) 28px; gap: 9px; text-align: left; border: 0; border-radius: inherit;
+  background: none; padding: 8px 10px; margin: 0; width: 100%; cursor: pointer; color: inherit; }
 .agent:hover { background: var(--wash); }
-.agent[aria-current="true"] { background: var(--selected); }
+.agent[data-current="true"] { background: var(--selected); }
 /* open in a panel: a bar at its left edge -- every one open, the one selected too (it alone also filled, so the rows of a
    task's actors, every one open in a pane, do not all look picked) */
-.agent:is([data-open="true"], [aria-current="true"]) { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--s1) 60%, transparent); }
+.agent:is([data-open="true"], [data-current="true"]) { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--s1) 60%, transparent); }
 .agent .logo { width: 28px; height: 28px; margin-top: 1px; display: block; }
 /* an actor's avatar, its harness's badge small at the corner: the avatar cut away around the badge, so
    whatever is behind the row (hovered, selected) shows between them */
@@ -88,8 +91,8 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .name.none { color: var(--muted); font-weight: 400; font-style: italic; }
 .agent .name + .asked { font-size: var(--fs-meta); font-weight: 400; color: var(--ink-2); -webkit-line-clamp: 2; }
 /* the one shown: its top line clicked names it */
-.agent[aria-current="true"] .name[title], .agent[aria-current="true"] .asked[title] { cursor: text; }
-.agent.renaming { cursor: default; }
+.agent[data-current="true"] .name[title], .agent[data-current="true"] .asked[title] { cursor: text; }
+.agent.renaming > .a-main { cursor: default; }
 :is(.agent, .gatherer-row) .name-box { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-ui); font-weight: 600; line-height: 1.4;
   color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 5px; padding: 1px 6px; margin: -2px 0 -2px -7px;
   width: calc(100% + 7px); outline: none; }
@@ -111,10 +114,10 @@ button.agent-group:hover { color: var(--ink-2); }
 /* what it runs in the background, under its facts: how many, and what they are for */
 .agent .bgline { font-size: var(--fs-meta); color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agent .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
-/* an actor is a task too (features/list/list.js's agentRow): its state at its left, on its name's line, its face at its right;
+/* an actor is a task too (features/list/RowViews.tsx's agentRow): its state at its left, on its name's line, its face at its right;
    its state in a word on its meta line, as a task's line says it */
-.agent > .dot { justify-self: center; margin-top: 6px; }
-.agent > .dot.running { margin-top: 4.5px; }
+.a-main > .dot { justify-self: center; margin-top: 6px; }
+.a-main > .dot.running { margin-top: 4.5px; }
 .agent .meta b { font-weight: 600; color: var(--ink-2); }
 .agent .meta b.asking { color: light-dark(#a15c00, #e0a42a); }
 .agent .meta b.error { color: var(--critical); }
@@ -187,15 +190,17 @@ button.agent-group:hover { color: var(--ink-2); }
   white-space: nowrap; cursor: pointer; font-variant-numeric: tabular-nums; }
 .rail .r-fold:hover, .rail .r-fold:focus-visible { color: var(--ink); background: var(--wash); outline: none; }
 /* an actor: its avatar, its status at its corner, and under it its name, in two short lines at most */
-.rail .r-actor { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; box-sizing: border-box;
-  border: 0; background: none; padding: 4px 1px 5px; border-radius: 9px; flex: none; cursor: pointer; color: inherit; font: inherit; }
+/* a tile (features/list/RailTiles.tsx): its box, and in it its main button, the whole box; its own buttons beside that one */
+.rail .r-actor { position: relative; min-width: 0; box-sizing: border-box; border-radius: 9px; flex: none; color: inherit; }
+.rail .r-main { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; min-width: 0; box-sizing: border-box;
+  border: 0; background: none; padding: 4px 1px 5px; margin: 0; border-radius: inherit; cursor: pointer; color: inherit; font: inherit; }
 .rail .r-actor:hover { background: var(--wash); }
 /* the one shown: a ring round its avatar (and its name bold, below) -- no filled tile, the heaviest shape in the rail;
    one open in another pane, a fainter ring */
 .rail .r-actor .r-pic > .logo { border-radius: 50%; }
-.rail .r-actor[aria-current="true"] .r-pic > .logo { box-shadow: 0 0 0 2px var(--side), 0 0 0 4px var(--s1); }
+.rail .r-actor[data-current="true"] .r-pic > .logo { box-shadow: 0 0 0 2px var(--side), 0 0 0 4px var(--s1); }
 .rail .r-actor[data-open="true"] .r-pic > .logo { box-shadow: 0 0 0 2px var(--side), 0 0 0 4px color-mix(in srgb, var(--s1) 45%, transparent); }
-.rail .r-actor:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
+.rail .r-main:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 .rail .r-pic { position: relative; display: block; }
 .rail .r-actor .logo, .rail .r-actor .avatar img { width: 30px; height: 30px; display: block; -webkit-mask-image: none; mask-image: none; }
 .rail .r-actor .badge, .rail .r-actor .dw-badge { display: none; }
@@ -217,19 +222,19 @@ button.agent-group:hover { color: var(--ink-2); }
    drawn anew on each change of the home, and a new tile under a resting pointer -- the rail scrolled, set back where it
    was -- is laid out once before it counts as hovered, so a fade would run again from nothing on each redraw (a flash). */
 .rail .r-actor :is(.save-btn, .close-btn) { position: absolute; left: calc(50% - 28px); display: flex; align-items: center; justify-content: center;
-  width: 12px; height: 12px; border-radius: 50%; color: var(--muted); cursor: pointer; opacity: 0; }
+  width: 12px; height: 12px; border: 0; padding: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; opacity: 0; }
 .rail .r-actor .save-btn { top: 5px; }
 .rail .r-actor .close-btn { top: 20px; }
 .rail .r-actor :is(.save-btn, .close-btn) svg { width: 10px; height: 10px; display: block; pointer-events: none; }
 /* an actor with a ring (shown, or open in another pane): the ring runs behind them, the panel's colour under each --
    or, the tile hovered, the colour it is then -- so it never crosses them */
-.rail .r-actor:is([aria-current="true"], [data-open="true"]) :is(.save-btn, .close-btn) { background: var(--side); }
-.rail .r-actor:is([aria-current="true"], [data-open="true"]):hover :is(.save-btn, .close-btn):not(:hover, :focus-visible) {
+.rail .r-actor:is([data-current="true"], [data-open="true"]) :is(.save-btn, .close-btn) { background: var(--side); }
+.rail .r-actor:is([data-current="true"], [data-open="true"]):hover :is(.save-btn, .close-btn):not(:hover, :focus-visible) {
   background: linear-gradient(var(--wash), var(--wash)) var(--side); }
 /* keyboard focus, not a press: a bookmark or × pressed keeps its focus, which would hold them shown once the pointer left */
-.rail .r-actor:is(:hover, :focus-visible, :has(:focus-visible), [aria-current="true"]) :is(.save-btn, .close-btn) { opacity: 1; }
+.rail .r-actor:is(:hover, :has(:focus-visible), [data-current="true"]) :is(.save-btn, .close-btn) { opacity: 1; }
 @media (hover: none) { .rail .r-actor .save-btn.on { opacity: 1; } }
-@media (hover: none) { .rail .r-actor:not([aria-current="true"]) .close-btn, .rail .r-actor:not([aria-current="true"]) .save-btn:not(.on) { opacity: 0; } }
+@media (hover: none) { .rail .r-actor:not([data-current="true"]) .close-btn, .rail .r-actor:not([data-current="true"]) .save-btn:not(.on) { opacity: 0; } }
 .rail .r-actor .save-btn.on { color: var(--s1); }
 .rail .r-actor .save-btn:is(:hover, :focus-visible) { color: var(--s1); background: var(--surface); outline: none; }
 .rail .r-actor .close-btn:is(:hover, :focus-visible) { color: var(--critical); background: var(--surface); outline: none; }
@@ -267,7 +272,7 @@ button.agent-group:hover { color: var(--ink-2); }
    folder's, the centre line kept */
 .rail .r-gatherer > :is(.r-kids, .r-actor, .r-fopen, .r-ffold, .r-fold, .r-none) { margin-left: 4px; margin-right: 4px; }
 .rail .r-fopen > .r-kids > :is(.r-fopen, .r-ffold) { margin-left: 3px; margin-right: 3px; }
-/* A FOLDER OF GATHERERS (features/list/gatherer-folders.js, r-gf): as a gatherer's folders are -- its name in a bracket, a little
+/* A FOLDER OF GATHERERS (features/list/gatherer-folders.ts, r-gf): as a gatherer's folders are -- its name in a bracket, a little
    bolder -- in the rail's gutter at its top, 4px in from both sides; the gatherers in it not set in further, so every
    avatar stays on the centre line; a folder in it 3px in from both, as a folder in a folder */
 .rail .r-actors > .r-gf { width: calc(100% - 8px); margin-left: 4px; margin-right: 4px; }
@@ -303,7 +308,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .rail .r-here .r-hname[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .rail .r-here .r-hname:is(:hover, :focus-visible) { background: var(--wash); outline: none; }
 .rail .r-here.folder .r-hname { font-weight: 600; }
-/* an actor dragged onto a name (features/list/list.js "DRAGGING"): the name it would go in lit, as the list's folder line is;
+/* an actor dragged onto a name (features/list/list.ts "DRAGGING"): the name it would go in lit, as the list's folder line is;
    what is dragged, faded; selected with Shift+click, tinted in the selection's colour, a check at its avatar's top right
    (its bookmark and × are at its left) once two are */
 .rail :is(.r-fname, .r-fhead, .r-gname, .r-hname, .r-step).drop-on { background: color-mix(in srgb, var(--s1) 18%, transparent);
@@ -311,10 +316,11 @@ button.agent-group:hover { color: var(--ink-2); }
 .rail .r-actor.dragging { opacity: .45; }
 .rail .r-actor.picked, .rail .r-actor.picked:hover { background: color-mix(in srgb, var(--pick) 15%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pick) 55%, transparent); }
-.rail .r-actor .pick { position: absolute; right: -5px; top: -5px; width: 15px; height: 15px; border-radius: 50%; display: flex; align-items: center;
+/* (the check: a button of the tile's own, beside its main one, at its avatar's top right corner) */
+.rail .r-actor > .pick { position: absolute; left: calc(50% + 5px); top: -1px; width: 15px; height: 15px; border: 0; padding: 0; border-radius: 50%; display: flex; align-items: center;
   justify-content: center; background: var(--pick); box-shadow: 0 0 0 1.5px var(--side); color: #fff; cursor: pointer; }
-.rail .r-actor .pick svg { width: 11px; height: 11px; stroke-width: 2.2; }
-.rail .r-actor[aria-current="true"] .r-name { color: var(--ink); font-weight: 600; }
+.rail .r-actor > .pick svg { width: 11px; height: 11px; stroke-width: 2.2; }
+.rail .r-actor[data-current="true"] .r-name { color: var(--ink); font-weight: 600; }
 .rail .r-none { color: var(--muted); font-size: var(--fs-label); text-align: center; padding: 8px 4px; }
 /* its foot (RAIL_FOOT): "Show…"; hovered, in focus from the keys, or pressed, its boxes -- folders, saved, closed --
    open over the word, which stays where it is (the tree above giving them room), one under another while the rail is
@@ -405,7 +411,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .actor-card .c-row .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .actor-card .c-row .st { flex: none; color: var(--muted); font-size: var(--fs-label); }
 .actor-card .c-more { color: var(--muted); font-size: var(--fs-meta); }
-.actor-card .c-tab { color: var(--ink-2); font-size: var(--fs-meta); }   /* where it is open: the tab (features/list/list.js's tabLine) */
+.actor-card .c-tab { color: var(--ink-2); font-size: var(--fs-meta); }   /* where it is open: the tab (features/list/CardParts.tsx's tabLine) */
 .actor-card .c-hint { color: var(--muted); font-size: var(--fs-label); border-top: 1px solid var(--grid); padding-top: 5px; margin-top: 1px; }
 :root.list-full .side { position: fixed; inset: var(--bar-h) 0 0 0; z-index: var(--z-list-over); border-right: 0; }
 :root.list-full .work { grid-column: 2; grid-row: 1; }
@@ -509,7 +515,8 @@ button.agent-group:hover { color: var(--ink-2); }
   :root.list-folded .rail :is(.r-fname, .r-fhead) { padding-left: 3px; }
   :root.list-folded .rail-grip { display: none; }
   :root.list-folded .rail :is(.r-fname, .r-fhead) { width: auto; max-width: 64px; }
-  :root.list-folded .rail .r-actor { width: auto; padding: 4px; }
+  :root.list-folded .rail .r-actor { width: auto; }
+  :root.list-folded .rail .r-main { padding: 4px; }
   :root.list-folded .rail .r-name { display: none; }
   :root.list-folded .rail .r-actor :is(.save-btn, .close-btn) { top: 0; width: 14px; height: 14px; background: var(--side); box-shadow: 0 0 0 1px var(--ring); }
   /* there, its tile no wider than its avatar: the two over the avatar's top corners, not one under the other */
@@ -523,7 +530,7 @@ button.agent-group:hover { color: var(--ink-2); }
   .monitor .m-body { overflow: visible; } }
 .servers { color: var(--ink-2); font-size: var(--fs-meta); }
 main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relative; overflow: hidden; }
-/* THE LIST HIDDEN (features/list/modes.js's setListHidden), the list or the rail: its column none, the panes the page's whole
+/* THE LIST HIDDEN (features/list/modes.ts's setListHidden), the list or the rail: its column none, the panes the page's whole
    width, a thin edge at the page's left (.list-edge); the pointer on it (list-peek), the list slides out over the panes,
    and back once the pointer has left it */
 :root.list-hidden:not(.list-full) .layout { grid-template-columns: 0 minmax(0, 1fr); }

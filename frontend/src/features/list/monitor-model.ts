@@ -1,7 +1,7 @@
 // THE MONITOR'S VIEW-MODEL (the list over the whole page): every actor of the groups not hidden, a column for each group
 // of the list that has any -- those wanting the reader first, then those at work, then those at rest (MON_ORDER), Closed
 // last -- and in each, a card for each actor; Saved's under a heading for each folder. What a card shows of its actor's
-// turn is read from the server (monitor.py) for the cards in view, by the page (modes.js's monLoad): `got`, by key.
+// turn is read from the server (monitor.py) for the cards in view, by the page (monitor-feed.ts's monLoad): `got`, by key.
 // Each card has a signature of all it shows, so the view draws it again only when that changes (Monitor.tsx).
 import { plural } from "../../core/format";
 import { key } from "../../core/model/keys";

@@ -1,11 +1,11 @@
 import { SNAPSHOT, panes, state } from "../../core/page/state.js";
 import { ICONS, closeIcon, el, post, strokeIcon } from "../../core/page/helpers.js";
 import { setLive } from "../page/data.js";
-import { markSeen, seen, statusOf } from "../list/seen.js";
+import { markSeen, seen, statusOf } from "../list/seen";
 import {
   actorTitle, appFace, appInfo, appKey, appTitle, plainFace, readApps, renderAgents, selectApp, titleOf,
-} from "../list/list.js";
-import { cardDraw, hover } from "../list/modes.js";
+} from "../list/list";
+import { cardDraw, hover } from "../list/modes";
 import { isAt, openActors, paneNote, pick } from "../layout/panes.js";
 import * as appHost from "../apps/host";
 import * as prefs from "../../core/prefs";
@@ -22,7 +22,7 @@ import * as prefs from "../../core/prefs";
 // computer's needs the reader's leave once, in a browser (the desktop app gives it): asked from the settings. Both
 // choices kept in this browser (HEED_KEY).
 //
-// An app's notification is listed until the reader looks at the app (features/list/seen.js: its panel shown, the page in front),
+// An app's notification is listed until the reader looks at the app (features/list/seen.ts: its panel shown, the page in front),
 // the app clears it, or the reader dismisses it (its × in a card: dismissNotice). A click on one (a card's, a pop-up's,
 // the computer's) shows the app's panel and hands it where the notification said (openNotice: the SDK's
 // ag.notices.onOpen).

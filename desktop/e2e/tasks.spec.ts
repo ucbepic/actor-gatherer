@@ -82,7 +82,7 @@ async function until(check: () => Promise<boolean>, ms = 60_000): Promise<void> 
 async function rowOf(page: Page, c: string) {
   const tasks = ((await ask("/api/home")).tasks || {}) as Record<string, { tasked: Record<string, number> }>;
   const t = tasks.g?.tasked?.[c];
-  return page.locator(t === undefined ? `#agents button.agent[data-key$="${c}"]` : `#agents button.agent.task[data-key$="/task:${t}"]`);
+  return page.locator(t === undefined ? `#agents .agent[data-key$="${c}"]` : `#agents .agent.task[data-key$="/task:${t}"]`);
 }
 /** The app's native pages: each one's address, whether it shows, and where. */
 const pagesOf = (app: ElectronApplication) =>

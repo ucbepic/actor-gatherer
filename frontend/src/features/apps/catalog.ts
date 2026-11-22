@@ -1,4 +1,4 @@
-// THE APPS PAGE, as the page around it uses it (features/apps/apps-page.js draws it in a tab's box; features/list/seen.js
+// THE APPS PAGE, as the page around it uses it (features/apps/apps-page.js draws it in a tab's box; features/list/seen.ts
 // asks an agent's requests): the page in React (catalog/AppsPage.tsx), its state in a store (catalog/store.ts), its
 // dialogs in a root of their own on the page (catalog/Dialogs.tsx), so an agent's request is asked even with the Apps
 // page not shown.

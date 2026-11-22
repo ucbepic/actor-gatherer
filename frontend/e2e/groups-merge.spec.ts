@@ -1,5 +1,5 @@
 // A folder made outside every group is a group of its own, and a group dropped into another is a folder of it
-// (features/list/gatherer-folders.js's nameGroup; features/list/group-moves.js's askMerge; groups.py's `make` and `merge`): the list head's
+// (features/list/gatherer-folders.ts's nameGroup; features/list/group-moves.ts's askMerge; groups.py's `make` and `merge`): the list head's
 // folder button names a new group in place -- a folder at the list's top is a group, by the default rule -- and a group's row dragged onto another group asks first, then is merged into it.
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
@@ -148,8 +148,7 @@ test("a group dragged onto another is a folder of it with all its actors: asked 
   const lab = page.locator("#agents .gatherer", { has: page.locator(".gatherer-row", { hasText: LAB }) });
   const folder = lab.locator(".folder-line", { hasText: GATHERER });
   await expect(folder.locator(".fbtn")).toHaveAttribute("aria-expanded", "true"); // opened, to show where it went
-  for (const actor of [CLAUDE, CODEX])
-    await expect(lab.locator(".f-kids button.agent", { hasText: actor })).toBeVisible();
+  for (const actor of [CLAUDE, CODEX]) await expect(lab.locator(".f-kids .agent", { hasText: actor })).toBeVisible();
 });
 
 test("a group is not merged into itself, nor dragged at all with a database per gatherer", async ({ page }) => {
@@ -161,7 +160,7 @@ test("a group is not merged into itself, nor dragged at all with a database per 
     return route.abort();
   });
   await open(page);
-  await groupRow(page, GATHERER).dragTo(page.locator("#agents button.agent", { hasText: CLAUDE })); // its own actor
+  await groupRow(page, GATHERER).dragTo(page.locator("#agents .agent", { hasText: CLAUDE })); // its own actor
   await expect(page.locator("dialog.mv-dialog")).toHaveCount(0);
   expect(asked).toBe(0);
   await page.unroute("**/api/home");

@@ -4,8 +4,8 @@ import { drafts, fitBox, keepDraft, setLive } from "../page/data.js";
 import {
   aimStart, appInfo, appItem, byName, folderById, folderPost, kidFolders, openUp, readApps, selectApp, shownClosed,
   startIn, titleOf,
-} from "../list/list.js";
-import { aloneUnder, everyActor } from "../list/group-moves.js";
+} from "../list/list";
+import { aloneUnder, everyActor } from "../list/group-moves";
 import {
   appMarkImg, byLabel, closePop, folderPicks, noHarness, openApp, openPop, opensWithAgent, popMenu, rowPop, startCwd, startSession,
   startShell, startWithApp, startable, workPlacer,

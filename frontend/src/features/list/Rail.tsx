@@ -15,7 +15,7 @@ import { ActorTile, AppTile, TaskTile } from "./RailTiles";
 import { GF, type Tally } from "./tree";
 import type { Folder, ListCtx } from "./types";
 
-/** What the rail calls of the page around it (features/list/modes.js's RAIL_HOST): the list's own presses and drags,
+/** What the rail calls of the page around it (features/list/modes.ts's RAIL_HOST): the list's own presses and drags,
  * and the rail's -- drilled in or out, a busy folder folded, what its foot shows. */
 export interface RailHost
   extends

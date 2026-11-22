@@ -3,7 +3,7 @@ import {
   ICONS, bareAvatar, doneCheck, el, restDelay, shellOf, shellPath, signature, strokeIcon,
 } from "../../core/page/helpers.js";
 import { loadChat } from "../page/data.js";
-import { markSeen, statusOf } from "../list/seen.js";
+import { markSeen, statusOf } from "../list/seen";
 import { placeIfShown, placeWork, workPlacer } from "./panes.js";
 import { drawPane } from "../page/main-view.js";
 import { chatToEnd } from "../chat/chat.js";

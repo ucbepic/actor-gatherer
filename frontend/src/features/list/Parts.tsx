@@ -193,8 +193,8 @@ export function CrewButton({ host, g, node }: { host: ListHost; g: Gatherer | nu
   );
 }
 
-/** A row's own button -- its bookmark, its × -- a span the keys reach (its row a button already), Enter or Space
- * pressing it: a press on one does only what it says, not showing the row's item. */
+/** A row's own button -- its bookmark, its × -- beside the row's main button, not in it: a press on one does only what
+ * it says, not showing the row's item. */
 export function RowButton({
   className,
   run,
@@ -212,25 +212,17 @@ export function RowButton({
   "aria-expanded"?: "true" | "false";
 }) {
   return (
-    <span
+    <button
       className={className}
-      role="button"
-      tabIndex={0}
+      type="button"
       {...attrs}
       onClick={(ev) => {
         ev.stopPropagation();
         run(ev.currentTarget);
       }}
-      onKeyDown={(ev) => {
-        if (ev.key === "Enter" || ev.key === " ") {
-          ev.preventDefault();
-          ev.stopPropagation();
-          run(ev.currentTarget);
-        }
-      }}
     >
       {children}
-    </span>
+    </button>
   );
 }
 
@@ -245,23 +237,13 @@ export function TabMark({ at }: { at: TabAt | null }) {
   );
 }
 
-/** An actor's face alone, no harness's badge: its avatar, else its harness's mark -- with a check on it, selected with
- * another (`check`: a click on it leaves it out). */
-export function Face({
-  host,
-  a,
-  check,
-}: {
-  host: Pick<PageParts, "avatarSrc" | "harnessLogo">;
-  a: Actor;
-  check?: ReactNode;
-}) {
+/** An actor's face alone, no harness's badge: its avatar, else its harness's mark. */
+export function Face({ host, a }: { host: Pick<PageParts, "avatarSrc" | "harnessLogo">; a: Actor }) {
   const src = host.avatarSrc(a.avatar);
-  if (!src) return <Html node={host.harnessLogo(a.harness)} extra={check} />;
+  if (!src) return <Html node={host.harnessLogo(a.harness)} />;
   return (
     <span className="logo avatar">
       <img src={src} alt="" draggable="false" />
-      {check}
     </span>
   );
 }
@@ -325,6 +307,38 @@ export function AskClose({
         {button("go", "go", "Close folder", go)}
         {button("cancel", "", "Cancel", cancel)}
       </div>
+    </div>
+  );
+}
+
+/** The place to drop what is dragged outside every group -- over the list's head, and over Manage groups' top line --
+ * shown while such a drag goes on (body.drag-out; drag.ts's showOutside says what it does there): `can`, whether what is
+ * dragged may go there; `drop`, it dropped there. */
+export function OutsideDrop({ can, drop }: { can: () => boolean; drop: () => void }) {
+  return (
+    <div
+      className="outside-drop"
+      onDragEnter={(ev) => {
+        if (!can()) return;
+        ev.preventDefault();
+        ev.currentTarget.classList.add("drop-on");
+      }}
+      onDragOver={(ev) => {
+        if (!can()) return;
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "move";
+      }}
+      onDragLeave={(ev) => {
+        if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) ev.currentTarget.classList.remove("drop-on");
+      }}
+      onDrop={(ev) => {
+        if (!can()) return;
+        ev.preventDefault();
+        ev.stopPropagation(); // the list's head it is over: not dropped there too
+        drop();
+      }}
+    >
+      Outside every group: a group of its own
     </div>
   );
 }

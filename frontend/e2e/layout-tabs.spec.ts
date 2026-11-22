@@ -15,12 +15,12 @@ const CLAUDE_CHANNEL = "5f0c2a2e-8d1b-4c7e-9a3f-1b2c3d4e5f60";
 // an actor's latest activity after any the server has kept as looked at (by an earlier test, or try, of this run)
 const later = () => Date.now() / 1000;
 const beside = process.platform === "darwin" ? "Meta" : "Control";
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const mark = (page: Page, text: string) => row(page, text).locator(".tab-no");
 const tabs = (page: Page) => page.locator(".lay-tabs:visible .lay-tab");
 const notes = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]");
 const frame = (page: Page) => page.locator("#panes > .pane").nth(1);
-const lone = (page: Page) => page.locator("#agents button.agent.app-row");
+const lone = (page: Page) => page.locator("#agents .agent.app-row");
 const box = async (l: Locator) => (await l.boundingBox())!;
 
 // Claude (the page's first click: in place of the actor it opened on) with a Notepad, one task, in tab 1; Codex, open
@@ -41,7 +41,7 @@ test("a click on a task open nowhere opens it in a tab of its own; on one in ano
 }) => {
   await twoTabs(page);
   await expect(notes(page)).toHaveCount(0); // Codex's tab: Claude's task not in it
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(mark(page, CLAUDE)).toHaveText("1"); // open in tab 1, not shown
   await expect(mark(page, CLAUDE)).not.toHaveClass(/here/);
   await expect(mark(page, CODEX)).toHaveText("2");
@@ -49,10 +49,10 @@ test("a click on a task open nowhere opens it in a tab of its own; on one in ano
   await row(page, CLAUDE).click(); // in tab 1: that tab shown, as it was left
   await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true");
   await expect(notes(page)).toHaveCount(1);
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(tabs(page)).toHaveCount(2); // no third
   await tabs(page).nth(1).click(); // pressed: shown
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
 });
 
 test("a click on a task open in the tab shown puts it in focus; ⌥+click leaves the tab with that task alone", async ({
@@ -63,12 +63,12 @@ test("a click on a task open in the tab shown puts it in focus; ⌥+click leaves
   await row(page, CODEX).click({ modifiers: [beside] }); // beside, in the tab shown
   await expect(frame(page)).toHaveCount(1);
   await row(page, CLAUDE).click(); // open here: in focus, nothing opened or closed
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(frame(page)).toHaveCount(1);
   await expect(tabs(page)).toHaveCount(1);
   await row(page, CODEX).click({ modifiers: ["Alt"] }); // the tab shown: Codex's alone, Claude's pane closed
   await expect(frame(page)).toHaveCount(0);
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(tabs(page)).toHaveCount(1); // no new tab, none lost
   await expect(mark(page, CLAUDE)).toHaveCount(0); // open nowhere now
   await row(page, CLAUDE).click(); // so: a tab of its own
@@ -83,7 +83,7 @@ test("⌥+click on a task of another tab moves it into the tab shown, in place o
   await expect(notes(page)).toHaveCount(1);
   await row(page, CODEX).click({ modifiers: ["Alt"] });
   await expect(tabs(page)).toHaveCount(1);
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(notes(page)).toHaveCount(0);
   await expect(mark(page, CLAUDE)).toHaveCount(0);
 });
@@ -94,7 +94,7 @@ test("⌘+click on a task of another tab brings that tab forward, nothing opened
   await expect(notes(page)).toHaveCount(1);
   await row(page, CODEX).click({ modifiers: [beside] });
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(frame(page)).toHaveCount(0);
   await expect(notes(page)).toHaveCount(0);
 });
@@ -108,17 +108,17 @@ test("an actor stays in its tab though an app beside it was selected as the tab 
   await row(page, CLAUDE).click();
   await lone(page).click({ modifiers: [beside] }); // the lone Notepad beside Claude, selected
   await expect(notes(page)).toHaveCount(1);
-  await expect(lone(page)).toHaveAttribute("aria-current", "true");
+  await expect(lone(page).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await row(page, CODEX).click(); // tab 2
   await expect(tabs(page)).toHaveCount(2);
   for (let i = 0; i < 2; i++) {
     await tabs(page).nth(0).click(); // back: Claude and the Notepad, both, the Notepad selected
     await expect(notes(page)).toHaveCount(1);
     await expect(page.locator("#pane-here")).toBeVisible();
-    await expect(lone(page)).toHaveAttribute("aria-current", "true");
+    await expect(lone(page).locator(".a-main")).toHaveAttribute("aria-current", "true");
     await expect(mark(page, CLAUDE)).toHaveClass(/here/);
     await tabs(page).nth(1).click();
-    await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+    await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   }
   await expect(mark(page, CLAUDE)).toHaveText("1"); // still kept in tab 1
 });
@@ -132,7 +132,7 @@ test("a click while a tab is still being opened goes where it would once it is",
   await tabs(page).nth(0).click(); // Claude's tab, still opening its Notepad...
   await row(page, CODEX).click(); // ...as Codex is clicked: its tab, once Claude's is open
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(notes(page)).toHaveCount(0);
   await expect(tabs(page)).toHaveCount(2);
   await expect(mark(page, CLAUDE)).toHaveText("1");
@@ -148,7 +148,7 @@ test("a click is not held up by a tab still loading what its actor shows: it goe
   await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true");
   await row(page, CODEX).click(); // well before Claude's Chat has loaded
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 3000 });
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true", { timeout: 3000 });
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true", { timeout: 3000 });
   await page.waitForTimeout(6500); // Claude's tab done loading meanwhile: nothing of it opened here, nothing lost
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(notes(page)).toHaveCount(0);
@@ -162,13 +162,13 @@ test("reloaded, the page shows the tab shown's actor again, whichever of its fir
 }) => {
   await twoTabs(page);
   await tabs(page).nth(0).click(); // Claude's tab: not the actor the page opens on by itself
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await page.route("**/api/home", async (route) => {
     await new Promise((r) => setTimeout(r, 1500)); // the stream's home first
     await route.continue();
   });
   await page.reload();
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true");
   await expect(notes(page)).toHaveCount(1);
   await expect(mark(page, CODEX)).toHaveText("2");
@@ -189,9 +189,9 @@ test("an app selected while the actor shown just before still loads its Chat sta
   await row(page, CLAUDE).click(); // its Chat loading...
   await lone(page).click({ modifiers: [beside] }); // ...as the lone Notepad is opened beside it, selected
   await expect(notes(page)).toHaveCount(1);
-  await expect(lone(page)).toHaveAttribute("aria-current", "true");
+  await expect(lone(page).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await page.waitForTimeout(5500); // Claude's Chat loaded meanwhile: the Notepad still the one selected
-  await expect(lone(page)).toHaveAttribute("aria-current", "true");
+  await expect(lone(page).locator(".a-main")).toHaveAttribute("aria-current", "true");
 });
 
 test('"+" opens a new tab, its page shown, the next task clicked shown in it; left empty, it goes', async ({
@@ -202,7 +202,7 @@ test('"+" opens a new tab, its page shown, the next task clicked shown in it; le
   await page.locator(".lay-tab-add").click();
   await expect(tabs(page)).toHaveCount(2);
   await expect(page.locator(".lay-empty").getByRole("textbox", { name: "Message a new actor" })).toBeVisible(); // its page
-  await expect(row(page, CLAUDE)).not.toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).not.toHaveAttribute("aria-current", "true");
   await expect(mark(page, CLAUDE)).toHaveText("1");
   await row(page, CODEX).click(); // open nowhere: shown in the empty tab, not a third
   await expect(tabs(page)).toHaveCount(2);
@@ -212,7 +212,7 @@ test('"+" opens a new tab, its page shown, the next task clicked shown in it; le
   await expect(tabs(page)).toHaveCount(3);
   await tabs(page).nth(0).click(); // the empty one left: gone
   await expect(tabs(page)).toHaveCount(2);
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
 });
 
 test("a task's row open in a tab is not dropped onto the work area", async ({ page }) => {
@@ -320,14 +320,14 @@ test("a task dragged by its card head onto the tab bar goes to a new tab; the ta
   await expect(tabs(page)).toHaveCount(2);
   await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true"); // the tab shown stays shown
   await expect(notes(page)).toHaveCount(0); // without Claude's task
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(mark(page, CODEX)).toHaveText("1");
   await expect(mark(page, CLAUDE)).toHaveText("2");
   await expect(mark(page, CLAUDE)).not.toHaveClass(/here/);
   await expect(ghost).toBeHidden();
   await tabs(page).nth(1).click(); // its tab shown: the task as it was, its Notepad with it
   await expect(notes(page)).toHaveCount(1);
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(mark(page, CODEX)).toHaveText("1");
 });
 
@@ -353,7 +353,7 @@ test("a task moved from its card head's menu: to a new tab; or, its only panel's
   await expect(mark(page, CODEX)).toHaveText("2");
   await expect(tabs(page)).toHaveCount(2);
   await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true"); // the lone Notepad's, still shown
-  await expect(lone(page)).toHaveAttribute("aria-current", "true");
+  await expect(lone(page).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await tabs(page).nth(1).click(); // Claude's task and Codex, side by side
   await expect(notes(page)).toHaveCount(1);
   await expect(frame(page)).toHaveCount(1);
@@ -377,7 +377,7 @@ test("a tab named by a double-click keeps its name; × closes a tab, its actors 
   await tabs(page).nth(0).locator(".lay-close").click(); // Claude's tab closed: Codex's shown, alone, no ×
   await expect(tabs(page)).toHaveCount(1);
   await expect(tabs(page).locator(".lay-close")).toHaveCount(0);
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(row(page, CLAUDE)).toHaveCount(1); // still in the list, as it was
   await expect(mark(page, CLAUDE)).toHaveCount(0);
 });
@@ -393,7 +393,7 @@ test("each task's state marked on its lead's box in its tab's map: waiting, fail
   });
   await twoTabs(page); // Claude's task in tab 1, Codex shown in tab 2
   await expect.poll(homes.sent).toBe(true);
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true"); // Claude out of sight: not looked at
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true"); // Claude out of sight: not looked at
   const face = tabs(page).nth(0).locator(".lay-mcell[title]");
   await expect(face).toHaveCount(1); // one lead's box for its task
   await expect(face.locator(".lay-dot")).toHaveCount(0); // idle: no mark

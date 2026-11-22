@@ -8,7 +8,7 @@ import { CLAUDE, CODEX, GATHERER, open } from "./home";
 type Agent = { channel: string; harness?: string; [k: string]: unknown };
 type Group = { name: string; agents: Agent[]; [k: string]: unknown };
 const beside = process.platform === "darwin" ? "Meta" : "Control";
-const row = (page: Page, text: string) => page.locator("#agents button.agent", { hasText: text });
+const row = (page: Page, text: string) => page.locator("#agents .agent", { hasText: text });
 const crew = (page: Page) => page.locator("#agents .gatherer-row .act.crew");
 const tabs = (page: Page) => page.locator(".lay-tabs:visible .lay-tab");
 const panes = (page: Page) => page.locator("#panes > .pane:not(.lay-away)");
@@ -37,22 +37,22 @@ test("the coordinator agent opens in a tab of its own, kept when a new tab is op
   await expect(tabs(page)).toHaveCount(2);
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(tabs(page).nth(1)).toContainText("Coordinator agent");
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(row(page, CODEX).locator(".tab-no")).toHaveText("2");
   await page.locator(".lay-tab-add").click(); // a new tab: the coordinator's kept
   await expect(tabs(page)).toHaveCount(3);
   await tabs(page).nth(1).click(); // (the new tab, left with nothing in it, closed)
   await expect(tabs(page)).toHaveCount(2);
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await expect(panes(page)).toHaveCount(1);
   await crew(page).click(); // open in the tab shown: no other
   await expect(tabs(page)).toHaveCount(2);
   await tabs(page).nth(0).click();
-  await expect(row(page, CLAUDE)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CLAUDE).locator(".a-main")).toHaveAttribute("aria-current", "true");
   await crew(page).click(); // open in another tab: that tab brought forward
   await expect(tabs(page)).toHaveCount(2);
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
-  await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true");
+  await expect(row(page, CODEX).locator(".a-main")).toHaveAttribute("aria-current", "true");
 });
 
 test("the coordinator agent opened beside a task is kept in that tab: shown again with it", async ({ page }) => {
