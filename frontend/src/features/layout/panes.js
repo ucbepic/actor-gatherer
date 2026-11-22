@@ -27,7 +27,7 @@ import { termOf } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
 import { allPanes as everyPane, makePane, paneAt, paneBox, paneInfo } from "../page/pane-view.js";
 import { herePane, newPane } from "./pane";
-import { clearPlan, closePlan, itemsPlan, onlyPlan, tabPlan } from "./plan";
+import { clearPlan, closePlan, herePlan, itemsPlan, onlyPlan, tabPlan } from "./plan";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
 import { shadow } from "./shadow";
@@ -409,15 +409,9 @@ function closePane(p) {
   renderPanes();
 }
 // This page's own pane closed: the next pane's actor (`next`) -- and view -- moves into it, its frame gone.
-async function closeHere(next = actorPanes()[0]) {
-  if (!next) return;
-  shadow.update(model.unwantPanes, (o) => isAt([o.g, o.c], next.g, next.c));
-  dropPane(next, false);                             // (its actor shown on in this page's own: not gone)
-  panes.here.size = next.size;
-  if (next.view) setViewHere(next.view);
-  focusPane(panes.here);
-  layout();
-  await select(next.g, next.c);
+async function closeHere() {
+  if (!actorPanes().length) return;
+  return renderLayout(herePlan(openNow()));         // (features/layout/plan.ts's herePlan: the next pane's actor in it)
 }
 // This page's own pane closed by its × -- its head's, its Chat bar's, its minimized box's -- as an app's panel's × closes
 // it: out of its task's tab shown (workClosed); the next pane's actor moved into it, or, none, it out of sight (away) and
@@ -432,11 +426,8 @@ async function closeHerePane() {
   if (NARROW.matches) return;
   workClosed(panes.here.node);
   const k = taskKey(...state.selected);
-  putAway(state.selected, true);
-  const app = panes.apps.find((q) => !q.held && appPaneTask(q) === k) || panes.apps.find((q) => !q.held);
-  if (app) selectAppPane(app);
+  renderLayout(herePlan(openNow()));                 // out of sight, closed by the reader; an app of its task selected
   if (k && tasksLaidOut.has(k)) rememberTask(k);
-  placeWork(); renderAgents();
 }
 // An actor's pane focused: the app selected, if one was, no longer (selectAppPane)
 function focusPane(p) {
@@ -810,6 +801,7 @@ function renderLayout(plan, firstKept = false) {
   // this page's own pane out of sight, or in sight again, before anything is placed: a panel placed in sight is put in
   // its task's arrangement (work.ts)
   const h = plan.here;
+  let loading = null;
   if (!h && plan.away && state.selected && !isShell(state.selected[1])) putAway(state.selected);
   if (h && h.shut) putAway([h.g, h.c], true);
   else if (h && shadow.layout.away) backInSight();
@@ -818,7 +810,8 @@ function renderLayout(plan, firstKept = false) {
     if (h.size) panes.here.size = h.size;
     if (!h.keep && !isAt(state.selected, h.g, h.c)) {
       if (h.view) setViewHere(h.view);
-      select(h.g, h.c).catch(() => {});
+      loading = select(h.g, h.c);
+      loading.catch(() => {});
     }
   }
   renderPanes();
@@ -828,6 +821,7 @@ function renderLayout(plan, firstKept = false) {
   else if (f) focusPane(isAt(state.selected, f.g, f.c) ? panes.here : actorPanes().find((q) => isAt([q.g, q.c], f.g, f.c)) || panes.here);
   markSelected(); placeWork();
   if (state.home) renderAgents();
+  return loading;                                    // this page's own pane's actor loading, if it was given another
 }
 // A task's key as it is now: a lone item's -- an actor's, an app's -- the task it has been put in since, if it has (taskKey);
 // any other, as it is (a task's; one not known yet, its apps not read). A screen tab keeps the keys of the tasks it was

@@ -271,3 +271,34 @@ export function itemsPlan(
   const focus = last ? { g: last.g, c: last.c } : null;
   return { order: [], appsOnly: now.appsOnly ?? null, here, away, others: list, apps: kept, focus, left: 0 };
 }
+
+/** The page's own pane closed by its × (`next`: the pane beside whose actor moves into it, if one is): that actor (its
+ * view, its width) in it, its own pane gone, in focus -- or, none beside, the page's own out of sight, closed by the
+ * reader (`shut`), an app of its task selected (else any app shown). */
+export function herePlan(now: Open): Plan {
+  const keepAll = now.others.map(bare),
+    apps = now.apps.map(appOf);
+  if (now.others.length) {
+    const [next, ...rest] = now.others;
+    return {
+      order: [],
+      appsOnly: now.appsOnly ?? null,
+      here: { g: next.g, c: next.c, view: next.view, shut: false, keep: false, size: next.size },
+      others: rest.map(bare),
+      apps,
+      focus: { g: next.g, c: next.c },
+      left: 0,
+    };
+  }
+  const h = now.here!,
+    app = now.apps.find((a) => a.task === h.task) || now.apps[0];
+  return {
+    order: [],
+    appsOnly: now.appsOnly ?? null,
+    here: { g: h.g, c: h.c, view: null, shut: true, keep: true },
+    others: keepAll,
+    apps,
+    focus: app ? { app: app.id } : null,
+    left: 0,
+  };
+}

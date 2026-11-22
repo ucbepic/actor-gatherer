@@ -1,7 +1,7 @@
 // A screen tab's panels worked out at once (plan.ts): the first task with actors in the page's own pane, its others beside
 // it, each other task beside them in the order the page opened them, apps alone last, terminals kept, at most so many.
 import { describe, expect, it } from "vitest";
-import { clearPlan, closePlan, itemsPlan, onlyPlan, tabPlan, type Open, type TaskFacts } from "./plan";
+import { clearPlan, closePlan, herePlan, itemsPlan, onlyPlan, tabPlan, type Open, type TaskFacts } from "./plan";
 
 const task = (key: string, over: Partial<TaskFacts> = {}): TaskFacts => ({
   key,
@@ -168,5 +168,14 @@ describe("clearPlan and closePlan", () => {
     expect(back.here).toMatchObject({ c: "a", keep: true });
     expect(back.others).toEqual([{ g: "g", c: "b", view: "history" }]);
     expect(back.focus).toEqual({ g: "g", c: "b" });
+  });
+
+  it("the page's own pane closed: the next pane's actor moves into it; none beside, it out of sight, an app selected", () => {
+    const moved = herePlan(open);
+    expect(moved.here).toEqual({ g: "g", c: "b", view: "history", shut: false, keep: false, size: 2 });
+    expect([moved.others.map((o) => o.c), moved.focus]).toEqual([["x", "shell:1"], { g: "g", c: "b" }]);
+    const shut = herePlan({ ...open, others: [] });
+    expect(shut.here).toMatchObject({ c: "a", shut: true });
+    expect(shut.focus).toEqual({ app: "i1" }); // (its task's app)
   });
 });
