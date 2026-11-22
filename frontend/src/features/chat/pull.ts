@@ -1,6 +1,6 @@
 // Moving about the conversation as the reader does: a turn's replies or its files shown or folded from its message,
-// that message kept where it was on the screen; and the earlier turns pulled in as the reader scrolls up past the top,
-// what they look at kept in place.
+// that message kept where it was on the screen; and the earlier turns pulled in as the reader scrolls up past the top --
+// what they look at kept in place by react-virtuoso, the turns put before its first (Turns.tsx's firstItemIndex).
 import { flushSync } from "react-dom";
 import { placed } from "./follow";
 import { TURNS_MORE, useTurns } from "./store";
@@ -10,6 +10,7 @@ import type { ChatFeed } from "./types";
 export const drawn: { feed: ChatFeed | null } = { feed: null };
 
 const talkNow = () => document.querySelector<HTMLElement>("#main .fl-talk");
+const top = (n: Element) => n.getBoundingClientRect().top;
 
 /**
  * A turn's files and commands, or its replies, shown or folded from its message (`change`: drawn at once, or -- a turn's
@@ -17,8 +18,7 @@ const talkNow = () => document.querySelector<HTMLElement>("#main .fl-talk");
  * brought into view, as a new pick is (Turns's effect, by the store's `shown`).
  */
 export async function keepTurn(n: number, change: () => unknown): Promise<void> {
-  const top = (x: Element) => x.getBoundingClientRect().top,
-    talk = talkNow();
+  const talk = talkNow();
   const turn = document.getElementById(`fl-turn-${n}`),
     y = talk && turn ? top(turn) - top(talk) : null;
   let changed: unknown;
@@ -34,24 +34,32 @@ export async function keepTurn(n: number, change: () => unknown): Promise<void> 
   if (now) placed(now); // not at its end, if it is no longer: the message stays where it is as the box changes size
 }
 
-/** More of the conversation above where the reader is (`change`, drawn at once), what they look at kept in place. */
-function showMore(change: () => void) {
-  const n = talkNow(),
-    below = n ? n.scrollHeight - n.scrollTop : 0;
-  flushSync(change);
-  const again = talkNow();
-  if (n && again) again.scrollTop = again.scrollHeight - below;
-}
-
 // Scrolled to its top, a pull further up -- the wheel, a finger drawn down, or ↑, Page Up or Home with the focus in it --
 // shows TURNS_MORE earlier turns above, the reader's place kept. Reaching the top is not one: what is drawn ends there,
-// and only a pull PULL_WAIT_MS after (of PULL_PX, so a jolt of the trackpad is not one) shows more. Chrome scrolls before
-// the page hears of the wheel, so the top is known by when the conversation got there (`topAt`), not by the event.
+// and only a pull PULL_WAIT_MS after (of PULL_PX, so a jolt of the trackpad is not one) shows more -- not react-virtuoso's
+// startReached, which a conversation shorter than its box is at as it opens. Chrome scrolls before the page hears of the
+// wheel, so the top is known by when the conversation got there (`topAt`, as react-virtuoso tells it), not by the event.
 export const PULL_PX = 60,
   PULL_WAIT_MS = 300;
 let topAt: number | null = null,
   pulled = 0,
   touchedAt: number | null = null;
+
+// A turn held where the reader is to see it, as turns are drawn about it: the turn first drawn as earlier turns are pulled
+// in, where it was on the screen; a turn picked, at the top (Turns.tsx's useShown). react-virtuoso puts turns before the
+// first a frame after it has them, keeping the reader's place by the height it guesses they have, and a turn not on the
+// page where it reckons it is from the heights it knows; and the count of earlier turns above them goes once the first
+// turn is on the page. So as they are drawn -- the turn held, or one above it (Turns.tsx's TurnItem), and the count
+// (its Top) -- the turn is put back where it is to be: in that draw, and only for a moment after, so a turn drawn above
+// it later, as the reader scrolls on, does not move it.
+let held: { talk: HTMLElement; n: number; y: number; at: number } | null = null;
+const HELD_MS = 2000;
+
+/** Turn `n` held `y` from the top of `talk` until it, or a turn above it, is drawn. */
+export function holdTurn(talk: HTMLElement, n: number, y: number): void {
+  held = { talk, n, y, at: performance.now() };
+}
+
 const talkOf = (n: EventTarget | null) => (n instanceof Element ? n.closest<HTMLElement>("#main .fl-talk") : null);
 
 export function pullEarlier(talk: HTMLElement | null, by: number): void {
@@ -71,7 +79,35 @@ export function pullEarlier(talk: HTMLElement | null, by: number): void {
   if (Date.now() - topAt < PULL_WAIT_MS || (pulled += by) < PULL_PX) return;
   pulled = 0;
   topAt = null;
-  showMore(() => useTurns.getState().setFirst(Math.max(0, first - TURNS_MORE)));
+  const turn = talk.querySelector(`#fl-turn-${first}`);
+  if (turn) holdTurn(talk, first, top(turn) - top(talk));
+  useTurns.getState().setFirst(Math.max(0, first - TURNS_MORE));
+}
+
+/** The turn held put where it is to be, if one is and it is on the page. */
+export function keepHeld(): void {
+  const h = held;
+  if (!h) return;
+  const turn = performance.now() - h.at < HELD_MS && h.talk.isConnected && h.talk.querySelector(`#fl-turn-${h.n}`);
+  if (!turn) return;
+  h.talk.scrollTop += top(turn) - top(h.talk) - h.y;
+  placed(h.talk);
+}
+
+/** Turn `n` drawn: if the turn held or one above it, the turn held put where it is to be -- and let go of once this draw
+ * is over (the turns drawn with it, and the count above them, put back too). */
+export function drawnAt(n: number): void {
+  const h = held;
+  if (!h || n > h.n) return;
+  keepHeld();
+  queueMicrotask(() => {
+    if (held === h) held = null;
+  });
+}
+
+/** The conversation got to its top, or left it (Turns.tsx's atTopStateChange). */
+export function reachedTop(there: boolean): void {
+  topAt = there ? (topAt ?? Date.now()) : null;
 }
 
 let listening = false;
@@ -79,14 +115,6 @@ let listening = false;
 export function listenForPulls(): void {
   if (listening) return;
   listening = true;
-  document.addEventListener(
-    "scroll",
-    (ev) => {
-      const n = ev.target;
-      if (n instanceof Element && n.matches("#main .fl-talk")) topAt = n.scrollTop > 0 ? null : (topAt ?? Date.now());
-    },
-    true,
-  );
   document.addEventListener(
     "wheel",
     (ev) => {
