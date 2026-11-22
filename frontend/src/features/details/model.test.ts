@@ -1,20 +1,15 @@
 // What the Details panel's cards show, worked out (model.ts): a context's runs and the items the types shown let through,
 // how it divides, and the latest context with what the next call carries.
 import { describe, expect, it } from "vitest";
+import { contextOf, itemOf } from "../../core/api/testing";
 import { NOT_COUNTED, PREAMBLE } from "../../core/model/items";
 import { contextEntries, contextRows, counted, ctxKey, divide, rowKey, tally, typeCounts, withPending } from "./model";
 import type { Agent, Context, Item } from "./types";
 
-const item = (over: Partial<Item>): Item => ({
-  group: "Recent history",
-  name: "user_message",
-  tokens: 1,
-  text: "",
-  ...over,
-});
+const item = (over: Partial<Item>): Item => itemOf({ tokens: 1, ...over });
 
 const ctx = (over: Partial<Context> = {}): Context => ({
-  read_id: 3,
+  ...contextOf(3),
   at: 100,
   tokens: 60,
   items: [

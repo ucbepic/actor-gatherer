@@ -2076,15 +2076,23 @@ export interface components {
       llm_attributed_by_time: number;
     };
     /**
+     * AgentOffer
+     * @description An app's `[agent]`: whether it can be opened with an agent of its own, and the name that agent is given.
+     */
+    AgentOffer: {
+      offered: boolean;
+      name: string;
+    };
+    /**
      * AgentTask
      * @description A task ag made of the actor's history.
      */
     AgentTask: {
       index: number;
-      name: string | null;
+      name: string;
       description: string | null;
-      first_row: number | null;
-      last_row: number | null;
+      first_row: number;
+      last_row: number;
       tokens: number | null;
       started: number | null;
       ended: number | null;
@@ -2126,21 +2134,14 @@ export interface components {
       /** @enum {string} */
       on_task: "join" | "folder" | "no";
       instructions: string;
-      agent: {
-        [key: string]: unknown;
-      };
+      agent: components["schemas"]["AgentOffer"];
       mark: boolean;
       panel: string | null;
-      tools: {
-        [key: string]: unknown;
-      }[];
-      links: {
-        [key: string]: unknown;
-      }[];
-      capabilities: {
-        [key: string]: unknown;
-      };
-      origin: string | null;
+      tools: components["schemas"]["ToolListed"][];
+      handles: components["schemas"]["Handles"][];
+      links: components["schemas"]["LinkForm"][];
+      capabilities: components["schemas"]["Capabilities"];
+      origin: string;
       folder: string | null;
       opens_with_agent: boolean;
       failed: string | null;
@@ -2262,6 +2263,29 @@ export interface components {
       active: number | null;
     };
     /**
+     * Block
+     * @description What a call did to a file (files.py's blocks), by `t`: the lines it read (`lines`, from `start`: None, not
+     *     known), matches it found (`hits`: `rows`), a change (`diff`: `old` replaced by `new` at `at` -- None, not found --
+     *     with the known lines `above` and `below`; `write`, `append`: its `lines`), what a command printed (`output`), an image
+     *     its result holds (`image`: `row_id`, `id`), a note (`text`); `cut`, how many more lines there were.
+     */
+    Block: {
+      t: string;
+      lines?: string[];
+      start?: number | null;
+      cut?: number;
+      rows?: [number, string][];
+      at?: number | null;
+      old?: string[];
+      new?: string[];
+      above?: [number, string][];
+      below?: [number, string][];
+      created?: boolean;
+      row_id?: number;
+      id?: string;
+      text?: string;
+    };
+    /**
      * Branch
      * @description An actor's branch of a project, in a worktree of its own (branches.py's `listed`).
      */
@@ -2336,6 +2360,23 @@ export interface components {
       exit?: number | string | null;
       took?: string | null;
       id: string | null;
+    };
+    /**
+     * Capabilities
+     * @description What an app may do beyond its own panel and tools (its manifest's `[capabilities]`).
+     */
+    Capabilities: {
+      native_view: boolean;
+      reads: string[];
+      files: boolean;
+      commands: boolean;
+      message_agents: boolean;
+      transcript: boolean;
+      edit_guard: boolean;
+      docs: boolean;
+      actors: boolean;
+      notify: boolean;
+      message_actors: boolean;
     };
     /**
      * Catalog
@@ -2466,7 +2507,7 @@ export interface components {
       git?: {
         [key: string]: string[];
       };
-      changed?: number[] | null;
+      changed?: [number, number] | null;
     };
     /**
      * Context
@@ -2568,7 +2609,8 @@ export interface components {
       model: string | null;
       created: number;
       finished: number | null;
-      rows: number[][];
+      /** @description the rows it was made of, as runs: [first, last] */
+      rows: [number, number][];
       channels: string[];
       ask: string | null;
       messages: number;
@@ -2663,6 +2705,14 @@ export interface components {
       error?: string;
     };
     /**
+     * Handles
+     * @description An intent an app handles, for these types.
+     */
+    Handles: {
+      intent: string;
+      types: string[];
+    };
+    /**
      * HarnessInfo
      * @description What the page shows of a harness (data.py's `harness_info`, from harness_kit).
      */
@@ -2694,8 +2744,24 @@ export interface components {
     History: {
       first_row: number;
       last_row: number | null;
-      items: components["schemas"]["Item"][];
+      items: components["schemas"]["HistoryItem"][];
       more: number;
+    };
+    /**
+     * HistoryItem
+     * @description An event of an actor's history (data.py's `history`): its type (`name`), size, time and text (`clipped`: how
+     *     much more there is); to its newest, its pending events after them, as a context lists them (`Item`).
+     */
+    HistoryItem: {
+      row_id: number | null;
+      name: string;
+      tokens: number;
+      at: number | null;
+      clipped: number;
+      text: string;
+      position?: number | null;
+      group?: string;
+      made_id?: number | null;
     };
     /** Hit */
     Hit: {
@@ -2725,9 +2791,7 @@ export interface components {
       now: number;
       running_seconds: number;
       gatherers: components["schemas"]["Gatherer"][];
-      hook_servers: {
-        [key: string]: unknown;
-      }[];
+      hook_servers: components["schemas"]["HookServer"][];
       /** @description {gatherer: "hidden" | "shown"} */
       hiding: {
         [key: string]: string;
@@ -2776,6 +2840,15 @@ export interface components {
       home_dir: string;
       branches: components["schemas"]["Branch"][];
       app_requests: components["schemas"]["AppRequest"][];
+    };
+    /**
+     * HookServer
+     * @description A hook server ag started that still runs (home.py's `hook_servers`).
+     */
+    HookServer: {
+      port: number | null;
+      pid: number | null;
+      upstream: string | null;
     };
     /**
      * IndexApp
@@ -2876,19 +2949,29 @@ export interface components {
     };
     /**
      * Item
-     * @description An item of a context, of an actor's history, or pending (data.py's `context` items, `history`, `_pending`): an
-     *     event, ag's made item, a preamble's part; its size and text (`clipped`: how much more there is).
+     * @description An item of a context (data.py's `context` items), or one the next call will carry (`_pending`, `_after_read`):
+     *     an event, ag's made item, a preamble's part -- its group, its size and text (`clipped`: how much more there is).
      */
     Item: {
+      position: number | null;
+      group: string;
       name: string;
       tokens: number;
-      at: number | null;
-      text: string;
-      clipped: number;
       row_id: number | null;
-      group?: string;
-      position?: number | null;
-      made_id?: number | null;
+      made_id: number | null;
+      at: number | null;
+      clipped: number;
+      text: string;
+    };
+    /**
+     * LinkForm
+     * @description The paths of `ag://<app>/...` links an app's panel opens (app_kit/links.py); `paths`, a file's path an agent
+     *     writes with no app named opens in it.
+     */
+    LinkForm: {
+      form: string;
+      about: string;
+      paths?: boolean;
     };
     /**
      * Llm
@@ -3045,25 +3128,37 @@ export interface components {
     OutlineTask: {
       channel: string;
       index: number;
-      name: string | null;
+      name: string;
       description: string | null;
-      first_row: number | null;
-      last_row: number | null;
+      first_row: number;
+      last_row: number;
       tokens: number | null;
     };
     /**
      * Part
-     * @description A part of an event, as the transcript shows it (data.py's `parts`): text, thinking, a call, its result, an
-     *     image.
+     * @description A part of an event, as the transcript shows it, whatever harness wrote it (data.py's `parts`), by `kind`: "text"
+     *     (`role`: user, assistant, system), "thinking" ("" when encrypted), "call" (`id`, `name`, `input`; what it does and
+     *     how it is shown, as its harness's rules read it: `action`, `view`; a script's `calls`), "result" (its call's `id`,
+     *     `error`, `text`; its harness's lines about the run taken off, `shown`, and what they said: `exit`, `took`), "note"
+     *     (`name`, `text`; what its harness's rules read of it: `said`).
      */
     Part: {
       kind: string;
       role?: string;
-      text?: string | null;
+      text?: string;
       id?: string | null;
       name?: string | null;
       input?: unknown;
-      error?: boolean | null;
+      action?: unknown;
+      view?: {
+        [key: string]: unknown;
+      };
+      calls?: components["schemas"]["ToolCall"][];
+      error?: boolean;
+      shown?: unknown;
+      exit?: unknown;
+      took?: unknown;
+      said?: unknown;
     };
     /**
      * Place
@@ -3249,6 +3344,25 @@ export interface components {
       folder: number | null;
     };
     /**
+     * Source
+     * @description A call that touched a file (files.py's sources): what it did to it, by kind; how (`via`); the lines its changes
+     *     added and removed. What git did as it ran is one apart (`git`). Where ag's hook server checked it on disk,
+     *     `checked` (None: nothing to match), and `unnamed`, the file changed as it ran but the call doesn't name it.
+     */
+    Source: {
+      via: string;
+      kind: string;
+      kinds: string[];
+      error: boolean;
+      call: unknown;
+      blocks: components["schemas"]["Block"][];
+      at: number | null;
+      changed: [number, number] | null;
+      git?: boolean;
+      checked?: boolean | null;
+      unnamed?: boolean;
+    };
+    /**
      * Staged
      * @description An app copied aside and checked (/api/apps/stage), to be installed or discarded: and the one installed of its
      *     name, with what installing it would change.
@@ -3365,6 +3479,30 @@ export interface components {
       };
     };
     /**
+     * ToolCall
+     * @description A call a script makes (codex's code mode), as its harness's rules read it.
+     */
+    ToolCall: {
+      name: string | null;
+      input: unknown;
+      action: unknown;
+      view: {
+        [key: string]: unknown;
+      };
+    };
+    /**
+     * ToolListed
+     * @description A tool an app gives agents, and what handles its calls (its backend, or its panel).
+     */
+    ToolListed: {
+      name: string;
+      description: string;
+      input_schema: {
+        [key: string]: unknown;
+      };
+      handled_by: string;
+    };
+    /**
      * Transcript
      * @description An actor's transcript (/api/transcript): its events, oldest first; whether it has earlier ones, and whether these
      *     reach its newest.
@@ -3403,7 +3541,8 @@ export interface components {
       stopped: components["schemas"]["Stopped"] | null;
       /** @description its calls, as many as its commands list */
       calls: number;
-      kind: string | null;
+      /** @description what the user's message is, as its harness's wrapper says (harness_kit's `words`) */
+      kind: string;
       /** @description what the avatar acts out (work.py's summary) */
       work: unknown;
       sent?: components["schemas"]["SentMessage"][];
@@ -3421,12 +3560,10 @@ export interface components {
       path: string;
       kinds: string[];
       created: boolean;
-      changed: number[] | null;
+      changed: [number, number] | null;
       /** @description what git changed of it as the turn's commands ran: its kinds */
       git: string[];
-      sources: {
-        [key: string]: unknown;
-      }[];
+      sources: components["schemas"]["Source"][];
       temporary: boolean;
     };
     /**
@@ -3517,7 +3654,7 @@ export interface components {
       text: string;
       row_id: number | null;
       at: number | null;
-      kind: string | null;
+      kind: string;
       cid?: string | null;
     };
     /**

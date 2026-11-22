@@ -2,12 +2,13 @@
 // its band (folded to its first lines, its toggle), a watch's news, an app's own message, a message the actor sent.
 import { act } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { actorOf, gathererOf, homeOf, sentMessageOf, userMessageOf } from "../../core/api/testing";
 import { loadVendored } from "../../core/ui/testing";
 import { ACTOR, AT, testPage, turn } from "./testing";
 import type { Actor } from "./types";
 
-const HELPER: Actor = { channel: "abc12345-6789", avatar: "animal/owl", name: { text: "Fixer" } };
-const COORDINATOR: Actor = { channel: "zz-1", role: "coordinator", avatar: null };
+const HELPER: Actor = actorOf("abc12345-6789", { avatar: "animal/owl", name: { text: "Fixer", by: "user" } });
+const COORDINATOR: Actor = actorOf("zz-1", { role: "coordinator", avatar: null });
 
 beforeAll(() => loadVendored());
 afterEach(() => document.body.replaceChildren());
@@ -19,7 +20,7 @@ function drawn(text: string, over: Parameters<typeof turn>[1] = {}, agents: Acto
 }
 function page(text: string, over: Parameters<typeof turn>[1], agents: Actor[]) {
   return testPage([turn(0, { text, ...over })], {
-    home: { home: "/h", now: AT, gatherers: [{ name: "g", agents }], harness_info: {} },
+    home: homeOf({ now: AT, gatherers: [gathererOf("g", { agents })] }),
   });
 }
 
@@ -96,13 +97,12 @@ describe("Bubble", () => {
   it("names a coordinator agent after its folder: its own name, else the folder its message says it is over", () => {
     const text =
       'Message from the coordinator agent over "paper/Figures" (answer it with: ag actors send ff-1 "..."):\n\nWait.';
-    const named: Actor = {
-      channel: "ff-1",
+    const named: Actor = actorOf("ff-1", {
       role: "coordinator",
       over: "folder:3",
       avatar: null,
-      name: { text: "Figures coordinator" },
-    };
+      name: { text: "Figures coordinator", by: "dashboard" },
+    });
     const env = { from: "coordinator" as const, id: "ff-1", name: null, over: "paper/Figures", text: "Wait." };
     const said = (agents: Actor[]) => {
       const t = page(text, {}, agents);
@@ -111,16 +111,16 @@ describe("Bubble", () => {
     };
     expect(said([ACTOR, named])).toBe("Figures coordinator");
     expect(said([ACTOR])).toBe("Figures coordinator"); // not listed here: by its folder
-    const sent = [{ text: "Please settle it.", kind: "send", to: "ff-1", to_name: "Figures coordinator" }];
+    const sent = [sentMessageOf("Please settle it.", { kind: "send", to: "ff-1", to_name: "Figures coordinator" })];
     const node = drawn("Ask", { sent }, [ACTOR, named]).node;
     expect(node.querySelector("#fl-turn-0 > .fl-sent .crew-from")!.textContent).toBe("To Figures coordinator");
   });
 
   it("draws what the actor sent another, with its receiver's face and name", () => {
     const sent = [
-      { text: "Please review.", kind: "send", to: "abc12345-6789", to_name: null },
-      { text: "Coordinate.", kind: "send", to: "x", to_name: "Coordinator agent" },
-      { text: "Start here.", kind: "new", to: "ffff0000-1", to_name: null },
+      sentMessageOf("Please review.", { kind: "send", to: "abc12345-6789" }),
+      sentMessageOf("Coordinate.", { kind: "send", to: "x", to_name: "Coordinator agent" }),
+      sentMessageOf("Start here.", { kind: "new", to: "ffff0000-1" }),
     ];
     const node = drawn("Ask", { sent }, [ACTOR, HELPER, COORDINATOR]).node;
     const bubbles = [...node.querySelectorAll("#fl-turn-0 > .fl-sent")];
@@ -141,7 +141,7 @@ describe("Bubble", () => {
 
   it("puts a message written mid-turn between actors in a band stacked on the turn's message", () => {
     const text = "Message from the gatherer agent:\n\nAlso this.";
-    const t = page("Ask", { more: [{ text, kind: "mid_turn" }] }, [ACTOR]);
+    const t = page("Ask", { more: [userMessageOf(text, { kind: "mid_turn" })] }, [ACTOR]);
     t.host.envelopes[text] = { from: "coordinator", id: null, name: null, text: "Also this." };
     const band = t.page.draw().querySelector("#fl-turn-0 > .fl-crew")!;
     expect(band.className).toBe("fl-crew joined crew-fold");

@@ -2,6 +2,7 @@
 // what the model was sent (Context: what `/context` in the message box opens), and what ag did for it (Gatherer) -- one
 // part under another. No × of its own: the pane head's Details button (pressed while it is open) closes it, as Esc does.
 import type { ReactNode } from "react";
+import { failed } from "../../core/api/types";
 import { ago, clock, compact, full, plural, span, usd } from "../../core/format";
 import { canChat, harnessLabel, runnableNames } from "../../core/model/harness";
 import { INLINE, NOT_COUNTED, uncounted } from "../../core/model/items";
@@ -45,7 +46,7 @@ function Facts({ feed }: { feed: DetailsFeed }) {
     s = info.session,
     k = parse(feed.key);
   const rows: [string, string | null | undefined][] = [
-    ["Harness", harnessLabel(home, info.harness || feed.agent?.harness)],
+    ["Harness", harnessLabel(home, info.harness || (feed.agent && !failed(feed.agent) ? feed.agent.harness : null))],
     ["Gatherer", k.group],
     ["Channel", k.id],
     ["Directory", info.cwd || s?.cwd],
@@ -308,7 +309,8 @@ function Part({ id, name, what, children }: { id: string; name: string; what: st
 
 /** The panel's head and body, for the actor `feed.key` (in its `aside`: mount.tsx). */
 export function DetailsPanel({ feed, host }: { feed: DetailsFeed; host: DetailsHost }) {
-  const a = feed.agent;
+  const got = feed.agent;
+  const a = got && !failed(got) ? got : null;
   const calls: CallsOf = { actor: feed.key, gatherer: parse(feed.key).group, agent: a, snapshot: feed.snapshot };
   const reads = a?.reads || [];
   return (
@@ -319,9 +321,9 @@ export function DetailsPanel({ feed, host }: { feed: DetailsFeed; host: DetailsH
       <div className="drawer-body" data-keep="details">
         <MoreViews feed={feed} host={host} />
         <Facts feed={feed} />
-        {!a || a.error || !a.reads ? (
+        {!a || !a.reads ? (
           <div className="empty">
-            {(a && a.error) ||
+            {(got && failed(got) && got.error) ||
               (feed.info.session ? "No calls yet. Send the agent a message." : "No data for this actor.")}
           </div>
         ) : (

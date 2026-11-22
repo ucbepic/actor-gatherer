@@ -2,20 +2,14 @@
 // read again as the list is drawn, at most every APPS_READ ms (`now`: at once; -> once read) -- the list drawn again if
 // they changed.
 import { get } from "../../core/api/client";
+import type { Apps, Instance } from "../../core/api/types";
 import { L, S, inPane, snap, type PageHome } from "./link";
 import { renderAgents } from "./list";
 import { newerTasks } from "./seen";
-import type { AppItem, Tasks } from "./types";
+import type { AppItem } from "./types";
 
 /** An instance of an app, as the host lists it. */
-export interface Instance {
-  id: string;
-  app: string;
-  title?: string;
-  name?: string;
-  folder?: string | null;
-  gatherer?: string;
-}
+export type { Instance } from "../../core/api/types";
 /** What the list knows of a gatherer's apps: its instances, and the agents attached to each. */
 export interface Known {
   instances: Instance[];
@@ -28,8 +22,7 @@ export function readApps(gname: string, now = false): Promise<void> {
   if (inPane() || snap() || !L.appHost.found().length) return Promise.resolve();
   if (!now && Date.now() - (appsRead.get(gname) || 0) < APPS_READ) return Promise.resolve();
   appsRead.set(gname, Date.now());
-  type Got = Partial<Known> & { tasks?: Tasks; now?: number };
-  return get<Got>(`/api/apps?gatherer=${encodeURIComponent(gname)}`)
+  return get<Apps>(`/api/apps?gatherer=${encodeURIComponent(gname)}`)
     .then((got) => {
       const state = S();
       const is = JSON.stringify({ instances: got.instances || [], attached: got.attached || {} });

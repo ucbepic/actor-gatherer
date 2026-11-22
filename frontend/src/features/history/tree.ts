@@ -1,35 +1,14 @@
 // The History view's model, apart from drawing it: the actor's history as a tree -- actor > task (where ag has split
 // it into tasks) > turn (a user message and all that answered it) > message, each node with the rows it holds -- the
 // rows the list shows of it, and what a selection holds.
+import type { BuildState, OutlineEvent, OutlineTask } from "../../core/api/types";
 import { itemType } from "../../core/model/items";
 
-/** An event of the outline (history.py's `outline`): light, its text cut short. */
-export interface OutlineEvent {
-  row_id: number;
-  channel: string;
-  type: string;
-  text: string;
-  tokens: number;
-  at: number | null;
-}
-
+// An event of the outline (history.py's `outline`), a task ag found, how an actor's latest build stands: as generated
+// from the server's schema (core/api/types.ts).
+export type { BuildState, OutlineEvent } from "../../core/api/types";
 /** A task ag found (its build's), from its first row. */
-export interface Task {
-  channel: string;
-  name: string;
-  description?: string | null;
-  first_row: number;
-}
-
-/** How an actor's latest build stands: running, failed, done; the user messages since. */
-export interface BuildState {
-  status?: string;
-  since: number;
-  build_id?: number | null;
-  started?: number | null;
-  finished?: number | null;
-  error?: string | null;
-}
+export type Task = OutlineTask;
 
 /** The outline of an actor's history, as loaded so far. */
 export interface Outline {

@@ -37,8 +37,8 @@ describe("the list", () => {
     gatherers: [g],
     folders: { g: { folders: [{ id: 1, parent: null, name: "F" }], filed: { inf: 1 } } },
     saved: { g: { kept: "2026-01-01" } },
-    tasks: { g: { tasks: [{ id: 9 }], tasked: { t1: 9, t2: 9, "app:i1": 9 } } },
-    shells: [{ id: "shell:s", gatherer: "g", cwd: "/w" }],
+    tasks: { g: { tasks: [{ id: 9, name: null }], tasked: { t1: 9, t2: 9, "app:i1": 9 } } },
+    shells: [{ id: "shell:s", gatherer: "g", cwd: "/w", since: 0, folder: null }],
   };
   const apps = { g: [app("g", "i1"), app("g", "i2")] };
 

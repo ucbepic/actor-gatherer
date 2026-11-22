@@ -5,7 +5,8 @@
 import { create } from "zustand";
 import { get } from "../../core/api/client";
 import { parse } from "../../core/model/keys";
-import type { Item } from "./types";
+import { failed, type History } from "../../core/api/types";
+import type { HistoryItem as Item } from "./types";
 
 export interface EventsFeed {
   /** the actor's */
@@ -39,7 +40,7 @@ async function loadNow(actor: string | null): Promise<void> {
   const { group: g, id: c } = parse(actor);
   let f = eventsOf(actor);
   if (!f) useEvents.setState({ feed: (f = { key: actor, items: [], pending: [], last_row: 0 }) });
-  let got: { items: Item[]; error?: string } | null;
+  let got: History | null;
   try {
     got = await get(
       `/api/history?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}&from=${f.last_row + 1}`,
@@ -48,7 +49,7 @@ async function loadNow(actor: string | null): Promise<void> {
     return; // no database yet: the gatherer is made on the first call
   }
   const now = eventsOf(actor);
-  if (!got || got.error || !now) return;
+  if (!got || failed(got) || !now) return;
   const fresh = got.items.filter((i) => stored(i) && i.row_id! > now.last_row);
   useEvents.setState({
     feed: {

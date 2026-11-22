@@ -3,6 +3,18 @@
 // folds a click made.
 import { act, fireEvent } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  callRunOf,
+  currentOf,
+  failingOf,
+  harnessInfoOf,
+  homeOf,
+  openingOf,
+  replyOf,
+  sessionOf,
+  userMessageOf,
+  waitsOf,
+} from "../../core/api/testing";
 import { sizesForTests } from "../../core/ui/lists";
 import { loadVendored } from "../../core/ui/testing";
 import { chatOf } from "./actors";
@@ -105,8 +117,8 @@ describe("Turns", () => {
   });
 
   it("shows a turn's earlier messages behind its +, and folds them again by its −", () => {
-    const replies = [0, 1, 2, 3].map((i) => ({ kind: "text", text: `on the way ${i}` }));
-    const { page } = testPage([turn(0, { replies: [...replies, { kind: "text", text: "Done." }] })]);
+    const replies = [0, 1, 2, 3].map((i) => replyOf({ kind: "text", text: `on the way ${i}` }));
+    const { page } = testPage([turn(0, { replies: [...replies, replyOf({ kind: "text", text: "Done." })] })]);
     const node = page.draw();
     const more = () => node.querySelector<HTMLButtonElement>("#fl-turn-0 .fl-more")!;
     expect(more().textContent).toBe("+2 earlier messages");
@@ -142,10 +154,10 @@ describe("Turns", () => {
   it("draws what a turn's agent thought, its notes, and its latest call while nothing followed it", () => {
     const t = turn(0, {
       replies: [
-        { kind: "thinking", texts: ["**Plan**: read the file", "then answer"] },
-        { kind: "thinking", texts: [] },
-        { kind: "report", text: "It's 42.", name: "counter" },
-        { kind: "peer", text: "Hello from there\nmore", name: "Bob" },
+        replyOf({ kind: "thinking", texts: ["**Plan**: read the file", "then answer"] }),
+        replyOf({ kind: "thinking", texts: [] }),
+        replyOf({ kind: "report", text: "It's 42.", name: "counter" }),
+        replyOf({ kind: "peer", text: "Hello from there\nmore", name: "Bob" }),
       ],
       last: {
         id: "c1",
@@ -179,7 +191,7 @@ describe("Turns", () => {
 
   it("says how the latest call is: running, waiting for the user, stopped, or ran", () => {
     const words = (state: "working" | "asking" | "done", running: boolean) => {
-      const ts = [turn(0, { replies: [], last: { id: "x", text: "sleep 9", running } })];
+      const ts = [turn(0, { replies: [], last: callRunOf("sleep 9", { id: "x", running }) })];
       const { page } = testPage(ts, { view: chatView(ts, { current: now(ts, state) }) });
       return page.draw().querySelector("#fl-c-0-x summary .lbl")!.textContent;
     };
@@ -214,7 +226,7 @@ describe("Turns", () => {
     const thinking = [turn(0), { ...at, now: { kind: "thinking" } }];
     page.draw(withTurns(thinking, { current: now(thinking, "working") }));
     expect(status.querySelector(".now")!.textContent).toBe("Thinking…");
-    page.draw(withTurns(ts, { current: now(ts, "working", { failing: { at: NOW - 7 } }) }));
+    page.draw(withTurns(ts, { current: now(ts, "working", { failing: failingOf({ at: NOW - 7 }) }) }));
     expect(node.querySelector("#fl-turn-1 .fl-times")!.textContent).toMatch(/^last try 7s ago/);
     expect(status.querySelector(".now")!.textContent).toBe("Retrying…");
     page.draw({ interrupting: true });
@@ -248,8 +260,10 @@ describe("Turns", () => {
 
   it("draws a turn sent and not stored yet, at work; the turn stored in its place counts from when it was sent", () => {
     const ts = turns(2);
-    const opening = { text: "And now?", cid: "p1", began: NOW - 30, seen: true };
-    const { page } = testPage(ts, { view: chatView(ts, { opening, current: { state: "opening", turn: "opening" } }) });
+    const opening = openingOf("And now?", { cid: "p1", began: NOW - 30, seen: true });
+    const { page } = testPage(ts, {
+      view: chatView(ts, { opening, current: currentOf({ state: "opening", turn: "opening" }) }),
+    });
     const node = page.draw();
     const opened = node.querySelector(".fl-foot > .fl-turn.opened")!;
     expect(opened.querySelector(".fl-user")!.getAttribute("title")).toBe("Sent to the agent");
@@ -292,9 +306,12 @@ describe("Turns", () => {
 
   it("says a turn sent and stopped before the harness recorded it is interrupted, not at work", () => {
     const ts = turns(1);
-    const opening = { text: "Hello", cid: "p1", began: NOW - 2, seen: false, stopped: { kind: "interrupted" } };
+    const opening = openingOf("Hello", { cid: "p1", began: NOW - 2, stopped: { kind: "interrupted" } });
     const { page } = testPage(ts, {
-      view: chatView(ts, { opening, current: { state: "stopped", turn: "opening", stopped: opening.stopped } }),
+      view: chatView(ts, {
+        opening,
+        current: currentOf({ state: "stopped", turn: "opening", stopped: opening.stopped }),
+      }),
       interrupting: true,
     });
     const node = page.draw();
@@ -306,10 +323,7 @@ describe("Turns", () => {
 
   it("draws what waits for the agent's next step at the latest turn's end", () => {
     const ts = turns(1);
-    const waiting = [
-      { text: "queued one", how: "queued" as const },
-      { text: "in its queue", how: "dashboard" as const },
-    ];
+    const waiting = [waitsOf("queued one", "queued"), waitsOf("in its queue", "dashboard")];
     const { page } = testPage(ts, {
       view: chatView(ts, { current: now(ts, "working"), waiting }),
       mine: [{ cid: "p1", text: "sent here", at: NOW * 1000 - 1000 }], // at work: it waits too
@@ -327,10 +341,10 @@ describe("Turns", () => {
 
   it("says a sent message is not seen by the session for long, and the way to its terminal", () => {
     const ts = turns(1);
-    const opening = { text: "And now?", cid: "p1", began: NOW - 20, seen: false, unseen: true };
+    const opening = openingOf("And now?", { cid: "p1", began: NOW - 20, unseen: true });
     const { page, host } = testPage(ts, {
-      info: { ...ACTOR, session: { status: "terminal", terminal: { cols: 80 } } },
-      view: chatView(ts, { opening, current: { state: "opening", turn: "opening" } }),
+      info: { ...ACTOR, session: sessionOf({ status: "terminal", terminal: true }) },
+      view: chatView(ts, { opening, current: currentOf({ state: "opening", turn: "opening" }) }),
     });
     const node = page.draw();
     const opened = node.querySelector(".fl-foot > .fl-turn.opened")!;
@@ -343,8 +357,8 @@ describe("Turns", () => {
   });
 
   it("stacks what was written mid-turn on the turn's message", () => {
-    const t = turn(0, { more: [{ text: "Also this.", kind: "mid_turn" }] });
-    const { page } = testPage([t, turn(1, { more: [{ text: "And that.", kind: "user", cid: "p2" }] })]);
+    const t = turn(0, { more: [userMessageOf("Also this.", { kind: "mid_turn" })] });
+    const { page } = testPage([t, turn(1, { more: [userMessageOf("And that.", { cid: "p2" })] })]);
     const node = page.draw();
     const joined = node.querySelector("#fl-turn-0 > .fl-user.joined")!;
     expect(joined.tagName).toBe("BUTTON");
@@ -377,12 +391,10 @@ describe("Turns", () => {
   it("says how a turn stopped short, unless the actor's error note says it", () => {
     const stopped = { kind: "error", text: "overloaded" };
     const { page } = testPage([turn(0, { stopped: { kind: "interrupted" } }), turn(1, { stopped })], {
-      home: {
-        home: "/h",
+      home: homeOf({
         now: AT,
-        gatherers: [],
-        harness_info: { h1: { stopped: { lead: "■", interrupted: "Stopped by you", error: "Error" } } },
-      },
+        harness_info: { h1: harnessInfoOf({ stopped: { lead: "■", interrupted: "Stopped by you", error: "Error" } }) },
+      }),
       earlierTurns: "whole",
     });
     const node = page.draw();
@@ -455,13 +467,13 @@ describe("before the first turn", () => {
     expect(node.querySelector(":scope > .fl-turn.opened .tx")!.textContent).toBe("Hello there");
     expect(node.lastElementChild!.className).toBe("fl-status");
     // the view has it: the same turn, from it
-    const opening = { text: "Hello there", cid: "p1", began: NOW, seen: true };
-    page.draw({ mine: [], view: chatView([], { opening, current: { state: "opening", turn: "opening" } }) });
+    const opening = openingOf("Hello there", { cid: "p1", began: NOW, seen: true });
+    page.draw({ mine: [], view: chatView([], { opening, current: currentOf({ state: "opening", turn: "opening" }) }) });
     expect(node.querySelector(":scope > .fl-turn.opened .tx")!.textContent).toBe("Hello there");
   });
 
   it("draws what waits before the first turn above the actor", () => {
-    const { page } = testPage([], { view: chatView([], { waiting: [{ text: "in its queue", how: "dashboard" }] }) });
+    const { page } = testPage([], { view: chatView([], { waiting: [waitsOf("in its queue", "dashboard")] }) });
     const node = page.draw();
     expect(node.querySelector(":scope > .fl-turn > .fl-pending .tx")!.textContent).toBe("in its queue");
     expect(node.querySelector(".fl-hello")!.children.length).toBe(1); // the actor, no line

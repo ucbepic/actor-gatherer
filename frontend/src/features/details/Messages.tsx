@@ -3,14 +3,14 @@
 import { itemType, useShown } from "../../core/model/items";
 import { Columns, ContextItem } from "./Context";
 import { rowKey, tally } from "./model";
-import type { Item } from "./types";
+import type { HistoryItem } from "./types";
 
 /** What the page hands the view for the actor it shows. */
 export interface MsgFrame {
   /** the actor's */
   key: string;
-  items: Item[];
-  pending: Item[];
+  items: HistoryItem[];
+  pending: HistoryItem[];
   /** what waits for the turn to end */
   queued: string[];
   /** said when there is nothing, nothing pending and nothing waiting */
@@ -22,7 +22,7 @@ export function Messages({ f }: { f: MsgFrame }) {
   const shown = useShown((s) => s.types);
   const items = [...f.items, ...f.pending].map((i) => ({ ...i, group: "Recent history" }));
   const listed = items.filter((it) => shown.has(itemType(it)[0]));
-  const count = (all: Item[]) => all.reduce((n, i) => n + i.tokens, 0);
+  const count = (all: HistoryItem[]) => all.reduce((n, i) => n + i.tokens, 0);
   return (
     <>
       <Columns />

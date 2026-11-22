@@ -9,7 +9,7 @@ import { loadTranscript, txFeedOf, useTxFeed } from "./data";
 import { drawTranscript, foldedOutputNode, notesSwitchNode, transcriptBlockNodes } from "./mount";
 import { useNotes, type TxFrame } from "./TranscriptView";
 
-const ev = (row_id: number | null, ...parts: Part[]): TxItem => ({ row_id, parts });
+const ev = (row_id: number | null, ...parts: Part[]): TxItem => ({ row_id, type: "?", at: null, parts });
 const call = (id: string, view: Record<string, unknown> = { shape: "shell", command: `run ${id}` }): Part => ({
   kind: "call",
   id,

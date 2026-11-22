@@ -3,25 +3,14 @@
 // ones behind "+N more", each result drawn with its call wherever it was stored; thinking a folded line of its own; the
 // harness's system messages and ag's notes, between them, if shown. Each block keyed by what it is, so it stays the same
 // element from one draw to the next.
-import type { Call } from "./calls";
+import type { Part, TranscriptItem } from "../../core/api/types";
 
-/** A part of an event (data.py's `parts`: every harness's events made the same parts). */
-export interface Part extends Call {
-  kind: string;
-  role?: string;
-  text: string;
-  /** a call's id, and its result's */
-  id?: string;
-  error?: boolean;
-}
+/** A part of an event (data.py's `parts`: every harness's events made the same parts), as generated from the server's
+ * schema (core/api/types.ts). */
+export type { Part } from "../../core/api/types";
 
 /** An event, as the transcript feed has it: stored (its row), or pending (none). */
-export interface TxItem {
-  row_id: number | null;
-  type?: string;
-  at?: number | null;
-  parts: Part[];
-}
+export type TxItem = TranscriptItem;
 
 export interface Note {
   id: string;
@@ -62,7 +51,7 @@ export function transcriptBlocks(items: TxItem[], running: boolean, showNotes: b
     if (!run.length) return;
     if (run.some((x) => x.part.kind === "call")) {
       const lines = run.map(({ part, id }): Line => {
-        if (part.kind !== "call") return { kind: "think", key: id, id, text: part.text };
+        if (part.kind !== "call") return { kind: "think", key: id, id, text: part.text ?? "" };
         const result = part.id ? results.get(part.id) || null : null;
         return { kind: "call", key: `${id}-l`, id, part, result, running: running && last };
       });
@@ -72,7 +61,7 @@ export function transcriptBlocks(items: TxItem[], running: boolean, showNotes: b
         out.push({ kind: "more", key: id, id, lines: lines.slice(0, lines.length - RUN_SHOWN) });
         out.push(...lines.slice(-RUN_SHOWN));
       }
-    } else for (const { part, id } of run) out.push({ kind: "think", key: id, id, text: part.text });
+    } else for (const { part, id } of run) out.push({ kind: "think", key: id, id, text: part.text ?? "" });
     run = [];
   };
   items.forEach((it, n) => {
@@ -81,10 +70,10 @@ export function transcriptBlocks(items: TxItem[], running: boolean, showNotes: b
       const id = `tx-${base}-${j}`;
       const isNote = p.kind === "note" || (p.kind === "text" && p.role === "system");
       if (isNote) {
-        if (showNotes) notes.push({ id, name: p.name || "system", text: p.text });
+        if (showNotes) notes.push({ id, name: p.name || "system", text: p.text ?? "" });
         return;
       }
-      if (p.kind === "call" || (p.kind === "thinking" && p.text.trim())) {
+      if (p.kind === "call" || (p.kind === "thinking" && (p.text ?? "").trim())) {
         flushNotes();
         run.push({ part: p, id });
         return;
@@ -92,11 +81,11 @@ export function transcriptBlocks(items: TxItem[], running: boolean, showNotes: b
       if (p.kind === "thinking" || (p.kind === "result" && p.id && calls.has(p.id))) return; // encrypted; or with its call
       flushRun();
       flushNotes();
-      if (p.kind === "text" && p.role === "user") out.push({ kind: "user", key: id, text: p.text });
-      else if (p.kind === "text") out.push({ kind: "text", key: id, text: p.text });
+      if (p.kind === "text" && p.role === "user") out.push({ kind: "user", key: id, text: p.text ?? "" });
+      else if (p.kind === "text") out.push({ kind: "text", key: id, text: p.text ?? "" });
       else if (p.kind === "result")
         // its call is not loaded: shown alone
-        out.push({ kind: "result", key: id, id, text: p.text, error: !!p.error });
+        out.push({ kind: "result", key: id, id, text: p.text ?? "", error: !!p.error });
     });
   });
   flushRun(true);

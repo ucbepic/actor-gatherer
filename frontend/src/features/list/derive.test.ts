@@ -1,5 +1,6 @@
 // The list's derivations from the home: statuses and groups, messages between actors, folders, tasks, gatherers.
 import { describe, expect, it } from "vitest";
+import { appNoticesOf, noticeOf, sessionOf } from "../../core/api/testing";
 import { askedOf, crewLine, envelope } from "./envelope";
 import {
   aloneFolds,
@@ -35,15 +36,15 @@ describe("an actor's status and group", () => {
   const g = gatherer("g", []);
   it("says what the page started first, then a turn opened ahead, then what the server decided", () => {
     const ctx = ctxOf({ gatherers: [g] }, { opened: ["c2"], seenAt: { "g\u0000c1": 100, "g\u0000c2": 100 } });
-    expect(statusOf(ctx, actor("g", "c1", { session: { status: "starting" }, status: "asking" }))).toEqual([
+    expect(statusOf(ctx, actor("g", "c1", { session: sessionOf({ status: "starting" }), status: "asking" }))).toEqual([
       "building",
       "Starting",
     ]);
-    expect(statusOf(ctx, actor("g", "c1", { session: { status: "idle", queued: [1] } }))).toEqual([
+    expect(statusOf(ctx, actor("g", "c1", { session: sessionOf({ status: "idle", queued: ["hi"] }) }))).toEqual([
       "running",
       "Running",
     ]);
-    expect(statusOf(ctx, actor("g", "c1", { session: { status: "failed" } }))).toEqual(["failed", "Failed"]);
+    expect(statusOf(ctx, actor("g", "c1", { session: sessionOf({ status: "failed" }) }))).toEqual(["failed", "Failed"]);
     expect(statusOf(ctx, actor("g", "c2", { status: "idle" }))).toEqual(["running", "Running"]);
     expect(statusOf(ctx, actor("g", "c1", { status: "asking" }))).toEqual(["asking", "Waiting for you"]);
     expect(statusOf(ctx, actor("g", "c1", { status: "error" }))).toEqual(["error", "Error"]);
@@ -60,7 +61,7 @@ describe("an actor's status and group", () => {
     expect(statusOf(ctxOf({ gatherers: [gatherer("g", [a])] }), a)).toEqual(["closed", "Closed"]);
   });
   it("puts a closed actor saved in Saved, by its channel or the one it was started as", () => {
-    const a = actor("g", "c1", { status: "closed", session: { started_as: "old" } });
+    const a = actor("g", "c1", { status: "closed", session: sessionOf({ started_as: "old" }) });
     const ctx = ctxOf({ gatherers: [gatherer("g", [a])], saved: { g: { old: "2026-01-01" } } });
     expect(savedAs(ctx, "g", a)).toBe("old");
     expect(groupOf(ctx, ctx.home.gatherers[0], a)).toBe("Saved");
@@ -69,17 +70,21 @@ describe("an actor's status and group", () => {
   });
   it("closes a session the page runs, discards one that never started, and does neither in a snapshot", () => {
     const ctx = ctxOf({ gatherers: [g] });
-    expect(closeHow(ctx, actor("g", "c", { session: { pid: 4 } }))).toBe("close");
-    expect(closeHow(ctx, actor("g", "c", { session: { status: "failed" } }))).toBe("discard");
-    expect(discardable(ctx, actor("g", "c", { session: { status: "failed" }, events: 3 }))).toBe(false);
+    expect(closeHow(ctx, actor("g", "c", { session: sessionOf({ pid: 4 }) }))).toBe("close");
+    expect(closeHow(ctx, actor("g", "c", { session: sessionOf({ status: "failed" }) }))).toBe("discard");
+    expect(discardable(ctx, actor("g", "c", { session: sessionOf({ status: "failed" }), events: 3 }))).toBe(false);
     expect(closeHow(ctx, actor("g", "c"))).toBe(null);
-    expect(closeHow(ctxOf({ gatherers: [g] }, { snapshot: true }), actor("g", "c", { session: { pid: 4 } }))).toBe(
-      null,
-    );
+    expect(
+      closeHow(ctxOf({ gatherers: [g] }, { snapshot: true }), actor("g", "c", { session: sessionOf({ pid: 4 }) })),
+    ).toBe(null);
   });
   it("marks an app with a notification the reader has not seen", () => {
     const ctx = ctxOf(
-      { gatherers: [gatherer("g", [], { apps: { i1: { last: 50, notices: [{ title: "a" }] } } })] },
+      {
+        gatherers: [
+          gatherer("g", [], { apps: { i1: appNoticesOf({ last: 50, notices: [noticeOf({ title: "a" })] }) } }),
+        ],
+      },
       { seenAt: { "g\u0000app:i1": 40 } },
     );
     expect(appStatusOf(ctx, "g", "i1")).toEqual(["notified", "Notification"]);
@@ -119,7 +124,7 @@ describe("folders", () => {
   const ctx = ctxOf({
     gatherers: [g],
     folders: { g: { folders, filed: { a1: 2, a3: 1, gone: 5 } } },
-    shells: [{ id: "shell:1", gatherer: "g", cwd: "/w", folder: null }],
+    shells: [{ id: "shell:1", gatherer: "g", cwd: "/w", since: 0, folder: null }],
   });
   it("files each actor in one folder, or at its gatherer's top", () => {
     expect(folderOf(ctx, "g", a1)).toBe(2);
@@ -165,7 +170,13 @@ describe("tasks", () => {
     shut = actor("g", "s", { status: "closed", last: 99 });
   const g = gatherer("g", [lead, other, shut]);
   const tasks = {
-    g: { tasks: [{ id: 7 }, { id: 8, name: "Named" }], tasked: { l: 7, o: 7, s: 7, "app:i1": 7, "app:i2": 8 } },
+    g: {
+      tasks: [
+        { id: 7, name: null },
+        { id: 8, name: "Named" },
+      ],
+      tasked: { l: 7, o: 7, s: 7, "app:i1": 7, "app:i2": 8 },
+    },
   };
   const ctx = ctxOf({ gatherers: [g], tasks }, { apps: { g: [app("g", "i1"), app("g", "i2", { title: "Shop" })] } });
   it("leads by the actor most pressing, the latest first among equals; closed ones never lead", () => {
@@ -178,14 +189,16 @@ describe("tasks", () => {
   });
   it("names a task by the reader's name, its lead's, else its first app's", () => {
     expect(taskName(ctx, g, { id: 8, name: "Named" })).toBe("Named");
-    expect(taskName(ctx, g, { id: 8 })).toBe("Notepad · Shop");
-    expect(taskName(ctx, g, { id: 7 })).toBe("No message yet");
+    expect(taskName(ctx, g, { id: 8, name: null })).toBe("Notepad · Shop");
+    expect(taskName(ctx, g, { id: 7, name: null })).toBe("No message yet");
   });
   it("says a notification of its apps over its lead's state, unless that is more pressing", () => {
     const told = ctxOf(
       {
-        gatherers: [gatherer("g", [actor("g", "x", { status: "running" })], { apps: { i1: { last: 50 } } })],
-        tasks: { g: { tasks: [{ id: 1 }], tasked: { x: 1, "app:i1": 1 } } },
+        gatherers: [
+          gatherer("g", [actor("g", "x", { status: "running" })], { apps: { i1: appNoticesOf({ last: 50 }) } }),
+        ],
+        tasks: { g: { tasks: [{ id: 1, name: null }], tasked: { x: 1, "app:i1": 1 } } },
       },
       { apps: { g: [app("g", "i1")] } },
     );
@@ -226,13 +239,17 @@ describe("gatherers", () => {
     const a = gatherer("a", []),
       b = gatherer("b", []),
       c = gatherer("c", []);
-    const places = { b: { in: "a", folder: 4 }, c: { in: "a", folder: null }, a: { in: "x" } };
+    const places = { b: { in: "a", folder: 4 }, c: { in: "a", folder: null }, a: { in: "x", folder: null } };
     const p = ctxOf({ gatherers: [a, b, c], places, merged: true, folders: { a: { folders: [], filed: {} } } });
     expect(placeOf(p, "b")).toEqual({ in: "a", folder: null }); // its folder gone: the top
     expect(placeOf(p, "a")).toBe(null); // in a group not there
     expect(insideOf(p, "b", "a")).toBe(true);
     expect(placedIn(p, "a", null).map((g) => g.name)).toEqual(["b", "c"]);
-    const ring = ctxOf({ gatherers: [a, b], places: { a: { in: "b" }, b: { in: "a" } }, merged: true });
+    const ring = ctxOf({
+      gatherers: [a, b],
+      places: { a: { in: "b", folder: null }, b: { in: "a", folder: null } },
+      merged: true,
+    });
     expect(placeOf(ring, "a")).toBe(null);
     expect(placeOf(ctxOf({ ...p.home, merged: false }), "b")).toBe(null); // one database per group: none
   });

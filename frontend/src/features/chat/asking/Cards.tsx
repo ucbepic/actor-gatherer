@@ -146,7 +146,7 @@ function AnsweredCard({ info, home }: CardProps) {
         </span>
         <span className="what">What was recorded is not what you picked</span>
         <span className="end">
-          <button type="button" onClick={() => dismiss(a.call)}>
+          <button type="button" onClick={() => dismiss(a.call ?? "")}>
             Dismiss
           </button>
         </span>

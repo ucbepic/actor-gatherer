@@ -3,6 +3,7 @@
 // last -- and in each, a card for each actor; Saved's under a heading for each folder. What a card shows of its actor's
 // turn is read from the server (monitor.py) for the cards in view, by the page (monitor-feed.ts's monLoad): `got`, by key.
 // Each card has a signature of all it shows, so the view draws it again only when that changes (Monitor.tsx).
+import type { MonitorActor } from "../../core/api/types";
 import { plural } from "../../core/format";
 import { key } from "../../core/model/keys";
 import { isHidden, titleOf } from "./groups";
@@ -23,19 +24,7 @@ export const MON_ORDER: readonly Group[] = [
 ];
 
 /** What the server read of an actor's turn (monitor.py's), as a card shows it. */
-export interface MonData {
-  work?: unknown;
-  /** when its turn began */
-  at?: number;
-  /** what it does now: a call under way, or thinking */
-  now?: { kind?: string; text?: string } | null;
-  /** its newest calls */
-  steps?: { text: string; running?: boolean; error?: boolean }[];
-  calls?: number;
-  said?: string;
-  files?: Record<string, number>;
-  turns?: number;
-}
+export type MonData = MonitorActor;
 /** What the page has read for each card, by its key: `data` null where there was nothing to read, or reading failed. */
 export type MonGot = ReadonlyMap<string, { sig: string; data: MonData | null }>;
 

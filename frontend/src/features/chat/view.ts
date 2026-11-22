@@ -23,7 +23,8 @@ export function openingOf(feed: ChatFeed): Opening | null {
  * before the view has come (and nothing sent from here). */
 export function currentOf(feed: ChatFeed): Current | null {
   const v = feed.view;
-  if (!v?.opening && openingOf(feed)) return { state: "opening", turn: "opening" };
+  if (!v?.opening && openingOf(feed))
+    return { state: "opening", turn: "opening", doing: null, failing: null, asking: null, stopped: null };
   return v ? v.current : null;
 }
 

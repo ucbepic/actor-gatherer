@@ -4,6 +4,7 @@
 import { act, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../../core/api/query";
+import { outlineTaskOf } from "../../core/api/testing";
 import { key } from "../../core/model/keys";
 import { sizesForTests } from "../../core/ui/lists";
 import { loadOutline, outlineKey, outlineOf, setHistHost, useAsked } from "./data";
@@ -48,7 +49,7 @@ const outline = (over: Partial<Outline> = {}): Outline => ({
   channel: "c1",
   events: EVENTS,
   tasks: [],
-  builds: { c1: { status: "done", since: 2, build_id: null } },
+  builds: { c1: { status: "done", since: 2 } },
   last: 6,
   more: false,
   error: "",
@@ -72,10 +73,7 @@ describe("the history as a tree", () => {
   });
 
   it("splits by tasks from their first rows, the last one current", () => {
-    const tasks = [
-      { channel: "c1", name: "Setup", first_row: 1 },
-      { channel: "c1", name: "Work", first_row: 5 },
-    ];
+    const tasks = [outlineTaskOf("c1", 1, { name: "Setup" }), outlineTaskOf("c1", 5, { name: "Work", index: 1 })];
     const { tree } = buildTree(outline({ tasks }));
     expect(tree[0].children.map((k) => [k.task?.name, k.current, k.rows])).toEqual([
       ["Setup", false, [1, 2, 3, 4]],
@@ -84,7 +82,7 @@ describe("the history as a tree", () => {
   });
 
   it("lists the turns holding a type shown, opened to their messages; grouped, each task's row first", () => {
-    const { tree } = buildTree(outline({ tasks: [{ channel: "c1", name: "All", first_row: 1 }] }));
+    const { tree } = buildTree(outline({ tasks: [outlineTaskOf("c1", 1, { name: "All" })] }));
     const users = (r: number) => [2, 5].includes(r);
     const flat = visibleRows(tree, false, new Set(["t:c1:0:1"]), users, null);
     expect(flat.rows.map((r) => [r.key, r.depth])).toEqual([

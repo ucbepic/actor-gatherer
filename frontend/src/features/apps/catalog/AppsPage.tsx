@@ -364,7 +364,7 @@ function Details({ app: a }: { app: CatalogApp }) {
           <GlyphIcon name="x" size={16} />
         </button>
       </div>
-      <p>{said.sentence(a.description)}</p>
+      <p>{said.sentence(a.description ?? "")}</p>
       {a.failed ? <p className="err">{`Backend failed to start: ${a.failed}`}</p> : null}
       <div className="ap-acts">
         <button type="button" className="ap-btn primary" onClick={() => openApp(a, !!a.opens_with_agent)}>

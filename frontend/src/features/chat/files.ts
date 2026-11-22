@@ -4,6 +4,7 @@
 // of the stream -- the home's, every few seconds while anything runs anywhere, the actor's calls -- as they were. An
 // earlier turn's, once: it is over. Kept a while after its actor is shown no more, so one shown again is drawn at once.
 import { get } from "../../core/api/client";
+import { failed, type Failed } from "../../core/api/types";
 import { queryClient } from "../../core/api/query";
 import { stampOf } from "./data";
 import type { FilesData } from "./types";
@@ -28,11 +29,11 @@ const NONE: FilesData = { turns: [], turn: null, files: [], commands: [], home: 
 
 async function fetchFiles(f: FilesOf): Promise<FilesData> {
   const q = (k: string, v: string) => `${k}=${encodeURIComponent(v)}`;
-  const got = await get<FilesData & { error?: string }>(
+  const got = await get<FilesData | Failed>(
     `/api/files?${q("gatherer", f.gatherer)}&${q("channel", f.channel)}` +
       `${f.turn === null ? "" : `&turn=${f.turn}`}&${q("cwd", f.cwd)}`,
   );
-  if (!got.error) return got;
+  if (!failed(got)) return got;
   if (got.error.startsWith("no database")) return NONE;
   throw new Error(got.error);
 }

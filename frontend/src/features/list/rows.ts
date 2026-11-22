@@ -1,7 +1,7 @@
 // THE LIST'S VIEW-MODEL, its shape (model.ts builds it): what aside#agents draws -- its nodes (gatherers, folders, folds,
 // the folders of gatherers) and its rows (actors, tasks, apps, terminals), each with what its row says -- and what it is
 // built from besides the home: the reader's choices, and what is shown (ListView).
-import type { Actor, AppItem, Folder, Gatherer, Shell, Status, Task } from "./types";
+import type { Actor, AppItem, AppNotices, Folder, Gatherer, Shell, Status, Task } from "./types";
 import type { Counts, Totals } from "./groups";
 import type { Tally } from "./tree";
 /** The group a coordinator agent's row is listed under (its row's data-group). */
@@ -141,7 +141,7 @@ export interface AppRow {
   shown: boolean;
   told: Status | null;
   /** its newest notification, if it has one unseen */
-  last: { title?: string } | null;
+  last: AppNotices["notices"][number] | null;
   naming: boolean;
   task: string;
   tab: TabAt | null;

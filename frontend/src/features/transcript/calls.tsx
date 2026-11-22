@@ -11,7 +11,7 @@ import { nodeOf } from "../../core/ui/node";
 /** A call as the history has it: its tool's name, its input, its view (the shape its harness's rules read), and the
  * calls a script made. */
 export interface Call {
-  name?: string;
+  name?: string | null;
   input?: unknown;
   view?: Record<string, unknown> | null;
   calls?: Call[];

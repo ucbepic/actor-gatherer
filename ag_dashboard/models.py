@@ -11,7 +11,7 @@ A field is written as what it always is: `x: str`, always there; `x: Optional[st
 that can answer {error} instead (its gatherer has no database yet, or nothing stored) says so: `Union[Agent, Failed]`.
 A field not named here is kept (`extra="allow"`): the models say what the page reads, not all there is."""
 
-from typing import Annotated, Any, Dict, List, Literal, Optional, TypeVar, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, TypeVar, Union
 
 from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema
 
@@ -21,6 +21,10 @@ T = TypeVar("T")
 Maybe = Annotated[T, Field(default=None)]
 #: A number, whole or not: seconds since the epoch, sizes summed from either (json.dumps writes each as it is).
 Number = Annotated[Union[int, float], WithJsonSchema({"type": "number"})]
+#: Lines added and removed: [added, removed].
+Lines = Tuple[int, int]
+#: A line of a file: [its number, its text].
+NumberedLine = Tuple[int, str]
 
 
 def _described(schema: Dict[str, Any], _model: Any) -> None:
@@ -602,6 +606,54 @@ class AppRequest(Model):
     at: Number
 
 
+class AgentOffer(Model):
+    """An app's `[agent]`: whether it can be opened with an agent of its own, and the name that agent is given."""
+
+    offered: bool
+    name: str
+
+
+class ToolListed(Model):
+    """A tool an app gives agents, and what handles its calls (its backend, or its panel)."""
+
+    name: str
+    description: str
+    input_schema: Dict[str, Any]
+    handled_by: str
+
+
+class Handles(Model):
+    """An intent an app handles, for these types."""
+
+    intent: str
+    types: List[str]
+
+
+class LinkForm(Model):
+    """The paths of `ag://<app>/...` links an app's panel opens (app_kit/links.py); `paths`, a file's path an agent
+    writes with no app named opens in it."""
+
+    form: str
+    about: str
+    paths: Maybe[bool]
+
+
+class Capabilities(Model):
+    """What an app may do beyond its own panel and tools (its manifest's `[capabilities]`)."""
+
+    native_view: bool
+    reads: List[str]
+    files: bool
+    commands: bool
+    message_agents: bool
+    transcript: bool
+    edit_guard: bool
+    docs: bool
+    actors: bool
+    notify: bool
+    message_actors: bool
+
+
 class AppListed(Model):
     """An app found, as the host lists it (/api/apps): its manifest (app_kit's `to_dict`), its panel's origin and
     folder, whether the reader opens it with an agent of its own, why its backend failed (None: it didn't), and what
@@ -615,13 +667,14 @@ class AppListed(Model):
     access: str
     on_task: OnTask
     instructions: str
-    agent: Dict[str, Any]
+    agent: AgentOffer
     mark: bool
     panel: Optional[str]
-    tools: List[Dict[str, Any]]
-    links: List[Dict[str, Any]]
-    capabilities: Dict[str, Any]
-    origin: Optional[str]
+    tools: List[ToolListed]
+    handles: List[Handles]
+    links: List[LinkForm]
+    capabilities: Capabilities
+    origin: str
     folder: Optional[str]
     opens_with_agent: bool
     failed: Optional[str]
@@ -656,6 +709,14 @@ class Apps(Model):
     now: Maybe[Number]
 
 
+class HookServer(Model):
+    """A hook server ag started that still runs (home.py's `hook_servers`)."""
+
+    port: Optional[int]
+    pid: Optional[int]
+    upstream: Optional[str]
+
+
 class Home(Model):
     """The home (/api/home, and the stream's `home`): every gatherer and its actors, what the reader keeps of them, what
     each harness is; and what a new session starts from here (`Server.read_home`). A snapshot's home (`ag dashboard
@@ -667,7 +728,7 @@ class Home(Model):
     now: Number
     running_seconds: Number
     gatherers: List[Gatherer]
-    hook_servers: List[Dict[str, Any]]
+    hook_servers: List[HookServer]
     hiding: Dict[str, str]
     """{gatherer: "hidden" | "shown"}"""
     titles: Dict[str, str]
@@ -699,17 +760,32 @@ class Home(Model):
 # ---------------------------------------------------------------------------------------------- one actor over time
 
 class Item(Model):
-    """An item of a context, of an actor's history, or pending (data.py's `context` items, `history`, `_pending`): an
-    event, ag's made item, a preamble's part; its size and text (`clipped`: how much more there is)."""
+    """An item of a context (data.py's `context` items), or one the next call will carry (`_pending`, `_after_read`):
+    an event, ag's made item, a preamble's part -- its group, its size and text (`clipped`: how much more there is)."""
 
+    position: Optional[int]
+    group: str
+    name: str
+    tokens: int
+    row_id: Optional[int]
+    made_id: Optional[int]
+    at: Optional[Number]
+    clipped: int
+    text: str
+
+
+class HistoryItem(Model):
+    """An event of an actor's history (data.py's `history`): its type (`name`), size, time and text (`clipped`: how
+    much more there is); to its newest, its pending events after them, as a context lists them (`Item`)."""
+
+    row_id: Optional[int]
     name: str
     tokens: int
     at: Optional[Number]
-    text: str
     clipped: int
-    row_id: Optional[int]
-    group: Maybe[str]
+    text: str
     position: Maybe[Optional[int]]
+    group: Maybe[str]
     made_id: Maybe[Optional[int]]
 
 
@@ -745,10 +821,10 @@ class AgentTask(Model):
     """A task ag made of the actor's history."""
 
     index: int
-    name: Optional[str]
+    name: str
     description: Optional[str]
-    first_row: Optional[int]
-    last_row: Optional[int]
+    first_row: int
+    last_row: int
     tokens: Optional[int]
     started: Optional[Number]
     ended: Optional[Number]
@@ -870,17 +946,36 @@ class Context(Model):
     items: List[Item]
 
 
+class ToolCall(Model):
+    """A call a script makes (codex's code mode), as its harness's rules read it."""
+
+    name: Optional[str]
+    input: Any
+    action: Any
+    view: Dict[str, Any]
+
+
 class Part(Model):
-    """A part of an event, as the transcript shows it (data.py's `parts`): text, thinking, a call, its result, an
-    image."""
+    """A part of an event, as the transcript shows it, whatever harness wrote it (data.py's `parts`), by `kind`: "text"
+    (`role`: user, assistant, system), "thinking" ("" when encrypted), "call" (`id`, `name`, `input`; what it does and
+    how it is shown, as its harness's rules read it: `action`, `view`; a script's `calls`), "result" (its call's `id`,
+    `error`, `text`; its harness's lines about the run taken off, `shown`, and what they said: `exit`, `took`), "note"
+    (`name`, `text`; what its harness's rules read of it: `said`)."""
 
     kind: str
     role: Maybe[str]
-    text: Maybe[Optional[str]]
+    text: Maybe[str]
     id: Maybe[Optional[str]]
     name: Maybe[Optional[str]]
     input: Maybe[Any]
-    error: Maybe[Optional[bool]]
+    action: Maybe[Any]
+    view: Maybe[Dict[str, Any]]
+    calls: Maybe[List[ToolCall]]
+    error: Maybe[bool]
+    shown: Maybe[Any]
+    exit: Maybe[Any]
+    took: Maybe[Any]
+    said: Maybe[Any]
 
 
 class TranscriptItem(Model):
@@ -906,7 +1001,7 @@ class History(Model):
 
     first_row: int
     last_row: Optional[int]
-    items: List[Item]
+    items: List[HistoryItem]
     more: int
 
 
@@ -958,7 +1053,7 @@ class UserMessage(Model):
     text: str
     row_id: Optional[int]
     at: Optional[Number]
-    kind: Optional[str]
+    kind: str
     cid: Maybe[Optional[str]]
 
 
@@ -989,7 +1084,8 @@ class Turn(Model):
     stopped: Optional[Stopped]
     calls: int
     """its calls, as many as its commands list"""
-    kind: Optional[str]
+    kind: str
+    """what the user's message is, as its harness's wrapper says (harness_kit's `words`)"""
     work: Any
     """what the avatar acts out (work.py's summary)"""
     sent: Maybe[List[SentMessage]]
@@ -1000,16 +1096,56 @@ class Turn(Model):
     began: Maybe[Optional[Number]]
 
 
+class Block(Model):
+    """What a call did to a file (files.py's blocks), by `t`: the lines it read (`lines`, from `start`: None, not
+    known), matches it found (`hits`: `rows`), a change (`diff`: `old` replaced by `new` at `at` -- None, not found --
+    with the known lines `above` and `below`; `write`, `append`: its `lines`), what a command printed (`output`), an image
+    its result holds (`image`: `row_id`, `id`), a note (`text`); `cut`, how many more lines there were."""
+
+    t: str
+    lines: Maybe[List[str]]
+    start: Maybe[Optional[int]]
+    cut: Maybe[int]
+    rows: Maybe[List[NumberedLine]]
+    at: Maybe[Optional[int]]
+    old: Maybe[List[str]]
+    new: Maybe[List[str]]
+    above: Maybe[List[NumberedLine]]
+    below: Maybe[List[NumberedLine]]
+    created: Maybe[bool]
+    row_id: Maybe[int]
+    id: Maybe[str]
+    text: Maybe[str]
+
+
+class Source(Model):
+    """A call that touched a file (files.py's sources): what it did to it, by kind; how (`via`); the lines its changes
+    added and removed. What git did as it ran is one apart (`git`). Where ag's hook server checked it on disk,
+    `checked` (None: nothing to match), and `unnamed`, the file changed as it ran but the call doesn't name it."""
+
+    via: str
+    kind: str
+    kinds: List[str]
+    error: bool
+    call: Any
+    blocks: List[Block]
+    at: Optional[Number]
+    changed: Optional[Lines]
+    git: Maybe[bool]
+    checked: Maybe[Optional[bool]]
+    unnamed: Maybe[bool]
+
+
 class TurnFile(Model):
     """A file a turn touched (files.py's `files`): what each call did to it, by kind; the lines added and removed."""
 
     path: str
     kinds: List[str]
     created: bool
-    changed: Optional[List[int]]
+    changed: Optional[Lines]
     git: List[str]
     """what git changed of it as the turn's commands ran: its kinds"""
-    sources: List[Dict[str, Any]]
+    sources: List[Source]
     temporary: bool
 
 
@@ -1021,7 +1157,7 @@ class Command(Call):
     loaded: Maybe[bool]
     did: Maybe[Dict[str, List[str]]]
     git: Maybe[Dict[str, List[str]]]
-    changed: Maybe[Optional[List[int]]]
+    changed: Maybe[Optional[Lines]]
 
 
 class Files(Model):
@@ -1149,10 +1285,10 @@ class OutlineTask(Model):
 
     channel: str
     index: int
-    name: Optional[str]
+    name: str
     description: Optional[str]
-    first_row: Optional[int]
-    last_row: Optional[int]
+    first_row: int
+    last_row: int
     tokens: Optional[int]
 
 
@@ -1203,7 +1339,8 @@ class Extract(Model):
     model: Optional[str]
     created: Number
     finished: Optional[Number]
-    rows: List[List[int]]
+    rows: List[Tuple[int, int]]
+    """the rows it was made of, as runs: [first, last]"""
     channels: List[str]
     ask: Optional[str]
     messages: int

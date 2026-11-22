@@ -70,7 +70,7 @@ function draw(home: Partial<ListHome> & { gatherers: ListHome["gatherers"] }, ho
 }
 
 describe("the list in React", () => {
-  const a1 = actor("g", "a1", { name: { text: "Parser" }, created: 2 }),
+  const a1 = actor("g", "a1", { name: { text: "Parser", by: "user" }, created: 2 }),
     a2 = actor("g", "a2", { last_user_message: "fix it", created: 1, status: "running" });
   const home = { gatherers: [gatherer("g", [a1, a2])] };
 

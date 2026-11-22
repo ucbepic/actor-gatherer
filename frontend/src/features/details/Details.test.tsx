@@ -3,6 +3,7 @@
 import { act, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../../core/api/query";
+import { actorOf, buildOf, contextOf, harnessInfoOf, homeOf, itemOf, readOf, usageOf } from "../../core/api/testing";
 import { useShown } from "../../core/model/items";
 import { key } from "../../core/model/keys";
 import { contextItemNode, detailsShown, drawDetails, typeChipsNode } from "./mount";
@@ -11,41 +12,44 @@ import type { Agent, Context, DetailsFeed, Read } from "./types";
 
 const ACTOR = key("demo", "c1");
 
-const read = (read_id: number, at: number): Read => ({
-  read_id,
-  at,
-  counted_tokens: 1000 * read_id,
-  real_tokens: null,
-  tasks: 0,
-  rebuild: false,
-});
+const read = (read_id: number, at: number): Read => ({ ...readOf(read_id, { at }), counted_tokens: 1000 * read_id });
 
 const agent = (): Agent => ({
+  gatherer: "demo",
+  channel: "c1",
   harness: "claude",
   reads: [read(1, 100), read(2, 200)],
-  usage: { entries: [{ group: "Recent history", name: "user_message", tokens: 30, items: 2 }], tokens: 30, calls: 2 },
+  pending: [],
+  typed: [],
+  after_read: [],
+  usage: usageOf({
+    entries: [{ group: "Recent history", name: "user_message", tokens: 30, items: 2 }],
+    tokens: 30,
+    calls: 2,
+  }),
   tasks: [],
-  builds: [{ build_id: 1, status: "failed", started: 10, finished: 20, error: "no model", reason: "asked" }],
+  builds: [buildOf(1, { status: "failed", started: 10, finished: 20, error: "no model", reason: "asked" })],
   checks: [],
   rebuilds: 0,
-  llm: { by_purpose: [], total: { calls: 0, tokens_in: 0, tokens_out: 0, errors: 0, cost: null } },
+  llm: { by_purpose: [], total: { calls: 0, tokens_in: 0, tokens_out: 0, errors: 0, cost: 0, unpriced: 0 }, calls: [] },
+  llm_attributed_by_time: 0,
 });
 
-const context = (read_id: number, text: string): Context => ({
-  read_id,
-  at: 100 * read_id,
-  tokens: 30,
-  items: [
-    { group: "Recent history", name: "user_message", tokens: 10, row_id: 1, text },
-    { group: "Recent history", name: "tool_call", tokens: 20, row_id: 2, text: "ls" },
-  ],
-});
+const context = (read_id: number, text: string): Context =>
+  contextOf(read_id, {
+    at: 100 * read_id,
+    tokens: 30,
+    items: [
+      itemOf({ group: "Recent history", name: "user_message", tokens: 10, row_id: 1, text }),
+      itemOf({ group: "Recent history", name: "tool_call", tokens: 20, row_id: 2, text: "ls" }),
+    ],
+  });
 
 const feed = (over: Partial<DetailsFeed> = {}): DetailsFeed => ({
   key: ACTOR,
-  info: { channel: "c1", harness: "claude", cwd: "/w" },
+  info: actorOf("c1", { harness: "claude", cwd: "/w" }),
   agent: agent(),
-  home: { home: "/h", now: 0, gatherers: [], harness_info: { claude: { label: "Claude Code", runs: true } } },
+  home: homeOf({ harness_info: { claude: harnessInfoOf({ label: "Claude Code", runs: true }) } }),
   snapshot: false,
   views: [{ id: "messages", name: "Messages", description: "One row each." }],
   current: "files",
@@ -93,7 +97,7 @@ describe("the Details panel", () => {
   });
 
   it("says why there is nothing to show for an actor with no calls", () => {
-    const { node } = drawn(feed({ agent: { error: "no database for gatherer 'demo'" } as Agent }));
+    const { node } = drawn(feed({ agent: { error: "no database for gatherer 'demo'" } }));
     expect(node.querySelector(".empty")!.textContent).toBe("no database for gatherer 'demo'");
     expect(drawn(feed({ agent: null })).node.querySelector(".empty")!.textContent).toBe("No data for this actor.");
   });
@@ -150,7 +154,9 @@ describe("the Details panel", () => {
 
 describe("its parts as nodes", () => {
   it("draws an item's row, whole once opened, in a node of its own", async () => {
-    const row = contextItemNode({ group: "Recent history", name: "agent_message", tokens: 3, text: "", clipped: 0 });
+    const row = contextItemNode(
+      itemOf({ group: "Recent history", name: "agent_message", tokens: 3, text: "", clipped: 0 }),
+    );
     expect(row.matches("details.item")).toBe(true);
     expect(row.querySelector(".preview.none")!.textContent).toBe("no text");
     row.open = true;
