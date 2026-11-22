@@ -1,6 +1,6 @@
 // What the Notes tests share: the Notes panel opened from the gatherer's menu, a page made and binned in it, and its
 // tools called as an agent calls them.
-import type { FrameLocator, Page } from "@playwright/test";
+import type { FrameLocator, Locator, Page } from "@playwright/test";
 import { expect } from "./test";
 import { GATHERER } from "./home";
 
@@ -26,6 +26,21 @@ export async function call(page: Page, instance: string, tool: string, args: Rec
   ).json();
   return { text: got.content[0].text as string, error: got.isError as boolean };
 }
+
+/** Whether the caret is in this line's words (`.tx`, a caption's too): the page's lines are one editor (its root,
+ * #blocks, has the focus whichever line the caret is in), its selection in the line, and the editor taking keys. */
+export const caretIn = (words: Locator) =>
+  words.evaluate((tx) => {
+    const root = tx.closest("#blocks") as HTMLElement | null,
+      s = getSelection();
+    return (
+      !!root &&
+      document.activeElement === root &&
+      root.isContentEditable &&
+      !!s?.anchorNode &&
+      tx.contains(s.anchorNode)
+    );
+  });
 
 export async function newPage(page: Page, panel: FrameLocator, title: string) {
   await panel.locator("#new-page").click();

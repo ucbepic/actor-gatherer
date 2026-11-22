@@ -5,29 +5,29 @@
 // narrows the agents, Tab goes into the box; ↑↓ pick, ↵ sends (⇧↵ a new line in the box), Esc closes. Opened by the
 // button, the box has the keys at once.
 import { el, oneLine, SVG, UNSENT } from "./helpers.js";
-import { current, store } from "./state.js";
-import { change, forget } from "./send.js";
-import { caretIn, pointAt, textOf } from "./caret.js";
+import { store } from "./state.js";
+import { forget } from "./send.js";
+import { box } from "./page.js";
 import { closePop, menu, place, popUp } from "./popups.js";
 import { holdKeys, picked } from "./picked.js";
 import { callTo, crew, face, findLine, isLead, nameOf, onIt, stands, tilde } from "./actors.js";
 import { sendTo } from "./sent.js";
+import { boxAt, edit, here, view } from "./editor.js";
+import { menuWords } from "./slash.js";
 
-export function atInput(n, tx, b, ev) {
-  if (menu && menu.kind === "at" && menu.tx) {
-    const c = caretIn(tx);
-    if (menu.tx !== tx || !c || c.start <= menu.from || tx.textContent[menu.from] !== "@") return closePop();
-    const q = tx.textContent.slice(menu.from + 1, c.start);
-    if (q.length > 30 || /\s\s/.test(q)) return closePop();
-    return drawAt(q);
-  }
-  if (ev.inputType !== "insertText" || ev.data !== "@" || UNSENT.includes(b.type) || b.type === "code") return;
-  const c = caretIn(tx);
-  if (!c) return;
-  const before = tx.textContent.slice(0, c.start - 1);
+// "@" typed in a line (`text`, just put in the line `b`) at a word's start: the picker, at the caret
+export function atTyped(b, text) {
+  const h = here();
+  if (text !== "@" || UNSENT.includes(b.type) || b.type === "code" || !h || !h.empty) return;
+  const before = h.node.textBetween(0, h.from - 1, "");
   if (before && !/\s$/.test(before)) return;           // an address's @ (a@b.c): not
-  const r = getSelection().getRangeAt(0).getBoundingClientRect();
-  atPop(r.width || r.height ? r : tx.getBoundingClientRect(), { tx, from: c.start - 1, block: b.id });
+  const head = view.state.selection.head;
+  atPop(boxAt(head), { tx: box, line: true, from: head - 1, block: b.id });
+}
+export function atFollow() {
+  const at = menuWords(1);
+  if (!at || at.lead !== "@" || at.q.length > 30 || /\s\s/.test(at.q)) return closePop();
+  if (at.q !== menu.q) drawAt(at.q);
 }
 export function openPicker(id, rect, ids = null) {
   atPop(rect, { tx: null, block: id, blocks: ids && ids.length > 1 ? ids : null });
@@ -137,17 +137,11 @@ function atPick(it) {
   if (!m) return;
   const b = (findLine(m.block) || {}).b;                // (the Work page's Assign: a line of any page)
   if (!b) return;
-  if (m.tx && m.tx.isConnected) {
-    const tx = m.tx, n = tx.closest(".blk"), c = caretIn(tx);
-    const end = c && c.start > m.from ? c.start : m.qEnd || m.from + 1;
-    const r = document.createRange(), a = pointAt(tx, m.from), z = pointAt(tx, Math.max(end, m.from + 1));
-    r.setStart(a.node, a.offset);
-    r.setEnd(z.node, z.offset);
-    r.deleteContents();
-    if (tx.innerHTML === "<br>") tx.innerHTML = "";
-    b.text = textOf(n, b);
+  if (m.line && view.state.doc.textBetween(m.from, m.from + 1, "") === "@") {   // the "@..." typed taken out: a change of its own
+    const h = here(), sel = view.state.selection;
+    const end = h && h.id === m.block && sel.empty && sel.head > m.from ? sel.head : m.qEnd || m.from + 1;
     forget(b.id);
-    change([{ op: "block.put", page: current, block: { id: b.id, text: b.text } }]);
+    edit(view.state.tr.delete(m.from, Math.min(Math.max(end, m.from + 1), view.state.doc.content.size)), "change");
   }
   if (it.kind === "where") return folderAsk(m.blocks || [b.id], m.rect, extra);
   sendTo(m.blocks || [b.id], it.kind === "new" ? { harness: it.harness, folder: crew.start } : { channel: it.channel }, extra);

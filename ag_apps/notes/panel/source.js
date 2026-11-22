@@ -44,7 +44,7 @@ export function sourcePart(n, b, ro) {
   n.classList.toggle("convo-on", open);
   if (b !== tail) { if (part) part.remove(); return; }
   n.classList.add("has-src");                           // (its Ask button would cover the avatar: @ or its menu sends it)
-  if (!part) { part = el("div", { class: "sent" }); n.append(part); }
+  if (!part) { part = el("div", { class: "sent", contenteditable: "false" }); n.append(part); }
   const a = actorOf(b.source), name = nameOf(a, b.source);
   const [cls, word] = standsSrc(a, g);
   const asks = !!askedAll(a, g);

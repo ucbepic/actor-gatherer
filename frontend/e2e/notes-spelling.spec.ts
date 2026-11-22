@@ -5,7 +5,7 @@
 import type { FrameLocator, Page } from "@playwright/test";
 import { expect, test } from "./test";
 import { open } from "./home";
-import { binPage, call, newPage, openNotes } from "./notes-home";
+import { binPage, call, caretIn, newPage, openNotes } from "./notes-home";
 
 const FIXES: Record<string, string[]> = { teh: ["the", "tech", "ten"], wrold: ["world", "wold"], zzxq: [] };
 
@@ -85,7 +85,7 @@ test("a click in a misspelled word offers its fixes; one picked takes its place,
   await fixes.locator(".it", { hasText: "the" }).first().click();
   await expect(fixes).toBeHidden();
   await expect(line).toHaveText("I fixed the wrold today");
-  await expect(line).toBeFocused(); // the keys still in the line, after the word
+  await expect.poll(() => caretIn(line)).toBe(true); // the keys still in the line, after the word
   await page.keyboard.type("!");
   await expect(line).toHaveText("I fixed the! wrold today");
   await page.keyboard.press("Backspace");
