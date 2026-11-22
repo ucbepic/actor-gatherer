@@ -47,6 +47,7 @@ import harness_kit
 from app_kit import AppError, Caller, remote
 
 from .. import app_agents, app_host, app_policy, desktop, libs, livedocs, mcp, task_links, tasks, tool_gateway
+from ..models import Apps, Instance
 from .common import (KEEPALIVE_EVENT, Body, Errors, Events, Parts, answer, blocking, event, failure, local_only, named_here, not_found,
                      queue_events)
 
@@ -81,7 +82,7 @@ def _need(body: dict, *keys: str) -> list:
     return [body[k] for k in keys]
 
 
-@router.get("/api/apps", dependencies=[Depends(local_only)])
+@router.get("/api/apps", dependencies=[Depends(local_only)], response_model=Apps)
 def apps_listed(srv: Parts, gatherer: str = "") -> Response:
     """The apps found (each its manifest, its panel's origin), those whose manifest can't be read (`broken`), and --
     for gatherer G -- its open instances, the agents attached to each, and its tasks (tasks.py: which an app is in, read
@@ -97,7 +98,7 @@ def apps_listed(srv: Parts, gatherer: str = "") -> Response:
         return _failed(exc)
 
 
-@router.post("/api/apps/open")
+@router.post("/api/apps/open", response_model=Instance)
 def apps_open(srv: Parts, body: Body) -> Response:
     """The app's instance for the gatherer (and folder, for an app with one per folder or checkout): the open one, or
     a new one -- `reuse`, for an app with any number, one open at that folder and in no task, if there is one. With

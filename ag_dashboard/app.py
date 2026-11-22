@@ -2,7 +2,8 @@
 -- the query read as the page's (`first_values`), and only the dashboard's own page let write -- and errors answered
 as the page reads them (api/common.py). `uvicorn` is the server that runs it (server.py's `serve_forever`).
 
-`python -m ag_dashboard --routes` prints `routes()`: every route, with what its handler's docstring says first."""
+`python -m ag_dashboard --routes` prints `routes()`: every route, with what its handler's docstring says first;
+`--openapi`, `schema()`: the routes' OpenAPI schema, which the page's types are generated from."""
 
 import importlib.util
 from typing import List, Optional, Tuple
@@ -54,6 +55,19 @@ def routes() -> List[Tuple[str, str, str]]:
             doc = " ".join((route.endpoint.__doc__ or "").strip().split("\n\n")[0].split())
             out.append((", ".join(sorted(getattr(route, "methods", None) or ["WEBSOCKET"])), route.path, doc))
     return out
+
+
+def schema() -> dict:
+    """The routes' OpenAPI schema (FastAPI's, from each route's parameters and `response_model`: models.py), which the
+    page's types are generated from (frontend/scripts/gen-types.mjs) -- less the 422 answer FastAPI describes for a
+    request it finds invalid: this app answers it 404 "not found" (`_not_valid`)."""
+    got = create().openapi()
+    for route in got["paths"].values():
+        for operation in route.values():
+            operation.get("responses", {}).pop("422", None)
+    for name in ("HTTPValidationError", "ValidationError"):
+        got.get("components", {}).get("schemas", {}).pop(name, None)
+    return got
 
 
 def uvicorn_server(app: FastAPI) -> "Uvicorn":

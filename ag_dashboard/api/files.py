@@ -1,18 +1,18 @@
 """An actor's files: each turn's (what it changed, read, made), a file's changes, an image a call's result holds."""
 
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import APIRouter
 from starlette.responses import Response
 
 from .. import files as turn_files
-from ..models import Files
+from ..models import Failed, Files
 from .common import Decimal, Errors, Whole, answer, send
 
 router = APIRouter(route_class=Errors)
 
 
-@router.get("/api/files", response_model=Files)
+@router.get("/api/files", response_model=Union[Files, Failed])
 def files(gatherer: str, channel: str, turn: Optional[Whole] = None, cwd: str = "") -> Response:
     """files.files(G, C, N, D): the actor's turns and the files of each (the turn N's, in the directory D)."""
     return answer(turn_files.files(gatherer, channel, turn, cwd))

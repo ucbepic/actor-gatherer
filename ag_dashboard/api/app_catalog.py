@@ -32,6 +32,7 @@ from app_kit import AppError
 from app_kit.installing import InstallError
 
 from .. import app_catalog, app_policy, app_requests, app_settings
+from ..models import Catalog, Staged, Updates
 from .common import Body, Errors, Parts, answer, failure, local_only
 
 router = APIRouter(route_class=Errors)
@@ -52,20 +53,20 @@ def _run(fn, *args) -> Response:
         return failure(exc.status if 400 <= exc.status < 600 else 400, str(exc))
 
 
-@router.get("/api/apps/catalog", dependencies=[Depends(local_only)])
+@router.get("/api/apps/catalog", dependencies=[Depends(local_only)], response_model=Catalog)
 def apps_catalog(srv: Parts) -> Response:
     """Every app installed (what it gives agents and costs them, what it may do, where it came from, its windows open,
     its data), the folders that couldn't load, and the apps that can be installed."""
     return _run(lambda: app_catalog.catalog(_host(srv)))
 
 
-@router.get("/api/apps/updates", dependencies=[Depends(local_only)])
+@router.get("/api/apps/updates", dependencies=[Depends(local_only)], response_model=Updates)
 def apps_updates(srv: Parts) -> Response:
     """The apps installed from git that have a newer commit: {updates: {name: commit}} (asks each source)."""
     return _run(lambda: {"updates": app_catalog.updates(_host(srv))})
 
 
-@router.post("/api/apps/stage")
+@router.post("/api/apps/stage", response_model=Staged)
 def apps_stage(srv: Parts, body: Body) -> Response:
     """A folder or git URL copied aside and its app.toml checked: what it is, its staging id, and -- one installed of
     that name -- what an update changes."""
