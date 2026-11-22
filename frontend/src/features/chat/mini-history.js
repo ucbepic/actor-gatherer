@@ -158,6 +158,10 @@ const miniCard = (() => {
   function leave() { clearTimeout(timer); clearTimeout(shutAt); shutAt = setTimeout(shut, 260); }
   function open(r, grow) {
     if (hush) return;
+    if (!r.isConnected) {                            // drawn anew since the pointer came onto it (a view came meanwhile,
+      r = [...document.querySelectorAll(".chat.mini .mh-row")].find((x) => x.dataset.kind === r.dataset.kind);   // before
+      if (!r) return;                                // the browser's own mouseenter on the new one): the line there now
+    }
     clearTimeout(shutAt);
     const k = key(...state.selected);
     if (forKey !== k) { opened.clear(); forKey = k; }
@@ -173,8 +177,9 @@ const miniCard = (() => {
       host().body.append(card);
       for (const d of docs()) d.addEventListener("keydown", onKey, true);
     }
+    place();                                         // placed first: its scroll kept, or set, at the size it has
     fill(again);                                     // open for this line already (the pointer back on it, the line drawn
-    place();                                         // again under it): its scroll kept, not grown in again
+                                                     // again under it): its scroll kept, not grown in again
     if (grow && !again) { card.classList.remove("grow"); void card.offsetWidth; card.classList.add("grow"); }
     if (!again) aim();
   }
@@ -193,8 +198,8 @@ const miniCard = (() => {
       if (!now || !chatMin()) { shut(); return; }
       for (const n of lines) n.classList.toggle("hot", n === now);
       anchor = now;
+      place();                                       // (first: its scroll kept at the size it has)
       fill(true);
-      place();
     });
   }
   // over the pane, rising from its lines: at least 420px wide, as tall as its content up to 640px or the room above it
