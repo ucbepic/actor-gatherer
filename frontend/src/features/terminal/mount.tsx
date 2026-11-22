@@ -7,7 +7,7 @@ import { Cover, type TermFrame } from "./TerminalView";
 /** The view's frame, drawn now, `host` (the terminal's node; none: no terminal) first in it: its node, for the page to
  * put where it goes. */
 export function drawTerminal(f: TermFrame, host: HTMLElement | null, name: string): HTMLDivElement {
-  const node = viewFrame("terminal", "xterm-frame", name, <Cover key={f.key} f={f} />);
+  const node = viewFrame("terminal", "xterm-frame", name, <Cover key={f.key} f={f} />, f.key);
   // another session's terminal, dropped since (term.ts's termFor), out; this one's first, before the cover
   for (const n of [...node.querySelectorAll(":scope > .xterm-host")]) if (n !== host) n.remove();
   if (host && node.firstChild !== host) node.insertBefore(host, node.firstChild);

@@ -2,9 +2,10 @@
 // panel beside the chat ("the selected agent", "the chat"'s context cards).
 import type { WebSocketRoute } from "@playwright/test";
 import { expect, homeAs, test } from "./test";
-import { CLAUDE, NOW, masks, openActor } from "./home";
+import { CLAUDE, CODEX, NOW, masks, open, openActor } from "./home";
 
 const CLAUDE_CHANNEL = "5f0c2a2e-8d1b-4c7e-9a3f-1b2c3d4e5f60";
+const beside = process.platform === "darwin" ? "Meta" : "Control";
 
 test("the Terminal view of a session with no terminal says so", async ({ page }) => {
   await openActor(page, CLAUDE);
@@ -17,6 +18,28 @@ test("the History view lists the actor's history", async ({ page }) => {
   await page.locator("#controls").getByRole("button", { name: "History" }).click();
   await expect(page.locator("#main")).toContainText("probe-greet");
   await expect(page.locator("#main")).toHaveScreenshot("history.png", { mask: masks(page) });
+});
+
+test("two panes on History, side by side: each its own rows picked, its own panel", async ({ page }) => {
+  await open(page);
+  await page.locator("#agents .agent", { hasText: CLAUDE }).click();
+  await page.locator("#agents .agent", { hasText: CODEX }).click({ modifiers: [beside] });
+  const here = page.locator("#pane-here"),
+    other = page.locator("#panes > .pane").nth(1);
+  await expect(other).toHaveCount(1);
+  await here.locator("#controls").getByRole("button", { name: "History" }).click();
+  await other.locator(".controls").getByRole("button", { name: "History" }).click();
+  const rowsOf = (pane: typeof here) => pane.locator(".hist .h-list .h-row");
+  await expect(rowsOf(here).first()).toBeVisible();
+  await expect(rowsOf(other).first()).toBeVisible();
+  await rowsOf(here).first().locator(".h-main").click();
+  await expect(rowsOf(here).first()).toHaveClass(/\bon\b/);
+  await expect(here.locator(".h-side.open")).toHaveCount(1);
+  await expect(other.locator(".hist .h-row.on")).toHaveCount(0); // not picked in the other's
+  await expect(other.locator(".h-side.open")).toHaveCount(0);
+  await rowsOf(other).first().locator(".h-main").click();
+  await expect(other.locator(".h-side.open")).toHaveCount(1);
+  await expect(rowsOf(here).first()).toHaveClass(/\bon\b/); // the first's kept
 });
 
 test("Details opens beside the chat, and closes", async ({ page }) => {

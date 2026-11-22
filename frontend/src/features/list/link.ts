@@ -100,7 +100,8 @@ export interface PanesPart {
   closePops(): void;
   closedInTabs(k: string | null, item?: string | null): Promise<void>;
   cwdOf(a: Actor | Record<string, never>): string;
-  drawWho(): void;
+  /** a pane's head (none given: every pane's) */
+  drawWho(p?: unknown): void;
   enterAppTask(gname: string, k: string): void;
   focusPane(p: ActorPane): void;
   focusedActor(): At | null;
@@ -111,6 +112,7 @@ export interface PanesPart {
   noHarness(): string;
   openActors(): At[];
   openCoordinator(g: Gatherer | null, node: string): void;
+  /** a box (the page's node) or a menu hung from `button`, by its key (Pops.tsx draws it) */
   openPop(key: string, button: HTMLElement, box: HTMLElement): void;
   openTaskBeside(gname: string, k: string, first: string): Promise<void>;
   paneNote(text: string): void;
@@ -150,7 +152,8 @@ export interface PanesPart {
   readonly taskAppsOpening: Promise<unknown> | null;
   taskKey(gname: string, c: string): string | null;
   taskLayout(k: string): TaskLeft | null;
-  readonly tasksLaidOut: Set<string>;
+  /** the tasks laid out in this page (the layout model's), read and written as a set */
+  readonly tasksLaidOut: { has(k: string): boolean; add(k: string): void; delete(k: string): void };
   viaTabs(
     k: string | null,
     ev: AnyEvent | Record<string, never> | null | undefined,
@@ -209,7 +212,7 @@ export interface ListPage {
     redrawList(): void;
     setLive(text: string): void;
     setAbout(open: boolean): void;
-    loadChat(): Promise<void>;
+    loadChat(p?: unknown): Promise<void>;
     refresh(now?: boolean): Promise<void>;
     render(now?: boolean): void;
   };

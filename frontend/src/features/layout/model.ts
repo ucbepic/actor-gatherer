@@ -91,6 +91,13 @@ export interface Layout {
    * only: not kept. */
   away?: { g: string; c: string; shut: boolean } | null;
   appsOnly?: string | null;
+  /** The task last entered (what the apps it opens wait on: another entered meanwhile wants its own), the tasks laid out
+   * in this page (one shown, laid out, stays as it is; one shown by chance, as the page opened, is laid out at its first
+   * click), and the task the page opened on by itself (a click on another shows it in its place, not in a new tab). This
+   * page's only: not kept. */
+  entered?: string | null;
+  laidOut?: string[];
+  auto?: string | null;
 }
 
 export const KEY = "ag-dashboard-layout";
@@ -285,6 +292,18 @@ export const setAway = (l: Layout, sel: [string, string] | null, shut = false): 
   sel ? { ...l, away: { g: sel[0], c: sel[1], shut } } : { ...l, away: null };
 /** Task `key` shown with its apps alone (none: none is). */
 export const setAppsOnly = (l: Layout, key: string | null): Layout => ({ ...l, appsOnly: key });
+/** Task `key` the one last entered (none: none is now). */
+export const setEntered = (l: Layout, key: string | null): Layout => ({ ...l, entered: key });
+/** Whether task `key` is laid out in this page. */
+export const isLaidOut = (l: Layout, key: string): boolean => (l.laidOut || []).includes(key);
+/** Task `key` laid out in this page (`on`), or to be laid out again at its next click. */
+export function layOut(l: Layout, key: string, on = true): Layout {
+  if (isLaidOut(l, key) === on) return l;
+  const laidOut = (l.laidOut || []).filter((k) => k !== key);
+  return { ...l, laidOut: on ? [...laidOut, key] : laidOut };
+}
+/** Task `key` the one the page opened on by itself (none: it is no longer). */
+export const setAuto = (l: Layout, key: string | null): Layout => ({ ...l, auto: key });
 
 /** Item `item` in focus: an actor's pane (`actor`), or an app's panel selected. */
 export const focusOn = (l: Layout, item: string | null, actor: boolean): Layout =>
@@ -526,6 +545,9 @@ export function load(get: (k: string) => string | null): Layout {
       lastActor: null,
       away: null,
       appsOnly: null,
+      entered: null,
+      laidOut: [],
+      auto: null,
     };
   return migrate(get);
 }

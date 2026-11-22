@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   close,
   closed,
+  isLaidOut,
+  layOut,
+  setAuto,
+  setEntered,
   closeShown,
   empty,
   focusOn,
@@ -180,7 +184,16 @@ describe("the migration from the six keys", () => {
     expect(migrate((k) => old[k] ?? null).tasks["g\u0000t1"].left!.sizes).toEqual({ a: 0.5 });
     const now = { ...two(), current: "b" };
     const both: Record<string, string> = { ...old, "ag-dashboard-layout": JSON.stringify(now) };
-    expect(load((k) => both[k] ?? null)).toEqual({ ...now, focus: null, lastActor: null, away: null, appsOnly: null }); // (focus: the page's alone)
+    expect(load((k) => both[k] ?? null)).toEqual({
+      ...now,
+      focus: null, // (the page's alone)
+      lastActor: null,
+      away: null,
+      appsOnly: null,
+      entered: null,
+      laidOut: [],
+      auto: null,
+    });
     expect(load((k) => (k === "ag-dashboard-layout" ? "{broken" : (old[k] ?? null))).tasks["g\u0000t1"]).toBeTruthy();
   });
 
@@ -241,5 +254,22 @@ describe("the migration from the six keys", () => {
   it("starts as a fresh home with nothing kept, or what was kept unreadable", () => {
     expect(migrate(() => null).tabs.length).toBe(1);
     expect(migrate(() => "{not json").tabs[0].tasks).toEqual([]);
+  });
+
+  it("the page's own: the task last entered, those laid out here, the one it opened on by itself -- not kept", () => {
+    let l = setEntered(two(), "g\u0000t1");
+    l = layOut(layOut(layOut(l, "g\u0000t1"), "g\u0000c2"), "g\u0000t1");
+    expect(l.laidOut).toEqual(["g\u0000t1", "g\u0000c2"]);
+    expect(isLaidOut(l, "g\u0000c2")).toBe(true);
+    l = layOut(l, "g\u0000t1", false);
+    expect([isLaidOut(l, "g\u0000t1"), l.laidOut]).toEqual([false, ["g\u0000c2"]]);
+    l = setAuto(l, "g\u0000c2");
+    expect([l.entered, l.auto]).toEqual(["g\u0000t1", "g\u0000c2"]);
+    const kept = JSON.stringify(l);
+    expect(load((k) => (k === "ag-dashboard-layout" ? kept : null))).toMatchObject({
+      entered: null,
+      laidOut: [],
+      auto: null,
+    });
   });
 });

@@ -1,12 +1,14 @@
 import { SNAPSHOT, state } from "../../core/page/state.js";
-import { ICONS, hasChat, selectedInfo } from "../../core/page/helpers.js";
+import { ICONS, hasChat } from "../../core/page/helpers.js";
 import { refresh } from "../page/data.js";
 import { linkClicked } from "../layout/panes.js";
+import { paneInfo, paneWith } from "../page/pane-view.js";
 import { readOnlyWhy } from "../chat/chat.js";
 import { addChatView } from "../chat/views.js";
 import { shownGone } from "./shell.js";
 import {
-  fullscreenFor as fullscreenIn, setTermHost, term, termFor, termListen, termOpen, termPlaced, termWebgl, xtermTheme,
+  eachTerm, fullscreenFor as fullscreenIn, setTermHost, term, termFor, termListen, termOf, termOpen, termPlaced, termWebgl,
+  xtermTheme,
 } from "./term";
 import { drawTerminal } from "./mount";
 
@@ -20,9 +22,12 @@ import { drawTerminal } from "./mount";
 const fullscreenFor = (info) => fullscreenIn(state.home, info);
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
-  setTermHost({ info: selectedInfo, gatherer: () => (state.selected ? state.selected[0] : null), home: () => state.home,
-    refresh: () => refresh(), linkClicked, shellGone: shownGone });
-  window.addEventListener("ag-theme", () => { if (term.xterm) term.xterm.options.theme = xtermTheme(); });
+  // each terminal's session, as the pane showing it has it
+  setTermHost({ info: (sid) => paneInfo(paneWith(sid)), gatherer: (sid) => (paneWith(sid) || {}).g || null,
+    home: () => state.home, refresh: () => refresh(),
+    linkClicked: (uri, ev, sid) => linkClicked(uri, ev, false, paneWith(sid)), shellGone: shownGone,
+    here: () => (state.selected ? state.selected[1] : null) });
+  window.addEventListener("ag-theme", () => { for (const t of eachTerm()) t.xterm.options.theme = xtermTheme(); });
   if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
     id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame", icon: ICONS.terminal,
     description: "The harness's own interface, in a terminal.",
@@ -43,4 +48,4 @@ export function start() {
   });
 }
 
-export { fullscreenFor, term, termFor, termListen, termWebgl };
+export { fullscreenFor, term, termFor, termListen, termOf, termWebgl };

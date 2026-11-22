@@ -1,4 +1,4 @@
-import { PANE, SNAPSHOT, state } from "../../core/page/state.js";
+import { SNAPSHOT, state } from "../../core/page/state.js";
 import { ICONS, el, harnessBadge, harnessInfo, harnessName, key, post, strokeIcon } from "../../core/page/helpers.js";
 import { drafts, fitBox, keepDraft, setLive } from "../page/data.js";
 import {
@@ -11,7 +11,8 @@ import {
   startShell, startWithApp, startable, workPlacer,
 } from "./panes.js";
 import { drawAppsPage, openAppsPage } from "../apps/apps-page.js";
-import { renderMain } from "../page/main-view.js";
+import { drawPane } from "../page/main-view.js";
+import { paneOf } from "../page/pane-view.js";
 import { tildePath } from "../../core/page/code.js";
 import * as appHost from "../apps/host";
 import * as prefs from "../../core/prefs";
@@ -84,7 +85,7 @@ const placeName = (p) => !p ? "No group yet" : p.alone ? "On its own"
 // The page, drawn into the work area's box for a tab showing nothing (`tab`, its id): the message box as the tab's draft
 // left it, in focus, and its parts
 function drawNewTab(box, tab) {
-  if (PANE || SNAPSHOT || !workPlacer) return;
+  if (SNAPSHOT || !workPlacer) return;
   if (workPlacer.tabs.shownTab().page === "apps") return drawAppsPage(box);   // the Apps page's tab (features/apps/apps-page.js)
   box.classList.remove("ap");
   if (tab !== newTab.tab || !newTab.input || !box.contains(newTab.input))
@@ -117,7 +118,7 @@ function keysSaid() {
 function refreshNewTab(now = false) {
   const box = newTab.box, parts = newTab.parts;
   if (!box || !parts || box.hidden || !box.isConnected || !state.home) return;
-  const p = ntPlace(), apps = PANE || SNAPSHOT ? [] : appHost.found();
+  const p = ntPlace(), apps = SNAPSHOT ? [] : appHost.found();
   const sig = JSON.stringify([p, placeName(p), startable(), ntHarness(p), ntCwd(p), canAlone(), newTab.busy, newTab.error,
     state.home.terminals, apps.map((a) => [a.name, a.label, !!a.failed])]);
   if (!now && sig === newTab.sig) return;
@@ -150,7 +151,7 @@ function ntLine(p) {
   ];
 }
 // a drop-down of the page's: scrolling, if long (many groups and folders)
-function ntMenu(head, items) { const m = popMenu(head, items); m.classList.add("nt-menu"); return m; }
+function ntMenu(head, items) { return popMenu(head, items, null, null, "nt-menu"); }
 // "In"'s drop-down: each group, its open folders under it, then on its own (when an actor can start so)
 function ntPlaces(p) {
   const at = (q) => JSON.stringify(q) === JSON.stringify(p) ? "chosen" : "";
@@ -260,10 +261,10 @@ async function ntSend() {
     newTab.error = `Not started: ${e.message}`;
   } finally { workPlacer.tabs.filling(false); newTab.busy = ""; }
   if (!s) { refreshNewTab(true); ntFocus(); return; }
-  const k = key(s.gatherer, s.session_id);
-  if (state.chatSend && state.chatSend.draft === k) {
-    if (await state.chatSend(text)) return;
-    if (!drafts()[k]) { keepDraft(k, text); renderMain(); }   // not sent (Chat says why): its draft, not lost
+  const k = key(s.gatherer, s.session_id), shown = paneOf(s.gatherer, s.session_id);
+  if (shown && shown.chatSend.draft === k) {
+    if (await shown.chatSend(text)) return;
+    if (!drafts()[k]) { keepDraft(k, text); drawPane(shown); }   // not sent (Chat says why): its draft, not lost
     return;
   }
   keepDraft(k, text);                                // not in Chat here (another view): its draft, to send from there
@@ -271,9 +272,8 @@ async function ntSend() {
   catch (e) { setLive(`Not sent: ${e.message}`); }
 }
 
-// The keys: the tab shown's page's -- a pane's frame hands them to the page (agPanes.tabKey) -- or the ag app's menu's
+// The keys: the page's, or the ag app's menu's
 function tabKey(what) {
-  if (PANE) { PANE.tabKey(window, what); return; }
   if (!workPlacer || SNAPSHOT) return;
   if (what === "closeTab") { void workPlacer.tabs.closeShown(); return; }
   if (what !== "newTab") return;
@@ -290,7 +290,7 @@ export function start() {
     ev.preventDefault(); ev.stopPropagation();
     tabKey(k === "t" ? "newTab" : "closeTab");
   }, true);
-  if (!PANE && !SNAPSHOT) { try { if (window.agApp && window.agApp.onKey) window.agApp.onKey(tabKey); } catch (e) { /* not the app */ } }
+  if (!SNAPSHOT) { try { if (window.agApp && window.agApp.onKey) window.agApp.onKey(tabKey); } catch (e) { /* not the app */ } }
 }
 export {
   START_HARNESS_KEY, drawNewTab, keptHarness, keptStart, keptValue, ntGroup, realGroups, refreshNewTab, startPlace,

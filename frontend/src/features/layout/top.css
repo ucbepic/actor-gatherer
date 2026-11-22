@@ -6,8 +6,8 @@
 .top-row { flex: 0 0 var(--ed-h, 50%); min-height: 140px; display: flex; position: relative; min-width: 0;
   background: var(--page); border-bottom: 5px solid color-mix(in srgb, var(--ink) 14%, var(--page)); }   /* the edge between it and the panes (placed: a band to drag, place.css) */
 .top-row:not(:has(> section:not([hidden]))) { display: none; }
-/* a pane minimized (setChatMin): as tall as what it shows -- a frame's told by its page (fitMini); placed so by the work area
-   (features/layout/) -- and no head of its own */
+/* a pane minimized (setChatMin): as tall as what it shows, placed so by the work area (features/layout/) -- and no head
+   of its own */
 .pane:has(> main > .chat.mini) > .pane-top { display: none; }
 main:has(> .chat.mini) { align-items: flex-end; }
 /* a pane minimized: what the agent asks the reader, if it does, over the message box; a terminal's way back at its left, its
@@ -32,9 +32,8 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .chat.mini > .mini-grip { grid-area: hist; justify-self: start; align-self: stretch; position: relative; z-index: 1; width: 9px;
   margin-left: -4px; cursor: col-resize; touch-action: none; }
 .mini-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; }
-.mini-grip:hover::after, :root[data-mini-drag="here"] .mini-grip::after { left: 3px; width: 3px; background: var(--axis); }
-/* dragged (here, or in a pane's frame): the frames -- the pane's own among them, in the page around it -- let the pointer
-   by, so it goes on over them */
+.mini-grip:hover::after, .pane[data-mini-drag="here"] .mini-grip::after { left: 3px; width: 3px; background: var(--axis); }
+/* dragged: the apps' frames let the pointer by, so it goes on over them */
 :root[data-mini-drag] { cursor: col-resize; user-select: none; }
 :root[data-mini-drag] body * { cursor: inherit; }
 :root[data-mini-drag] iframe { pointer-events: none; }
@@ -46,7 +45,7 @@ main:has(> .chat.mini) { align-items: flex-end; }
 }
 .chat.mini .composer, .chat.mini .readonly { border-top: 0; padding: 8px 8px 8px 0; }
 .chat.mini:not(:has(> .mini-back)) > :is(.composer, .readonly) { padding-left: 10px; }   /* no way back before it: off the edge */
-.chat.mini .asking-note { max-height: 360px; }      /* not in vh: a frame is as tall as its pane (fitMini) */
+.chat.mini .asking-note { max-height: 360px; }
 .mini-back { display: inline-flex; align-items: center; justify-content: center; width: var(--ib); height: var(--ib); margin: 0 4px 0 6px; padding: 0;
   border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
 .mini-back:hover, .mini-back:focus-visible { background: var(--wash); color: var(--ink); }
@@ -106,7 +105,7 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .dotc.err { background: var(--term-err); } .dotc.stop { background: var(--axis); }
 .dotc.run { background: var(--term-run); animation: mh-pulse 1s ease-in-out infinite; }
 @keyframes mh-pulse { 50% { opacity: .35; } }
-/* the card: in the page around a pane's frame, over everything there (the hover cards' level), and over a native page
+/* the card: over the page, over everything there (the hover cards' level), and over a native page
    (class floats: features/apps/native.ts) */
 .mh-card { position: fixed; z-index: var(--z-card); display: flex; flex-direction: column; background: var(--surface); color: var(--ink);
   border: 1px solid var(--ring); border-radius: 12px; overflow: hidden; font-size: var(--fs-ui); line-height: 1.45;

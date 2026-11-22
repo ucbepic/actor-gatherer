@@ -88,7 +88,7 @@ test("a task's strip dragged onto the bottom of another task: the two one over t
 test("a task of one panel moved by its head's menu: in the other task's place", async ({ page }) => {
   const { codex, strip } = await twoTasks(page);
   expect((await box(codex)).x).toBeGreaterThan((await box(strip)).x); // Codex at the right
-  const grip = await box(codex.frameLocator("iframe").locator(".fl-grip")); // its head, in its Chat bar (an app shown)
+  const grip = await box(codex.locator(".fl-grip")); // its head, in its Chat bar (an app shown)
   await page.mouse.click(grip.x + grip.width / 2, grip.y + grip.height / 2, { button: "right" });
   const menu = page.locator(".row-menu[role=menu][aria-label='Move this task']");
   await expect(menu.getByRole("menuitem").nth(-2)).toHaveText(`⇄Swap with ${CLAUDE}`);

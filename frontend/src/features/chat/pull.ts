@@ -3,13 +3,23 @@
 // what they look at kept in place by react-virtuoso, the turns put before its first (Turns.tsx's firstItemIndex).
 import { flushSync } from "react-dom";
 import { placed } from "./follow";
-import { TURNS_MORE, useTurns } from "./store";
+import { TURNS_MORE, foldsOf } from "./store";
 import type { ChatFeed } from "./types";
 
-/** The feed of the turn list's last draw by the page (mount.tsx): what the page shows now. */
-export const drawn: { feed: ChatFeed | null } = { feed: null };
+/** Each actor's feed of its turn list's last draw by the page (mount.tsx): what its pane shows now. */
+export const drawn = new Map<string, ChatFeed>();
 
-const talkNow = () => document.querySelector<HTMLElement>("#main .fl-talk");
+// an actor's conversation on the page: in its frame (mount.tsx's, keyed by its data-sig), in the pane showing it
+const talkNow = (key: string) =>
+  [...document.querySelectorAll<HTMLElement>(".pane .chat-frame.files")]
+    .find((f) => f.dataset.sig === encodeURIComponent(key))
+    ?.querySelector<HTMLElement>(".fl-talk") ?? null;
+// the actor whose conversation `talk` is
+const keyOf = (talk: Element): string | null => {
+  const sig = talk.closest<HTMLElement>(".chat-frame")?.dataset.sig;
+  return sig ? decodeURIComponent(sig) : null;
+};
+const turnIn = (talk: HTMLElement | null, n: number) => talk?.querySelector<HTMLElement>(`#fl-turn-${n}`) ?? null;
 const top = (n: Element) => n.getBoundingClientRect().top;
 
 /**
@@ -17,19 +27,19 @@ const top = (n: Element) => n.getBoundingClientRect().top;
  * files loaded first -- once the page draws them): that message kept where it was on the screen -- not the turn picked
  * brought into view, as a new pick is (Turns's effect, by the store's `shown`).
  */
-export async function keepTurn(n: number, change: () => unknown): Promise<void> {
-  const talk = talkNow();
-  const turn = document.getElementById(`fl-turn-${n}`),
+export async function keepTurn(key: string, n: number, change: () => unknown): Promise<void> {
+  const talk = talkNow(key);
+  const turn = turnIn(talk, n),
     y = talk && turn ? top(turn) - top(talk) : null;
   let changed: unknown;
   flushSync(() => {
     changed = change();
   });
   await changed;
-  const feed = drawn.feed;
-  if (feed) useTurns.getState().setShown(`${feed.key}:${feed.data.turn}`);
-  const now = talkNow(),
-    again = document.getElementById(`fl-turn-${n}`);
+  const feed = drawn.get(key);
+  if (feed) foldsOf(key).getState().setShown(`${feed.key}:${feed.data.turn}`);
+  const now = talkNow(key),
+    again = turnIn(now, n);
   if (y !== null && now && again) now.scrollTop += top(again) - top(now) - y;
   if (now) placed(now); // not at its end, if it is no longer: the message stays where it is as the box changes size
 }
@@ -60,11 +70,12 @@ export function holdTurn(talk: HTMLElement, n: number, y: number): void {
   held = { talk, n, y, at: performance.now() };
 }
 
-const talkOf = (n: EventTarget | null) => (n instanceof Element ? n.closest<HTMLElement>("#main .fl-talk") : null);
+const talkOf = (n: EventTarget | null) => (n instanceof Element ? n.closest<HTMLElement>(".pane .fl-talk") : null);
 
 export function pullEarlier(talk: HTMLElement | null, by: number): void {
-  if (!talk) return;
-  const first = useTurns.getState().first;
+  const key = talk && keyOf(talk);
+  if (!talk || !key) return;
+  const first = foldsOf(key).getState().first;
   if (talk.scrollTop > 0 || !first) {
     topAt = null;
     pulled = 0;
@@ -81,7 +92,9 @@ export function pullEarlier(talk: HTMLElement | null, by: number): void {
   topAt = null;
   const turn = talk.querySelector(`#fl-turn-${first}`);
   if (turn) holdTurn(talk, first, top(turn) - top(talk));
-  useTurns.getState().setFirst(Math.max(0, first - TURNS_MORE));
+  foldsOf(key)
+    .getState()
+    .setFirst(Math.max(0, first - TURNS_MORE));
 }
 
 /** The turn held put where it is to be, if one is and it is on the page. */

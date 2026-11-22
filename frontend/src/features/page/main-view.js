@@ -1,42 +1,56 @@
-import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { el, isShell, parseKey, selectedInfo } from "../../core/page/helpers.js";
-import { drawn, mainSignature } from "./data.js";
+import { SNAPSHOT, state } from "../../core/page/state.js";
+import { el, isShell, parseKey } from "../../core/page/helpers.js";
+import { mainSignature } from "./data.js";
 import { keepingPlace } from "../settings/panel.js";
-import { chatCard } from "../chat/chat.js";
+import { chatAtEnd, chatCard, chatToEnd } from "../chat/chat.js";
 import { CHAT_VIEWS, chatView, setChatView } from "../chat/views.js";
 import { shellCard } from "../terminal/shell.js";
-import { chatActor, interrupt } from "../chat/files-view.js";
-import { chatMin, fitMini, shellMini, topMount } from "../layout/top.js";
+import { interrupt } from "../chat/files-view.js";
+import { chatMin, shellMini, topMount } from "../layout/top.js";
 import { focusedPane } from "../layout/panes.js";
+import { allPanes, drawingIn, drawingPane, paneAt, paneInfo, paneKey } from "./pane-view.js";
 import { useSettings } from "../settings/store";
 import { useShown } from "../../core/model/items";
 import { drawDetails } from "../details/mount";
 import { useNotes } from "../transcript/TranscriptView";
 
-// ------------------------------------------------------------------ the selected agent
-// The main view is the actor's conversation (chatCard): all of it, with the message box under it where
-// the actor can be messaged here. What it is, what ag saw and did for it -- its calls, its context, the Gatherer's work --
-// is the details panel (detailsPanel), opened from the page's header (the ⓘ), at the chat's right. The apps' panels are above the
-// panes, in the top row (features/layout/top.js's topMount: the chat minimized under it, or not).
-function renderMain() {
+// ------------------------------------------------------------------ an actor's pane, drawn
+// A pane's main view is its actor's conversation (chatCard): all of it, with the message box under it where the actor
+// can be messaged here. What it is, what ag saw and did for it -- its calls, its context, the Gatherer's work -- is the
+// details panel (detailsPanel), opened from the pane's head (the ⓘ), at the chat's right. The apps' panels are above
+// the panes, in the top row (features/layout/top.js's topMount: a pane's chat minimized under it, or not). Each pane is
+// drawn for its own actor (features/page/pane-view.js's record): this page's own, and each beside it.
+function renderPane(p) {
   topMount();
-  const main = document.getElementById("main");
-  if (!state.selected) {
-    document.getElementById("controls").replaceChildren();
+  const main = p.main, c = p.c;
+  if (!c) {
+    p.controls.replaceChildren();
     main.replaceChildren(el("div", { class: "empty", text: "No actors yet. Run a harness through ag and it appears here." }));
     return;
   }
-  const x = document.getElementById("pane-close"), shell = isShell(state.selected[1]);
+  const x = p.close, shell = isShell(c);
   x.title = shell ? "Close pane (the terminal keeps running)" : "Close pane (the actor stays open)";
   x.setAttribute("aria-label", x.title);
-  if (shell) { patch(main, [chatMin() ? shellMini(state.selected[1]) : shellCard(state.selected[1])]); fitMini(); return; }
-  const info = selectedInfo() || {};
-  const kids = [chatCard(info), ...(state.details && !chatMin() ? [detailsPanel(info)] : [])];
-  const open = new Set([...main.querySelectorAll("details[open][id]")].map((d) => d.id));
-  for (const k of kids) for (const d of k.querySelectorAll("details[id]")) if (open.has(d.id)) d.open = true;
-  patch(main, kids);
-  fitMini();
+  drawingIn(p, () => {
+    if (shell) { patch(main, [chatMin(p) ? shellMini(p, c) : shellCard(p, c)]); return; }
+    const info = paneInfo(p) || {};
+    const kids = [chatCard(p, info), ...(p.details && !chatMin(p) ? [detailsPanel(p, info)] : [])];
+    const open = new Set([...main.querySelectorAll("details[open][id]")].map((d) => d.id));
+    for (const k of kids) for (const d of k.querySelectorAll("details[id]")) if (open.has(d.id)) d.open = true;
+    patch(main, kids);
+  });
 }
+// A pane drawn again, where the reader left it (keepingPlace), its view's ends followed (`end`: kept at its end if it
+// was); every pane, by drawPanes.
+function drawPane(p, end = false) {
+  const atEnd = end && chatAtEnd(p);
+  keepingPlace(() => renderPane(p), p);
+  p.drawn.main = mainSignature(p);
+  if (atEnd) chatToEnd(p);
+}
+const drawPanes = () => { for (const p of allPanes()) drawPane(p); };
+// The page's own pane, drawn (what the list's select() and the old callers draw).
+const renderMain = () => renderPane(drawingPane());
 // Put `kids` in `parent`, keeping each node already there that is the same as its new one: the browser
 // lays out again only what changed (a long transcript takes it a third of a second), and a kept node
 // keeps its focus, its typed text and its scroll. Matched by position, as the chat grows at its end.
@@ -67,12 +81,11 @@ function patch(parent, kids) {
   final.forEach((n, i) => { if (i >= old.length) parent.append(n); else if (n !== old[i]) parent.replaceChild(n, old[i]); });
   for (const o of old.slice(final.length)) o.remove();
 }
-// Open or close it; `part` (actor, context, gatherer): opened at that part of it.
-function setDetails(open, part) {
-  state.details = open;
-  keepingPlace(renderMain);
-  drawn.main = mainSignature();
-  const body = open && part && document.querySelector(".drawer-body"), at = body && document.getElementById(`details-${part}`);
+// Pane `p`'s opened or closed; `part` (actor, context, gatherer): opened at that part of it.
+function setDetails(p, open, part) {
+  p.details = open;
+  drawPane(p);
+  const body = open && part && p.main.querySelector(".drawer-body"), at = body && body.querySelector(`#details-${part}`);
   if (at) body.scrollTop = at.offsetTop - body.offsetTop;
 }
 // The dashboard's own commands, typed in a message box: done here, not sent to the agent. Any other "/" goes to the
@@ -80,66 +93,69 @@ function setDetails(open, part) {
 // that reaches the session's terminal shows the reader that terminal (the composer's send).
 //   /context   ag's context for the actor -- what the model was really sent, which under ag is not what Claude Code's
 //              own /context counts -- in the details panel, beside the chat, at its Context part
-const DASHBOARD_COMMANDS = { "/context": () => setDetails(true, "context") };
-function dashboardCommand(text) {
+const DASHBOARD_COMMANDS = { "/context": (p) => setDetails(p, true, "context") };
+// (typed in pane `p`'s box: done there)
+function dashboardCommand(text, p) {
   const run = DASHBOARD_COMMANDS[String(text ?? "").trim().toLowerCase()];
-  if (run) run();
+  if (run) run(p);
   return !!run;
 }
-// An Esc from outside the message box, for the actor this pane shows: in Chat, its panel closed (the Esc closes that).
+// An Esc from outside the message box, for the actor pane `p` shows: in Chat, its panel closed (the Esc closes that).
 // While the agent asks too, as from the box: the question dismissed, as an Esc on it in its terminal -- after a click on
 // one of the card's choices among them.
-function escapeShown() {
-  const info = selectedInfo();
-  return !!state.selected && !isShell(state.selected[1]) && !state.details && chatView().id === "files"
-    && !!info && interrupt(info);
+function escapeShown(p) {
+  const info = paneInfo(p);
+  return !!p && !!p.c && !isShell(p.c) && !p.details && chatView(p).id === "files" && !!info && interrupt(p, info);
 }
 const DETAILS_TIP = "Details";
 // All of it in one panel, one part under another (features/details/: React's, the same node from draw to draw): the
 // history's other views and the actor's facts, then its calls (Actor), what the model was sent (Context: what `/context`
 // in the message box opens, dashboardCommand), and what ag did for it (Gatherer). For the actor this page shows (the key
-// files-view.js's chatActor makes of it): the actor as the home has it, and what ag recorded of its calls.
-const DETAILS_HOST = Object.freeze({ showView: (id) => { setDetails(false); setChatView(id); } });
-function detailsPanel(info) {
+// pane's actor, by its key): the actor as the home has it, and what ag recorded of its calls.
+const detailsHost = (p) => ({ showView: (id) => { setDetails(p, false); setChatView(p, id); } });
+function detailsPanel(p, info) {
   const views = [...CHAT_VIEWS.values()].filter((v) => v.more)
     .map(({ id, name, description, icon }) => ({ id, name, description, icon }));
-  return drawDetails({ key: chatActor(), info, agent: state.agent, home: state.home, snapshot: !!SNAPSHOT, views,
-    current: chatView().id, now: Date.now() / 1000 }, DETAILS_HOST);
+  return drawDetails({ key: paneKey(p), info, agent: p.agent, home: state.home, snapshot: !!SNAPSHOT, views,
+    current: chatView(p).id, now: Date.now() / 1000 }, detailsHost(p));
 }
 // What the context's and size cards are drawn for, as nodes (the reader's own views: agDashboard's contextCard, sizeCard):
-// the actor this page shows, and what ag recorded of its calls.
+// the actor of the pane being drawn, and what ag recorded of its calls.
 const callsNow = () => {
-  const actor = chatActor();
-  return { actor, gatherer: parseKey(actor).group, agent: state.agent, snapshot: !!SNAPSHOT };
+  const p = drawingPane(), actor = paneKey(p);
+  return { actor, gatherer: actor ? parseKey(actor).group : "", agent: p.agent, snapshot: !!SNAPSHOT };
 };
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   // the types the lists show, picked (features/details/'s chips): this page's own views of them, and the reader's, drawn
   // again -- React's draw themselves
-  useShown.subscribe((now, was) => { if (now.types !== was.types) keepingPlace(renderMain); });
-  useNotes.subscribe((now, was) => { if (now.on !== was.on) keepingPlace(renderMain); });   // the Transcript's notes shown
+  useShown.subscribe((now, was) => { if (now.types !== was.types) drawPanes(); });
+  useNotes.subscribe((now, was) => { if (now.on !== was.on) drawPanes(); });   // the Transcript's notes shown
   // Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn (interrupt), as in its
   // terminal (and dismisses what the agent asks, as there). So does it from anywhere else on the page that nothing else
-  // takes it (escapeShown), for the actor of the pane in focus (another pane's: its agPane.escape) -- else an Esc after a
-  // click on the actor in the list, a turn or a button did nothing at all, the focus out of the box. Not typed in another
+  // takes it (escapeShown), for the actor of the pane in focus -- else an Esc after a click on the actor in the list, a
+  // turn or a button did nothing at all, the focus out of the box. Not typed in another
   // box, the Editor or a terminal, and nothing open that the Esc is for: a menu, a dialog (DocWriter's pop-up among them), the settings. Before the rest
   // (capture), so it knows whether the settings were open before their own Esc closes them.
   document.addEventListener("keydown", (ev) => {
     if (ev.key !== "Escape" || ev.defaultPrevented || ev.isComposing) return;
     const n = ev.target;
     if (n && n.id === "composer-text") {
-      if (state.selected && !isShell(state.selected[1]) && interrupt(selectedInfo())) ev.preventDefault();
+      const p = paneAt(n);
+      if (p && p.c && !isShell(p.c) && interrupt(p, paneInfo(p))) ev.preventDefault();
       return;
     }
     if ((n && n.closest && n.closest("input, textarea, select, [contenteditable], .xterm, .top-row"))
       || document.querySelector("[role=menu]:not([hidden]), [role=dialog]:not([hidden]), dialog[open]")
       || !document.getElementById("about").hidden || useSettings.getState().file.open) return;
-    if (!PANE && focusedPane() !== panes.here ? focusedPane().call("escape") : escapeShown()) ev.preventDefault();
+    if (escapeShown(focusedPane())) ev.preventDefault();
   }, true);
+  // and Details: the pane's where the Esc is, else the pane in focus's
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
-      && !(state.selected && isShell(state.selected[1]))) setDetails(false);
+    const p = paneAt(ev.target) || focusedPane();
+    if (ev.key === "Escape" && p && p.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
+      && !(p.c && isShell(p.c))) setDetails(p, false);
   });
 }
 
-export { DETAILS_TIP, callsNow, dashboardCommand, escapeShown, patch, renderMain, setDetails };
+export { DETAILS_TIP, callsNow, dashboardCommand, drawPane, drawPanes, escapeShown, patch, renderMain, renderPane, setDetails };

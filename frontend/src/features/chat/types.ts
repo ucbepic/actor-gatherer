@@ -215,7 +215,7 @@ export interface ChatFeed {
   /** the actor's key (its gatherer and channel) and its gatherer */
   key: string;
   gatherer: string;
-  /** the page's files feed for the actor (state.files): the turn list's folds start over with a new one, as they did */
+  /** the pane's files feed for the actor (its record's `files`): the turn list's folds start over with a new one */
   files: object;
   data: FilesData;
   /** the turn picked, or null: the latest, followed */
@@ -276,8 +276,8 @@ export interface ChatHost extends CardsHost {
   beside: string;
   /** the files and commands folded to their bar, or shown (folded: the latest turn's, which the bar counts) */
   foldSide(actor: string, fold: boolean): unknown;
-  /** the pane's head, put in the files' folded bar with a panel open above the panes; null: none */
-  barActs(): Node | null;
+  /** the head of the pane showing `actor`, put in the files' folded bar with a panel open above the panes; null: none */
+  barActs(actor: string): Node | null;
   /** a turn's files and commands shown: null, the latest's */
   setFilesTurn(actor: string, n: number | null): Promise<unknown>;
 }

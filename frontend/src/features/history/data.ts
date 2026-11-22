@@ -32,9 +32,11 @@ const enc = encodeURIComponent;
 
 /** The actor the view last asked a build for, since it was opened (null: none yet); what the last ask answered. */
 export const useAsked = create<{
-  askedFor: string | null;
-  built: { for: string; started?: boolean; running?: boolean; failed?: string } | null;
-}>()(() => ({ askedFor: null, built: null }));
+  /** the actors whose histories were asked to be built since their view was opened */
+  asked: ReadonlySet<string>;
+  /** how each actor's last ask went */
+  built: Readonly<Record<string, { started?: boolean; running?: boolean; failed?: string }>>;
+}>()(() => ({ asked: new Set<string>(), built: {} }));
 export const outlineKey = (actor: string) => ["outline", actor] as const;
 export const outlineOf = (actor: string | null): Outline | null =>
   actor ? (queryClient.getQueryData<Outline>(outlineKey(actor)) ?? null) : null;
@@ -97,8 +99,8 @@ async function loadNow(actor: string | null): Promise<void> {
   }
   setOutline({ ...h, loaded: true }); // what the actor had when opened is in: tasks after it came in later
   await loadExtracts(g, false); // another page's, too
-  if (host.shown() && useAsked.getState().askedFor !== actor) {
-    useAsked.setState({ askedFor: actor });
+  if (host.shown() && !useAsked.getState().asked.has(actor)) {
+    useAsked.setState({ asked: new Set([...useAsked.getState().asked, actor]) });
     void askBuild(actor); // not waited on: it loads the outline again itself, after this load
   }
   if (outlineOf(actor)?.builds[c]?.status === "running") pollBuild(actor);
@@ -116,7 +118,7 @@ async function askBuild(actor: string) {
   } catch (err) {
     got = { failed: (err as Error).message };
   }
-  useAsked.setState({ built: { for: key(h.gatherer, h.channel), ...got } });
+  useAsked.setState({ built: { ...useAsked.getState().built, [key(h.gatherer, h.channel)]: got } });
   if (got.started || got.running) {
     await loadOutline(actor);
     pollBuild(actor);

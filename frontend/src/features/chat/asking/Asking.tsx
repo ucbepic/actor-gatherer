@@ -249,7 +249,7 @@ export function AskingCard({ info, home, answerable, snapshot, terminalView, hos
               type="button"
               className="to-term"
               title="Open the terminal"
-              onClick={() => host.setChatView("terminal")}
+              onClick={() => host.setChatView("terminal", info.channel)}
             >
               <StrokeIcon d={host.icons.terminal} size={14} />
               <span className="lbl">Open the terminal</span>

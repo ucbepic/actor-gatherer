@@ -36,7 +36,7 @@ import { useChat } from "./context";
 import { followContent, followEnd, placed, unfollow } from "./follow";
 import { OpenedTurn } from "./Pending";
 import { drawn, drawnAt, holdTurn, keepHeld, reachedTop } from "./pull";
-import { TURNS_SHOWN, useOnPage, useTurns } from "./store";
+import { TURNS_SHOWN, foldsOf, onPage } from "./store";
 import { Turn, type TurnPlace } from "./Turn";
 import type { ChatFeed, Turn as TurnData } from "./types";
 import { currentOf, nowWords, openingOf, pickedOf, turnsOf } from "./view";
@@ -230,16 +230,17 @@ function useShown(
 ) {
   const picked = pickedOf(feed, turnsOf(feed));
   useLayoutEffect(() => {
-    const shown = `${feed.key}:${picked}`;
-    const mine = () => useOnPage.getState().key === feed.key; // its frame the one on the page
-    if (useTurns.getState().shown === shown || !mine()) return;
+    const shown = `${feed.key}:${picked}`,
+      folds = foldsOf(feed.key);
+    const mine = () => onPage(feed.key); // its frame on the page
+    if (folds.getState().shown === shown || !mine()) return;
     requestAnimationFrame(() => {
-      if (useTurns.getState().shown === shown || !mine()) return; // already (keepTurn: kept where the reader had it)
+      if (folds.getState().shown === shown || !mine()) return; // already (keepTurn: kept where the reader had it)
       const talk = talkRef.current,
-        p = (drawn.feed ?? feed).picked,
+        p = (drawn.get(feed.key) ?? feed).picked,
         { first, last } = at.current;
       if (!talk?.isConnected || (p !== null && p < first)) return; // not drawn yet
-      useTurns.getState().setShown(shown);
+      folds.getState().setShown(shown);
       if (p === null) toEnd(talk, list.current, last);
       else toTurn(talk, list.current, p, first);
     });

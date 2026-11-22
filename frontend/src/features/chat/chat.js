@@ -1,15 +1,15 @@
-import { SNAPSHOT, state } from "../../core/page/state.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
   ICONS, ago, el, harnessName, hasChat, parseKey, post, runnableNames, signature,
 } from "../../core/page/helpers.js";
 import { drafts, fitBox, keepDraft, setLive } from "../page/data.js";
-import { keepingPlace } from "../settings/panel.js";
 import { turnStatus } from "../list/seen";
-import { DETAILS_TIP, renderMain, setDetails } from "../page/main-view.js";
+import { DETAILS_TIP, drawPane, renderPane, setDetails } from "../page/main-view.js";
 import { permissionNode, summary } from "../transcript/calls";
 import { plural } from "../../core/format";
 import { CHAT_VIEWS, chatFeed, chatView, offeredViews, setChatView } from "./views.js";
-import { CHAT_HOST, boxedFor, chatActor, sendFrom, setFilesTurn } from "./files-view.js";
+import { CHAT_HOST, boxedFor, sendFrom, setFilesTurn } from "./files-view.js";
+import { paneKey } from "../page/pane-view.js";
 import { MINI_VIEW, MIN_TIP, canMinimize, chatMin, setChatMin } from "../layout/top.js";
 import { agDashboard } from "./own-views.js";
 import { TASK_KINDS } from "./side/marks";
@@ -35,25 +35,26 @@ const readOnlyWhy = () => `Read only. Only ${runnableNames("and")} sessions with
 const heldWhy = (info) => hasChat(info) && info.chattable === false
   ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}. `
     + "Close it there to message it here." : "";
-function chatCard(info) {
-  const actor = chatActor();                         // the actor this page shows, by its key: all below is its
+function chatCard(p, info) {
+  const actor = paneKey(p);                          // the actor pane `p` shows, by its key: all below is its
   const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
-  const view = chatMin() ? MINI_VIEW : chatView(), feed = chatFeed(view);
+  const view = chatMin(p) ? MINI_VIEW : chatView(p), feed = chatFeed(p, view);
   const writable = hasChat(info) && !SNAPSHOT && !view.readOnly;
   const held = heldWhy(info);
-  const data = feed.data() || { items: [], pending: [], earlier: false };
+  const data = feed.data(p) || { items: [], pending: [], earlier: false };
   // that there is no conversation yet: said under a view's blocks, or by a view that draws its frame itself (`mount`)
   const noneYet = SNAPSHOT ? "A snapshot has no conversation. Run `ag dashboard` live to see it."
     : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet.";
   const ctx = { actor, info, session: s, data, noneYet, running: ["running", "building"].includes(turnStatus(info)[0]), queued: s.queued || [], held, writable,
+    pane: p,
     loadEarlier: async () => {                         // the view's "earlier" control: kept where the reader was
       if (!feed.loadEarlier) return;
-      const n = document.getElementById("chat-list"), from = n ? n.scrollHeight - n.scrollTop : 0;
-      await feed.loadEarlier(); renderMain();
-      const m = document.getElementById("chat-list"); if (m) m.scrollTop = m.scrollHeight - from;
+      const n = chatList(p), from = n ? n.scrollHeight - n.scrollTop : 0;
+      await feed.loadEarlier(p); renderPane(p);
+      const m = chatList(p); if (m) m.scrollTop = m.scrollHeight - from;
     },
-    rerender: () => keepingPlace(renderMain), api: agDashboard };
-  const card = el("section", { class: "chat" + (view.mini ? " mini" : ""), "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${parseKey(actor).group}`,
+    rerender: () => drawPane(p), api: agDashboard };
+  const card = el("section", { class: "chat" + (view.mini ? " mini" : ""), "aria-label": `${harnessName(info.harness || (p.agent && p.agent.harness))} · ${parseKey(actor).group}`,
     "data-morph": "", "data-for": signature([actor, view.id, writable, held, !!info.session]) });
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
@@ -62,13 +63,13 @@ function chatCard(info) {
   // its controls go in the page's header (features/chat/Controls.tsx): the view's own (tools: Chat's its own), which
   // view, and the details panel. Minimized: the head hidden, kept as it was.
   const tools = view.chatTools ? [] : safely(() => view.tools && view.tools(ctx));
-  if (!view.mini) drawControls(document.getElementById("controls"), {
+  if (!view.mini) drawControls(p.controls, {
     actor, chat: !!view.chatTools, tools: tools.length ? tools : null,
-    views: offeredViews().filter((v) => !v.more || v.id === view.id)
+    views: offeredViews(p).filter((v) => !v.more || v.id === view.id)
       .map((v) => ({ id: v.id, name: v.name, description: v.description, icon: v.icon })),
-    current: view.id, details: !!state.details, minimize: canMinimize() ? { title: MIN_TIP } : null, detailsTitle: DETAILS_TIP,
-    icons: ICONS, show: (id) => setChatView(id), toggleDetails: () => setDetails(!state.details), doMinimize: () => setChatMin(true),
-    latest: () => setFilesTurn(null) });
+    current: view.id, details: !!p.details, minimize: canMinimize(p) ? { title: MIN_TIP } : null, detailsTitle: DETAILS_TIP,
+    icons: ICONS, show: (id) => setChatView(p, id), toggleDetails: () => setDetails(p, !p.details), doMinimize: () => setChatMin(p, true),
+    latest: () => setFilesTurn(p, null) });
   // a view that draws its frame itself (the Chat view: React's, features/chat/mount.tsx), the same node from draw to draw
   const mounted = view.mount ? safely(() => view.mount(ctx), true) : null;
   const frame = mounted && mounted[0] && mounted[0].id === "chat-list" ? mounted[0]
@@ -113,10 +114,10 @@ function chatCard(info) {
   // the error it gets (features/chat/SendError.tsx) and the message the harness took back (esc.ts's refill) the actor's.
   refill(actor, info, boxedFor(actor));
   // A message box kept from an earlier draw (`patch`) still calls the send it was drawn with: each send goes to the
-  // latest draw's (state.chatSend), which knows the session as it is now.
-  ctx.send = (t) => state.chatSend(t);
-  state.chatSend = (t) => send(actor, t, sendFrom(actor, info, held));
-  state.chatSend.draft = actor;                      // whose it is: a new tab's first message sent by it (features/layout/new-tab.js)
+  // latest draw's (the pane's chatSend), which knows the session as it is now.
+  ctx.send = (t) => p.chatSend(t);
+  p.chatSend = (t) => send(actor, t, sendFrom(p, actor, info, held));
+  p.chatSend.draft = actor;                          // whose it is: a new tab's first message sent by it (features/layout/new-tab.js)
   // The text box a composer is built around: Enter sends it, Shift+Enter starts a new line, and what is
   // typed in it survives the tab being drawn again (keepingPlace finds it by its id), and the reader going to another
   // actor or view and back (it starts with the actor's draft). A line high, growing with the lines typed (fitBox).
@@ -162,7 +163,7 @@ function chatCard(info) {
     if (box && box !== n) n.dataset.morph = ""; else if (!box) n.dataset.sig = sig;
   }
   // why nothing is sent, or the last message was not (React's, the actor's own: features/chat/SendError.tsx)
-  const err = drawSendError({ actor, held, session: s, toTerminal: CHAT_VIEWS.has("terminal") ? () => setChatView("terminal") : null });
+  const err = drawSendError({ actor, held, session: s, toTerminal: CHAT_VIEWS.has("terminal") ? () => setChatView(p, "terminal") : null });
   put(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
   if (held || chatOf(actor).sending) for (const n of card.querySelectorAll("[data-send], #composer-text")) if (held || n.matches("[data-send]")) n.disabled = true;   // whatever the view drew
   return built();
@@ -211,8 +212,10 @@ function defaultComposer(ctx) {
   form.addEventListener("submit", (ev) => { ev.preventDefault(); ctx.send(text.value); });
   return form;
 }
-const chatAtEnd = () => { const n = document.getElementById("chat-list"); return !!n && n.scrollHeight - n.scrollTop - n.clientHeight < 40; };
-const chatToEnd = () => { const n = document.getElementById("chat-list"); if (n) n.scrollTop = n.scrollHeight; };
+// A pane's view's frame (this page's own, by default): at its end, or put there.
+const chatList = (p) => p.main.querySelector("#chat-list");
+const chatAtEnd = (p = panes.here) => { const n = chatList(p); return !!n && n.scrollHeight - n.scrollTop - n.clientHeight < 40; };
+const chatToEnd = (p = panes.here) => { const n = chatList(p); if (n) n.scrollTop = n.scrollHeight; };
 export {
   TASK_KINDS, answeredNote, askKey, askWhere, askingNote, backgroundNote, chatAtEnd, chatCard, chatToEnd, errorNote,
   permissionVerb, permissionView, readOnlyWhy,

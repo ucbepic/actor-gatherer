@@ -1,11 +1,10 @@
-import { PANE, SNAPSHOT, state } from "../../core/page/state.js";
+import { SNAPSHOT } from "../../core/page/state.js";
 import {
-  HUE_INK, ICONS, ago, bareAvatar, buddy, doneCheck, el, full, harnessName, key, lasting, restDelay, selectedInfo,
-  strokeIcon,
+  HUE_INK, ICONS, ago, bareAvatar, buddy, doneCheck, el, full, harnessName, lasting, restDelay, strokeIcon,
 } from "../../core/page/helpers.js";
-import { keepingPlace } from "../settings/panel.js";
 import { statusOf } from "../list/seen";
-import { renderMain } from "../page/main-view.js";
+import { drawPane } from "../page/main-view.js";
+import { paneAt, paneInfo, paneKey } from "../page/pane-view.js";
 import { str } from "../../core/model/items";
 import { firstLine, plural } from "../../core/format";
 import { callLabel, callView, chatViewOf, foldSide, mySends, setFilesTurn, viewAtWork } from "./files-view.js";
@@ -21,24 +20,24 @@ import { loadFiles } from "./files";
 // shows the whole conversation in a card over what is above the pane (miniCard): each turn, the user's message, then
 // what the agent did, in order -- its messages among its commands (each reply's `after`: how many of the turn's calls came
 // before it, files.py's) -- an earlier turn folded to a line, its commands fetched when opened; the latest its last few
-// steps; and each turn's reply. The card is this page's, made from its own data with its own helpers, and put in the page
-// around it, where there is room: a pane's frame is only as tall as its strip (fitMini). A pane too narrow for the lines
-// shows none (features/layout/top.css).
+// steps; and each turn's reply. The card is the page's, one at a time, for the pane whose lines are hovered, made from
+// that pane's data, and put over what is above the pane, where there is room. A pane too narrow for the lines shows
+// none (features/layout/top.css).
 const MINI_STEPS = 10;                               // the latest turn's steps shown; the earlier ones a press away
 const MINI_REPLY = 420;                              // an earlier turn's reply longer than this: its first lines, then a press
-// The files feed's data, for this page's actor: its turns, and the latest turn's commands (minimized: the latest is loaded).
-const miniData = () => state.files && state.selected && state.files.key === key(...state.selected) ? state.files.data : null;
+// The files feed's data, for pane `p`'s actor: its turns, and the latest turn's commands (minimized: the latest is loaded).
+const miniData = (p) => p && p.files && p.files.key === paneKey(p) ? p.files.data : null;
 // The turns as Chat has them: the server's view's, else the files feed's.
-const miniTurns = (info) => { const v = chatViewOf(info), d = miniData(); return (v && v.turns) || (d && d.turns) || []; };
+const miniTurns = (p, info) => { const v = chatViewOf(info), d = miniData(p); return (v && v.turns) || (d && d.turns) || []; };
 // What the agent said last in a turn, readable: its last message.
 const lastSaid = (t) => { const r = (t.replies || []).filter((x) => x.kind === "text" && str(x.text).trim()); return r.length ? r[r.length - 1].text : null; };
 const plainLine = (text, n = 200) => firstLine(str(unplanned(str(text))).replace(/`|\*\*|^#{1,6}\s+/gm, "").trim(), n);
 
 // The two lines, right of the message box: built at each draw of the pane, from what the Chat view has.
-function miniHistory({ info, running }) {
-  const turns = miniTurns(info), v = chatViewOf(info), cur = v ? v.current : null;
+function miniHistory({ pane: p, info, running }) {
+  const turns = miniTurns(p, info), v = chatViewOf(info), cur = v ? v.current : null;
   const t = turns.length ? turns[turns.length - 1] : null;
-  const mine = mySends(), atWork = viewAtWork(info) || running;
+  const mine = mySends(p), atWork = viewAtWork(info) || running;
   const opening = (v && v.opening) || (mine.length && !atWork ? mine[0] : null);
   const waits = [...((v && v.waiting) || []), ...(atWork ? mine.filter((m) => !(v && cidsOf(v).has(m.cid))) : [])];
   if (!t && !opening) { miniCard.shut(); return null; }
@@ -46,6 +45,7 @@ function miniHistory({ info, running }) {
   // the user's: what waits to reach the agent, else the turn's latest message (one written while it ran, else its own)
   const said = opening || (waits.length ? waits[waits.length - 1] : null);
   const more = t && (t.more || []).length ? t.more[t.more.length - 1] : null;
+  const miniRow = rowIn(p);
   if (said) rows.push(miniRow("you pending", el("span", { class: "ic", text: "›" }),
     [el("span", { class: "sub", text: "Pending ·" }), plainLine(said.text)], null));
   else rows.push(miniRow("you", el("span", { class: "ic", text: "›" }),
@@ -70,13 +70,13 @@ function miniHistory({ info, running }) {
   } else {
     const reply = lastSaid(t), stopped = t.stopped || (cur && cur.state === "stopped" ? cur.stopped : null);
     const mark = ME_MARKS[statusOf(info)[0]] || null;   // stopped on an error: its mark
-    const rest = miniRest({ info, running });           // else, done as Chat shows it: its check
+    const rest = miniRest({ pane: p, info, running });   // else, done as Chat shows it: its check
     const icon = (alt) => rest ? meDone(info, rest) : meIcon(info, mark, alt);
     if (reply && !stopped) rows.push(miniRow("now reply", icon(null), plainLine(reply), agoOf(t.end || t.at)));
     else rows.push(miniRow("now quiet", icon("■"),
       stopped ? stoppedWords(stopped) : t.calls ? `Done · ${plural(t.calls, "command")}` : "Done", agoOf(t.end || t.at)));
   }
-  miniCard.drawn(info, rows);
+  miniCard.drawn(p, info, rows);
   const ink = HUE_INK[info.avatar_hue];
   return el("div", { class: "mini-hist", role: "group", "aria-label": "Latest messages",
     style: ink ? `--mh-ink: light-dark(${ink[0]}, ${ink[1]})` : null }, ...rows);
@@ -88,9 +88,9 @@ const meIcon = (info, mark, alt) => {
 };
 // The latest turn, if it is over as Chat shows it -- its actor done under it (features/chat/Turns.tsx's `done`) -- and the
 // actor not stopped on an error nor asking the reader (their marks instead); else null.
-function miniRest({ info, running }) {
-  const turns = miniTurns(info), v = chatViewOf(info), cur = v ? v.current : null, t = turns.length ? turns[turns.length - 1] : null;
-  if (!t || running || viewAtWork(info) || (v && v.opening) || mySends().length || ME_MARKS[statusOf(info)[0]]) return null;
+function miniRest({ pane: p, info, running }) {
+  const turns = miniTurns(p, info), v = chatViewOf(info), cur = v ? v.current : null, t = turns.length ? turns[turns.length - 1] : null;
+  if (!t || running || viewAtWork(info) || (v && v.opening) || mySends(p).length || ME_MARKS[statusOf(info)[0]]) return null;
   return !cur || cur.state === "done" || cur.state === "stopped" ? t : null;
 }
 // The actor's icon, turn `t` over: Chat's done avatar (core/page/helpers.js's atRest), small and still, a green check at its
@@ -102,7 +102,8 @@ const meDone = (info, t, cls = "ic") => {
 };
 const agoOf = (t) => t ? el("span", { "data-ago": t, text: ago(t) }) : null;
 const stoppedWords = (s) => s.kind === "interrupted" ? "Interrupted" : s.text ? `Stopped: ${firstLine(s.text, 120)}` : "Stopped";
-function miniRow(kind, icon, text, meta, extra = "") {
+// a line of pane `p`'s
+const rowIn = (p) => (kind, icon, text, meta, extra = "") => {
   const r = el("button", { type: "button", class: `mh-row ${kind}${extra}`, "data-kind": kind.split(" ")[0],
     title: "Hover to see the conversation · click to open the chat" },
     icon, el("span", { class: "tx" }, ...[].concat(text).filter((x) => x !== null && x !== undefined)), el("span", { class: "meta" }, meta));
@@ -110,26 +111,26 @@ function miniRow(kind, icon, text, meta, extra = "") {
   r.addEventListener("mouseleave", () => miniCard.leave());
   r.addEventListener("focus", () => miniCard.open(r, true));
   r.addEventListener("blur", () => miniCard.leave());
-  r.addEventListener("click", (ev) => { miniCard.shut(); miniOpenAt(null, ev.metaKey || ev.ctrlKey); });
+  r.addEventListener("click", (ev) => { miniCard.shut(); miniOpenAt(p, null, ev.metaKey || ev.ctrlKey); });
   return r;
-}
-// The chat shown again -- at turn `n` (null: at its end); `side`, its files and commands too.
-function miniOpenAt(n, side) {
-  setChatMin(false);
+};
+// Pane `p`'s chat shown again -- at turn `n` (null: at its end); `side`, its files and commands too.
+function miniOpenAt(p, n, side) {
+  setChatMin(p, false);
   setTimeout(() => {
-    if (side) foldSide(false, false);
-    if (n !== null) setFilesTurn(n); else if (side) keepingPlace(renderMain);
+    if (side) foldSide(p, false);
+    if (n !== null) setFilesTurn(p, n); else if (side) drawPane(p);
   }, 60);
 }
 
 // ------------------------------------------------------------------ the card: the whole conversation
 const miniCard = (() => {
-  let card = null, anchor = null, kind = "now", info = null, timer = 0, shutAt = 0;
+  let card = null, anchor = null, kind = "now", info = null, timer = 0, shutAt = 0, pane = null;
   const opened = new Set();                        // what the reader opened in it: earlier turns, a command, a reply
   const fetched = new Map();                       // an earlier turn's commands: "<actor> <n>" -> list, or a promise
   let forKey = null;
-  const host = () => PANE ? window.parent.document : document;
-  const hostWin = () => PANE ? window.parent : window;
+  const host = () => document;
+  const hostWin = () => window;
   const isOpen = () => !!card && card.isConnected;
   // Esc closes it, from anywhere on the page or the page around -- the message box too: open, it is what the reader is
   // looking at (it shows only while a line or it is hovered, or a line focused); a second Esc there interrupts the turn
@@ -153,23 +154,26 @@ const miniCard = (() => {
     clearTimeout(shutAt);
     if (isOpen()) { open(r, false); return; }      // open: another line's at once
     clearTimeout(timer);
-    timer = setTimeout(() => open(r, true), 140);
+    const from = paneAt(r);                          // (its pane, should the line be drawn anew meanwhile)
+    timer = setTimeout(() => open(r, true, from), 140);
   }
   function leave() { clearTimeout(timer); clearTimeout(shutAt); shutAt = setTimeout(shut, 260); }
-  function open(r, grow) {
+  function open(r, grow, from = null) {
     if (hush) return;
     if (!r.isConnected) {                            // drawn anew since the pointer came onto it (a view came meanwhile,
-      r = [...document.querySelectorAll(".chat.mini .mh-row")].find((x) => x.dataset.kind === r.dataset.kind);   // before
-      if (!r) return;                                // the browser's own mouseenter on the new one): the line there now
+      const kind_ = r.dataset.kind;                  // before the browser's own mouseenter on the new one): its pane's
+      r = from && from.main ? [...from.main.querySelectorAll(".chat.mini .mh-row")].find((x) => x.dataset.kind === kind_) : null;
+      if (!r) return;                                // line of its kind there now
     }
     clearTimeout(shutAt);
-    const k = key(...state.selected);
-    if (forKey !== k) { opened.clear(); forKey = k; }
-    const again = isOpen() && kind === r.dataset.kind;
+    const p = paneAt(r), k = paneKey(p);
+    if (!p || !k) return;
+    if (forKey !== k) { opened.clear(); forKey = k; info = null; }
+    const again = isOpen() && kind === r.dataset.kind && pane === p;
     for (const n of document.querySelectorAll(".mh-row.hot")) n.classList.remove("hot");
     r.classList.add("hot");
-    anchor = r; kind = r.dataset.kind;
-    if (!info) info = selectedInfo();
+    anchor = r; kind = r.dataset.kind; pane = p;
+    if (!info) info = paneInfo(p);
     if (!isOpen()) {
       card = el("div", { class: "mh-card floats", role: "dialog", "aria-label": "The conversation" });
       card.addEventListener("mouseenter", () => clearTimeout(shutAt));
@@ -185,17 +189,18 @@ const miniCard = (() => {
   }
   // the pane drawn again: the card, if open, with it -- anchored to the new line, its scroll kept (at its end: kept there)
   // (patch() keeps a line that did not change, so the line is found on the page once it is drawn)
-  function drawn(a, rows) {
+  function drawn(p, a, rows) {
+    if (p !== pane) return;                          // (another pane's lines)
     info = a;
     if (!isOpen()) return;
-    if (!state.selected || key(...state.selected) !== forKey) { shut(); return; }
+    if (paneKey(p) !== forKey) { shut(); return; }
     const r = rows.find((x) => x.dataset.kind === kind);
     if (r) r.classList.add("hot");
     queueMicrotask(() => {
       if (!isOpen()) return;
-      const lines = [...document.querySelectorAll(".chat.mini .mh-row")];
+      const lines = [...p.main.querySelectorAll(".chat.mini .mh-row")];
       const now = lines.find((x) => x.dataset.kind === kind) || lines[lines.length - 1];
-      if (!now || !chatMin()) { shut(); return; }
+      if (!now || !chatMin(p)) { shut(); return; }
       for (const n of lines) n.classList.toggle("hot", n === now);
       anchor = now;
       place();                                       // (first: its scroll kept at the size it has)
@@ -207,7 +212,7 @@ const miniCard = (() => {
     if (!anchor || !card) return;
     const box = anchor.closest(".mini-hist"), strip = anchor.closest(".chat.mini");
     if (!box || !strip) return;
-    const off = PANE && window.frameElement ? window.frameElement.getBoundingClientRect() : { left: 0, top: 0 };
+    const off = { left: 0, top: 0 };
     const h = box.getBoundingClientRect(), s = strip.getBoundingClientRect(), W = hostWin().innerWidth, H = hostWin().innerHeight;
     const w = Math.min(W - 24, Math.max(420, Math.min(640, h.width + 80)));
     const left = Math.min(Math.max(12, off.left + h.left - 6), W - w - 12), top = off.top + s.top;
@@ -222,11 +227,11 @@ const miniCard = (() => {
     if (kind === "you") { const y = [...body.querySelectorAll(".mh-you")].pop(); if (y) body.scrollTop = y.offsetTop - 8; }
   }
   function fill(update) {
-    const a = info || selectedInfo();
+    const a = info || paneInfo(pane);
     if (!card || !a) return;
     const old = card.querySelector(".mh-body");
     const atEnd = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 8, top = old ? old.scrollTop : 0;
-    const turns = miniTurns(a), v = chatViewOf(a), cur = v ? v.current : null, last = turns.length - 1;
+    const turns = miniTurns(pane, a), v = chatViewOf(a), cur = v ? v.current : null, last = turns.length - 1;
     const live = !!cur && cur.state === "working" || (!cur && !!a.running);
     const src = bareAvatar(a), t = turns[last];
     const head = el("div", { class: "mh-head" }, src ? el("img", { src, alt: "", draggable: "false" }) : null,
@@ -237,7 +242,7 @@ const miniCard = (() => {
     if (cur && cur.state === "asking") body.append(el("div", { class: "mh-now ask" }, el("span", { class: "mk ask", text: "?" }), "Waiting for you · the question is above the message box"));
     else if (live) body.append(el("div", { class: "mh-now" }, src ? buddy(a, !!a.failing) : el("span", { class: "spin" }),
       cur && cur.failing ? "Retrying…" : ((cur && cur.doing) || (t && t.now) || {}).kind === "thinking" ? "Thinking…" : "Working…"));
-    else { const rest = miniRest({ info: a, running: false });   // its turn over: the actor done under it, as in Chat
+    else { const rest = miniRest({ pane, info: a, running: false });   // its turn over: the actor done under it, as in Chat
       if (rest) body.append(el("div", { class: "mh-now rested", title: `Done · ${ago(rest.end || rest.at)}` }, meDone(a, rest, "mh-me"))); }
     const foot = el("div", { class: "mh-foot" }, el("span", {}, el("kbd", { text: "Click" }), " a message to open it in the chat"),
       el("span", {}, el("kbd", { text: "⌘" }), " to show its commands too"), el("span", {}, el("kbd", { text: "Esc" }), " to close"));
@@ -261,16 +266,17 @@ const miniCard = (() => {
     const you = el("div", { class: "mh-you", tabindex: "0", title: "Open the chat at this turn · ⌘-click to show its commands too" },
       el("span", { class: "lbl", text: "You" }), el("div", { class: "tx", text: str(t.text) }),
       ...(t.more || []).map((m) => el("div", { class: "tx more" }, el("span", { class: "lbl", text: "While it worked" }), str(m.text))));
-    you.addEventListener("click", (ev) => { shut(); miniOpenAt(latest ? null : t.n, ev.metaKey || ev.ctrlKey); });
+    const p = pane;
+    you.addEventListener("click", (ev) => { shut(); miniOpenAt(p, latest ? null : t.n, ev.metaKey || ev.ctrlKey); });
     you.addEventListener("keydown", (ev) => { if (ev.key === "Enter") you.click(); });
     out.push(you);
-    const k = `${key(...state.selected)} ${t.n}`, reply = lastSaid(t);
+    const k = `${paneKey(pane)} ${t.n}`, reply = lastSaid(t);
     const finalAt = live ? -1 : (t.replies || []).map((r, j) => [r, j]).filter(([r]) => r.kind === "text" && str(r.text).trim()).map(([, j]) => j).pop() ?? -1;
     if (!latest && !opened.has(`t${t.n}`)) {
       if (t.calls) out.push(el("button", { type: "button", class: "mh-sum", "data-turn": t.n, onclick: () => { opened.add(`t${t.n}`); fetchTurn(a, t, k); fill(true); } },
         el("span", { class: "car", text: "▸" }), plural(t.calls, "command")));
     } else {
-      const cmds = latest ? latestCommands(miniTurns(a).length, t) : fetched.get(k);
+      const cmds = latest ? latestCommands(miniTurns(pane, a).length, t) : fetched.get(k);
       if (!latest && t.calls) out.push(el("button", { type: "button", class: "mh-sum open", "data-turn": t.n, onclick: () => { opened.delete(`t${t.n}`); fill(true); } },
         el("span", { class: "car", text: "▸" }), plural(t.calls, "command")));
       if (!Array.isArray(cmds) && t.calls) out.push(el("div", { class: "mh-wait", text: "Loading its commands…" }));
@@ -293,13 +299,13 @@ const miniCard = (() => {
   const miniCurState = (a) => { const v = chatViewOf(a); return v ? v.current.state : null; };
   // the latest turn's commands, from the files feed -- when it has that turn (its turns as many as the view's)
   function latestCommands(n, t) {
-    const d = miniData();
+    const d = miniData(pane);
     return d && d.turns.length === n && d.turn === n - 1 ? d.commands : t.calls ? null : [];
   }
   // an earlier turn's commands, as Chat's files and commands have them (files.ts: fetched once, kept by the turn)
   function fetchTurn(a, t, k) {
     if (fetched.has(k)) return;
-    const [gatherer, channel] = state.selected, cwd = (a && (a.cwd || (a.session && a.session.cwd))) || "";
+    const { g: gatherer, c: channel } = pane, cwd = (a && (a.cwd || (a.session && a.session.cwd))) || "";
     fetched.set(k, loadFiles({ gatherer, channel, turn: t.n, row: t.row_id ?? null, cwd })
       .then((got) => { fetched.set(k, got.commands || []); if (isOpen()) fill(true); },
         () => { fetched.delete(k); }));
@@ -338,11 +344,10 @@ const miniCard = (() => {
           c.changed[0] ? el("span", { class: "chg-a", text: `+${full(c.changed[0])}` }) : null,
           c.changed[1] ? el("span", { class: "chg-r", text: `−${full(c.changed[1])}` }) : null)
           : cls === "err" ? el("span", { class: "mh-side", text: "failed" }) : cls === "run" ? el("span", { class: "mh-side", text: "running" }) : null));
-    if (open) n.append(callView(c.call, c));
+    if (open) n.append(callView(pane, c.call, c));
     return n;
   }
-  if (PANE) window.addEventListener("pagehide", shut);
-  if (!SNAPSHOT) (PANE ? window.parent : window).addEventListener("resize", () => { if (isOpen()) place(); });
+  if (!SNAPSHOT) window.addEventListener("resize", () => { if (isOpen()) place(); });
   return { hover, leave, open, shut, drawn, isOpen };
 })();
 export { miniCard, miniHistory, miniRest };

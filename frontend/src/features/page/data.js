@@ -1,17 +1,17 @@
-import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
-  avatarMode, clock, el, get, isShell, keepAvatarMode, key, parseKey, selectedInfo, signature,
+  avatarMode, clock, el, get, isShell, keepAvatarMode, parseKey, selectedInfo, signature,
 } from "../../core/page/helpers.js";
-import { keepingPlace } from "../settings/panel.js";
 import { statusOf, takeHome } from "../list/seen";
 import { firstAgent, isHidden, moveHidingToServer, renderAgents, staleNames } from "../list/list";
 import { drawWho, paneSig, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes.js";
-import { renderMain } from "./main-view.js";
-import { chatAtEnd, chatToEnd } from "../chat/chat.js";
+import { drawPane } from "./main-view.js";
+import { termsKept } from "../terminal/term";
 import { chatFeed, chatView } from "../chat/views.js";
-import { chatActor, opened } from "../chat/files-view.js";
+import { opened } from "../chat/files-view.js";
 import { canMinimize, chatMin, topShown } from "../layout/top.js";
-import { useTurns } from "../chat/store";
+import { clearFlips } from "../chat/store";
+import { allPanes, paneInfo, paneKey, paneSel } from "./pane-view.js";
 import { drafts, keepDraft } from "../chat/drafts";
 import { ownBox } from "../chat/Composer";
 import { useSettings } from "../settings/store";
@@ -24,56 +24,49 @@ import { txSignature, useTxFeed } from "../transcript/data";
 
 // ------------------------------------------------------------------ data
 let hidingMoved = false;
-// The home. In a pane, the one the page around it has (its stream's last, or its own first read: panes.home, as sent) --
-// a read of every actor of every group, the longest the dashboard makes, not made again for each pane opened (a task's
-// actors, beside its first, each waited seconds for theirs) -- unless it does not list this pane's actor yet (one just
-// started): then read, as the page reads its own.
+// The home: read once by the page (every pane draws from it), then as the stream sends it.
 async function loadHome() {
-  let home = SNAPSHOT ? SNAPSHOT.home : PANE && PANE.home ? JSON.parse(PANE.home) : null;
-  if (home && PANE && !lists(home, state.selected)) home = null;
+  let home = SNAPSHOT ? SNAPSHOT.home : null;
   if (!home) {
     const r = await fetch("/api/home", { cache: "no-store" });
     if (!r.ok) throw new Error(`/api/home: ${r.status}`);
-    const text = await r.text();
-    if (!PANE) panes.home = text;                    // the panes' to start from, until the stream sends one
-    home = JSON.parse(text);
+    home = await r.json();
   }
   takeHome(home);
-  if (!hidingMoved && !PANE) { hidingMoved = true; await moveHidingToServer(); }
+  if (!hidingMoved) { hidingMoved = true; await moveHidingToServer(); }
 }
-// whether `home` lists the actor `sel` ([gatherer, channel]): a shell, its terminal, is not an actor
-const lists = (home, sel) => !sel || isShell(sel[1]) || home.gatherers.some((g) => g.name === sel[0]
-  && g.agents.some((a) => a.channel === sel[1] || a.started_as === sel[1] || (a.session && a.session.started_as === sel[1])));
-async function loadAgent() {
-  if (!state.selected || isShell(state.selected[1])) return;
-  const [g, c] = state.selected;
-  const got = SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
+// What ag recorded of the calls of pane `p`'s actor (this page's own, by default), fetched: as the pane is given it.
+async function loadAgent(p = panes.here) {
+  const sel = paneSel(p);
+  if (!sel || isShell(sel[1])) return;
+  const [g, c] = sel;
+  const got = SNAPSHOT ? SNAPSHOT.agents[paneKey(p)] || null
     : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`);
-  if (!state.selected || state.selected[0] !== g || state.selected[1] !== c) return;   // another picked meanwhile: not it
-  await takeAgent(got);
+  if (p.g !== g || p.c !== c) return;               // another given it meanwhile: not it
+  await takeAgent(got, p);
 }
-// The selected agent, fetched or pushed: its calls' counts, and the context of the call Details shows (the latest's,
+// Pane `p`'s actor's calls, fetched or pushed: their counts, and the context of the call Details shows (the latest's,
 // unless one is picked: features/details/store.ts), fetched before the page draws it.
-async function takeAgent(agent) {
-  state.agent = agent; state.agentVersion = (state.agentVersion || 0) + 1;
-  const reads = (state.agent && state.agent.reads) || [];
+async function takeAgent(agent, p = panes.here) {
+  p.agent = agent; p.agentVersion = (p.agentVersion || 0) + 1;
+  const reads = (agent && agent.reads) || [];
   counted(reads);                                    // ag's count of all each call sent
-  const actor = chatActor();
+  const actor = paneKey(p);
   if (!actor) return;
-  detailsShown(actor);
+  detailsShown(allPanes().map(paneKey).filter(Boolean));
   if (reads.length) await loadContext(parseKey(actor).group, shownRead(agent, pickedFor(usePicked.getState(), actor)));
 }
-// What the main view draws from, of the transcript's feed (features/transcript/data.ts): while the view shown draws it.
-const txSignatureNow = () => chatView().feed === "transcript" ? txSignature(useTxFeed.getState().feed) : null;
-// What the chat shows, loaded: the feed its view draws from (chat views, below), for the selected actor --
-// any actor: one that cannot be messaged here is shown all the same, without the message box.
-async function loadChat() {
-  if (!state.selected || SNAPSHOT || isShell(state.selected[1])) return;
-  try { await chatFeed().load(); } catch (err) { /* no database yet: the gatherer is made on the first call */ }
+// What a pane's view draws from, of the transcript's feed (features/transcript/data.ts): while its view draws it.
+const txSignatureNow = (p) => chatView(p).feed === "transcript" ? txSignature(useTxFeed.getState().feed) : null;
+// What pane `p` shows, loaded (this page's own, by default): the feed its view draws from (chat views, below), for its
+// actor -- any actor: one that cannot be messaged here is shown all the same, without the message box.
+async function loadChat(p = panes.here) {
+  if (!p || !p.c || SNAPSHOT || isShell(p.c)) return;
+  try { await chatFeed(p).load(p); } catch (err) { /* no database yet: the gatherer is made on the first call */ }
 }
-// What was last drawn, so an update that brings nothing new draws nothing: no flash, and an open
-// table, a scrolled list or a tooltip stays as it is.
-const drawn = { agents: null, main: null, who: null };
+// What was last drawn, so an update that brings nothing new draws nothing: no flash, and an open table, a scrolled list
+// or a tooltip stays as it is -- the list's here, each pane's in its record (`drawn`: features/page/pane-view.js).
+const drawn = { agents: null };
 // What the list draws from: kept as `drawn.agents` by renderAgents whoever calls it -- a home, or the reader's own
 // action, which draws at once -- so a home that only confirms that action draws nothing anew (a row drawn again under
 // the pointer as the reader presses it to drag starts no drag). Not the clock: its "ago" texts count where they are, as
@@ -95,10 +88,10 @@ async function refresh(userAction = false) {
       const first = state.home.gatherers.find((g) => g.agents.length && !isHidden(g)) || state.home.gatherers.find((g) => g.agents.length);
       if (first) {
         state.selected = [first.name, firstAgent(first).channel];
-        if (!PANE) setAutoShown(taskKey(...state.selected));   // shown by itself: the tab's as if empty (features/layout/panes.js's viaTabs)
+        setAutoShown(taskKey(...state.selected));   // shown by itself: the tab's as if empty (features/layout/panes.js's viaTabs)
       }
     }
-    if (state.selected && !PANE) showActorsApp(...state.selected);   // an app's actor (features/apps/app-actors.js): its panel above
+    if (state.selected) showActorsApp(...state.selected);   // an app's actor (features/apps/app-actors.js): its panel above
     startTabs();                                     // the tab shown as it was left (features/layout/panes.js)
     await loadAgent().catch(() => { state.agent = null; });   // a session started here may have no database yet
     await loadChat();
@@ -140,7 +133,7 @@ function fitBox(box) {
 }
 // What was typed in an actor's message box and not sent, by actor (key()), kept in this browser tab: its box, drawn
 // again once the reader comes back from another actor or view, or reloads, starts with it (ctx.input). Read and
-// written whole each time, as the panes' frames share it.
+// written whole each time.
 const TYPING_MS = 300;                               // an update that comes while the reader types waits this long after a key
 function render(userAction = false) {
   if (!state.home) return;
@@ -151,25 +144,27 @@ function render(userAction = false) {
   }
   // not while a form in the list is open, which a redraw would empty
   if ((userAction || listSignature() !== drawn.agents) && !((state.adding || state.renaming) && !userAction)) renderAgents();
-  const view = mainSignature();
-  if (userAction || view !== drawn.main) { const end = chatAtEnd(); keepingPlace(renderMain); drawn.main = view; if (end) chatToEnd(); }
-  drawWho();
+  for (const p of allPanes()) {                      // each pane, drawn again if what it shows changed
+    if (userAction || mainSignature(p) !== p.drawn.main) drawPane(p, true);
+    drawWho(p);
+  }
+  termsKept(allPanes().map((p) => p.c).filter(Boolean));   // the terminals of the sessions no pane shows let go of
   setLive(SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}` : state.paused ? "Paused"
     : !state.stream ? "Connecting…" : state.stream.readyState === EventSource.OPEN ? `Live · updated ${clock(Date.now() / 1000)}` : "Reconnecting…");
 }
-// What the main view draws from: drawn again only when it changed. The selected actor's state among it -- its status, what
-// it waits on, why it stopped, what runs in the background (which, not how lately): a turn's end may change only that (its
+// What a pane's view draws from: drawn again only when it changed. Its actor's state among it -- its status, what it
+// waits on, why it stopped, what runs in the background (which, not how lately): a turn's end may change only that (its
 // answer's end comes after its last words, which the actor's data already had), and its "Working…" would stay.
-const mainSignature = () => {
-  const info = selectedInfo(), events = useEvents.getState().feed;
-  return signature([state.selected, state.agentVersion, info && info.session,
+const mainSignature = (p) => {
+  const info = paneInfo(p), events = useEvents.getState().feed, feed = chatFeed(p);
+  return signature([paneSel(p), p.agentVersion, info && info.session,
     info && [info.chattable, info.holder],
     info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id),
       info.taken_back],
     info && info.avatar_hello,
-    events && [events.key, events.last_row, events.pending], txSignatureNow(), chatView().id,
-    chatFeed().signature ? chatFeed().signature() : null,
-    state.details, topShown(), chatMin(), canMinimize()]);
+    events && [events.key, events.last_row, events.pending], txSignatureNow(p), chatView(p).id,
+    feed.signature ? feed.signature(p) : null,
+    p.details, topShown(), chatMin(p), canMinimize(p)]);
 };
 // The page's state, in the settings panel: its dot green while live, amber paused, red on an error; the logo's title says it.
 const setLive = (text) => {
@@ -196,7 +191,6 @@ function setTheme(pick, keep) {
   document.documentElement.dataset.theme = pick === "system" ? (systemDark() ? "dark" : "light") : pick;
   for (const b of document.querySelectorAll("[data-theme-pick]")) b.setAttribute("aria-pressed", b.dataset.themePick === pick ? "true" : "false");
   if (keep) { prefs.setText(THEME_KEY, pick); }
-  for (const p of panes.others) p.call("theme", pick);
   window.dispatchEvent(new Event("ag-theme"));
 }
 // The actor at work in the Chat view: acting out what it does (the stage), or small with its one motion ("simple"); kept in
@@ -206,8 +200,7 @@ function setAvatarMode(pick, keep, draw = true) {
   keepAvatarMode(pick === "simple" ? "simple" : "acting");
   for (const b of document.querySelectorAll("[data-avatar-pick]")) b.setAttribute("aria-pressed", b.dataset.avatarPick === avatarMode ? "true" : "false");
   if (keep) { prefs.setText(AVATAR_KEY, avatarMode); }
-  for (const p of panes.others) p.call("avatar", avatarMode);
-  if (draw && chatView().id === "files") keepingPlace(renderMain);
+  if (draw) for (const p of allPanes()) if (chatView(p).id === "files") drawPane(p);
 }
 // The Chat's turns before the latest, at first: the user's messages only, a click on one showing the rest ("messages",
 // filesTalk) -- all but the latest two the agent answered, the one before them folded once a newer turn has its first
@@ -217,11 +210,10 @@ const EARLIER_KEY = "ag-dashboard-chat-earlier";
 let earlierTurns = "messages";
 function setEarlierTurns(pick, keep, draw = true) {
   earlierTurns = pick === "whole" ? "whole" : "messages";
-  useTurns.getState().clearFlips();                   // the turns' clicks: Chat's turns (src/features/chat/store.ts)
+  clearFlips();                                       // the turns' clicks: Chat's turns (src/features/chat/store.ts)
   for (const b of document.querySelectorAll("[data-earlier-pick]")) b.setAttribute("aria-pressed", b.dataset.earlierPick === earlierTurns ? "true" : "false");
   if (keep) { prefs.setText(EARLIER_KEY, earlierTurns); }
-  for (const p of panes.others) p.call("earlier", earlierTurns);
-  if (draw && chatView().id === "files") keepingPlace(renderMain);
+  if (draw) for (const p of allPanes()) if (chatView(p).id === "files") drawPane(p);
 }
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {

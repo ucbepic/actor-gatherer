@@ -27,7 +27,7 @@ import { TYPES, wordless } from "../../core/model/items";
 import { key } from "../../core/model/keys";
 import { BUILD_MESSAGES, fetchFullText, fetchHits, fullTextKey, useAsked } from "./data";
 import { Side, useRecs, type SideProps } from "./Side";
-import { search, setGroup, tasksCame, toggleOpen, toggleType, useHist, type Hist } from "./store";
+import { search, setGroup, tasksCame, toggleOpen, toggleType, useHist, useHistStore, type Hist } from "./store";
 import {
   buildTree,
   marked,
@@ -133,6 +133,7 @@ const meta = (n: HNode, hits: number) =>
 
 const Row = memo(
   function Row({ row: { n, depth, key: k }, edge, st, open, hits, hit, q, gatherer }: RowProps) {
+    const hist = useHistStore();
     const what = n.kind === "message" ? (open ? "Hide full text" : "Show full text") : open ? "Fold" : "Open";
     const said = meta(n, hits);
     return (
@@ -152,7 +153,7 @@ const Row = memo(
           title={what}
           aria-label={what}
           aria-expanded={open}
-          onClick={() => toggleOpen(n.id)}
+          onClick={() => toggleOpen(hist, n.id)}
         >
           {open ? "▾" : "▸"}
         </button>
@@ -249,11 +250,10 @@ function Types() {
 
 /** The selected actor's tasks, as of its latest build: being made, how far behind they are, or why not. */
 function BuildNote({ h }: { h: Outline }) {
-  const built = useAsked((s) => s.built);
+  const asked = useAsked((s) => s.built[key(h.gatherer, h.channel)] ?? null);
   const b = h.builds[h.channel];
   if (!b) return null;
   const since = `${plural(b.since, "user message")} since`;
-  const asked = built && built.for === key(h.gatherer, h.channel) ? built : null;
   if (b.status === "running" && !h.tasks.length) return null; // the checkbox says so
   const [cls, text, title] =
     b.status === "running"
@@ -295,7 +295,8 @@ function Bar({
   hits: { size: number; more: boolean } | null;
 }) {
   const q = useHist((s) => s.q),
-    flash = useHist((s) => s.flash);
+    flash = useHist((s) => s.flash),
+    st = useHistStore();
   const building = h.builds[h.channel]?.status === "running";
   const flashing = flash === h.key;
   const qt = q.trim();
@@ -310,11 +311,11 @@ function Bar({
             aria-label="Search the history"
             spellCheck="false"
             value={q}
-            onChange={(ev) => search(ev.currentTarget.value)}
+            onChange={(ev) => search(st, ev.currentTarget.value)}
             onKeyDown={(ev) => {
               if (ev.key !== "Escape" || !ev.currentTarget.value) return;
               ev.stopPropagation();
-              search("");
+              search(st, "");
             }}
           />
         </label>
@@ -332,7 +333,7 @@ function Bar({
             type="checkbox"
             checked={grouped}
             disabled={!hasTasks}
-            onChange={(ev) => setGroup(ev.currentTarget.checked)}
+            onChange={(ev) => setGroup(st, ev.currentTarget.checked)}
           />
           {building && !hasTasks ? (
             <>
@@ -499,11 +500,12 @@ const ROWS_PARTS = {
 
 /** Tasks come in while the reader looks: the list stays as it is, and Group by tasks pulses a few times. */
 function useTasksCame(h: Outline) {
+  const st = useHistStore();
   const had = useRef<{ key: string; had: boolean } | null>(null);
   const hasTasks = h.tasks.length > 0;
   useEffect(() => {
     const was = had.current;
     had.current = { key: h.key, had: hasTasks };
-    if (was && was.key === h.key && !was.had && hasTasks) tasksCame(h.key);
-  }, [h.key, hasTasks]);
+    if (was && was.key === h.key && !was.had && hasTasks) tasksCame(st, h.key);
+  }, [st, h.key, hasTasks]);
 }

@@ -1,8 +1,8 @@
 # The dashboard on a standard stack: plan
 
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
-the views share, in `core/ui/`; Chat; the list, all of it TypeScript; Details, Transcript, Messages, History and Terminal's
-frame). A1's build step, the server serving it and `publish.yml` building it come with A3, the
+the views share, in `core/ui/`; Chat; the list, all of it TypeScript; Details, Transcript, Messages, History and Terminal's frame); A6 begun
+(the layout model, steps 1-4c-3b and the first of 4c-3c; the panes as parts of one page; the page's pop-ups on Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
 
@@ -235,11 +235,11 @@ Each of these modules still goes as its view is rewritten (A5, A6), and a new vi
 - **How the two halves talk** (`src/bridge.ts`): the bridge runs first and sets `window.agNext`, which the old page
   calls: it hands over the stream's home (`04-seen.js`'s `takeHome`) and asks for ag's settings (opening the panel,
   Esc closing the config.toml dialog). The old page hands back `window.agLegacy` (`03-settings.js`): what the new
-  code calls of it (the panel opened or closed; whether this is a snapshot or a pane's frame). Both go when nothing
-  calls them.
+  code calls of it (the panel opened or closed; whether this is a snapshot). Both go when nothing calls them.
 - **One stream.** The old page's stream stays the only one, and copies what it takes into the store
-  (`core/store`, Zustand). It moves into `core/api/stream.ts` with the shell (A6): until panes stop being frames, the
-  page around them streams for them, which is the old page's code.
+  (`core/store`, Zustand). It moves into `core/api/stream.ts` with the shell (A6). Since the panes are parts of the page
+  (A6), it serves them all -- each pane's actor an `actor` of it -- still the old page's code (settings/panel.js's
+  `connect`, `streamTake`).
 - **The first view:** ag's part of the dashboard's panel (the model, the defaults, the harnesses, Browser logins,
   config.toml's dialog) is `features/settings/` now: a component drawn into the old panel's `#cfg`, its own Zustand
   store for config.toml, its markup and classes as before so it looks the same. Its tests (`AgSettings.test.tsx`,
@@ -498,7 +498,8 @@ pattern the list and Chat follow:
   DropdownMenu (`Menus.tsx`; the page says what each holds: `startMenu`, `gathererMore`, `folderMore`), closed by a
   press the page never hears as the page's own drop-downs are (`pressedAway`'s `PRESSED_AWAY`); an item that opens a box
   or the branch picker opens it from the same button, the menu closed (its second step, `openPop` by the button's
-  `data-pop`). The card's "+ actor" and "+ ⋯", the new-tab page's and the panes' drop-downs are `openPop`'s still.
+  `data-pop`). The card's "+ actor" and "+ ⋯", the new-tab page's and the panes' drop-downs are `openPop`'s, which
+  shows them on Radix since A6 (`features/layout/Pops.tsx`).
 - *The rest of the list in TypeScript:* what was left of it in the old page's JS -- list.js, group-moves.js, modes.js,
   seen.js, gatherer-folders.js -- is gone, into modules of `features/list/` by what each does: the reader's choices,
   the home's hiding, titles and bookmarks, the selection and the list's draw (`list.ts`, its host `list-host.ts`);
@@ -516,7 +517,7 @@ pattern the list and Chat follow:
   for the actors selected (`PickBar.tsx`, `pick-bar.tsx`) -- Vitest: `bars.test.tsx`. Its "Move to…" and a task card's
   "+" are Radix's DropdownMenu as the list's other menus are (`Menus.tsx`'s `PageMenu`: closed by a press the page never
   hears, the page resizing or its box scrolling; a card stays while its menu is open, `hover-card.ts`'s `cardLetGo`).
-  The head's "+" for an actor on its own still opens the panes' start box (`openPop`, `railNewBox`).
+  The head's "+" for an actor on its own opens the panes' start box (`openPop`, `railNewBox`).
   A feature's TypeScript may not import another feature's modules, nor the old page's plain JS: what the list takes of
   them -- the panes and their tasks, the page's data and state, Chat's, the apps' -- comes through one link
   (`link.ts`'s `ListPage`, typed member by member), each module's namespace handed over by `src/list-link.js` before any
@@ -584,8 +585,58 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
   panes, Details, the chat minimized. It replaces today's separate browser keys, which are read once and dropped.
 - The splits are our own (`tree.ts`, `arrange.ts`, `place.ts`), not react-resizable-panels: its splits nest the panels
   in the page, so changing one moves them, and an app's panel, an iframe, would load again (see "The stack").
-- Panes become components in one page, sharing one stream.
+- Panes become components in one page, sharing one stream (built, below).
 - `page.js` has no module left to start, and goes with the bridge.
+
+**The panes in one page (built).** Each pane beside the first was the page again in an iframe (the `PANE` flag): a
+second copy of the bundle, the home and its actor's updates handed to it by the page's stream, a copy of everything the
+page drew. Now each actor's pane is a part of the one page:
+- *Its record* (`features/page/pane-view.js`'s `makePane`; `panes.here`, then `panes.others`): its parts -- head, who,
+  controls, ×, main view (`features/layout/pane.ts`: the page's own pane keeps index.html's ids, those beside it the
+  same markup by class) -- its actor (the page's own pane's is the page's selection, `state.selected`, which the list
+  sets; `state.agent` reads that pane's), and what it shows of it: the view picked (`view`: the page's own kept as the
+  page's choice, the others with the layout's panes), Details open (`details`), the actor's calls (`agent`, drawn again
+  as `agentVersion` moves on), Chat's files feed (`files`), its message box's send (`chatSend`), what was last drawn
+  (`drawn`). `paneInfo`, `paneKey`, `paneAt` (the pane holding a node), `paneOf`, `paneWith` find what a pane shows.
+- *Every view takes the pane it is given*: main-view.js's `renderPane(p)` and `drawPane(p)` (renderMain's place, its
+  place kept by `keepingPlace(draw, p)`), data.js's `loadAgent(p)`, `takeAgent(agent, p)`, `loadChat(p)` and
+  `mainSignature(p)` (render() draws each pane whose signature moved), Chat's card (`chatCard(p, info)`), views
+  (`chatView(p)`, `setChatView(p, id)`, the feeds' `load(p)`/`data(p)`), files feed (`loadFiles(p)`, `setFilesTurn(p,
+  n)`, `foldSide(p, fold)`, `barActs(p)`), a minimized pane (top.js's `chatMin(p)`, `setChatMin(p, on)`, `minRedraw(p)`;
+  mini-history.js's lines and its one card, for the pane hovered), the shell's pane, Details, History, Esc
+  (`escapeShown(p)`, `interrupt(p, info)`), the links clicked in a pane (`linkClicked(href, ev, path, p)`). Nothing in a
+  view reads `state.selected`; a list module calling with no pane (`select`'s `loadChat()`, `chatToEnd()`, `showKept`)
+  means the page's own. The reader's own views (`agDashboard`) are drawn for the pane being drawn (`drawingPane`).
+- *Each actor's own state in the new code*, where it was the page's one: Chat's folds (`store.ts`'s `foldsOf(key)`), the
+  frames on the page (`useOnPage`'s keys), the files panel folded and too narrow (`side/store.ts`'s `panels`), a pull
+  and a turn kept in place in their pane's conversation (`pull.ts`), the read picked on the size chart
+  (`details/store.ts`'s `picks`); one view frame per view and actor (`core/ui/frame.tsx`), one Details panel per actor,
+  one head's controls per pane (`Controls.tsx`); one xterm per session a pane shows (`terminal/term.ts`'s `termFor`, let
+  go of by `termsKept` once no pane shows it; `term` stays for the list's following of a renamed codex session). The
+  host's calls from React name their actor (`barActs(actor)`, `setChatView(id, channel)`).
+- *One stream, one home*: a pane opened beside loads its actor's calls and view from the page (`paneGiven`), its actor
+  an `actor` of the page's stream from then on -- no frame, no page loaded again, no home of its own
+  (`pane-home.spec.ts`).
+- Gone: `PANE_URL`, `panes.home` and `panes.actors`, the frames' bridges (`agPanes`, `agPane`, `agTop`, `paneReady`,
+  `panesTake`, `paneUrl`, `fitMini`), the frame CSS (`pane-mode`, `pane-focused`), the bridge's `pane` flag. `PANE` is a
+  constant `null`, kept only for the list's modules till they are rewritten.
+- Kept: the placement (`tree.ts`, `arrange.ts`, `work.ts`, `place.ts`), which places every pane absolutely and never
+  moves a node; the apps' panels, which stay iframes, placed over the work area as before and never moved in the DOM
+  (a moved iframe reloads).
+- Specs: those that reached into an actor pane's frame reach the pane in the page (`.pane-close`, `.controls`, `main`);
+  the minimized lines' drag marks the pane dragged in (`.pane[data-mini-drag]`) and the page's root, where it marked two
+  documents.
+
+**The page's pop-ups on Radix (built).** What `openPop` hung from a button -- a panel's moves (its head right-clicked),
+the rail's and the hover card's "+ actor" and "+ ⋯", the new-tab page's "In", "Directory" and "On", the boxes for a
+new actor's directory (`railNewBox`, also the list head's actor on its own) and an app's folder (`appStartBox`), the
+list's moves -- was placed, focused and closed by hand. `features/layout/Pops.tsx` shows them now, one at a time: a
+menu (`popMenu`'s: its heading, its choices) as Radix's DropdownMenu, a box -- the page's own form -- in Radix's
+Popover; both placed by Radix under the button (beside it from the rail), flipped above where there is no room, closed
+by the button pressed again, a press elsewhere, Esc (the focus back on the button), the page resizing or the page or a
+box holding the button scrolling. `openPop(key, button, what)`, `popMenu`, `closePop` and `rowPop` keep their roles, as
+the list's modules still call them; `placePop` went. Vitest: `Pops.test.tsx`. Left: the forms in the boxes are still
+built by the old page (`el`), and the branch picker (`openBranchMenu`, `openBranchDialog`) is still drawn by hand.
 
 The layout slice comes first, in four steps, each with every test passing:
 1. *The model* (built): `features/layout/model.ts`, one `Layout` value -- the screen tabs, the tab shown, what each
@@ -634,10 +685,18 @@ The layout slice comes first, in four steps, each with every test passing:
    - 4c-3b (built): the page's own pane out of sight or closed (`away`, the page's `hereAway`/`hereClosed`) and the task
      of apps only shown (`appsOnly`) are the model's, this page's alone and not kept: `putAway`, `backInSight`,
      `setAppsOnly` write it, `isAway`, `isShut` and `appsOnlyKey()` read it.
-   - 4c-3c: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
-     and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
-   (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,
-   `ag-dashboard-layout`. The model then holds each task's open items itself (what `keysNow` reads off the panels now).
+   - 4c-3c, first part (built): the last of the page's own variables are the model's, as `away` and `appsOnly` are (this
+     page's alone, not kept): the task last entered (`entered`, the page's `taskNow`: what the apps it opens wait on),
+     the tasks laid out in this page (`laidOut`, `tasksLaidOut`: still a set's has/add/delete over it for the list's
+     `openTask`), and the task the page opened on by itself (`auto`, `autoShown`) -- `setEntered`, `layOut`, `setAuto`.
+     `taskLayouts` went with 4a, the six keys with 4b (read once by `migrate`).
+   - 4c-3c, left: clicks call the model's functions and one renderer opens and closes panes to match it, in place of
+     the tells and of entering a tab's tasks (`enterTask`, `enterAppTask`, `openTaskBeside`, `onlyTask`,
+     `closeTaskHere`, `clearWork`, `enterTasks`, `showTaskItems`, which still open and close the panes one by one and
+     tell the model); the model then holds each task's open items itself (what `keysNow` reads off the panels now), and
+     `shadow.ts` becomes the layout's store, its check against the page (`AG_LAYOUT_STRICT`) going with the tells. The
+     panes being parts of the page makes that renderer simpler: a pane given an actor is drawn at once, no frame to wait
+     for.
 
 ### Track B: the server
 

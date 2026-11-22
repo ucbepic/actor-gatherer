@@ -6,7 +6,7 @@ import { viewFrame } from "../../core/ui/frame";
 import { parse } from "../../core/model/keys";
 import { loadOutline, outlineKey, outlineOf } from "./data";
 import { History, type HistFeed } from "./HistoryView";
-import { showing } from "./store";
+import { HistContext, histOf, showing } from "./store";
 import type { Outline } from "./tree";
 
 /** What the page hands the view: the actor, and what it draws with of the page. */
@@ -24,7 +24,15 @@ function Kept({ page }: { page: HistPage }) {
 /** The view's frame for `page.actor`, drawn now: its node, for the page to put where it goes. */
 export function drawHistory(page: HistPage, name: string): HTMLDivElement {
   showing(page.actor, parse(page.actor).group);
-  return viewFrame("history", "hist", name, <Kept key={page.actor} page={page} />);
+  return viewFrame(
+    "history",
+    "hist",
+    name,
+    <HistContext value={histOf(page.actor)}>
+      <Kept key={page.actor} page={page} />
+    </HistContext>,
+    page.actor,
+  );
 }
 
 /** What the page's draws compare of the actor's outline, to draw again when it changes (the reader's own views). */

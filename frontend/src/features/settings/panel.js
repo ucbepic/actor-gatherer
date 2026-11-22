@@ -1,40 +1,40 @@
-import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { SNAPSHOT, panes, state } from "../../core/page/state.js";
 import { isShell } from "../../core/page/helpers.js";
 import { fitBox, loadAgent, loadChat, render, setAbout, setLive, takeAgent } from "../page/data.js";
 import { takeHome } from "../list/seen";
 import { firstAgent } from "../list/list";
-import {
-  actorPanes, isAt, paneUrl, panesTake, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey,
-} from "../layout/panes.js";
+import { actorPanes, isAt, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes.js";
 import { takeChatView } from "../chat/files-view.js";
+import { allPanes } from "../page/pane-view.js";
 import { stream } from "../../core/api/stream";
 
 // ------------------------------------------------------------------ ag's settings
 // ag's config.toml (settings.py): drawn by the new code now (src/features/settings/), at the top of the panel. What it
 // calls of this page, handed to it (src/bridge.ts's AgLegacy).
 const $ = (id) => document.getElementById(id);
-// Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
+// Redraw a pane's main view (this page's own, by default) where the reader left it: the same tables open, the same lists
+// scrolled.
 const atEnd = (n) => n.scrollHeight - n.scrollTop - n.clientHeight < 40;
-function keepingPlace(draw) {
-  const main = document.getElementById("main");
+function keepingPlace(draw, p = panes.here) {
+  const main = p.main;
   const open = [...main.querySelectorAll("details[open][id]")].map((d) => d.id);
   const scrolled = [...main.querySelectorAll("[data-keep]")].map((n) => [n.dataset.keep, n.scrollTop, n.scrollLeft]);
   // a list that follows its end (data-follow), read to its end: kept at its end as it grows
   const following = [...main.querySelectorAll("[data-follow]")].filter(atEnd).map((n) => n.dataset.keep);
   const pageY = window.scrollY;
-  const box = document.getElementById("composer-text"), focused = box && document.activeElement === box;
+  const box = main.querySelector("#composer-text"), focused = box && document.activeElement === box;
   const typed = box ? [box.dataset.draft, box.value, box.selectionStart, box.selectionEnd] : null;
   // what keeps its own node across draws (a terminal, data-refocus) and had the focus: given it back
   const refocus = document.activeElement && document.activeElement.closest && document.activeElement.closest("[data-refocus]");
   draw();
   if (refocus && refocus.isConnected && refocus.agFocus) refocus.agFocus();
   // the box drawn anew for the same actor: as it was, caret and all (another actor's starts with its own draft)
-  const again = document.getElementById("composer-text");
+  const again = main.querySelector("#composer-text");
   if (again && typed && again !== box && again.dataset.draft === typed[0]) {
     again.value = typed[1]; fitBox(again);
     if (focused) { again.focus(); again.setSelectionRange(typed[2], typed[3]); }
   }
-  for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
+  for (const id of open) { const d = main.querySelector(`#${CSS.escape(id)}`); if (d) d.open = true; }
   for (const [k, top, left] of scrolled) {
     const n = main.querySelector(`[data-keep="${k}"]`);
     if (n) { n.scrollTop = top; n.scrollLeft = left; }
@@ -47,10 +47,9 @@ function keepingPlace(draw) {
 // starts with both again, so nothing is missed while it was down. Reopened when the selection
 // changes; closed while paused. A message for an agent no longer selected is dropped.
 // It goes on the page's one WebSocket with its other streams (src/core/api/stream.ts), not on one of the six
-// connections a browser keeps open to a server. The other panes' actors come on it too (`also`, each an `actor`),
-// handed to their frames: a frame has no stream of its own, so the server reads the home once for the page.
+// connections a browser keeps open to a server. The other panes' actors come on it too (`also`, each an `actor`: its
+// calls and what Chat shows of it), each for the pane showing it: one stream for the page, the home read once.
 function connect() {
-  if (PANE) { state.stream = PANE.stream; paneUrl(); PANE.shows(window, state.selected); return; }
   if (state.stream) { state.stream.close(); state.stream = null; }
   if (SNAPSHOT || state.paused) return;
   const sel = state.selected, also = actorPanes().filter((p) => !isShell(p.c));   // a shell: nothing to stream but its terminal
@@ -58,18 +57,17 @@ function connect() {
     ...(also.length ? [`also=${encodeURIComponent(JSON.stringify(also.map((p) => [p.g, p.c])))}`] : [])];
   const es = stream("/api/stream" + (q.length ? "?" + q.join("&") : ""));
   state.stream = es;
-  panes.actors.clear();
   const mine = () => state.stream === es;
-  es.addEventListener("home", (ev) => { if (mine()) { panesTake("home", ev.data); streamTake("home", ev.data, mine); } });
+  es.addEventListener("home", (ev) => { if (mine()) streamTake("home", ev.data, mine); });
   es.addEventListener("agent", (ev) => { if (mine()) streamTake("agent", ev.data, mine, sel); });
   es.addEventListener("chat", (ev) => { if (mine()) streamTake("chat", ev.data, mine, sel); });
-  es.addEventListener("actor", (ev) => { if (mine()) panesTake("actor", ev.data); });
+  es.addEventListener("actor", (ev) => { if (mine()) streamTake("actor", ev.data, mine); });
   es.addEventListener("open", () => { if (mine()) render(); });
   es.addEventListener("error", () => { if (mine() && !state.paused) setLive("Reconnecting…"); });
 }
 
-// What the stream says, one message at a time, in order: the home, and the agent of `sel` -- or, in a frame,
-// the `actor` its page around it hands it (the stream's, for this pane's actor). In a frame, after its first load.
+// What the stream says, one message at a time, in order: the home, the agent of `sel` (this page's own pane's actor), and
+// each other pane's actor (`actor`: its calls, and what Chat shows of it).
 let streamQueue = Promise.resolve();
 function streamTake(name, data, mine = () => true, sel = null) {
   streamQueue = streamQueue.then(async () => {
@@ -78,9 +76,9 @@ function streamTake(name, data, mine = () => true, sel = null) {
       const got = JSON.parse(data);
       if (name === "home") {
         takeHome(got);
-        await loadedSoon(loadChat());                // a session's state: its messages may have moved on too
-        if (!panes.checked && !PANE) restorePanes(); // (come before refresh's answer: what the page kept, first)
-        if (!state.selected && !PANE) {              // the first agent to appear: shown, and watched
+        await loadedSoon(Promise.all(allPanes().map((p) => loadChat(p))));   // a session's state: its messages may have moved on too
+        if (!panes.checked) restorePanes();          // (come before refresh's answer: what the page kept, first)
+        if (!state.selected) {                       // the first agent to appear: shown, and watched
           const first = got.gatherers.find((g) => g.agents.length);
           if (first) {
             state.selected = [first.name, firstAgent(first).channel];
@@ -89,15 +87,17 @@ function streamTake(name, data, mine = () => true, sel = null) {
             await loadAgent(); render(true); connect();
           }
         }
-        if (!PANE) startTabs();                      // the tab shown as it was left (features/layout/panes.js)
+        startTabs();                                 // the tab shown as it was left (features/layout/panes.js)
       } else if (name === "chat") {                   // what Chat shows of the actor: drawn as it comes, nothing to load
         if (!sel || !isAt(state.selected, ...sel)) return;
         takeChatView(sel[0], sel[1], got);
       } else {
         const [g, c, agent] = name === "actor" ? [got.gatherer, got.channel, got.agent] : [...(sel || []), got];
-        if (!isAt(state.selected, g, c)) return;     // for an actor no longer shown
+        const ps = name === "actor" ? actorPanes().filter((p) => isAt([p.g, p.c], g, c))
+          : isAt(state.selected, g, c) ? [panes.here] : [];
+        if (!ps.length) return;                      // for an actor no longer shown
         if (name === "actor" && got.chat) takeChatView(g, c, got.chat);
-        await loadedSoon(Promise.all([takeAgent(agent), loadChat()]));   // takeAgent keeps the agent at once
+        await loadedSoon(Promise.all(ps.flatMap((p) => [takeAgent(agent, p), loadChat(p)])));   // takeAgent keeps the agent at once
       }
       render();
     } catch (err) { setLive(`Not updated: ${err.message}`); }
@@ -124,7 +124,7 @@ function loadedSoon(work) {
 }
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
-  window.agLegacy = Object.freeze({ setAbout, snapshot: !!SNAPSHOT, pane: !!PANE });
+  window.agLegacy = Object.freeze({ setAbout, snapshot: !!SNAPSHOT });
 }
 
 export { $, connect, keepingPlace, streamTake };

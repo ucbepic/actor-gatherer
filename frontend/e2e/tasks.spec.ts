@@ -90,7 +90,7 @@ test("a task opened again is as it was left: an actor's pane closed in it stays 
   await page.locator("#agents").hover({ position: { x: 5, y: 5 } });
   await row.click(); // at first: both, side by side
   await expect(panes).toHaveCount(2);
-  await panes.nth(1).frameLocator("iframe").locator("#pane-close").click(); // one of them closed
+  await panes.nth(1).locator(".pane-close").click(); // one of them closed
   await expect(panes).toHaveCount(1);
   await row.click(); // the task shown already: as it is
   await expect(panes).toHaveCount(1);
