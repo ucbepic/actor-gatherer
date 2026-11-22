@@ -15,7 +15,7 @@
 .pane > main { flex: 1 1 auto; }
 /* A pane's top: its head, in the page's top row, as tall as the row (--top-h: the tallest of the page's name and
    the heads), so the rule under the row runs straight across. Alone, the head is one line: the actor's controls,
-   at the right, as a header's, and its × (features/layout/panes.js's closeHerePane: the pane out of sight, what else is shown taking
+   at the right, as a header's, and its × (features/layout/render.ts's closeHerePane: the pane out of sight, what else is shown taking
    its room); split, each pane's says whose it is too: who, the view's switch and Details,
    the ×, and the view's own tools (filters, switches) on a line under them -- a narrow pane's, who and the × on a
    line, the switch and Details under them, then the tools */
@@ -133,9 +133,9 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: var(--fs-meta
 .warn { color: var(--ink-2); font-size: var(--fs-meta); margin-top: 8px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .stale { opacity: .55; transition: opacity .2s; }
-/* a panel moved from its head's menu (features/layout/panes.js's moveMenu): the menu hangs from the point pressed, each choice its arrow */
+/* a panel moved from its head's menu (features/layout/moves.ts's moveMenu): the menu hangs from the point pressed, each choice its arrow */
 .lay-anchor { position: fixed; width: 0; height: 0; pointer-events: none; }
 .row-menu .lay-mark { flex: none; width: 16px; text-align: center; color: var(--ink-2); }
 .files .fl-act.fl-grip { cursor: grab; }
-/* this page's own pane away: its actor not in its task's tab shown (features/layout/panes.js's hereAway) */
+/* this page's own pane away: its actor not in its task's tab shown (features/layout/open.ts's away) */
 .work.placed #pane-here.lay-away { display: none; }

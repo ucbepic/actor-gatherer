@@ -3,7 +3,7 @@
 // Home/End, typing a letter, Esc giving the focus back); a folder's coordinator agent and its ×. An item that opens a
 // box or a drop-down of its own (an app's box, the branch picker) opens it from the same button, the menu closed: its
 // second step. A press the page never hears -- in a pane's frame, an app's panel -- closes the menu too, as it closes
-// every drop-down of the page (features/layout/panes.js's pressedAway, its PRESSED_AWAY event).
+// every drop-down of the page (features/layout/popups.ts's pressedAway, its PRESSED_AWAY event).
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Html } from "../../core/ui/PageNode";

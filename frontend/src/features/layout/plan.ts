@@ -1,7 +1,7 @@
 // A SCREEN TAB'S PANELS, worked out at once (ag_dashboard/DESIGN.md, A6, layout step 4c-3c): what the page shows for the
 // tasks of a tab shown -- the actor in the page's own pane, the panes beside it in their order, the apps' panels above,
 // what is in focus -- from what each task was left with (model.ts's Left, read by the page into TaskFacts) and what is
-// open now. The page then makes the model so and renders it (features/layout/panes.js's enterTasks, renderLayout), in
+// open now. The page then makes the model so and renders it (enter.ts's enterTasks, render.ts's renderLayout), in
 // place of entering the tasks one by one, each pane opened and the model told. The rules are those the page had: the
 // first task with actors in the page's own pane, its other actors beside it; each other task beside, as ⌘+click opens
 // one; the tasks of apps alone last; terminals kept; at most `max` panes.
@@ -321,7 +321,7 @@ export function appsPlan(now: Open, k: string, known: AppWant[] = []): Plan {
   };
 }
 
-/** Another task `k` entered by a click (an actor of it shown in the pane in focus: features/layout/panes.js's show): the
+/** Another task `k` entered by a click (an actor of it shown in the pane in focus: show.ts's show): the
  * panes and panels of the others closed (terminals kept), out of apps alone, k's open already kept, the page's own pane
  * in focus if it shows another task's actor (k's actor is shown in it next); the rest of k laid out after (layOutTask). */
 export function enterPlan(now: Open, k: string): Plan {

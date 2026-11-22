@@ -47,7 +47,7 @@ export interface PageState {
   agentVersion?: number;
 }
 
-/** An actor's pane beside this page's own (panes.js's: a part of the page), and an app's panel above them. */
+/** An actor's pane beside this page's own (features/page/pane-view.js's: a part of the page), and an app's panel above them. */
 export interface ActorPane {
   g: string;
   c: string;
@@ -68,7 +68,7 @@ export interface TaskLeft {
   shut?: string | null;
   apps?: unknown[];
 }
-/** A start box's or menu's button, as the card's start buttons say it (panes.js's cardStart). */
+/** A start box's or menu's button, as the card's start buttons say it (features/layout/starts.ts's cardStart). */
 export interface CardStart {
   key: string | null;
   disabled: boolean;
@@ -79,7 +79,7 @@ export interface CardStart {
   expanded: boolean | null;
 }
 
-/** The layout's module (features/layout/panes.js): the panes, the tasks shown and their tabs, the start buttons. */
+/** The layout's module (features/layout/panes.ts): the panes, the tasks shown and their tabs, the start buttons. */
 export interface PanesPart {
   actorPanes(): ActorPane[];
   appClosed(id: string): void;
@@ -214,7 +214,7 @@ export interface ListPage {
     render(now?: boolean): void;
   };
   panes: PanesPart;
-  /** features/layout/new-tab.js */
+  /** features/layout/new-tab.ts */
   newTab: { refreshNewTab(): void };
   /** features/chat/chat.js and files-view.js */
   chat: {

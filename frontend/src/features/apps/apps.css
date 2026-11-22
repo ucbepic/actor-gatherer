@@ -1,4 +1,4 @@
-/* An app's panel (host.ts) in the row above the panes (features/layout/panes.js): its frame alone, no head over it; the bar before it
+/* An app's panel (host.ts) in the row above the panes (features/layout/app-panels.ts): its frame alone, no head over it; the bar before it
    (features/layout/place.css), dragged to share the row's width with the panel before it. */
 .top-row > .app-pane {
   flex: 1 1 0;
@@ -7,7 +7,7 @@
   display: flex;
   flex-direction: column;
 }
-/* held out of sight (panes.js's holdAppPane: its agent at work, or kept for a screen tab not shown): its frame kept, as it
+/* held out of sight (features/layout/app-panels.ts's holdAppPane: its agent at work, or kept for a screen tab not shown): its frame kept, as it
    is, but not drawn -- `display: flex` above would otherwise outdo [hidden]'s own rule, and the panel, placed nowhere,
    showed at the work area's corner over what is shown */
 .top-row > .app-pane[hidden] {

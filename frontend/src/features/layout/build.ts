@@ -17,7 +17,7 @@ export interface Shown<N = HTMLElement> {
   node: N;
   app: boolean;
 }
-/** A task's layout as an older page kept it (src/features/layout/panes.js's taskLayouts): its panes' widths, its apps' panels'
+/** A task's layout as an older page kept it (remember.ts's taskLayout, as an older page kept it): its panes' widths, its apps' panels'
  * and its row's height, the first arrangement made of them. */
 export interface Old {
   actors?: string[] | null;
