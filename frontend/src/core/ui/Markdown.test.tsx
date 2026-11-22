@@ -1,5 +1,5 @@
 // Markdown in React: the same HTML in the same boxes as the page's markdown(), its code blocks' folding kept.
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import { useDashboard } from "../store";
 import { codeClick, codeFolded, fence } from "./highlight/fence";
 import { Markdown } from "./Markdown";
 import { markdown } from "./md";
+import { loadTex, texLoaded } from "./tex";
 import { loadVendored } from "./testing";
 
 const HARNESS_INFO = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "harness-info.json"), "utf8")) as Record<
@@ -57,6 +58,19 @@ describe("Markdown", () => {
     fireEvent.click(box.querySelector(".code-fold")!);
     rerender(<Markdown text={text + "\n\nMore."} />);
     expect(container.querySelector(".code-box")!.className).toBe("code-box folded");
+  });
+
+  it("shows math as written until KaTeX loads, then draws it as markdown() does", async () => {
+    const text = "Area: $\\pi r^2$, or\n\n$$\n\\pi r^2\n$$";
+    expect(texLoaded()).toBeUndefined();
+    const { container } = render(<Markdown text={text} />);
+    expect([...container.querySelectorAll(".md-tex")].map((n) => n.textContent)).toEqual([
+      "$\\pi r^2$",
+      "$$\n\\pi r^2\n$$",
+    ]);
+    await act(() => loadTex());
+    expect(container.querySelectorAll(".katex")).toHaveLength(2);
+    expect(container.innerHTML).toBe(markdown(text).outerHTML);
   });
 
   it("without marked and DOMPurify, shows the text as it is", async () => {

@@ -1,11 +1,13 @@
 // Markdown, as the page draws a message: marked (GFM) and DOMPurify, the vendored scripts index.html loads before the
 // page (window.marked, window.DOMPurify); raw HTML in a message shown as the agent wrote it, not rendered; links
 // opening apart, a link to something in an app (`ag://<app>/...`, features/apps/links.ts) kept and marked with the app's
-// mark (.ag-link: the page opens it there, src/features/layout/pane-links.ts); fenced code coloured (codeFence). And a block a harness's model writes in a reply that its own
+// mark (.ag-link: the page opens it there, src/features/layout/pane-links.ts); fenced code coloured (codeFence); LaTeX
+// math drawn by KaTeX (tex.ts). And a block a harness's model writes in a reply that its own
 // terminal draws apart (harness_kit's `reply_block`), drawn as a card. Without the vendored scripts, the text as it is.
 import { useDashboard } from "../store";
 import { escapeHtml } from "./html";
 import { codeFence, foldKept } from "./highlight/fence";
+import { hasTex, loadTex, mathBlock, onTexLoaded, TEX_PURIFY, texExtensions, texLoaded, typeset } from "./tex";
 
 /** As much of marked and DOMPurify as the page uses. */
 interface Marked {
@@ -16,11 +18,12 @@ interface Marked {
       html: (token: { text: string }) => string;
       code: (token: { text: string; lang?: string }) => string;
     };
+    extensions: typeof texExtensions;
   }): void;
   parse(text: string, options?: { breaks: boolean }): string;
 }
 interface Purify {
-  sanitize(html: string, config?: { ALLOWED_URI_REGEXP?: RegExp }): string;
+  sanitize(html: string, config?: { ALLOWED_URI_REGEXP?: RegExp; ADD_TAGS?: string[]; ADD_ATTR?: string[] }): string;
   addHook(hook: "afterSanitizeAttributes", run: (node: Element) => void): void;
 }
 declare global {
@@ -50,7 +53,11 @@ function setUp(): boolean {
       marked.use({
         gfm: true,
         breaks: false,
-        renderer: { html: ({ text }) => escapeHtml(text), code: ({ text, lang }) => codeFence(text, lang) },
+        renderer: {
+          html: ({ text }) => escapeHtml(text),
+          code: ({ text, lang }) => (lang === "math" ? mathBlock(text) : codeFence(text, lang)),
+        },
+        extensions: texExtensions,
       });
       DOMPurify.addHook("afterSanitizeAttributes", (n) => {
         if (n.tagName !== "A") return;
@@ -139,25 +146,39 @@ const mdCache = new Map<string, string>(); // a text's rendered markdown: the sa
 
 /**
  * `text` as HTML, sanitized: what a message's box holds. `breaks`: each line break kept, for text written as lines
- * rather than as markdown (a subagent's report). null: no marked or DOMPurify, so no markdown.
+ * rather than as markdown (a subagent's report). null: no marked or DOMPurify, so no markdown. Math in it is typeset
+ * once KaTeX is loaded; before then (loading it) it shows as written, and that HTML is not kept: drawn again once it
+ * loads (onTexLoaded), the math is typeset.
  */
 export function markdownHtml(text: string, breaks = false): string | null {
   if (!setUp()) return null;
   const k = (breaks ? "\u0001" : "") + text;
   let html = mdCache.get(k);
   if (html === undefined) {
+    let keep = true;
     try {
-      html = window.DOMPurify!.sanitize(window.marked!.parse(text, breaks ? { breaks: true } : undefined), {
-        ALLOWED_URI_REGEXP: URIS,
-      });
+      const parsed = window.marked!.parse(text, breaks ? { breaks: true } : undefined);
+      const katex = hasTex(parsed) ? texLoaded() : null;
+      if (katex === undefined) {
+        keep = false;
+        void loadTex();
+      }
+      html = window.DOMPurify!.sanitize(
+        katex ? typeset(parsed, katex) : parsed,
+        katex ? { ALLOWED_URI_REGEXP: URIS, ...TEX_PURIFY } : { ALLOWED_URI_REGEXP: URIS },
+      );
     } catch {
       html = escapeHtml(text);
     }
+    if (!keep) return html;
     if (mdCache.size > 2000) mdCache.clear();
     mdCache.set(k, html);
   }
   return html;
 }
+
+/** Whether `html` (markdownHtml's) shows math as written, KaTeX not yet loaded to typeset it. */
+export const texWaiting = (html: string) => hasTex(html) && !texLoaded();
 
 const div = (cls: string, ...kids: Node[]) => {
   const n = document.createElement("div");
@@ -191,5 +212,13 @@ export function markdown(text: string, breaks = false): HTMLDivElement {
   }
   box.innerHTML = html; // sanitized by DOMPurify, raw HTML escaped before it
   foldKept(box);
+  if (texWaiting(html)) {
+    // its math typeset once KaTeX loads: the box drawn again
+    const stop = onTexLoaded(() => {
+      stop();
+      box.innerHTML = markdownHtml(text, breaks) ?? box.innerHTML;
+      foldKept(box);
+    });
+  }
   return box;
 }
