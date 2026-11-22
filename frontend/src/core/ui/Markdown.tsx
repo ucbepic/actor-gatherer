@@ -1,9 +1,11 @@
 // Markdown as the page draws a message (md.ts's markdown(), which the old page calls): the same HTML in the same boxes
 // (.md; a harness's reply block as a .proposed-plan card), a code block folded by a click before drawn folded again.
-// Its code blocks' buttons work by the page's one listener (highlight/fence.ts's codeClick, on the document).
-import { useLayoutEffect, useRef } from "react";
+// Its code blocks' buttons work by the page's one listener (highlight/fence.ts's codeClick, on the document). Its math
+// typeset once KaTeX loads (tex.ts): each box drawn again then.
+import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { foldKept } from "./highlight/fence";
 import { markdownHtml, splitReply } from "./md";
+import { onTexLoaded, texLoaded } from "./tex";
 
 export interface MarkdownProps {
   text: string;
@@ -28,6 +30,7 @@ export function Markdown({ text, breaks = false }: MarkdownProps) {
 }
 
 function MarkdownBox({ text, breaks }: Required<MarkdownProps>) {
+  useSyncExternalStore(onTexLoaded, texLoaded); // drawn again once KaTeX loads, its math typeset
   const html = markdownHtml(text, breaks);
   const ref = useRef<HTMLDivElement>(null);
   // Its HTML is set again only when it changes, so a block folded or opened since stays so; when it does change, the
