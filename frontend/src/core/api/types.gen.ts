@@ -2266,8 +2266,8 @@ export interface components {
      * Block
      * @description What a call did to a file (files.py's blocks), by `t`: the lines it read (`lines`, from `start`: None, not
      *     known), matches it found (`hits`: `rows`), a change (`diff`: `old` replaced by `new` at `at` -- None, not found --
-     *     with the known lines `above` and `below`; `write`, `append`: its `lines`), what a command printed (`output`), an image
-     *     its result holds (`image`: `row_id`, `id`), a note (`text`); `cut`, how many more lines there were.
+     *     with the known lines `above` and `below`; `write`, `append`: its `lines`), what a command printed (`output`), an
+     *     image its result holds (`image`: `row_id`, `id`), a note (`text`); `cut`, how many more lines there were.
      */
     Block: {
       t: string;

@@ -1,5 +1,5 @@
-"""`python -m ag_dashboard [--home DIR] [--host H] [--port N] [--open] [--out FILE] [--routes] [--openapi]` (or `ag`, `ag
-dashboard`): the page on localhost until interrupted (Ctrl-C, SIGTERM or SIGHUP: each one stops it the same
+"""`python -m ag_dashboard [--home DIR] [--host H] [--port N] [--open] [--out FILE] [--routes] [--openapi]` (or `ag`,
+`ag dashboard`): the page on localhost until interrupted (Ctrl-C, SIGTERM or SIGHUP: each one stops it the same
 way, removing its socket in the home's listeners/), or, with --out, written to FILE with its
 data inside it. With --open (as `ag` runs it), the page is also opened in the browser -- the one
 already on that port, if it is this home's dashboard. With --routes, the server's routes are listed instead: each

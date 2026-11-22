@@ -1,10 +1,10 @@
 """What the routes the page reads return, as Pydantic models: the home (/api/home, and the stream's `home`), one actor
 (/api/agent), its transcript, history, files and context, Chat's view of it (the stream's `chat`), the History view's
-outline and records, the apps (/api/apps, the Apps page's catalog) and the settings. They describe the JSON for FastAPI's
-schema (each route's `response_model`), which generates the page's types (frontend/src/core/api/types.gen.ts:
+outline and records, the apps (/api/apps, the Apps page's catalog) and the settings. They describe the JSON for
+FastAPI's schema (each route's `response_model`), which generates the page's types (frontend/src/core/api/types.gen.ts:
 `pnpm gen:types`), and are checked against real answers in the tests (test_dashboard_app.py: each validates, and gives
-back exactly what it was given); the routes do not serialize through them -- they send the JSON json.dumps writes, as the
-page has always read it.
+back exactly what it was given); the routes do not serialize through them -- they send the JSON json.dumps writes, as
+the page has always read it.
 
 A field is written as what it always is: `x: str`, always there; `x: Optional[str]`, always there, perhaps null;
 `x: Maybe[str]`, sometimes left out, never null; `x: Maybe[Optional[str]]`, sometimes left out, perhaps null. A route
@@ -1099,8 +1099,8 @@ class Turn(Model):
 class Block(Model):
     """What a call did to a file (files.py's blocks), by `t`: the lines it read (`lines`, from `start`: None, not
     known), matches it found (`hits`: `rows`), a change (`diff`: `old` replaced by `new` at `at` -- None, not found --
-    with the known lines `above` and `below`; `write`, `append`: its `lines`), what a command printed (`output`), an image
-    its result holds (`image`: `row_id`, `id`), a note (`text`); `cut`, how many more lines there were."""
+    with the known lines `above` and `below`; `write`, `append`: its `lines`), what a command printed (`output`), an
+    image its result holds (`image`: `row_id`, `id`), a note (`text`); `cut`, how many more lines there were."""
 
     t: str
     lines: Maybe[List[str]]
