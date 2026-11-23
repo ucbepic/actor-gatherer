@@ -86,12 +86,12 @@ export interface PageParts {
   hovers(): boolean;
   /** "⌘" on a Mac, else "Ctrl" */
   besideKey: string;
-  harnessName(h: string | undefined): string;
+  harnessName(h: string | null | undefined): string;
   ago(t: number | null | undefined): string;
   /** where a session's image is: its avatar's, or a snapshot's own copy; null, none */
   avatarSrc(name: string | null | undefined): string | null;
   /** a harness's mark, for an actor with no avatar */
-  harnessLogo(h: string | undefined): Node;
+  harnessLogo(h: string | null | undefined): Node;
   /** an app's face, and its mark */
   appFace(o: AppItem): Node;
   appMark(o: AppItem): Node;
@@ -107,7 +107,7 @@ export interface ListHost extends PageParts {
   /** who named an actor, and how it went ("" for none) */
   nameNote(g: Gatherer, a: Actor): string;
   /** what runs in the background, by its kind */
-  taskKind(kind: string | undefined): string;
+  taskKind(kind: string | null | undefined): string;
   shellPath(s: Shell): string;
 
   // -- the list's head (Head.tsx): the drop outside every group, a new group, an actor on its own, the list's buttons

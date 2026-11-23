@@ -3,6 +3,7 @@
 // touched; the bar the panel folds to; a file opened call by call.
 import { act, fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
+import { commandOf, sourceOf, turnFileOf } from "../../../core/api/testing";
 import { Paths } from "./CallView";
 import { FileView } from "./FileView";
 import { cmdCounts, Side, SideBar, type SideProps } from "./Side";
@@ -10,13 +11,9 @@ import { useSide } from "./store";
 import type { Command, FilesData, TurnFile } from "../types";
 
 const ICONS = { sidebar: "M1 1", page: "M2 2", terminal: "M3 3", pulse: "M4 4", x: "M5 5" };
-const file = (path: string, kinds: string[], over: Partial<TurnFile> = {}): TurnFile => ({
-  path,
-  kinds,
-  sources: [],
-  ...over,
-});
-const cmd = (text: string, over: Partial<Command> = {}): Command => ({ text, ...over });
+const file = (path: string, kinds: string[], over: Partial<TurnFile> = {}): TurnFile =>
+  turnFileOf(path, { kinds, ...over });
+const cmd = (text: string, over: Partial<Command> = {}): Command => commandOf(text, over);
 
 const data = (files: TurnFile[], commands: Command[] = []): FilesData => ({
   turns: [],
@@ -167,8 +164,14 @@ describe("a file opened", () => {
   it("lists the calls that touched it, the last opened, each with what it did", () => {
     const f = file("/home/u/app/a.ts", ["read", "edit"], {
       sources: [
-        { via: "Read a.ts", kinds: ["read"], blocks: [{ t: "lines", start: 1, lines: ["one", "two"] }] },
-        { via: "Edit a.ts", kinds: ["edit"], blocks: [{ t: "diff", at: 2, old: ["two"], new: ["2"] }], checked: true },
+        sourceOf({ via: "Read a.ts", kinds: ["read"], blocks: [{ t: "lines", start: 1, lines: ["one", "two"] }] }),
+        sourceOf({
+          via: "Edit a.ts",
+          kind: "edit",
+          kinds: ["edit"],
+          blocks: [{ t: "diff", at: 2, old: ["two"], new: ["2"] }],
+          checked: true,
+        }),
       ],
     });
     const { container } = render(

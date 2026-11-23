@@ -8,18 +8,15 @@ vi.hoisted(() => {
 import { setLayoutPage, type LayoutPage } from "./link";
 import { closePop, openPop, popClosed } from "./popups";
 import { startPops } from "./Pops";
+import { actorOf, gathererOf, homeOf } from "../../core/api/testing";
 import { railNewBox } from "./StartBoxes";
 import type { Gatherer, PageState } from "./types";
 
-const g: Gatherer = {
-  name: "g",
-  agents: [
-    { channel: "a", cwd: "/h/one", last: 2 },
-    { channel: "b", cwd: "/h/two", last: 1 },
-  ],
-};
+const g: Gatherer = gathererOf("g", {
+  agents: [actorOf("a", { cwd: "/h/one", last: 2 }), actorOf("b", { cwd: "/h/two", last: 1 })],
+});
 const state: PageState = {
-  home: { gatherers: [g], harnesses: ["h1", "h2"], home_dir: "/h", cwd: "/h/dash" },
+  home: homeOf({ gatherers: [g], harnesses: ["h1", "h2"], home_dir: "/h", cwd: "/h/dash" }),
   selected: null,
   starting: null,
   adding: null,

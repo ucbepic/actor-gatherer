@@ -13,7 +13,8 @@ import tseslint from "typescript-eslint";
 // feature's own code, as its view is rewritten (A5, A6). None is over max-lines any more.
 
 export default tseslint.config(
-  { ignores: ["node_modules/", "test-results/", "playwright-report/"] },
+  // (src/core/api/types.gen.ts: generated from the server's schema by scripts/gen-types.mjs, over max-lines by far)
+  { ignores: ["node_modules/", "test-results/", "playwright-report/", "src/core/api/types.gen.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ["src/**/*.{ts,tsx}"], ...reactHooks.configs.flat["recommended-latest"] },

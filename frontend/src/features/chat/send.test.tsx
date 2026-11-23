@@ -4,6 +4,7 @@
 // or a message is on its way. And the line under the box (SendError.tsx), the header's controls (Controls.tsx).
 import { act, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { actorOf, sessionOf } from "../../core/api/testing";
 import { chatOf, useActors, viewTaken } from "./actors";
 import { drawControls, type ControlsProps } from "./Controls";
 import { drafts, keepDraft } from "./drafts";
@@ -22,7 +23,7 @@ let calls: string[];
 
 const from = (
   over: Partial<SendFrom> = {},
-  info: Actor = { channel: "c", session: { session_id: "s1" } },
+  info: Actor = actorOf("c", { session: sessionOf({ session_id: "s1" }) }),
 ): SendFrom => ({
   info,
   held: false,
@@ -68,7 +69,7 @@ describe("a send", () => {
   });
 
   it("starts an actor with no session by its gatherer and channel", async () => {
-    await send(A, "hi", from({}, { channel: "c" }));
+    await send(A, "hi", from({}, actorOf("c")));
     expect(posted[0][1]).toMatchObject({ gatherer: "g", channel: "c", text: "hi" });
   });
 

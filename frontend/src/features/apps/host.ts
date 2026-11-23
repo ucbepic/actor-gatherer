@@ -6,6 +6,7 @@
 // the theme, the agent in focus, an intent) comes back the same way. The layout (src/features/layout/app-panels.ts) keeps the
 // pane among its others, as it keeps an actor's.
 import { get, post } from "../../core/api/client";
+import type { AppListed, Apps, Instance } from "../../core/api/types";
 import { glyph } from "../../core/ui/glyphs";
 import { stream, type Stream } from "../../core/api/stream";
 import "./apps.css";
@@ -13,53 +14,18 @@ import { desktop, nativePanes, nativeSoon, stillDrawn, type NativePlace } from "
 import { ACTOR_OPS, toActors } from "./actors";
 import { NOTICE_OPS, toNotices } from "./notices";
 import { SPELLING_OPS, spellingOn, toSpelling } from "./spelling";
-import type { LinkForm } from "./links";
 import { THEME_VARS } from "./theme-vars";
 import type { AgInfo, AgTheme } from "../../../../app_kit/js/app";
 
-type Capability =
-  "message_agents" | "transcript" | "edit_guard" | "native_view" | "docs" | "actors" | "notify" | "message_actors";
-export interface AppInfo {
-  name: string;
-  label: string;
-  description: string;
-  origin: string;
-  instances: string;
-  offer?: string;
-  /** who may use its instances: "task" (the agents in its task) or "group" (every agent of its group) */
-  access?: string;
-  /** what adding it to an actor or a task does (ag_dashboard/app_policy.py, as the user chose it): "join", put in the
-   * task; "folder", opened at the actor's directory, shown with the task, not put in it; "no", not offered */
-  on_task?: "join" | "folder" | "no";
-  agent?: { offered: boolean; name: string };
-  /** opened from a menu, it starts with an agent of its own (the Apps page's choice: app_settings.py) */
-  opens_with_agent?: boolean;
-  capabilities?: Partial<Record<Capability, boolean>>;
-  tools?: { name: string; handled_by: string }[];
-  handles: { intent: string; types: string[] }[];
-  /** The paths of `ag://<name>/...` links its panel opens (app_kit/links.py). */
-  links?: LinkForm[];
-  failed?: string | null;
-}
-export interface Instance {
-  id: string;
-  app: string;
-  gatherer: string;
-  folder: string | null;
-  title: string;
-  data: Record<string, unknown>;
-  /** The user's name for it, over its title ("": none). */
-  name?: string;
-}
+/** An app found, as the host lists it (/api/apps), and its open instance: as generated from the server's schema
+ * (core/api/types.ts). */
+export type AppInfo = AppListed;
+export type { Instance } from "../../core/api/types";
 export interface Selection {
   gatherer: string;
   channel: string;
 }
-interface Listed {
-  apps: AppInfo[];
-  instances: Instance[];
-  attached: Record<string, string[]>;
-}
+type Listed = Apps;
 /** What the page around a pane gives it. */
 export interface PaneHooks {
   close: () => void;
@@ -108,14 +74,14 @@ export interface AgentState {
 }
 type Msg = Record<string, unknown> & { ag?: number; id?: number; op?: string };
 
-let listed: Listed = { apps: [], instances: [], attached: {} };
+let listed: Listed = { apps: [], broken: [], instances: [], attached: {} };
 
 /** The apps found, read again (the gatherer's instances too, given one). */
 export async function load(gatherer?: string): Promise<AppInfo[]> {
   try {
     listed = await get<Listed>("/api/apps" + (gatherer ? `?gatherer=${encodeURIComponent(gatherer)}` : ""));
   } catch {
-    listed = { apps: [], instances: [], attached: {} };
+    listed = { apps: [], broken: [], instances: [], attached: {} };
   }
   return listed.apps;
 }

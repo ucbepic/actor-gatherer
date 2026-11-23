@@ -9,18 +9,8 @@ import type { Actor, AppItem, AppManifest, Folder, Gatherer, ListHome, Shell } f
 /** An actor's place: its gatherer and channel. */
 export type At = [string, string];
 
-/** The home as the page has it: the list's, and what else of it the list reads. */
-export interface PageHome extends ListHome {
-  home_dir?: string;
-  cwd?: string;
-  hook_servers?: { port: number; upstream: string }[];
-  harnesses?: string[];
-  app_requests?: unknown[];
-  /** each app instance's group (the server's app host's) */
-  app_groups?: Record<string, string>;
-  /** when the reader last looked at each item, by group and item (seen.py); null: none kept yet */
-  seen?: Record<string, Record<string, number>> | null;
-}
+/** The home as the page has it: the list's (the server's, or a snapshot's). */
+export type PageHome = ListHome;
 
 /** What the page started, and is starting: its gatherer, harness, and (a coordinator agent) its node. */
 export interface Starting {
@@ -194,9 +184,9 @@ export interface ListPage {
     hideIcon(): Node;
     strokeIcon(d: string, size?: number): SVGElement;
     harnessBadge(h: string): Node;
-    harnessLogo(h: string | undefined): Node;
-    harnessInfo(h: string | undefined): unknown;
-    harnessName(h: string | undefined): string;
+    harnessLogo(h: string | null | undefined): Node;
+    harnessInfo(h: string | null | undefined): unknown;
+    harnessName(h: string | null | undefined): string;
     shellPath(s: Shell): string;
   };
   /** core/page/code.js */

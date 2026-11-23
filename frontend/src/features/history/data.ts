@@ -6,6 +6,15 @@
 // build runs, the outline is looked at again every few seconds, its tasks coming in when it is done -- and what the
 // model makes, every two while it is being made.
 import { get, post } from "../../core/api/client";
+import {
+  failed,
+  type Event,
+  type Extract,
+  type Failed,
+  type History,
+  type Outline as Got,
+  type Search,
+} from "../../core/api/types";
 import { queryClient } from "../../core/api/query";
 import { full } from "../../core/format";
 import { str, wordless } from "../../core/model/items";
@@ -51,14 +60,6 @@ export function loadOutline(actor: string | null): Promise<void> {
   return loading;
 }
 
-interface Got {
-  events: OutlineEvent[];
-  tasks: Outline["tasks"];
-  builds?: Outline["builds"];
-  more: boolean;
-  error?: string;
-}
-
 async function loadNow(actor: string | null): Promise<void> {
   if (!actor || window.AG_SNAPSHOT) return;
   const { group: g, id: c } = parse(actor);
@@ -75,13 +76,13 @@ async function loadNow(actor: string | null): Promise<void> {
     loaded: false,
   };
   for (let page = 0; page < PAGES; page++) {
-    let got: Got;
+    let got: Got | Failed;
     try {
-      got = await get<Got>(`/api/outline?gatherer=${enc(g)}&channel=${enc(c)}&after=${h.last}`);
+      got = await get<Got | Failed>(`/api/outline?gatherer=${enc(g)}&channel=${enc(c)}&after=${h.last}`);
     } catch (err) {
-      got = { error: `Not loaded: ${(err as Error).message}` } as Got;
+      got = { error: `Not loaded: ${(err as Error).message}` };
     }
-    if (got.error) {
+    if (failed(got)) {
       h = { ...h, error: got.error };
       break;
     }
@@ -135,24 +136,7 @@ function pollBuild(actor: string) {
 }
 
 /** What the Gatherer's model made of the gatherer's history, newest first (history.py's extracts). */
-export interface Rec {
-  id: string;
-  gatherer: string;
-  kind: string;
-  status: string;
-  output: string;
-  error?: string | null;
-  model?: string | null;
-  created: number;
-  rows: [number, number][];
-  channels: string[];
-  ask?: string | null;
-  messages: number;
-  turns: number;
-  dirs?: string[];
-  memories?: { name: string; title: string; type: string; description: string; body: string }[];
-  saved?: { at: number; paths: string[] }[];
-}
+export type Rec = Extract;
 
 export const extractsKey = (gatherer: string) => ["extracts", gatherer] as const;
 
@@ -187,7 +171,7 @@ export const setExtracts = (gatherer: string, change: (list: Rec[]) => Rec[]) =>
   queryClient.setQueryData<Rec[]>(extractsKey(gatherer), (list) => change(list || []));
 
 /** A tool call opened, as its input reads: its tool, then its command (a shell's), else its fields one by one. */
-export function callInput(p: { name?: string; input?: unknown }): string {
+export function callInput(p: { name?: string | null; input?: unknown }): string {
   const inp = p.input;
   if (!inp || typeof inp !== "object") return [p.name, str(inp)].filter(Boolean).join("\n\n");
   const o = inp as Record<string, unknown>;
@@ -207,20 +191,18 @@ export const fullTextKey = (gatherer: string, e: OutlineEvent) =>
 export async function fetchFullText(gatherer: string, e: OutlineEvent): Promise<string> {
   try {
     if (e.type === "tool_call") {
-      const got = await get<{ parts?: { kind: string; name?: string; input?: unknown }[] }>(
-        `/api/event?gatherer=${enc(gatherer)}&row_id=${e.row_id}`,
-      );
+      const got = await get<Event | Failed>(`/api/event?gatherer=${enc(gatherer)}&row_id=${e.row_id}`);
       return (
-        (got.parts || [])
+        (failed(got) ? [] : got.parts)
           .filter((p) => p.kind === "call")
           .map(callInput)
           .join("\n\n") || "(no input)"
       );
     }
-    const got = await get<{ items?: { name: string; text: string; clipped?: number }[] }>(
+    const got = await get<History | Failed>(
       `/api/history?gatherer=${enc(gatherer)}&channel=${enc(e.channel)}&from=${e.row_id}&to=${e.row_id}`,
     );
-    const it = got.items && got.items[0];
+    const it = failed(got) ? undefined : got.items[0];
     return it
       ? (it.text || `(${wordless(it)})`) + (it.clipped ? `\n… ${full(it.clipped)} more characters not shown` : "")
       : "(not found)";
@@ -236,11 +218,13 @@ export interface Hits {
 }
 
 export async function fetchHits(h: Pick<Outline, "gatherer" | "channel">, q: string): Promise<Hits> {
-  let got: { hits?: { row_id: number; snippet: string }[]; more?: boolean };
+  let got: Search | Failed;
   try {
     got = await get(`/api/search?gatherer=${enc(h.gatherer)}&channel=${enc(h.channel)}&q=${enc(q)}`);
   } catch {
     got = { hits: [], more: false };
   }
-  return { hits: new Map((got.hits || []).map((x) => [x.row_id, x.snippet])), more: !!got.more };
+  return failed(got)
+    ? { hits: new Map(), more: false }
+    : { hits: new Map(got.hits.map((x) => [x.row_id, x.snippet])), more: got.more };
 }

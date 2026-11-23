@@ -4,6 +4,7 @@
 import { act } from "@testing-library/react";
 import { change } from "./actors";
 import { drawChat } from "./mount";
+import { actorOf, currentOf, gathererOf, homeOf, replyOf, sessionOf, turnOf } from "../../core/api/testing";
 import { sizesForTests } from "../../core/ui/lists";
 import type { Actor, ChatFeed, ChatHost, ChatView, Current, Envelope, PageFeed, Turn } from "./types";
 
@@ -70,34 +71,30 @@ export function testHost(): TestHost {
 }
 
 /** A turn: the user's message, the agent's answer. */
-export const turn = (n: number, over: Partial<Turn> = {}): Turn => ({
-  n,
-  row_id: 100 + n,
-  at: AT + n * 60,
-  end: AT + n * 60 + 5,
-  text: `Ask ${n}`,
-  kind: "user",
-  replies: [{ kind: "text", text: `Answer ${n}` }],
-  calls: 0,
-  ...over,
-});
+export const turn = (n: number, over: Partial<Turn> = {}): Turn =>
+  turnOf(n, {
+    row_id: 100 + n,
+    at: AT + n * 60,
+    end: AT + n * 60 + 5,
+    text: `Ask ${n}`,
+    replies: [replyOf({ kind: "text", text: `Answer ${n}` })],
+    ...over,
+  });
 
 /** The server's view of a conversation of `turns` (chat_view.py's): its latest turn done, unless `over` says otherwise. */
 export const chatView = (turns: Turn[], over: Partial<ChatView> = {}): ChatView => ({
   turns,
   opening: null,
-  current: turns.length ? { state: "done", turn: turns.length - 1 } : { state: "idle", turn: null },
+  current: turns.length ? currentOf({ state: "done", turn: turns.length - 1 }) : currentOf(),
   waiting: [],
   taken_back: null,
+  version: [],
   ...over,
 });
 
 /** The latest of `turns` in `state` (and what else `over` says of it). */
-export const now = (turns: Turn[], state: Current["state"], over: Partial<Current> = {}): Current => ({
-  state,
-  turn: turns.length ? turns.length - 1 : null,
-  ...over,
-});
+export const now = (turns: Turn[], state: Current["state"], over: Partial<Current> = {}): Current =>
+  currentOf({ state, turn: turns.length ? turns.length - 1 : null, ...over });
 
 /** A feed's turns, as the page's files feed and the server's view both have them: the latest shown. */
 export const withTurns = (turns: Turn[], over: Partial<ChatView> = {}): Partial<ChatFeed> => ({
@@ -105,16 +102,15 @@ export const withTurns = (turns: Turn[], over: Partial<ChatView> = {}): Partial<
   view: chatView(turns, over),
 });
 
-export const ACTOR: Actor = {
-  channel: "c1",
+export const ACTOR: Actor = actorOf("c1", {
   harness: "h1",
   status: "idle",
   last: AT + 3000,
   avatar: "animal/fox",
   avatar_hue: "red",
   avatar_hello: "Hi, I'm Fox.\nReady when you are.",
-  session: { status: "terminal" },
-};
+  session: sessionOf({ status: "terminal" }),
+});
 
 let actors = 0;
 
@@ -160,7 +156,7 @@ export function testPage(turns: Turn[], over: PageFeedOver = {}) {
     gatherer: "g",
     files: {},
     data: { turns, turn: turns.length ? turns.length - 1 : null, files: [], commands: [], home: "/home/u" },
-    home: { home: "/h", now: AT, gatherers: [{ name: "g", agents: [info] }], harness_info: {} },
+    home: homeOf({ now: AT, gatherers: [gathererOf("g", { agents: [info] })] }),
     session: { status: "terminal" },
     view: chatView(turns),
     writable: true,
@@ -187,5 +183,5 @@ type PageFeedOver = Partial<PageFeed> & Own;
 const terminalOf = (info: Actor): Actor => ({
   ...info,
   status: "running",
-  session: { ...info.session, session_id: "s", terminal: true },
+  session: sessionOf({ ...info.session, session_id: "s", terminal: true }),
 });

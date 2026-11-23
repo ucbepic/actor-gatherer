@@ -96,7 +96,7 @@ type StageBox = HTMLSpanElement & { agLeft?: number };
 const shown = new Map<string, Shown | Rested>();
 
 /** Actor `a` at work, `w` its turn's work (work.py's summary), `src` its bare picture: its stage, drawn now. */
-function drawStage(a: PageActor, w: Work, src: string): StageBox {
+function drawStage(a: PageActor, w: Partial<Work>, src: string): StageBox {
   const ch = a.channel;
   const e = w.ended,
     gone = reaction(`${ch} call`, e ? e.id : null, e && e.at);

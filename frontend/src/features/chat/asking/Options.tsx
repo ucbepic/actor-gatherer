@@ -3,7 +3,7 @@
 // screen shows, as it shows it.
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
-import type { Ask } from "./ask";
+import type { Ask, AskOption } from "./ask";
 import { pick, type, type Draft } from "./answers";
 
 /** A box for words of the reader's own (an answer, a change, what to do instead): Enter does `onEnter`. */
@@ -40,7 +40,7 @@ export function Own({
 }
 
 /** An option's words: its label, and what it means where that says more. */
-const optionBody = (o: { label?: string; description?: string }) => (
+const optionBody = (o: AskOption) => (
   <>
     <span className="lbl">{o.label || ""}</span>
     {o.description && o.description !== o.label ? <span className="odesc">{o.description}</span> : null}

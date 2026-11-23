@@ -1,10 +1,12 @@
 // An actor on a branch (branch-model.ts): what a folder has checked out, where a branch goes, its changes waiting, a
 // source's name, where sources are suggested from.
 import { describe, expect, it } from "vitest";
+import { actorOf } from "../../core/api/testing";
 import { actorDirs, branchOf, branchRoute, branchWaiting, checkedOut, projectName } from "./branch-model";
-import type { Branch } from "./types";
+import type { Branch, Project } from "./types";
 
 const branch: Branch = {
+  session_id: "c1",
   gatherer: "g",
   channel: "c1",
   branch: "ag/c1",
@@ -13,8 +15,20 @@ const branch: Branch = {
   started_on: "main",
   start: "abcdef123456",
   onto: { head: "abc1234", branch: "main" },
-  held: { "a.tex": { n: 2 }, "b.tex": { n: 1 } },
+  approve: false,
+  held: { "a.tex": { n: 2, kind: "lines" }, "b.tex": { n: 1, kind: "lines" } },
 };
+/** A source to branch from, at a folder: no remote unless given. */
+const project = (path: string, name: string, more: Partial<Project> = {}): Project => ({
+  path,
+  name,
+  remote: null,
+  github: null,
+  exists: true,
+  branch: "main",
+  head: "abc1234",
+  ...more,
+});
 
 describe("branch-model", () => {
   it("finds an actor's branch and counts its changes waiting", () => {
@@ -35,15 +49,15 @@ describe("branch-model", () => {
     expect(branchRoute({ ...branch, approve: true }, "/h")).toContain("(on main) after you approve each change.");
   });
   it("names a source by its GitHub repository, else its folder's name", () => {
-    expect(projectName({ path: "/h/repo", name: "repo", github: "o/repo" })).toBe("o/repo");
-    expect(projectName({ path: "/h/repo", name: "repo" })).toBe("repo");
+    expect(projectName(project("/h/repo", "repo", { github: "o/repo" }))).toBe("o/repo");
+    expect(projectName(project("/h/repo", "repo"))).toBe("repo");
   });
   it("suggests sources from where the actors work, latest first, then the dashboard's own folder", () => {
     const g = {
       agents: [
-        { channel: "a", cwd: "/w/a", last: 1 },
-        { channel: "b", cwd: "/w/b", last: 2 },
-        { channel: "c", last: 3 },
+        actorOf("a", { cwd: "/w/a", last: 1 }),
+        actorOf("b", { cwd: "/w/b", last: 2 }),
+        actorOf("c", { last: 3 }),
       ],
     };
     expect(actorDirs(g, "/w/dash")).toEqual(["/w/b", "/w/a", "/w/dash"]);

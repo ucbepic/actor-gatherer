@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from starlette.responses import Response
 
 from .. import monitor
+from ..models import Monitor
 from .common import Errors, answer
 
 router = APIRouter(route_class=Errors)
@@ -27,7 +28,7 @@ def listed(raw: Optional[str]) -> list:
     return out
 
 
-@router.get("/api/monitor")
+@router.get("/api/monitor", response_model=Monitor)
 def the_monitor(actors: Optional[str] = None) -> Response:
     """?actors=[[G, C, D], ...]: monitor.actors, what each is doing, its latest turn -> {actors}."""
     return answer({"actors": monitor.actors(listed(actors))})

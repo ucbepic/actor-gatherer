@@ -50,7 +50,7 @@ describe("the rail", () => {
       },
     },
     saved: { g: { kept: "2026-01-01" } },
-    tasks: { g: { tasks: [{ id: 9 }], tasked: { t1: 9, t2: 9 } } },
+    tasks: { g: { tasks: [{ id: 9, name: null }], tasked: { t1: 9, t2: 9 } } },
   };
   const apps = { g: [app("g", "i1")] };
 

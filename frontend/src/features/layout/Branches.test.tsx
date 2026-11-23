@@ -6,13 +6,14 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.hoisted(() => {
   globalThis.matchMedia ??= (() => ({ matches: false, addEventListener() {} })) as unknown as typeof matchMedia;
 });
+import { actorOf, gathererOf, homeOf } from "../../core/api/testing";
 import { brMenuClose, brMenuOpenFor, openBranchMenu } from "./Branches";
 import { setLayoutPage, type LayoutPage } from "./link";
 import type { Gatherer, PageState } from "./types";
 
-const g: Gatherer = { name: "g", agents: [{ channel: "a", cwd: "/h/repo", last: 1 }] };
+const g: Gatherer = gathererOf("g", { agents: [actorOf("a", { cwd: "/h/repo", last: 1 })] });
 const state: PageState = {
-  home: { gatherers: [g], harnesses: ["h1"], home_dir: "/h", cwd: "/h/dash" },
+  home: homeOf({ gatherers: [g], harnesses: ["h1"], home_dir: "/h", cwd: "/h/dash" }),
   selected: null,
   starting: null,
   adding: null,

@@ -4,6 +4,16 @@
 // (mount.tsx): one node by what it is for, the card's box itself.
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  actorOf,
+  askOf,
+  failingOf,
+  harnessInfoOf,
+  homeOf,
+  optionOf,
+  questionOf,
+  sessionOf,
+} from "../../../core/api/testing";
 import type { Home } from "../../../core/api/types";
 import type { Actor } from "../types";
 import type { Ask } from "./ask";
@@ -12,24 +22,23 @@ import { Cards, type CardsHost } from "./Cards";
 import { drawCards } from "./mount";
 
 const AT = 1790874000;
-const home: Home = {
-  home: "/h",
+const home: Home = homeOf({
   now: AT,
-  gatherers: [],
   harness_info: {
-    h1: {
+    h1: harnessInfoOf({
       label: "Harness One",
       ask_says: {
         plan_verb: "review",
         plan_choices: [
-          { id: "yes", label: "Yes, go", primary: true },
-          { id: "no", label: "No" },
+          { id: "yes", label: "Yes, go", title: null, primary: true },
+          { id: "no", label: "No", title: null, primary: false },
         ],
-        plan_change: { label: "Or say what to change" },
+        plan_change: { label: "Or say what to change", title: null },
+        own_answer: "Or type your own answer",
       },
-    },
+    }),
   },
-};
+});
 
 let posted: [string, unknown][];
 let host: CardsHost & { views: string[] };
@@ -58,20 +67,25 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const actor = (over: Partial<Actor>): Actor => ({
-  channel: "c1",
-  harness: "h1",
-  status: "asking",
-  session: { session_id: "s1", terminal: true, status: "terminal" },
-  ...over,
-});
-const asking = (ask: Ask, over: Partial<Actor> = {}) => actor({ asking: { at: AT, harness: "h1", ...ask }, ...over });
+const actor = (over: Partial<Actor>): Actor =>
+  actorOf("c1", {
+    harness: "h1",
+    status: "asking",
+    session: sessionOf({ session_id: "s1", terminal: true, status: "terminal" }),
+    ...over,
+  });
+const asking = (ask: Partial<Ask>, over: Partial<Actor> = {}) =>
+  actor({ asking: askOf({ at: AT, harness: "h1", ...ask }), ...over });
 const show = (info: Actor, answerable = true) =>
   render(<Cards info={info} home={home} answerable={answerable} snapshot={false} terminalView host={host} />);
 const settle = () => act(async () => {});
 
-const FRUIT = { question: "Which fruit?", header: "Fruit", options: [{ label: "Apple" }, { label: "Pear" }] };
-const COLOURS = { question: "Which colours?", multiSelect: true, options: [{ label: "Red" }, { label: "Green" }] };
+const FRUIT = questionOf({ question: "Which fruit?", header: "Fruit", options: [optionOf("Apple"), optionOf("Pear")] });
+const COLOURS = questionOf({
+  question: "Which colours?",
+  multiSelect: true,
+  options: [optionOf("Red"), optionOf("Green")],
+});
 
 describe("a question", () => {
   it("is answered here, one option picked or words of the reader's own, and sent as the server takes it", async () => {
@@ -112,7 +126,7 @@ describe("a question", () => {
     expect(screen.queryByRole("radio")).toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Answer it in Chat or in the terminal.");
     unmount();
-    show(asking({ kind: "question", call: "q3", questions: [FRUIT] }, { session: { terminal: false } }));
+    show(asking({ kind: "question", call: "q3", questions: [FRUIT] }, { session: sessionOf({ terminal: false }) }));
     expect(screen.getByRole("status").textContent).toBe("Answer it in the terminal that runs the session.");
   });
 
@@ -120,7 +134,10 @@ describe("a question", () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout"] });
     vi.setSystemTime(AT * 1000 + 5000);
     show(
-      asking({ kind: "question", call: "q4", questions: [FRUIT] }, { answer: { call: "q4", at: AT, summary: "Pear" } }),
+      asking(
+        { kind: "question", call: "q4", questions: [FRUIT] },
+        { answer: { call: "q4", at: AT, summary: "Pear", result: null, recorded: null } },
+      ),
     );
     expect(screen.getByRole("status").textContent).toBe("Typing your answer into the terminal: Pear");
     act(() => {
@@ -141,7 +158,7 @@ describe("a question", () => {
 
 describe("a permission, a plan, a dialog", () => {
   it("allows a call, or denies it with what to do instead", async () => {
-    const ask: Ask = { kind: "permission", id: "p1", call: "c9", tool: "Bash" };
+    const ask: Partial<Ask> = { kind: "permission", id: "p1", call: "c9", tool: "Bash" };
     show(asking(ask));
     expect(screen.getByRole("group").getAttribute("aria-label")).toBe(
       "Waiting for you: Harness One asks to run a command",
@@ -174,7 +191,7 @@ describe("a permission, a plan, a dialog", () => {
 describe("the call the turn stopped on, and an answer recorded otherwise", () => {
   it("says why the model call failed, what it likely means, and what comes next", () => {
     const { container, rerender } = show(
-      actor({ status: "running", failing: { at: AT, first: AT, attempts: 1, error: "Connection refused" } }),
+      actor({ status: "running", failing: failingOf({ at: AT, first: AT, attempts: 1, error: "Connection refused" }) }),
     );
     const card = container.querySelector(".asking-note")!;
     expect(card.className).toBe("asking-note error-note retrying");
@@ -183,7 +200,7 @@ describe("the call the turn stopped on, and an answer recorded otherwise", () =>
     expect(card.textContent).toContain("Harness One will try again.");
     rerender(
       <Cards
-        info={actor({ status: "error", stopped: { at: AT, text: "gave up" } })}
+        info={actor({ status: "error", stopped: { kind: "error", at: AT, text: "gave up" } })}
         home={home}
         answerable
         snapshot={false}

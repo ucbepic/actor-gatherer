@@ -8,9 +8,11 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter
+from sse_starlette import EventSourceResponse
 from starlette.responses import Response
 
 from .. import chat_view, data, server
+from ..models import Stream
 from .common import KEEPALIVE_EVENT, Errors, Events, Parts, blocking, event
 
 router = APIRouter(route_class=Errors)
@@ -38,7 +40,8 @@ def signature(value) -> str:
     return json.dumps(value, sort_keys=True, default=str)
 
 
-@router.get("/api/stream")
+@router.get("/api/stream", response_model=Stream, response_class=EventSourceResponse,  # the schema's: each event's
+            responses={200: {"content": {"text/event-stream": {"schema": {"$ref": "#/components/schemas/Stream"}}}}})   # data
 def stream(srv: Parts, gatherer: Optional[str] = None, channel: Optional[str] = None,
            also: Optional[str] = None) -> Response:
     """Server-sent events, until the page goes: `home` (data.home()) and, with `gatherer` and `channel`, `agent`

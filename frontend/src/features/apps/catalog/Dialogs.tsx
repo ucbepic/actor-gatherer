@@ -71,7 +71,7 @@ function Body({ dialog }: { dialog: Dialog }) {
       return (
         <>
           <Lead app={a} title={`Install ${a.label}?`} sub={fromLine(a)} />
-          <p>{said.sentence(a.description)}</p>
+          <p>{said.sentence(a.description ?? "")}</p>
           <ItCan app={a} />
           {a.data?.there ? (
             <p className="ap-sub">

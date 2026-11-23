@@ -100,7 +100,7 @@ const STOPPED_ANY: StoppedSays = { lead: "⎿", interrupted: "Interrupted", erro
 export function stoppedLine(
   home: Home | null,
   info: Actor,
-  t: Turn,
+  t: Pick<Turn, "stopped">,
   latest: boolean,
 ): { cls: string; lead: string; said: string } | null {
   const s = t.stopped;
@@ -116,7 +116,7 @@ export function stoppedLine(
   return { cls: "fl-stopped" + (red ? " error" : ""), lead: says.lead, said };
 }
 
-export function StoppedLine({ t, latest }: { t: Turn; latest: boolean }) {
+export function StoppedLine({ t, latest }: { t: Pick<Turn, "n" | "text" | "stopped">; latest: boolean }) {
   const { feed } = useChat();
   const line = stoppedLine(feed.home, feed.info, t, latest);
   if (!line) return null;

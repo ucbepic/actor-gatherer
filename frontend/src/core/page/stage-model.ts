@@ -37,7 +37,7 @@ export function reactionIn(
 /** How a call that just ended went, as the stage shows it: a test passed or failed, a commit shipped, another failure;
  * null for none to show (`gone` null: no reaction now). */
 export type React = "pass" | "tfail" | "ship" | "fail";
-export function reactOf(ended: Work["ended"], gone: number | null): React | null {
+export function reactOf(ended: Work["ended"] | undefined, gone: number | null): React | null {
   if (gone === null || !ended) return null;
   if (!ended.ok) return ended.kind === "test" ? "tfail" : "fail";
   return ended.kind === "test" ? "pass" : ended.kind === "ship" ? "ship" : null;
@@ -98,7 +98,7 @@ export interface Step {
 
 /** The stage at `t0`, from what it showed before (`was`: none, first seen; a turn over, it arrives) and the actor's work
  * `w` and reaction `react`: what it shows now, and what it showed made so (`sh`, the same object when there was one). */
-export function stageStep(was: Shown | Rested | undefined, w: Work, react: React | null, t0: number): Step {
+export function stageStep(was: Shown | Rested | undefined, w: Partial<Work>, react: React | null, t0: number): Step {
   const musing = !w.doing;
   let sh = was as Shown | undefined;
   if (!sh || sh.done) {

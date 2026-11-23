@@ -2,138 +2,34 @@
 // shown and the start boxes read it, the page's state, and the records the page keeps of its panes and the apps' panels.
 // Declared here, not imported, as a feature's TypeScript may import only core/ and its own folder (ag_dashboard/
 // DESIGN.md's Rules); what fills them is handed over through link.ts.
-import type { Pane as PagePane } from "../../core/page/types";
+import type { AppListed, Folders, Instance } from "../../core/api/types";
+import type { PageActor, PageGatherer, PageHome as Home, Pane as PagePane } from "../../core/page/types";
 
 /** An actor's place: its gatherer and channel. */
 export type At = [string, string];
 /** A status as the list says it: [its class, its word] ("running", "Running"). */
 export type Status = readonly [cls: string, label: string];
 
-/** A session the page started or keeps (sessions.py's), as the layout reads it. */
-export interface Session {
-  session_id?: string;
-  started_as?: string;
-  terminal?: unknown;
-  cwd?: string;
-  role?: string | null;
-}
+// What the server sends of the home, as generated from its schema (core/api/types.ts) and as the page has it
+// (core/page/types.ts): a session, what an actor asks, a gatherer, a shell, folders, tasks, a branch, a project.
+export type { Ask as Asking, Branch, CheckedOut, Folder, Project, Tasks } from "../../core/api/types";
+export type { PageSession as Session, PageShell as Shell } from "../../core/page/types";
+/** A gatherer's folders, and where each item is filed (folders.py's tree). */
+export type FolderTree = Folders;
 
-/** What an actor waits on the reader for (data.py's `asking`), as far as the layout reads it (a panel is told the rest as
- * it is). */
-export interface Asking {
-  kind?: string;
-  id?: string;
-  call?: string;
-  at?: number;
-  /** asked as it goes on working */
-  async?: boolean;
-}
+/** An actor of a gatherer, as the home has it (core/page/types.ts) -- and, read by app-hooks.ts, fields the server does
+ * not send (always absent): kept so it reads them as it did. */
+export type Actor = PageActor & { closed?: boolean; started_as?: string; asked_of?: unknown };
 
-/** An actor of a gatherer (data.py's), as the layout reads it. */
-export interface Actor {
-  channel: string;
-  name?: { text?: string } | null;
-  last_user_message?: string | null;
-  avatar?: string | null;
-  avatar_hue?: string | null;
-  harness?: string | null;
-  cwd?: string | null;
-  last?: number | null;
-  status?: string;
-  closed?: boolean;
-  role?: string | null;
-  over?: string | null;
-  turn_over?: boolean;
-  asking?: Asking | null;
-  asked_of?: unknown;
-  recap?: { text?: string; at?: number } | null;
-  /** its model's calls failing, retried; how its last turn stopped */
-  failing?: { error?: string; attempts?: number; at?: number } | null;
-  stopped?: { text?: string; at?: number } | null;
-  started_as?: string;
-  session?: Session | null;
-}
+/** A gatherer, or group (data.py's), with its actors as the layout reads them. */
+export type Gatherer = Omit<PageGatherer, "agents"> & { agents: Actor[] };
 
-/** A gatherer, or group (data.py's). */
-export interface Gatherer {
-  name: string;
-  agents: Actor[];
-  /** an actor on its own: a group of one */
-  alone?: boolean;
-  last?: number | null;
-}
+/** The home as the page has it (core/page/types.ts), its gatherers' actors as the layout reads them. */
+export type PageHome = Omit<Home, "gatherers"> & { gatherers: Gatherer[] };
 
 /** Actors to pick a folder from: a gatherer, or every actor of every group (the list's everyActor). */
 export interface Actors {
   agents: Actor[];
-}
-
-/** A shell (sessions.py's `shell`), listed under its gatherer. */
-export interface Shell {
-  id: string;
-  gatherer: string;
-  cwd: string;
-}
-
-/** A folder of a gatherer's tree (folders.py's). */
-export interface Folder {
-  id: number;
-  parent: number | null;
-  name: string;
-  closed?: string | null;
-}
-
-/** A gatherer's folders, and where each item is filed (folders.py's tree). */
-export interface FolderTree {
-  folders: Folder[];
-  filed: Record<string, number>;
-}
-
-/** A gatherer's tasks (tasks.py's): its tasks, and the task each item is in. */
-export interface Tasks {
-  tasks: { id: number }[];
-  tasked: Record<string, number>;
-}
-
-/** An actor's branch of its own (branches.py's), as the list shows it. */
-export interface Branch {
-  gatherer: string;
-  channel: string;
-  branch: string;
-  worktree: string;
-  project: string;
-  started_on?: string | null;
-  start?: string | null;
-  onto?: CheckedOut | null;
-  approve?: boolean;
-  held?: Record<string, { n: number }>;
-}
-/** What a folder has checked out (branches.py's `checked_out`): its branch, or its commit alone. */
-export interface CheckedOut {
-  head?: string | null;
-  branch?: string | null;
-}
-/** A gatherer's source to branch from (branches.py's projects), or a repository its actors work in. */
-export interface Project extends CheckedOut {
-  path: string;
-  name?: string;
-  github?: string | null;
-  remote?: string | null;
-}
-
-/** The home, as the layout reads it. */
-export interface PageHome {
-  gatherers: Gatherer[];
-  shells?: Shell[];
-  home_dir?: string;
-  cwd?: string;
-  harnesses?: string[];
-  /** false: no terminals here (the home's config) */
-  terminals?: boolean;
-  /** groups merged into folders: an actor can start on its own */
-  merged?: boolean;
-  tasks?: Record<string, Tasks>;
-  branches?: Branch[];
 }
 
 /** What the page is starting: its gatherer, harness, and (a coordinator agent) its node. */
@@ -172,34 +68,12 @@ export interface OtherPane extends Pane {
   c: string;
 }
 
-/** An app as its manifest says (the app host's), as the layout reads it. */
-export interface AppManifest {
-  name: string;
-  label: string;
-  description?: string;
-  mark?: unknown;
-  instances?: string;
-  agent?: { offered: boolean } | null;
-  opens_with_agent?: boolean;
-  tools?: { handled_by: string }[];
-  links?: AppLinkForm[];
-  failed?: string | null;
-}
-/** A path of `ag://<app>/...` links an app opens (app_kit/links.py's). */
-export interface AppLinkForm {
-  form: string;
-  paths?: boolean;
-}
-/** An open instance of an app (the app host's). */
-export interface Instance {
-  id: string;
-  app: string;
-  gatherer: string;
-  folder: string | null;
-  title: string;
-  name?: string;
-  data: Record<string, unknown>;
-}
+/** An app as its manifest says (the app host's /api/apps), a path of `ag://<app>/...` links it opens, an open instance
+ * of it: as generated from the server's schema (core/api/types.ts). */
+export type AppManifest = AppListed;
+export type AppLinkForm = AppListed["links"][number];
+export type { Instance } from "../../core/api/types";
+
 /** An app's panel's bridge to its frame (features/apps/host.ts's AppPane), as the layout calls it. */
 export interface AppFrame {
   readonly node: HTMLElement;

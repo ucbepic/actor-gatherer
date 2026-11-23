@@ -8,7 +8,7 @@ import { useSettings } from "./store";
 const SETTINGS: Settings = {
   path: "/home/u/.ag/config.toml",
   exists: true,
-  error: null,
+  error: "",
   version: "v1",
   text: '[policies.llm]\nmodel = ""\n',
   llm: { model: "", api_base: "", key_env: "" },

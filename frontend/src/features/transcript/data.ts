@@ -4,6 +4,7 @@
 // load at a time: a stream message and the reader's own action can ask at once.
 import { create } from "zustand";
 import { get } from "../../core/api/client";
+import { failed, type Failed, type Transcript } from "../../core/api/types";
 import { parse } from "../../core/model/keys";
 import type { TxItem } from "./blocks";
 
@@ -18,12 +19,7 @@ export interface TxFeed {
   earlier: boolean;
 }
 
-interface Got {
-  items: TxItem[];
-  earlier?: boolean;
-  newest?: boolean;
-  error?: string;
-}
+type Got = Transcript;
 
 export const useTxFeed = create<{ feed: TxFeed | null }>()(() => ({ feed: null }));
 
@@ -50,8 +46,8 @@ async function loadNow(actor: string | null, earlier: boolean): Promise<void> {
   const pending = (got: Got, was: TxItem[]) => (got.newest ? got.items.filter((i) => i.row_id === null) : was);
   let f = txFeedOf(actor);
   if (!f) {
-    const got = await get<Got>(url(""));
-    if (got.error) {
+    const got = await get<Got | Failed>(url(""));
+    if (failed(got)) {
       useTxFeed.setState({ feed: null });
       return;
     }
@@ -66,9 +62,9 @@ async function loadNow(actor: string | null, earlier: boolean): Promise<void> {
   } else if (earlier) {
     if (!f.first_row) return;
     const first = f.first_row;
-    const got = await get<Got>(url(`&before=${first}`));
+    const got = await get<Got | Failed>(url(`&before=${first}`));
     f = txFeedOf(actor);
-    if (got.error || !f) return;
+    if (failed(got) || !f) return;
     f = {
       ...f,
       items: [...got.items.filter((i) => i.row_id !== null && i.row_id < first), ...f.items],
@@ -77,9 +73,9 @@ async function loadNow(actor: string | null, earlier: boolean): Promise<void> {
   } else {
     for (;;) {
       // all that came since, a page at a time
-      const got: Got = await get<Got>(url(`&after=${f.last_row}`));
+      const got: Got | Failed = await get<Got | Failed>(url(`&after=${f.last_row}`));
       const now = txFeedOf(actor);
-      if (got.error || !now) return;
+      if (failed(got) || !now) return;
       const fresh: TxItem[] = stored(got).filter((i) => i.row_id! > now.last_row);
       f = {
         ...now,

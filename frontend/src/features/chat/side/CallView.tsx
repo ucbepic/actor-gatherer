@@ -5,7 +5,7 @@
 import { createContext, useContext } from "react";
 import { firstLine } from "../../../core/format";
 import { guessWeb, hlLines, hlPart, langOfPath, outputHtml, shellHtml, tildePath } from "../../../core/ui/highlight";
-import type { CallRun } from "../types";
+import type { CallRun, Command } from "../types";
 
 /** Where the actor's paths are read from: its session's directory (a path in it shown from there), and the home folder
  * (one under it shown from ~). */
@@ -42,7 +42,7 @@ const html = (__html: string) => ({ __html });
 
 /** A call's line (files.py's `_label`): a shell command it is (no description given: codex's) in the terminal's type,
  * coloured. */
-export function CallLabel({ c, n }: { c: CallRun; n: number }) {
+export function CallLabel({ c, n }: { c: CallRun | Command; n: number }) {
   const text = firstLine(c.text, n);
   if (shellCommand(c.call) === null || (c.call as Call).view!.description) return text;
   return (

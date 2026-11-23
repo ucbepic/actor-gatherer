@@ -9,6 +9,7 @@
 // "dialog": a menu its harness shows as it starts -- an update, a folder to trust -- or a permission no hook reported):
 // an option picked ({pick}), as if picked there (sessions.py's `_pick`).
 import { useEffect, useState, type ReactNode } from "react";
+import type { Session } from "../../../core/api/types";
 import { ago, plural } from "../../../core/format";
 import { StrokeIcon } from "../../../core/ui/Icon";
 import { Markdown } from "../../../core/ui/Markdown";
@@ -54,7 +55,7 @@ export function AskingCard({ info, home, answerable, snapshot, terminalView, hos
   );
   const says = askSays(home, ask);
   const qs = ask.questions || [];
-  const s = info.session || {};
+  const s: Partial<Session> = info.session || {};
   const { touched, reopened, here: answersHere } = askWhere(info, ask, home, snapshot);
   const here = answerable && answersHere;
   const key = askKey(ask),

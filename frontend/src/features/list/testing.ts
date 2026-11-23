@@ -1,22 +1,19 @@
 // A home and the page's facts about it, for the list's tests: what each derivation reads (ListCtx), and the reader's
 // choices with nothing shown (ListView).
+import { actorOf, appListedOf, gathererOf, homeOf } from "../../core/api/testing";
 import type { ListView } from "./rows";
 import type { Actor, AppItem, Gatherer, ListCtx, ListHome } from "./types";
 
 /** An actor of gatherer `g`, at rest, seen: its key set as the page sets it. */
 export const actor = (g: string, channel: string, more: Partial<Actor> = {}): Actor => ({
-  channel,
+  ...actorOf(channel, { status: "idle", last: 100, created: 100 }),
   key: `${g}\u0000${channel}`,
-  status: "idle",
-  last: 100,
-  created: 100,
   ...more,
 });
 
 export const gatherer = (name: string, agents: Actor[], more: Partial<Gatherer> = {}): Gatherer => ({
-  name,
+  ...gathererOf(name, { last: 1000 }),
   agents,
-  last: 1000,
   ...more,
 });
 
@@ -34,7 +31,7 @@ export function ctxOf(
   const seenAt: Record<string, number> = {};
   for (const g of home.gatherers) for (const a of g.agents) if (a.key && a.last) seenAt[a.key] = a.last;
   return {
-    home: { home: "/home", now: 2000, ...home },
+    home: { ...homeOf({ home: "/home", now: 2000 }), ...home },
     snapshot: !!more.snapshot,
     now: () => 2000,
     seenAt: { ...seenAt, ...(more.seenAt || {}) },
@@ -45,7 +42,7 @@ export function ctxOf(
 
 /** An app's open instance in group `g`. */
 export const app = (g: string, id: string, more: Partial<AppItem> = {}): AppItem => ({
-  app: { name: "notepad", label: "Notepad" },
+  app: appListedOf("notepad", { label: "Notepad" }),
   id,
   title: "",
   name: "",

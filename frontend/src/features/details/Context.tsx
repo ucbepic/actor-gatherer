@@ -73,7 +73,10 @@ export const TypeChips = ({ counts }: { counts: Record<string, number> | null })
 
 /** An item's row, inside its `details` (the list's, or a node of its own: nodes.tsx): its type's colour, its name, the
  * start of its words, its size; the whole of its words once it is first opened. */
-export function ItemBody({ it }: { it: Item }) {
+/** What a row shows of an item: a context's, or an event of the history's (its group given). */
+type Shown = Pick<Item, "group" | "name" | "tokens" | "text" | "clipped">;
+
+export function ItemBody({ it }: { it: Shown }) {
   const head = useRef<HTMLElement>(null);
   const [opened, setOpened] = useState(false);
   useEffect(() => {
@@ -104,7 +107,7 @@ export function ItemBody({ it }: { it: Item }) {
   );
 }
 
-export function ContextItem({ it }: { it: Item }) {
+export function ContextItem({ it }: { it: Shown }) {
   return (
     <details className="item">
       <ItemBody it={it} />

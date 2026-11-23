@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { homeOf } from "../api/testing";
 import type { HarnessInfo } from "../api/types";
 import { useDashboard } from "../store";
 import { codeFolded, fence } from "./highlight/fence";
@@ -18,7 +19,7 @@ const HARNESS_INFO = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "
 
 beforeAll(() => {
   loadVendored();
-  useDashboard.getState().setHome({ home: "/h", now: 0, gatherers: [], harness_info: HARNESS_INFO });
+  useDashboard.getState().setHome(homeOf({ harness_info: HARNESS_INFO }));
 });
 afterEach(() => codeFolded.clear());
 

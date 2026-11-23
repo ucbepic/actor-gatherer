@@ -2,17 +2,20 @@
 // when a view says the turns moved on -- one fetch at a time, one more after it for all that asked meanwhile.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../../core/api/query";
+import { currentOf, turnOf } from "../../core/api/testing";
 import { KEPT_ACTORS, stampOf, turnsOf, useChatData, viewOf, viewOrNone, viewSeq } from "./data";
 import { filesSeq, keptFiles, loadFiles, type FilesOf } from "./files";
 import type { ChatView, FilesData, Turn } from "./types";
 
-const turn = (n: number, over: Partial<Turn> = {}): Turn => ({ n, text: `t${n}`, row_id: 10 * n, end: n, ...over });
+const turn = (n: number, over: Partial<Turn> = {}): Turn =>
+  turnOf(n, { text: `t${n}`, row_id: 10 * n, end: n, ...over });
 const view = (turns: Turn[]): ChatView => ({
   turns,
   opening: null,
-  current: { state: "done", turn: turns.length - 1 },
+  current: currentOf({ state: "done", turn: turns.length - 1 }),
   waiting: [],
   taken_back: null,
+  version: [],
 });
 const files = (turns: Turn[]): FilesData => ({ turns, turn: turns.length - 1, files: [], commands: [], home: "/h" });
 

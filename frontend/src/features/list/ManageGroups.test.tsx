@@ -24,9 +24,9 @@ function hostOf(home: Parameters<typeof ctxOf>[0]): DialogsHost {
 const calls = (host: DialogsHost) => (host as unknown as { calls: Record<string, ReturnType<typeof vi.fn>> }).calls;
 
 describe("Manage groups", () => {
-  const lab = gatherer("lab", [actor("lab", "l1", { name: { text: "Lab one" } })]);
+  const lab = gatherer("lab", [actor("lab", "l1", { name: { text: "Lab one", by: "user" } })]);
   const demo = gatherer("demo", [
-    actor("demo", "d1", { name: { text: "Parser" } }),
+    actor("demo", "d1", { name: { text: "Parser", by: "user" } }),
     actor("demo", "d2", { status: "closed" }),
     actor("demo", "crew", { role: "coordinator" }),
   ]);

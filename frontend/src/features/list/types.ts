@@ -1,148 +1,39 @@
-// What the list reads of the home (data.py's, the stream's `home`), as far as its view-model (model.ts) reads it, and
-// what the page tells it besides: each actor's status facts, the apps open, the reader's choices, what is shown.
+// What the list reads of the home (data.py's, the stream's `home`: its types generated from the server's schema,
+// core/api/types.ts), and what the page tells it besides: each actor's status facts, the apps open, the reader's
+// choices, what is shown.
+import type * as api from "../../core/api/types";
+import type { PageActor as Actor, PageHome as ListHome } from "../../core/page/types";
 
 /** A status as the list says it: [its class, its word] ("running", "Running"). */
 export type Status = readonly [cls: string, label: string];
 
-/** A session the page started or keeps (sessions.py's), as the list reads it. */
-export interface Session {
-  session_id?: string;
-  status?: string;
-  queued?: unknown[];
-  started_as?: string;
-  terminal?: unknown;
-  pid?: number | null;
-  kept?: unknown;
-  turns?: number;
-  since?: number;
-  cwd?: string;
-}
-
-/** An actor of a gatherer (data.py's), as the list reads it. */
-export interface Actor {
-  channel: string;
-  /** its gatherer's name and channel, as the page keys it (seen.ts's takeHome sets it) */
-  key?: string;
-  harness?: string;
-  name?: { text?: string; by?: string } | null;
-  last_user_message?: string | null;
-  status?: string;
-  running?: boolean;
-  building?: boolean;
-  session?: Session | null;
-  role?: string | null;
-  /** a coordinator agent's node ("all", "groups:<id>", "group:<name>", "folder:<id>") */
-  over?: string | null;
-  avatar?: string | null;
-  cwd?: string | null;
-  last?: number | null;
-  created?: number | null;
-  events?: number;
-  reads?: number;
-  chattable?: boolean;
-  background?: { kind?: string; label?: string; id?: string }[];
-  recap?: { text?: string; at?: number } | null;
-  /** what it waits on the reader for: a permission, a dialog of its terminal, a plan, questions */
-  asking?: Asking | null;
-  /** its model's calls failing, retried */
-  failing?: { error?: string; attempts: number; at?: number } | null;
-  /** how its last turn stopped */
-  stopped?: { text?: string; at?: number } | null;
-  real_tokens?: number | null;
-  sent_tokens?: number | null;
-}
+/** A session the page started or keeps, an actor (the home's, keyed by the page), a gatherer or group with its actors, a
+ * shell, an app instance's notifications, and the home itself as the page has it -- the server's, or a snapshot's
+ * (core/page/types.ts). */
+export type {
+  AppNotices,
+  PageActor as Actor,
+  PageGatherer as Gatherer,
+  PageHome as ListHome,
+  PageSession as Session,
+  PageShell as Shell,
+} from "../../core/page/types";
 
 /** What an actor waits on the reader for (data.py's `asking`), as the monitor says it. */
-export interface Asking {
-  kind?: string;
-  menu?: unknown;
-  title?: string;
-  said?: string;
-  tool?: string;
-  questions?: { question?: string }[];
-  at?: number;
-}
-
-/** An app instance's notifications, as the home has them (data.py's `app_notices`). */
-export interface AppNotices {
-  app?: string;
-  notices?: { title?: string; text?: string; at?: number }[];
-  last?: number;
-}
-
-/** A gatherer, or group (data.py's). */
-export interface Gatherer {
-  name: string;
-  agents: Actor[];
-  /** an actor on its own: a group of one (groups.py's `alone`) */
-  alone?: boolean;
-  last?: number | null;
-  changed?: number | null;
-  policy?: string;
-  error?: string;
-  apps?: Record<string, AppNotices>;
-}
+export type Asking = api.Ask;
 
 /** A folder of a gatherer's tree (folders.py's), or of the gatherers' (gatherer_folders.py's). */
-export interface Folder {
-  id: number;
-  parent: number | null;
-  name: string;
-  /** closed (folders.py's `close`): when, as an ISO time */
-  closed?: string | null;
-}
+export type Folder = api.Folder;
 
 /** A tree of folders: the folders, and where each item is filed (an actor by its channel, an app by its item). */
-export interface Tree {
-  folders: Folder[];
-  filed: Record<string, number>;
-}
+export type Tree = api.Folders;
 
 /** A gatherer's tasks (tasks.py's): its tasks, and the task each item is in. */
-export interface Task {
-  id: number;
-  name?: string;
-}
-export interface Tasks {
-  tasks: Task[];
-  tasked: Record<string, number>;
-}
+export type Task = api.Task;
+export type Tasks = api.Tasks;
 
-/** A shell (sessions.py's `shell`), listed under its gatherer. */
-export interface Shell {
-  id: string;
-  gatherer: string;
-  folder?: number | null;
-  cwd: string;
-  since?: number;
-}
-
-/** The home, as the list reads it. */
-export interface ListHome {
-  home: string;
-  now?: number;
-  gatherers: Gatherer[];
-  hiding?: Record<string, string>;
-  titles?: Record<string, string>;
-  saved?: Record<string, Record<string, string>>;
-  folders?: Record<string, Tree>;
-  gatherer_folders?: Tree;
-  places?: Record<string, { in?: string; folder?: number | null }>;
-  tasks?: Record<string, Tasks>;
-  shells?: Shell[];
-  merged?: boolean;
-}
-
-/** An app as its manifest says (the app host's), as the list reads it. */
-export interface AppManifest {
-  name: string;
-  label: string;
-  mark?: unknown;
-  access?: string;
-  on_task?: string;
-  instances?: string;
-  failed?: string | null;
-}
+/** An app as its manifest says (the app host's /api/apps). */
+export type AppManifest = api.AppListed;
 
 /** An open instance of an app, as the list has it (apps.ts's appOf). */
 export interface AppItem {

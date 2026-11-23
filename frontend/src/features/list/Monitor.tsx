@@ -33,7 +33,7 @@ export interface MonitorHost extends PageParts {
   /** a permission's verb, as Chat says it ("run a command") */
   permissionVerb(asking: unknown): string;
   /** what runs in the background, by its kind */
-  taskKind(kind: string | undefined): string;
+  taskKind(kind: string | null | undefined): string;
   /** the kinds of files a turn worked on: [what they are called, their colour] */
   fileKinds: Readonly<Record<string, readonly [string, string]>>;
 }

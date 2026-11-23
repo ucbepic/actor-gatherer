@@ -1,20 +1,16 @@
 // The Messages view drawn by its mount, and the history feed it lists (events.ts).
 import { fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { historyItemOf } from "../../core/api/testing";
 import { useShown } from "../../core/model/items";
 import { key } from "../../core/model/keys";
 import { eventsOf, loadEvents, useEvents } from "./events";
 import { drawMessages } from "./mount";
-import type { Item } from "./types";
+import type { HistoryItem } from "./types";
 
 const ACTOR = key("demo", "c1");
-const item = (row_id: number | null, name: string, text = name): Item => ({
-  group: "Pending",
-  name,
-  tokens: 2,
-  row_id,
-  text,
-});
+const item = (row_id: number | null, name: string, text = name): HistoryItem =>
+  historyItemOf({ group: "Pending", name, tokens: 2, row_id, text });
 
 afterEach(() => {
   useShown.setState({ types: new Set(["user_message", "agent_message", "gatherer"]) });

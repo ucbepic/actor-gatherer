@@ -36,12 +36,12 @@ describe("a stage's reactions", () => {
   });
 
   it("says how a call ended, while it reacts", () => {
-    expect(reactOf({ id: 1, ok: true, kind: "test" }, 10)).toBe("pass");
-    expect(reactOf({ id: 1, ok: false, kind: "test" }, 10)).toBe("tfail");
-    expect(reactOf({ id: 1, ok: true, kind: "ship" }, 10)).toBe("ship");
-    expect(reactOf({ id: 1, ok: false, kind: "read" }, 10)).toBe("fail");
-    expect(reactOf({ id: 1, ok: true, kind: "read" }, 10)).toBeNull();
-    expect(reactOf({ id: 1, ok: false, kind: "test" }, null)).toBeNull(); // over
+    expect(reactOf({ id: "c1", ok: true, kind: "test", at: 0 }, 10)).toBe("pass");
+    expect(reactOf({ id: "c1", ok: false, kind: "test", at: 0 }, 10)).toBe("tfail");
+    expect(reactOf({ id: "c1", ok: true, kind: "ship", at: 0 }, 10)).toBe("ship");
+    expect(reactOf({ id: "c1", ok: false, kind: "read", at: 0 }, 10)).toBe("fail");
+    expect(reactOf({ id: "c1", ok: true, kind: "read", at: 0 }, 10)).toBeNull();
+    expect(reactOf({ id: "c1", ok: false, kind: "test", at: 0 }, null)).toBeNull(); // over
   });
 });
 

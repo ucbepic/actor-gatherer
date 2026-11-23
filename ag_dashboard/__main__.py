@@ -1,9 +1,10 @@
-"""`python -m ag_dashboard [--home DIR] [--host H] [--port N] [--open] [--out FILE] [--routes]` (or `ag`, `ag
-dashboard`): the page on localhost until interrupted (Ctrl-C, SIGTERM or SIGHUP: each one stops it the same
+"""`python -m ag_dashboard [--home DIR] [--host H] [--port N] [--open] [--out FILE] [--routes] [--openapi]` (or `ag`,
+`ag dashboard`): the page on localhost until interrupted (Ctrl-C, SIGTERM or SIGHUP: each one stops it the same
 way, removing its socket in the home's listeners/), or, with --out, written to FILE with its
 data inside it. With --open (as `ag` runs it), the page is also opened in the browser -- the one
 already on that port, if it is this home's dashboard. With --routes, the server's routes are listed instead: each
-one's methods, path, and the first paragraph of its handler's docstring (what it answers)."""
+one's methods, path, and the first paragraph of its handler's docstring (what it answers); with --openapi, their
+OpenAPI schema, as JSON (what frontend/scripts/gen-types.mjs makes the page's types of)."""
 
 import argparse
 import errno
@@ -31,6 +32,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="open the page in the browser (`ag` does; --no-open: not)")
     ap.add_argument("--out", help="write the page, its data inside it, to this file and stop")
     ap.add_argument("--routes", action="store_true", help="list the server's routes, each with what it answers, and stop")
+    ap.add_argument("--openapi", action="store_true", help="write the routes' OpenAPI schema, as JSON, and stop")
     args = ap.parse_args(argv)
     missing = [name for name in NEEDED if importlib.util.find_spec(name) is None]
     if missing:
@@ -44,6 +46,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         width = max(len(m) for m, _, _ in listed), max(len(p) for _, p, _ in listed)
         for methods, path, doc in listed:
             print(f"{methods:<{width[0]}}  {path:<{width[1]}}  {doc}")
+        return 0
+    if args.openapi:
+        import json
+        from . import app
+        print(json.dumps(app.schema(), indent=1, ensure_ascii=False))
         return 0
     if args.home:
         home.HOME = os.path.abspath(os.path.expanduser(args.home))

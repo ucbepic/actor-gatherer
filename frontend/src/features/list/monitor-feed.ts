@@ -115,7 +115,7 @@ async function monLoad() {
   mon.busy = true;
   mon.last = performance.now();
   try {
-    const got = await get<{ actors?: (MonData & { error?: string })[] }>(
+    const got = await get<{ actors: MonData[] }>(
       `/api/monitor?actors=${L.history.enc(JSON.stringify(batch.map((b) => b.ask)))}`,
     );
     batch.forEach((b, i) => {

@@ -2,6 +2,7 @@
 // the message taken back is still in the harness's box untouched, and how it is put in Chat's message box and taken out
 // again. (These were tests/test_dashboard_esc.py's EscTest, on the old page's code.)
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { actorOf, currentOf, openingOf, sessionOf } from "../../core/api/testing";
 import { change, chatOf, useActors } from "./actors";
 import { useChatData } from "./data";
 import { drafts, keepDraft } from "./drafts";
@@ -16,12 +17,11 @@ function actor(
   status = "running",
   { terminal = true, starting = false, taken = null as typeof TAKEN | null, stopped_at = null as number | null } = {},
 ): Actor {
-  return {
-    channel: "s",
+  return actorOf("s", {
     status,
     taken_back: taken,
-    session: { session_id: "s", terminal, status: starting ? "starting" : "terminal", stopped_at },
-  };
+    session: sessionOf({ session_id: "s", terminal, status: starting ? "starting" : "terminal", stopped_at }),
+  });
 }
 
 let posted: unknown[];
@@ -76,8 +76,8 @@ describe("Esc", () => {
     // its message sent, not yet stored: the view has the turn opening
     useChatData.getState().take(A, {
       ...chatView([]),
-      opening: { text: "hi", began: 1, seen: true },
-      current: { state: "opening", turn: "opening" },
+      opening: openingOf("hi", { began: 1, seen: true }),
+      current: currentOf({ state: "opening", turn: "opening" }),
     });
     expect(canInterrupt(A, actor("idle"))).toBe(true);
     // or a message sent from here into its terminal, pending

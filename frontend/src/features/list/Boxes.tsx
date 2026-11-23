@@ -13,7 +13,7 @@ import { GF } from "./tree";
 import type { Folder, Gatherer } from "./types";
 
 /** The folders gatherers are kept in, as the page's drag code names them: a gatherer of their own. */
-export const GFS: Gatherer = { name: GF, agents: [] };
+export const GFS: Gatherer = { name: GF, policy: null, agents: [], last: null, created: null };
 /** A folder's name: as long as the server keeps (folders.py). */
 const FOLDER_CHARS = 60;
 const stop = (ev: MouseEvent) => ev.stopPropagation();

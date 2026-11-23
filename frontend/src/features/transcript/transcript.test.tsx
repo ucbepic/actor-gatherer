@@ -9,7 +9,7 @@ import { loadTranscript, txFeedOf, useTxFeed } from "./data";
 import { drawTranscript, foldedOutputNode, notesSwitchNode, transcriptBlockNodes } from "./mount";
 import { useNotes, type TxFrame } from "./TranscriptView";
 
-const ev = (row_id: number | null, ...parts: Part[]): TxItem => ({ row_id, parts });
+const ev = (row_id: number | null, ...parts: Part[]): TxItem => ({ row_id, type: "?", at: null, parts });
 /** A permission's call, drawn: its box. */
 const permissionNode = (ask: PermissionAsk, id: string): Element =>
   render(<PermissionCall ask={ask} id={id} />).container.firstElementChild!;

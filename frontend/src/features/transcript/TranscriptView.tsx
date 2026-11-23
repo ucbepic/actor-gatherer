@@ -51,9 +51,9 @@ function CallBlock({
   const glyph = result ? (result.error ? "dot-err" : "dot-ok") : running ? "dot-run" : "dot-ok";
   const under: ReactNode[] = [];
   if (s.body) under.push(s.body(id));
-  if (result && result.error) under.push(<FoldedOutput text={result.text} id={id + "-r"} cls="err" />);
-  else if (result && s.result) under.push(s.result(result.text, id + "-r"));
-  else if (result && !s.quiet) under.push(<FoldedOutput text={result.text} id={id + "-r"} />);
+  if (result && result.error) under.push(<FoldedOutput text={result.text ?? ""} id={id + "-r"} cls="err" />);
+  else if (result && s.result) under.push(s.result(result.text ?? "", id + "-r"));
+  else if (result && !s.quiet) under.push(<FoldedOutput text={result.text ?? ""} id={id + "-r"} />);
   else if (!result && !running) under.push(<pre>(no result recorded)</pre>);
   else if (!result) under.push(<pre>Running…</pre>);
   return (

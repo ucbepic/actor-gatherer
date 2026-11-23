@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { homeOf } from "../api/testing";
 import type { HarnessInfo } from "../api/types";
 import { useDashboard } from "../store";
 import { codeClick, codeFolded, fence } from "./highlight/fence";
@@ -19,7 +20,7 @@ const CODE = "a\n".repeat(8) + "a";
 
 beforeAll(() => {
   loadVendored();
-  useDashboard.getState().setHome({ home: "/h", now: 0, gatherers: [], harness_info: HARNESS_INFO });
+  useDashboard.getState().setHome(homeOf({ harness_info: HARNESS_INFO }));
   document.addEventListener("click", codeClick);
 });
 afterAll(() => document.removeEventListener("click", codeClick));

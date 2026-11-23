@@ -34,7 +34,7 @@ describe("a drag of the list's rows", () => {
   const home = {
     gatherers: [gatherer("g", [a1, a2, crew]), gatherer("lab", [actor("lab", "b1")])],
     folders: { g: folders },
-    tasks: { g: { tasks: [{ id: 7 }], tasked: { a1: 7, "app:n1": 7 } } },
+    tasks: { g: { tasks: [{ id: 7, name: null }], tasked: { a1: 7, "app:n1": 7 } } },
     merged: true,
   };
   const rules = (more = {}): DR.Rules => ({
@@ -137,8 +137,8 @@ describe("a change of the folders, made at once", () => {
 });
 
 describe("what a move between groups says first", () => {
-  const a1 = actor("g", "a1", { name: { text: "Parser" } }),
-    a2 = actor("g", "a2", { name: { text: "Lexer" }, status: "running", running: true });
+  const a1 = actor("g", "a1", { name: { text: "Parser", by: "user" } }),
+    a2 = actor("g", "a2", { name: { text: "Lexer", by: "user" }, status: "running", running: true });
   const home = { gatherers: [gatherer("g", [a1, a2]), gatherer("lab", [actor("lab", "b1")])], titles: { lab: "Lab" } };
   const w: MP.Words = { ctx: ctxOf(home), label: (x) => (x === "browser" ? "Browser" : x) };
   it("who moves where, how many others each group has, who rebuilds, the apps going with them", () => {
@@ -170,7 +170,7 @@ describe("the looks and tasks a home brings", () => {
   });
   it("keeps a gatherer's tasks read later than those that come", () => {
     const read = new Map<string, number>();
-    const t = (id: number) => ({ tasks: [{ id }], tasked: {} });
+    const t = (id: number) => ({ tasks: [{ id, name: null }], tasked: {} });
     let had = newerTasks(read, {}, { g: t(1) }, 10);
     had = newerTasks(read, had, { g: t(2) }, 5); // read before: not taken
     expect(had.g.tasks[0].id).toBe(1);
