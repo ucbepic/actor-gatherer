@@ -57,7 +57,7 @@ class Table:
 #: The modules that declare tables (a test checks it is all of them): each imported before a move, a merge or a
 #: discard, so every table is there to follow it, whatever the process has loaded so far.
 OWNERS = ("sessions", "saved", "seen", "avatars", "tasks", "hiding", "titles", "merges", "gatherer_folders", "folders",
-          "branches", "coordination")
+          "branches", "coordination", "git_found")
 TABLES: Dict[str, Table] = {}
 # (database file) -> (its schema's version then, the tables made and given their columns at it), in this process: a
 # change to its schema since (another process's, or a table dropped and made again) has them looked at again. The file
@@ -117,10 +117,11 @@ def reading(rows: bool = False) -> Iterator[Optional[sqlite3.Connection]]:
             conn.close()
 
 
-def write(*tables: str, rows: bool = False) -> sqlite3.Connection:
-    """dashboard.db for a change (autocommit; `transaction` for several statements as one), `tables` made first."""
+def write(*tables: str, rows: bool = False, timeout: float = TIMEOUT) -> sqlite3.Connection:
+    """dashboard.db for a change (autocommit; `transaction` for several statements as one), `tables` made first;
+    waiting `timeout` seconds at most on another's lock."""
     os.makedirs(os.path.dirname(path()), exist_ok=True)
-    conn = sqlite3.connect(path(), timeout=TIMEOUT, isolation_level=None)
+    conn = sqlite3.connect(path(), timeout=timeout, isolation_level=None)
     if rows:
         conn.row_factory = sqlite3.Row
     try:
@@ -132,9 +133,9 @@ def write(*tables: str, rows: bool = False) -> sqlite3.Connection:
 
 
 @contextmanager
-def transaction(*tables: str, rows: bool = False) -> Iterator[sqlite3.Connection]:
+def transaction(*tables: str, rows: bool = False, timeout: float = TIMEOUT) -> Iterator[sqlite3.Connection]:
     """`write(*tables)` in a transaction of its own (BEGIN IMMEDIATE): committed at the end, rolled back if it raises."""
-    conn = write(*tables, rows=rows)
+    conn = write(*tables, rows=rows, timeout=timeout)
     try:
         conn.execute("BEGIN IMMEDIATE")
         yield conn
