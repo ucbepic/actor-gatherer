@@ -3,7 +3,18 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AtRest, AtWork, Buddy, Greeting } from "./Stage";
-import { bareAvatar, helloOf, inkOf, reaction, REACT_MS, restDelay, stageOf, stageRest, wound } from "./model";
+import {
+  bareAvatar,
+  helloOf,
+  inkOf,
+  reaction,
+  REACT_MS,
+  restDelay,
+  stageOf,
+  stageRest,
+  windDown,
+  wound,
+} from "./model";
 
 afterEach(cleanup);
 
@@ -45,6 +56,14 @@ describe("what the stage reacts to", () => {
     expect(wound(100, 100)).toBe(100);
     expect(wound(100, 800)).toBe(100 + 700 - (700 * 700) / 2800);
     expect(wound(100, 100 + 5000)).toBe(100 + 1400 - 700); // stopped
+  });
+
+  it("plays its action from the start where the page has no Web Animations API (jsdom has none)", () => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    document.body.append(svg);
+    expect("getAnimations" in svg).toBe(false);
+    expect(() => windDown(svg, 0, 0)).not.toThrow();
+    svg.remove();
   });
 });
 

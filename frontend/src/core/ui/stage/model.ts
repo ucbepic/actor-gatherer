@@ -162,8 +162,9 @@ const WINDS = new Set([
 ]);
 
 /** The action's animations held where `wound` says, frame by frame until stopped: drawn already where it starts them
- * (--a). */
+ * (--a). Where the page has no Web Animations API (jsdom, in the unit tests), the action plays from its start. */
 export function windDown(svg: Element, since: number, from: number): void {
+  if (typeof svg.getAnimations !== "function") return;
   const anims = svg
     .getAnimations({ subtree: true })
     .filter((x) => WINDS.has((x as CSSAnimation).animationName)) as CSSAnimation[];
