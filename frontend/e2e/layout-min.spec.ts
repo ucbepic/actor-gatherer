@@ -15,6 +15,14 @@ const notes = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepa
 const other = (page: Page) => page.locator("#panes > .pane").nth(1);
 const here = (page: Page) => page.locator("#pane-here");
 const minimize = (pane: Locator) => pane.locator("button[aria-label='Minimize the chat']:visible").first();
+/** The page's own pane, minimized, as it stays once a reload has drawn it: its last two lines in -- they come with its
+ * feed, after its strip, which grows as they do and moves the line above it up -- and the work area placed for it, a
+ * frame on (it is placed again as a panel's size changes: ResizeObserver, at the next frame). A bar measured before
+ * then is pressed where it was. */
+async function miniSettled(page: Page) {
+  await expect(page.locator("#main > .chat.mini .mini-hist .mh-row")).toHaveCount(2);
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+}
 
 test("two panes under an app: minimized together by either's button, their row only as tall as their message boxes; shown whole together", async ({
   page,
@@ -98,6 +106,7 @@ test("a pane dragged shorter than its least is minimized; dragged longer again, 
   await expect(bar).not.toHaveClass(/still/); // (its bar still dragged: to show it whole)
   await page.reload(); // kept in its task's arrangement
   await expect(mini).toHaveCount(1);
+  await miniSettled(page);
   x = await press(); // a later drag up: whole again
   await to(x, 300);
   await page.mouse.up();
@@ -194,6 +203,7 @@ test("a task of one pane under another task in the tab: minimized by the line be
   await expect(minimize(codex)).toHaveCount(0); // Codex's not offered now: nothing whole left to take the room
   await page.reload(); // kept
   await expect(mini).toHaveCount(1);
+  await miniSettled(page);
   const b2 = await box(bar); // dragged back up: whole
   await page.mouse.move(x, b2.y + b2.height / 2);
   await page.mouse.down();

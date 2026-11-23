@@ -226,6 +226,9 @@ test("an app opened shows the actor it is attached to below it", async ({ page }
   const theirs = await instanceOf(there);
   await attachTo(page, GATHERER, theirs, CODEX_CHANNEL); // Codex attached to it
   await expect(there.frameLocator("iframe").locator("#agents")).toHaveText(CODEX_CHANNEL);
+  // in Codex's task now, as the list has it too -- its home comes after the panel is told, and till then the app is still
+  // listed open on its own: its row there, pressed for the panel's menu, goes from under the press
+  await expect(page.locator(`#agents .app-row[data-instance="${theirs}"]`)).toHaveCount(0);
   await closePanel(page, there);
   // opened again: its agent shown below, in the pane in focus -- another task than Claude's, so Claude's Notes, whose
   // panel asked, goes out of sight with that task (kept for its tab: features/layout/panes.js's keepForTab)
