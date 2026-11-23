@@ -12,8 +12,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ago, plural } from "../../../core/format";
 import { StrokeIcon } from "../../../core/ui/Icon";
 import { Markdown } from "../../../core/ui/Markdown";
-import { Html } from "../Hosted";
-import { askKey, askOf, askSays, askWhere, harnessName, isLate, lateAt, whoAsks, type Ask, type Answer } from "./ask";
+import { askKey, askOf, askSays, askWhere, harnessName, isLate, lateAt, whoAsks, type Answer } from "./ask";
 import { answer, answered, choiceOf, draftOf, nextOpen, show, tabOf, typeChange, useAnswers } from "./answers";
 import { DialogView, Own, Question } from "./Options";
 import type { CardProps } from "./Cards";
@@ -31,18 +30,6 @@ function useLate(sent: Answer | null): boolean {
     return () => clearTimeout(t);
   }, [at]);
   return late;
-}
-
-/** The call a permission is asked for, as Chat shows a call (the page's: the host's permissionView), made once for each. */
-const permViews = new Map<string, Node>();
-function permissionNode(make: (ask: Ask, id: string) => Node, ask: Ask, id: string): Node {
-  const sig = JSON.stringify([id, ask.tool, ask.input, ask.view, ask.said]);
-  let n = permViews.get(sig);
-  if (!n) {
-    if (permViews.size > 20) permViews.clear();
-    permViews.set(sig, (n = make(ask, id)));
-  }
-  return n;
 }
 
 /** What the agent asks for, in words: the card's name. */
@@ -286,7 +273,7 @@ export function AskingCard({ info, home, answerable, snapshot, terminalView, hos
             busy={busy}
           />
         ) : perm ? (
-          <Html node={permissionNode(host.permissionView, ask, `perm-${key}`)} />
+          <host.PermissionCall ask={ask} id={`perm-${key}`} />
         ) : here && qs.length > 1 ? (
           question(tab)
         ) : (

@@ -206,10 +206,13 @@ class AvatarsTest(AvatarsBase):
         for name in ("avatar.ts", "stage.ts"):                               # (frontend/src/core/page/)
             with open(os.path.join(page_source.SRC, "core", "page", name), encoding="utf-8") as fh:
                 avatar += fh.read()
-        ink = re.search(r"const HUE_INK\b[^=]*= \{(.*?)\};", avatar, re.S).group(1)
-        self.assertEqual(set(re.findall(r"(\w+): \[", ink)), set(pool.values()))   # every hue's words in its color
-        main = re.search(r"const HUE_MAIN\b[^=]*= \{(.*?)\};", avatar, re.S).group(1)
-        self.assertEqual(set(re.findall(r"(\w+): \"", main)), set(pool.values()))   # and its thought's dots
+        with open(os.path.join(page_source.SRC, "core", "ui", "stage", "model.ts"), encoding="utf-8") as fh:
+            stage = fh.read()                                                # and the stage Chat draws (core/ui/stage)
+        for src in (avatar, stage):
+            ink = re.search(r"const HUE_INK\b[^=]*= \{(.*?)\};", src, re.S).group(1)
+            self.assertEqual(set(re.findall(r"(\w+): \[", ink)), set(pool.values()))   # every hue's words in its color
+            main = re.search(r"const HUE_MAIN\b[^=]*= \{(.*?)\};", src, re.S).group(1)
+            self.assertEqual(set(re.findall(r"(\w+): \"", main)), set(pool.values()))   # and its thought's dots
 
     def test_the_drawn_avatars_each_say_four_lines_the_last_a_haiku(self):
         avatars.DIR = self.saved[1]

@@ -2,14 +2,13 @@
 // kinds of file switched in its legend; every call it made, in order, with how it went and the files it touched; what
 // runs in the background. Folded to a thin bar of what they hold until opened -- by a click on the bar, or on a message's
 // button for them -- and folded again by the button in their heading or that button of the turn they show.
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { ago, firstLine, full, plural } from "../../../core/format";
 import type { HarnessInfo } from "../../../core/api/types";
 import { CallLabel, CallView } from "./CallView";
 import { addChanged, Changed, FILE_KINDS, GitMark, KindMark, Stroke, TASK_KINDS } from "./marks";
 import { useSide, type SideState } from "./store";
 import { Tree, under } from "./Tree";
-import { useStage } from "../Hosted";
 import type { Command, FilesData, TurnFile } from "../types";
 
 /** A task the harness runs in the background (data.py's `background`). */
@@ -307,7 +306,7 @@ function Background({ tasks, open, openIt }: { tasks: Task[]; open: boolean; ope
 /** The bar the panel folds to: the files, by kind, in the colours of the tree's (a file of two kinds counted in both; the
  * kinds switched off left out); the commands, by how they went, in the colours of the commands' dots; the tasks in the
  * background. A click on it opens the panel; on the background's, their section too. `acts`: the pane's head, put in
- * the bar with a panel open above the panes (the page's barActs). */
+ * the bar with a panel open above the panes (PaneActs.tsx). */
 export function SideBar({
   files,
   counts,
@@ -323,12 +322,9 @@ export function SideBar({
   hiddenKinds: ReadonlySet<string>;
   icons: Record<string, string>;
   foldSide: (fold: boolean) => void;
-  /** the pane's head, as the page draws it; null: none */
-  acts: Node | null;
+  /** the pane's head (PaneActs); null: none */
+  acts: ReactNode;
 }) {
-  const box = useRef<HTMLDivElement>(null),
-    bar = useRef<HTMLButtonElement>(null);
-  useStage(box, () => acts, bar);
   const n = counts.ok + counts.err + counts.run;
   const kinds = Object.entries(FILE_KINDS)
     .filter(([k]) => !hiddenKinds.has(k))
@@ -354,7 +350,6 @@ export function SideBar({
   const dot = (cls: string) => <i className={"g " + cls} aria-hidden="true" />;
   const button = (
     <button
-      ref={bar}
       type="button"
       className="fl-bar"
       title={`${said}. Show the files and commands`}
@@ -406,9 +401,10 @@ export function SideBar({
       </span>
     </button>
   );
-  // with the pane's head: the two in a box, the head first (put there by useStage)
+  // with the pane's head: the two in a box, the head first
   return acts ? (
-    <div className="fl-barbox" ref={box}>
+    <div className="fl-barbox">
+      {acts}
       {button}
     </div>
   ) : (

@@ -6,7 +6,6 @@ import { create } from "zustand";
 import { ago, firstLine } from "../../core/format";
 import * as prefs from "../../core/prefs";
 import { Markdown } from "../../core/ui/Markdown";
-import { Html } from "../../core/ui/PageNode";
 import { FoldedOutput, callLine, summary } from "./calls";
 import { transcriptBlocks, type Line, type Part, type TxBlock, type TxItem } from "./blocks";
 
@@ -197,8 +196,8 @@ export interface TxFrame {
   last: number | null;
   /** its paths shown from here */
   cwd: string;
-  /** what runs in the background, as the page draws it (chat.js's backgroundNote) */
-  background: Node | null;
+  /** what runs in the background, as Chat draws it (its BackgroundNote, as a terminal's status line) */
+  background: ReactNode;
   /** what waits for the turn to end */
   queued: string[];
   /** said when there is nothing, nothing pending and nothing waiting */
@@ -227,7 +226,7 @@ export function Transcript({ f }: { f: TxFrame }) {
           <Since what={f.failing ? "last try" : "last activity"} at={f.failing ? f.failing.at : f.last} />
         </div>
       ) : null}
-      {f.background ? <Html node={f.background} /> : null}
+      {f.background}
       {f.queued.map((q, i) => (
         <div key={`q${i}`} className="queued">{`Waiting for the turn to end: ${q}`}</div>
       ))}
