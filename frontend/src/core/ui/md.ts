@@ -1,8 +1,8 @@
 // Markdown, as the page draws a message: marked (GFM) and DOMPurify, the vendored scripts index.html loads before the
 // page (window.marked, window.DOMPurify); raw HTML in a message shown as the agent wrote it, not rendered; links
 // opening apart, a link to something in an app (`ag://<app>/...`, features/apps/links.ts) kept and marked with the app's
-// mark (.ag-link: the page opens it there, src/features/layout/panes.js); fenced code coloured (codeFence); LaTeX math
-// drawn by KaTeX (tex.ts). And a block a harness's model writes in a reply that its own
+// mark (.ag-link: the page opens it there, src/features/layout/pane-links.ts); fenced code coloured (codeFence); LaTeX
+// math drawn by KaTeX (tex.ts). And a block a harness's model writes in a reply that its own
 // terminal draws apart (harness_kit's `reply_block`), drawn as a card. Without the vendored scripts, the text as it is.
 import { useDashboard } from "../store";
 import { escapeHtml } from "./html";
@@ -34,12 +34,12 @@ declare global {
 }
 
 // DOMPurify's own list of the links it keeps (its ALLOWED_URI_REGEXP), `ag://` ones (links to things in apps) and
-// `file://` ones: a file's, which the page opens in an app as it does a path (src/features/layout/panes.js's openFileLink)
+// `file://` ones: a file's, which the page opens in an app as it does a path (src/features/layout/pane-links.ts's openFileLink)
 const URIS =
   /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|ag:\/\/[a-z]|file:\/\/(?:localhost)?\/|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 const APP_LINK = /^ag:\/\/([a-z][a-z0-9_]{0,23})(?:[/?#]|$)/;
 // A file's path, as an agent writes one (no scheme, not to a host, not an anchor or query alone), or a file:// link:
-// marked data-path, for the page to open in an app that shows files (src/features/layout/panes.js's openFileLink; the rules
+// marked data-path, for the page to open in an app that shows files (src/features/layout/pane-links.ts's openFileLink; the rules
 // it is read by, features/apps/links.ts's filePath) -- not a link the dashboard draws itself, as /api/image?…
 const FILE_LIKE = /^(?:file:\/\/|(?![a-z][a-z0-9+.-]*:|\/\/|[#?~]))./i;
 

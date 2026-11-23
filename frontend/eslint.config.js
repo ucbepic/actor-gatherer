@@ -10,8 +10,7 @@ import tseslint from "typescript-eslint";
 // The page's script from before its views were rewritten -- page.html's sections, modules now (src/page.js starts
 // them): the .js files in features/ (core/page/ holds what they share, and keeps core/'s rules). Each still imports
 // other features' modules, as the one script they were, so the import rules leave them out; each goes, or becomes a
-// feature's own code, as its view is rewritten (A5, A6). Files of it over max-lines, until then: this list only shrinks.
-const PAGE_LONG = ["src/features/layout/panes.js"];
+// feature's own code, as its view is rewritten (A5, A6). None is over max-lines any more.
 
 export default tseslint.config(
   { ignores: ["node_modules/", "test-results/", "playwright-report/"] },
@@ -30,7 +29,6 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-expressions": ["error", { allowTernary: true, allowShortCircuit: true }],
     },
   },
-  { files: PAGE_LONG, rules: { "max-lines": "off" } },
   {
     files: ["src/**/*.{ts,tsx}", "src/core/**/*.js", "src/*.js"],
     plugins: { boundaries },

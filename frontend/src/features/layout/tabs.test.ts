@@ -18,7 +18,7 @@ let shown: string[],
   looks: Record<string, CellLook>, // what each item's box in a map shows (none: grey)
   dragging: string | null, // the task being dragged by its card head, if one can go to another tab
   carried: [string, string | null][]; // each let go on the bar: the task, the tab it goes in (null: a new one)
-// what the page shows changed: the layout model told, as the page's own changes tell it (panes.js: a task entered, opened
+// what the page shows changed: the layout model told, as the page's own changes tell it (the layout's modules: a task entered, opened
 // beside, closed)
 function setShown(list: string[]) {
   shown = list;

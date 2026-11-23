@@ -19,7 +19,7 @@ import { taskItems, taskOf } from "./tasks";
 import type { Actor, Gatherer } from "./types";
 
 /** What is dragged, and what the drag has done meanwhile: the rail's folders shown for it, a folder about to open, its
- * task offered to the work area (features/layout/panes.js). */
+ * task offered to the work area (features/layout/work-area.ts). */
 export interface ListDrag extends DR.Drag {
   revealed: boolean;
   spring: ReturnType<typeof setTimeout> | undefined;
@@ -129,7 +129,7 @@ export function endDrag(): void {
   for (const n of document.querySelectorAll(":is(#agents, #rail, .mg-dialog) :is(.dragging, .drop-on)"))
     n.classList.remove("dragging", "drop-on", "drop-across");
   if (d.revealed) renderAgents(); // the rail, its folders shown for the drag: as it was again
-  if (d.offered) L.panes.moveEnd(); // over the work area too: its cover put away (features/layout/panes.js)
+  if (d.offered) L.panes.moveEnd(); // over the work area too: its cover put away (features/layout/work-area.ts)
 }
 const canDrop = (g: Gatherer, id: number | null) => DR.canDrop(RULES, listDrag, g, id);
 // What is dragged dropped on a line or a row (`ev.currentTarget`): into folder `id` (null: the gatherer's top); `open`,
