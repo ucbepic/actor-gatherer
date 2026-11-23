@@ -16,7 +16,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import harness_kit  # noqa: E402
-import page_source  # noqa: E402
 
 DASHBOARD = os.path.join(ROOT, "ag_dashboard")
 NAMES = set(harness_kit.HARNESSES) | {"agy"}                      # agy: Antigravity's command
@@ -26,15 +25,11 @@ IN_TEXT = re.compile(r"(?i:%s)|\b(?:%s)\b" % ("|".join(LONG), "|".join(map(re.es
 IDENT = re.compile(r"(?i)(?:^|_)(?:%s)(?:_|$)" % "|".join(sorted(NAMES - {"pi"})))   # codex_rules, _claude_status, AGY_HEAD
 MODULE = re.compile(r"harness_kit\.(?:%s)\b|from harness_kit import [^\n#]*\b(?:%s)\b" % ("|".join(NAMES), "|".join(NAMES)))
 
-#: Any module of the page's script (page.js's: core/page/, the .js files of features/), in ALLOWED.
-PAGE_SCRIPT = "frontend/src/page.js"
 #: What the dashboard's code may still say that names a harness, and why it is not a harness's rule: (file, the words).
 ALLOWED = {
     ("data.py", '"codex"'): "the Gatherer model's providers (codex/..., claude-code/...): a model, not a session's harness",
     ("data.py", '"claude-code"'): "the same",
     ("settings.py", '"name a model, e.g. claude-code/sonnet or gemini/gemini-3.8-flash"'): "a Gatherer model's name, as an example",
-    (PAGE_SCRIPT, '"No model set: every Gatherer call fails until one is. A coding agent on its own login (claude-code/'):
-        "the same, in Settings",
     ("history.py", '"""\n\nFrom it, write an AGENTS.md: the standing instructions coding agents (Claude Code, Codex'):
         "what the Gatherer's model is asked for: who reads an AGENTS.md",
     ("history.py", '"claude"'): "a History record's kind (a CLAUDE.md, made before AGENTS.md), not a harness",
@@ -103,17 +98,13 @@ class DashboardNamesNoHarnessTest(unittest.TestCase):
             got = python_names(path) if name.endswith(".py") else []
             found += [f"{name}:{line}: {what}" for line, what in got
                       if not any(f == name and what.startswith(words) for f, words in ALLOWED)]
-        front = os.path.join(ROOT, "frontend", "src")         # the new front end: core/, features/, the app's own files
+        front = os.path.join(ROOT, "frontend", "src")         # the page's script: core/, features/, the app's own files
         for folder, _, names in os.walk(front):
-            for name in sorted(n for n in names if n.endswith((".ts", ".tsx")) and ".test." not in n):
+            for name in sorted(n for n in names if n.endswith((".ts", ".tsx", ".js")) and ".test." not in n):
                 path = os.path.join(folder, name)
                 rel = os.path.relpath(path, ROOT)
                 found += [f"{rel}:{line}: {what}" for line, what in page_names(path, whole=True)
                           if not any(f == rel and what.startswith(words) for f, words in ALLOWED)]
-        for path in page_source.script_files():               # the page's script: page.js's modules, .js
-            found += [f"{os.path.relpath(path, ROOT)}:{line}: {what}"
-                      for line, what in page_names(path, whole=True)
-                      if not any(f == PAGE_SCRIPT and what.startswith(words) for f, words in ALLOWED)]
         self.assertEqual(found, [], "a harness's rule in the dashboard: put it in its harness_kit class, and read it "
                                     "through a generic field (harness_kit/DESIGN.md)")
 
