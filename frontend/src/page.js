@@ -26,8 +26,16 @@ import { start as startLayoutTop } from "./features/layout/top";
 import { start as startChatOwnViews } from "./features/chat/own-views";
 import { start as startPageStart } from "./features/page/start";
 import { linkList } from "./list-link";
+import { linkPage } from "./links/page";
+import { linkSettings } from "./links/settings";
+import { linkNotify } from "./links/notify";
+import { linkApps } from "./links/apps";
 
 linkList(); // the list (TypeScript) handed the old page's modules it calls
+linkPage(); // the page's shell (features/page/) handed the features it draws
+linkSettings(); // the settings panel handed the page's shell
+linkNotify(); // the notifications handed the list, the panes and the apps
+linkApps(); // the Apps page handed the page around it
 startPageData();
 startSettingsPanel();
 startListSeen();
