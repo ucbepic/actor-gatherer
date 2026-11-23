@@ -25,6 +25,15 @@ const version = (panel: FrameLocator) =>
 
 const pane = (page: Page) => page.locator("#top-row > .app-pane[data-app=notes]");
 
+/** The page shown in the panel, titled `title` (its row in the list marked so), by its id: what the test reads back --
+ * not by its title, which a page an earlier attempt left has too (one that failed before binPage; a retry runs in the
+ * same home), and is found first. */
+const shownPage = async (panel: FrameLocator, title: string) =>
+  (await panel
+    .locator(".pg-row.on")
+    .filter({ has: panel.locator(".nm", { hasText: new RegExp(`^${title}$`) }) })
+    .getAttribute("data-id"))!;
+
 /** The Notes pane's panel on the page, ready (the pane kept in this browser). */
 async function panelOn(page: Page): Promise<FrameLocator> {
   const panel = pane(page).frameLocator("iframe");
@@ -63,6 +72,7 @@ for (const [how, sent] of [
     const { panel: first, instance } = await openNotes(page);
     const title = `Leaving: ${how}`;
     await newPage(page, first, title);
+    const id = await shownPage(first, title);
     let where = page,
       panel = first;
     if (how === "its tab shut") {
@@ -92,7 +102,7 @@ for (const [how, sent] of [
         .evaluate((f) => f.remove());
     else await where.close();
 
-    const read = async () => (await call(page, instance, "read", { page: title })).text;
+    const read = async () => (await call(page, instance, "read", { page: id })).text;
     const kept = /\] first one two\n\[[a-z0-9]+\] second$/m;
     await expect.poll(read).toMatch(kept);
     // a panel again: the pane's iframe was dropped; or this tab, left after another was shut, has one that takes no clicks
@@ -124,6 +134,7 @@ test("a panel hidden while a batch is being sent, then shown again, sends what w
   const { panel, instance } = await openNotes(page);
   const title = "Hidden a while";
   await newPage(page, panel, title);
+  const id = await shownPage(panel, title);
   const kb = page.keyboard;
   await kb.type("first");
   await expect(panel.locator("#saved")).toHaveText("Saved");
@@ -140,7 +151,7 @@ test("a panel hidden while a batch is being sent, then shown again, sends what w
       document.dispatchEvent(new Event("visibilitychange"));
     }, on);
   await hidden(true); // another tab shown: everything not yet taken sent at once, as if the page were going
-  const read = async () => (await call(page, instance, "read", { page: title })).text;
+  const read = async () => (await call(page, instance, "read", { page: id })).text;
   const kept = /\] first one two\n\[[a-z0-9]+\] second$/m;
   await expect.poll(read).toMatch(kept);
   await expect(panel.locator("#saved")).toHaveText("Saving…");
