@@ -22,10 +22,11 @@ export function renderPane(p: Pane): void {
   const main = p.main,
     c = p.c;
   if (!c) {
+    // no actor in it: none yet -- or, before the home has come (a reload: the actor it showed is picked again once the
+    // home says it is still there), not known yet. patch(): the page's own "Loading…" kept as it is, not drawn again.
     p.controls.replaceChildren();
-    main.replaceChildren(
-      el("div", { class: "empty", text: "No actors yet. Run a harness through ag and it appears here." }),
-    );
+    const why = state.home || SNAPSHOT ? "No actors yet. Run a harness through ag and it appears here." : "Loading…";
+    patch(main, [el("div", { class: "empty", text: why })]);
     return;
   }
   const x = p.close,
