@@ -3,12 +3,27 @@
 // and sheet (edit), a checklist (test), gears (run), a parcel sent off (ship), an hourglass (wait), little copies of it
 // (team); as a call ends, slowing to a stop and putting the tool away to think (a thought by its head, its dots in the
 // avatar's hue, the character moving as it does: its avatar_motion's move, and its effect round it), until the next; and
-// reacting to how a call ended, what shows on its head and at the stage's corner. Worked out here as SVG markup and what
-// it shows (its signature: drawn again the same, the one on the page is kept); drawn by Stage.tsx. On the page's clock
+// reacting to how a call ended, what shows on its head and at the stage's corner. What it shows is worked out by step.ts,
+// made here into SVG markup and its signature (drawn again the same, the one on the page is kept), and drawn by
+// Stage.tsx: the one stage of the page, in Chat, a minimized pane and the list's monitor. On the page's clock
 // (performance.now), so a redraw does not start an animation over.
 import type * as api from "../../api/types";
 import { escapeHtml } from "../html";
 import { OVER, hand, propsOf } from "./props";
+import {
+  REACT_MS,
+  WIND_MS,
+  reactOf,
+  reactionIn,
+  splitMotion,
+  stageClass,
+  stageLeft,
+  stageStep,
+  wound,
+  type Reactions,
+  type Rested,
+  type Shown,
+} from "./step";
 
 /** An actor, as far as the stage reads it: the home's (core/api/types.ts). */
 export type StageActor = Pick<api.Actor, "channel"> &
@@ -74,27 +89,16 @@ export function bareAvatar(a: { avatar?: string | null } | null | undefined): st
     : null;
 }
 
-// What an actor's stage reacts to, once: a call that ended, its turn over (`id`: which; null, none). Started when the page
-// sees it change -- or, seen on first drawing the actor, from when it happened, if that was lately; null once over.
-export const REACT_MS = 3200;
-const REACT_LATE = 6;
-const reacted = new Map<string, { id: unknown; start: number }>(); // "<channel> <what>"
-export function reaction(
+// What an actor's stage reacts to, once (step.ts's reactionIn), on the page's clock: one record for the whole page, so an
+// actor's call that ended, or its turn over, is reacted to once whichever view draws it.
+export { REACT_MS, wound };
+const reacted: Reactions = new Map(); // "<channel> <what>"
+export const reaction = (
   k: string,
   id: unknown,
   at: number | null | undefined,
   now = performance.now(),
-): number | null {
-  id = id === undefined ? null : id;
-  let r = reacted.get(k);
-  if (!r || r.id !== id) {
-    const late = Math.max(0, Date.now() / 1000 - (at || 0));
-    r = { id, start: r ? now : late < REACT_LATE ? now - late * 1000 : -Infinity };
-    reacted.set(k, r);
-  }
-  const gone = now - r.start;
-  return id !== null && gone < REACT_MS ? gone : null;
-}
+): number | null => reactionIn(reacted, k, id, at, now, Date.now() / 1000);
 
 /** The done avatar's grow-in, as far along as it is (--r, a negative delay): only if the page saw turn `turn` end -- one
  * reaction per actor, whichever view draws it (Chat, a minimized pane), so it grows once. */
@@ -104,24 +108,8 @@ export const restDelay = (a: StageActor | null | undefined, turn: unknown): stri
 };
 
 /** The character's move and the effect round it (its avatar_motion), each a CSS name or none. */
-export const motionOf = (a: StageActor): [string, string] => {
-  const [move = "", fx = ""] = (a.avatar_motion || "").split(/\s+/).map((w) => (/^[a-z0-9-]+$/.test(w) ? w : ""));
-  return [move, fx];
-};
+export const motionOf = (a: StageActor): [string, string] => splitMotion(a.avatar_motion);
 
-// what came of a call: on its own tool (a test's checklist, a commit's parcel) or on whatever it does now
-const ENDS: Record<string, string> = { pass: "test", tfail: "test", ship: "ship" };
-const MOVE_MS = 600,
-  WIND_MS = 1400;
-const PUT_AFTER = 900,
-  PUT_MS = 650; // a call over: its tool put away this long after, taking this long
-
-/** Where the action's animations are, by the page's clock, `now` after a call ended at `since`: slowing evenly to a stop
- * over WIND_MS. */
-export const wound = (since: number, now: number): number => {
-  const e = Math.min(WIND_MS, Math.max(0, now - since));
-  return since + e - (e * e) / (2 * WIND_MS);
-};
 const WINDS = new Set([
   "w-read",
   "w-flip",
@@ -168,22 +156,8 @@ export function windDown(svg: Element, since: number, from: number): void {
   step();
 }
 
-/** What each actor's stage last showed: its look, when it changed and the look before; whether it muses (no call under
- * way) and since when; when its tool is put away (null: none to); when its thought grows in; its turn over; when it
- * arrived. */
-interface Shown {
-  look: string | null;
-  at: number;
-  was: string | null;
-  musing: boolean;
-  musedAt: number;
-  putAt: number | null;
-  bubbleAt: number;
-  popBubble: boolean;
-  done: boolean;
-  arrivedAt: number;
-}
-const shown = new Map<string, Partial<Shown>>();
+// what each actor's stage last showed (step.ts's Shown), or its turn over before it was ever shown
+const shown = new Map<string, Shown | Rested>();
 
 /** Its turn over (the done avatar, the hello): the next turn's actor arrives on the stage. */
 export function stageRest(channel: string): void {
@@ -208,78 +182,15 @@ export function stageOf(a: StageActor, w: Work, src: string, t0 = performance.no
   const ch = a.channel;
   const e = w.ended,
     gone = reaction(`${ch} call`, e ? e.id : null, e && e.at, t0);
-  const react =
-    gone === null || !e
-      ? null
-      : !e.ok
-        ? e.kind === "test"
-          ? "tfail"
-          : "fail"
-        : e.kind === "test"
-          ? "pass"
-          : e.kind === "ship"
-            ? "ship"
-            : null;
-  const musing = !w.doing;
-  let sh = shown.get(ch) as Shown | undefined;
-  if (!sh || sh.done) {
-    // first seen (no change to show), or a new turn after its last: it arrives
-    sh = {
-      look: null,
-      at: -Infinity,
-      was: null,
-      musing,
-      musedAt: -Infinity,
-      putAt: null,
-      bubbleAt: -Infinity,
-      popBubble: false,
-      done: false,
-      arrivedAt: sh ? t0 : -Infinity,
-    };
-    shown.set(ch, sh);
-  }
-  const wasPut = sh.putAt !== null && t0 >= sh.putAt; // what it showed is being put away, or is
-  if (sh.musing !== musing) {
-    // a call over (the model at work), or one begun
-    const acting = sh.look !== null && sh.look !== "think";
-    const putAt = musing && acting ? t0 + (react ? REACT_MS - 300 : PUT_AFTER) : null;
-    Object.assign(sh, {
-      musing,
-      musedAt: t0,
-      putAt,
-      popBubble: !musing && sh.bubbleAt <= t0,
-      bubbleAt: !musing ? sh.bubbleAt : putAt === null ? t0 : putAt + 350,
-    });
-  }
-  // a call running; else, the call it made last, until it is put away (and while nothing readable was said since); else
-  // thinking
-  const putting = musing && sh.putAt !== null && t0 < sh.putAt + PUT_MS;
-  const doing = (react && ENDS[react]) || w.doing || (putting && w.last) || "think";
-  const look = doing === "team" ? `team${Math.min(3, Math.max(1, w.helpers || 0))}` : doing;
-  if (sh.look === null)
-    sh.look = look; // first seen: as it is
-  else if (sh.look !== look)
-    // what it showed, put away already, has nothing left to take off
-    Object.assign(sh, { was: wasPut && sh.look !== "think" ? null : sh.look, look, at: t0 });
-  const moving = sh.was !== null && t0 - sh.at < MOVE_MS;
+  const react = reactOf(e, gone);
+  const s = stageStep(shown.get(ch), w, react, t0);
+  shown.set(ch, s.sh);
+  const { sh, look, musing, moving, since } = s;
   const href = escapeHtml(src),
     p = propsOf(look, href),
     q = moving ? propsOf(sh.was!, href) : null;
-  const since = Math.max(sh.musedAt, t0 - 60000);
   const [move, fx] = motionOf(a);
-  const cls = [
-    "stage",
-    `s-${doing}`,
-    musing && "musing",
-    putting && "putting",
-    !musing && sh.popBubble && t0 - sh.musedAt < 400 && "popping",
-    t0 - sh.arrivedAt < MOVE_MS && "arriving",
-    react && `r-${react}`,
-    (!react || react === "fail") && (w.failed ?? 0) >= 3 && "streak",
-    a.failing && "retry",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const cls = stageClass(s, react, w.failed, !!a.failing, t0);
   const ms = (v: number) => Math.round(v);
   const html =
     `<svg xmlns="http://www.w3.org/2000/svg" class="${cls}" viewBox="-8 -14 102 82" aria-hidden="true" style="` +
@@ -297,15 +208,10 @@ export function stageOf(a: StageActor, w: Work, src: string, t0 = performance.no
     .split(" ")
     .filter((c) => c !== "popping" && c !== "arriving")
     .join(" ");
-  const left = Math.max(
-    gone === null ? 0 : REACT_MS - gone,
-    moving ? MOVE_MS - (t0 - sh.at) : 0,
-    putting ? sh.putAt! + PUT_MS - t0 : 0, // put away: drawn thinking
-  );
   return {
     html,
     sig: JSON.stringify([shows, look, href, fx, a.avatar_hue]),
-    left,
+    left: stageLeft(s, gone, t0),
     musing,
     since,
     from: wound(since, t0),

@@ -210,7 +210,7 @@ function miniMe(p: Pane, info: Actor | null, rest: { row_id?: number | null } | 
       class: "mini-me" + (rest ? " at-rest" : ""),
       title: says,
       "aria-label": says,
-      style: rest ? L.helpers.restDelay(info, rest.row_id) : null,
+      style: rest ? `--r: ${L.helpers.restDelay(info, rest.row_id)}` : null,
       onclick: () => setChatMin(p, false),
     },
     src ? el("img", { src, alt: "", draggable: "false" }) : icon("restore", 14),

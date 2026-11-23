@@ -1,4 +1,4 @@
-// What an actor's stage shows, worked out apart (stage-model.ts): its reactions, its look from one draw to the next, its
+// What an actor's stage shows, worked out apart (step.ts): its reactions, its look from one draw to the next, its
 // classes, and when it looks again.
 import { describe, expect, it } from "vitest";
 import {
@@ -7,16 +7,16 @@ import {
   PUT_MS,
   REACT_MS,
   WIND_MS,
-  motionOf,
   reactOf,
   reactionIn,
+  splitMotion,
   stageClass,
   stageLeft,
   stageStep,
   wound,
   type Reactions,
   type Shown,
-} from "./stage-model";
+} from "./step";
 
 describe("a stage's reactions", () => {
   it("reacts to a change it sees, for REACT_MS, once", () => {
@@ -47,10 +47,10 @@ describe("a stage's reactions", () => {
 
 describe("an avatar's motion", () => {
   it("is its move and its effect, each a CSS name or none", () => {
-    expect(motionOf("bob sparkle")).toEqual(["bob", "sparkle"]);
-    expect(motionOf("bob")).toEqual(["bob", ""]);
-    expect(motionOf("Bad! x")).toEqual(["", "x"]);
-    expect(motionOf(null)).toEqual(["", ""]);
+    expect(splitMotion("bob sparkle")).toEqual(["bob", "sparkle"]);
+    expect(splitMotion("bob")).toEqual(["bob", ""]);
+    expect(splitMotion("Bad! x")).toEqual(["", "x"]);
+    expect(splitMotion(null)).toEqual(["", ""]);
   });
 });
 

@@ -67,7 +67,7 @@ const MON_HOST = (): MonitorHost =>
       if (L.helpers.MAC && ev.ctrlKey && !snap()) leaveFull();
       L.panes.pickBeside(g.name, a.channel, ev);
     },
-    atWork: (a, work) => L.helpers.atWork(a, work),
+    avatarMode: () => L.helpers.avatarMode,
     permissionVerb: (asking) => L.chat.permissionVerb(asking),
     taskKind: (k) => (L.chat.TASK_KINDS[k as string] || k) as string,
     fileKinds: L.files.FILE_KINDS,

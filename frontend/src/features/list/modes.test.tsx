@@ -49,7 +49,7 @@ const boxOf = () => {
 };
 
 describe("the monitor", () => {
-  const a1 = actor("g", "a1", { status: "running", name: { text: "Parser", by: "user" } }),
+  const a1 = actor("g", "a1", { status: "running", name: { text: "Parser", by: "user" }, avatar: "animal/fox" }),
     a2 = actor("g", "a2", { status: "closed", last_user_message: "fix it" });
   const home = { gatherers: [gatherer("g", [a1, a2])] };
   const mv = { folded: new Set(["Saved", "Closed"]), got: new Map(), old: false, avatarMode: "acting" };
@@ -59,7 +59,7 @@ describe("the monitor", () => {
       ctx: ctxOf(home),
       folderIcon: "M0 0",
       fileKinds: {},
-      atWork: () => span("stage"),
+      avatarMode: () => "acting",
     });
     drawMonitor(boxOf(), buildMonitor(ctxOf(home), viewOf(), mv), host);
     expect(box.querySelector("h2")?.textContent).toBe("2 actors");

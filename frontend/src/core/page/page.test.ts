@@ -1,9 +1,9 @@
 // The page's shared parts (core/page/): its state in its store, the nodes it builds, what it looks up in its home, an
 // actor's avatar as it draws it.
 import { afterEach, describe, expect, it } from "vitest";
-import { actorOf, agentOf, gathererOf, homeOf, readOf, workOf } from "../api/testing";
+import { actorOf, agentOf, gathererOf, homeOf, readOf } from "../api/testing";
 import { usePage } from "../store/page";
-import { atRest, atWork, avatarMode, bareAvatar, buddy, greeting, hueInk, keepAvatarMode } from "./avatar";
+import { avatarMode, bareAvatar, keepAvatarMode } from "./avatar";
 import { el, foldMark, signature, statusEl, svgEl } from "./dom";
 import * as helpers from "./helpers";
 import { gathererNamed, selectedInfo, shellOf, shellPath } from "./home";
@@ -81,28 +81,14 @@ describe("what it looks up in its home", () => {
 });
 
 describe("an actor's avatar", () => {
+  // drawn by the stage (core/ui/stage: its tests in stage.test.tsx and step.test.ts)
   const fox = home.gatherers[0].agents[0];
-  it("its picture alone, its words' colour", () => {
+  it("its picture alone, and how one at work is drawn: acting, or simple", () => {
     expect(bareAvatar(fox)).toBe("/avatars/fox.svg?bare=1");
     expect(bareAvatar(actorOf("x"))).toBeNull();
-    expect(hueInk(fox)).toBe("color: light-dark(#b91c1c, #f57474)");
-    expect(hueInk(actorOf("x"))).toBeNull();
-  });
-
-  it("small, moving as it does; done; acting, or simple", () => {
-    const b = buddy(fox, true);
-    expect(b.className).toBe("buddy m-bob f-glow still");
-    expect(b.querySelectorAll("i").length).toBe(3);
-    const done = atRest(fox, 4);
-    expect(done.className).toBe("done");
-    expect(done.querySelector("img")?.getAttribute("src")).toBe("/avatars/fox.svg?bare=1");
-    expect(atWork(actorOf("y"), null).className).toBe("spin"); // no avatar: the turning glyph
-    expect(atWork(fox, { work: workOf({ doing: "read" }) }).className).toBe("stage-box");
     keepAvatarMode("simple");
     expect(avatarMode).toBe("simple");
-    expect(atWork(fox, null).className).toContain("buddy");
-    expect(greeting(fox)?.className).toContain("buddy");
     keepAvatarMode("acting");
-    expect(greeting(fox)?.querySelector("svg")?.getAttribute("class")).toBe("stage s-hello");
+    expect(avatarMode).toBe("acting");
   });
 });

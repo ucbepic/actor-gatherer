@@ -8,10 +8,11 @@ import { memo, useCallback, type MouseEvent } from "react";
 import { compact, lasting, plural } from "../../core/format";
 import { StrokeIcon } from "../../core/ui/Icon";
 import { Html } from "../../core/ui/PageNode";
+import { AtWork } from "../../core/ui/stage/Stage";
 import { titleOf } from "./groups";
 import type { PageParts } from "./host";
 import { plainWords, type MonCardRow, type MonColumn, type MonData, type MonitorModel } from "./monitor-model";
-import { Face, useFilled, useSpin } from "./Parts";
+import { Face, useSpin } from "./Parts";
 import { GROUP_CLS, type Group } from "./status";
 import type { Actor, Gatherer, ListCtx } from "./types";
 
@@ -28,8 +29,8 @@ export interface MonitorHost extends PageParts {
   /** a card pressed: the monitor left, its actor shown; right-clicked (or Ctrl+click on a Mac): beside the one shown */
   show(g: Gatherer, a: Actor, ev: MouseEvent): void;
   showBeside(g: Gatherer, a: Actor, ev: MouseEvent): void;
-  /** the actor at work, small, on its stage */
-  atWork(a: Actor, work: unknown): Node;
+  /** how an actor at work is drawn: "acting" (its stage) or "simple" (core/page/avatar.ts's avatarMode) */
+  avatarMode(): string;
   /** a permission's verb, as Chat says it ("run a command") */
   permissionVerb(asking: unknown): string;
   /** what runs in the background, by its kind */
@@ -183,10 +184,6 @@ const Card = memo(
       [cls, label] = r.status,
       live = cls === "running";
     const spin = useSpin();
-    const stage = useFilled<HTMLDivElement>(
-      () => (live ? [host.atWork({ ...a, channel: `monitor ${a.channel}` }, { work: (d && d.work) || {} })] : []),
-      [r.sig],
-    );
     const seen = useCallback(
       (n: HTMLButtonElement | null) => {
         if (!n) return;
@@ -221,7 +218,14 @@ const Card = memo(
       >
         <div className="c-head">
           {live ? (
-            <div className="c-pic acting" aria-hidden="true" ref={stage} />
+            <div className="c-pic acting" aria-hidden="true">
+              {/* its own stage, apart from Chat's for the same actor (its channel's record) */}
+              <AtWork
+                info={{ ...a, channel: `monitor ${a.channel}` }}
+                work={(d && d.work) || {}}
+                mode={host.avatarMode()}
+              />
+            </div>
           ) : (
             <div className="c-pic">
               <Face host={host} a={a} />

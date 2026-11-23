@@ -178,7 +178,6 @@ export interface ListPage {
     readonly MAC: boolean;
     readonly ICONS: Readonly<Record<string, string>>;
     readonly avatarMode: string;
-    atWork(a: Actor, work: unknown): Node;
     closeIcon(): Node;
     saveIcon(on: boolean): Node;
     hideIcon(): Node;
