@@ -23,7 +23,7 @@ export const shellSpan = (text: string): HTMLSpanElement => {
   return s;
 };
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   startClocks(); // every count-up time on the page set each second (core/ui/clocks.ts)
   // a code block's Copy (codeFence's, callView's): the command as written (data-copy), else the block's own text; its

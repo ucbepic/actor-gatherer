@@ -90,9 +90,12 @@ export interface Pane extends PaneParts {
   drawn: { main: string | null; who: string | null };
 }
 
-/** An app's panel above the panes (features/layout/panes.js's), as the page's modules read it. */
+/** An app's panel above the panes (the layout's, features/layout/types.ts's AppPanel), as the page's modules read it:
+ * its group (`g`) and node too. */
 export interface AppPane {
   app: { name: string };
+  g: string;
+  node: HTMLElement;
   instance: { id: string; gatherer?: string };
   held?: boolean;
   panel: { intent(kind: string, what: unknown): void; refresh?(): void };

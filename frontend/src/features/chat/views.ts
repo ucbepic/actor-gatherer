@@ -224,7 +224,7 @@ export async function setChatView(p: Pane, id: string): Promise<void> {
   chatToEnd(p);
 }
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   const page = P();
   Object.assign(CHAT_FEEDS, page.feeds);

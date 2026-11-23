@@ -1,9 +1,8 @@
-// WHAT THE LAYOUT TAKES FROM THE PAGE AROUND IT: the old page's modules (plain JS: its state, its helpers, its data, the
-// panes' views, Chat's) and the other features' own (the list, the apps' host, Chat's actors, the terminal), which a
-// feature's TypeScript may not import (ag_dashboard/DESIGN.md's Rules). src/links/layout.ts hands them over as the page
-// starts (setLayoutPage, from src/page.js, before any module starts), each a module's namespace, so a value one of them
-// changes later (the list's mode, the row being dragged) is read as it is then; what the layout reads of each is typed
-// here, and nothing else. It shrinks as those modules move.
+// WHAT THE LAYOUT TAKES FROM THE PAGE AROUND IT: the page's core and shell (its state, its helpers, its data, the
+// panes' views) and the other features' own (the list, the apps' host, Chat's, the terminal), which a feature may not
+// import (ag_dashboard/DESIGN.md's Rules). src/links/layout.ts hands them over as the page starts (setLayoutPage, from
+// src/main.ts, before any module starts), each a module's namespace, so a value one of them changes later (the list's
+// mode, the row being dragged) is read as it is then; what the layout reads of each is typed here, and nothing else.
 import type { PaneParts } from "./pane";
 import type {
   Actor,

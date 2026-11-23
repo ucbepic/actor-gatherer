@@ -329,7 +329,7 @@ export async function select(g: string, c: string): Promise<void> {
     if (end) L.chat.chatToEnd();
   }
 }
-// What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
+// What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded.
 export function start(): void {
   const side = document.querySelector<HTMLElement>(".side")!,
     root = document.documentElement;

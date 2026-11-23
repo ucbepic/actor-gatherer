@@ -8,7 +8,7 @@ import { CLAUDE, openActor } from "./home";
 async function says(page: Page, id: string, md: string) {
   await page.locator("#pane-here").evaluate(
     (here, [id, text]) => {
-      const ag = (window as unknown as { agNext: { ui: { markdown: (t: string) => HTMLElement } } }).agNext;
+      const ag = (window as unknown as { agPage: { ui: { markdown: (t: string) => HTMLElement } } }).agPage;
       const box = ag.ui.markdown(text);
       box.id = id;
       Object.assign(box.style, { position: "absolute", left: "40px", top: "60px", zIndex: "50", width: "600px" });

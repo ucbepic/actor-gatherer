@@ -1,9 +1,9 @@
 // The page's shell (features/page/) linked to the features it draws: what link.ts says it takes, filled from each
-// feature's modules. An app-level file (ag_dashboard/DESIGN.md's Rules): it may import any feature, and is type-checked,
-// so what it hands over is checked against what the shell says it takes -- but for the old page's modules still plain
-// JS, read as untyped (`@ts-ignore` on their imports, which does nothing once a module is TypeScript, when it is checked
-// too). Called once by page.js before any module starts; each part reads its module's namespace when called, so a value
-// the module changes later is read as it is then.
+// feature's modules. An app-level file (ag_dashboard/DESIGN.md's Rules): it may import any feature, and is
+// type-checked, so what it hands over is checked against what the shell says it takes -- but for the old page's modules
+// still plain JS, read as untyped (`@ts-ignore` on their imports, which does nothing once a module is TypeScript, when
+// it is checked too). Called once by src/main.ts before any module starts; each part reads its module's namespace when
+// called, so a value the module changes later is read as it is then.
 import { setPageLink } from "../features/page/link";
 import * as seen from "../features/list/seen";
 import * as list from "../features/list/list";
@@ -108,7 +108,7 @@ const detailsPart: DetailsPart = {
   notes: useNotes,
 };
 
-/** The page's shell handed what it takes of the features: page.js, before any module starts. */
+/** The page's shell handed what it takes of the features: src/main.ts, before any module starts. */
 export function linkPage(): void {
   setPageLink({
     list: listPart,

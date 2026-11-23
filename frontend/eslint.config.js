@@ -1,16 +1,11 @@
 // Lint for the dashboard's front end, with the import rules between its folders (ag_dashboard/DESIGN.md, "Rules"):
 // core/ imports no feature; a feature imports core/ and itself, not another feature; the app's own files (main.ts,
-// bridge.ts, page.js, and links/, what links each feature to the others) put them together.
+// styles.ts, and links/, what links each feature to the others) put them together.
 import js from "@eslint/js";
 import boundaries from "eslint-plugin-boundaries";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
-
-// The page's script from before its views were rewritten -- page.html's sections, modules now (src/page.js starts
-// them): the .js files in features/ (core/page/ holds what they share, and keeps core/'s rules). Each still imports
-// other features' modules, as the one script they were, so the import rules leave them out; each goes, or becomes a
-// feature's own code, as its view is rewritten (A5, A6). None is over max-lines any more.
 
 export default tseslint.config(
   // (src/core/api/types.gen.ts: generated from the server's schema by scripts/gen-types.mjs, over max-lines by far)
@@ -23,23 +18,15 @@ export default tseslint.config(
     rules: { "max-lines": ["error", { max: 500, skipBlankLines: true, skipComments: true }] },
   },
   {
-    files: ["src/**/*.js"],
-    rules: {
-      // a catch that only goes on (`catch (e) { ... }`), keys left out of a copy, and `on ? a() : b()` as a statement
-      "@typescript-eslint/no-unused-vars": ["error", { caughtErrors: "none", ignoreRestSiblings: true }],
-      "@typescript-eslint/no-unused-expressions": ["error", { allowTernary: true, allowShortCircuit: true }],
-    },
-  },
-  {
-    files: ["src/**/*.{ts,tsx}", "src/core/**/*.js", "src/*.js"],
+    files: ["src/**/*.{ts,tsx}"],
     plugins: { boundaries },
     settings: {
       "import/resolver": { node: { extensions: [".ts", ".tsx", ".js"] } },
       "boundaries/elements": [
         { type: "core", pattern: "src/core" },
         { type: "feature", pattern: "src/features/*", capture: ["name"] },
-        { type: "app", pattern: "src/*.{ts,tsx,js}" },
-        // what links each feature's TypeScript to the others (src/links/: a feature's link.ts, filled), as page.js does
+        { type: "app", pattern: "src/*.{ts,tsx}" },
+        // what links each feature to the others (src/links/: a feature's link.ts, filled), called by main.ts
         { type: "app", pattern: "src/links" },
       ],
     },

@@ -126,7 +126,7 @@ export function takeHome(home: PageHome): void {
       if (a.last_user_message) {
         // an app's words: the user's -- and what in the app they are about
         (a as Actor & { asked_of?: unknown }).asked_of = L.appActors.appAskedOf(a.last_user_message);
-        a.last_user_message = L.appActors.appAsked(a, a.last_user_message);
+        a.last_user_message = L.appActors.appAsked(a, a.last_user_message) ?? null;
       }
     }
   if (state.selected) {
@@ -202,7 +202,7 @@ export function markSeen(): void {
   void tellSeen(looked);
   if (apps) renderAgents();
 }
-// What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
+// What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded.
 export function start(): void {
   document.addEventListener("visibilitychange", () => {
     if (S().home && document.visibilityState === "visible") {

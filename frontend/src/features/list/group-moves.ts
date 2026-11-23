@@ -279,7 +279,7 @@ async function followMoved(
   const gone = new Set(moved),
     P = L.panes;
   for (const p of P.actorPanes())
-    if (p.g === from && gone.has(p.c)) {
+    if (p.g === from && p.c !== null && gone.has(p.c)) {
       P.retarget(p, to, p.c);
       void P.paneGiven(p); // drawn for it there (its calls and view loaded again)
     }

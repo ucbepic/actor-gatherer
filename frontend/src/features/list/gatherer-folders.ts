@@ -100,7 +100,7 @@ async function makeGroup(text: string, parent: number | null) {
     renderAgents();
   }
 }
-// What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
+// What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded.
 export function start(): void {
   document.addEventListener("keydown", (ev) => {
     const t = ev.target as Element | null;

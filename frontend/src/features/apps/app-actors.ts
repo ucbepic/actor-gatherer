@@ -34,9 +34,11 @@ export function actorLogo(a: PageActor): Element {
     harnessBadge(a.harness),
   );
 }
-/** The app and instance an actor's role names; null for an actor of none. */
-export const appRole = (info: Pick<PageActor, "session"> | null | undefined): { app: string; key: string } | null =>
-  roleOf(info && info.session && info.session.role);
+/** The app and instance an actor's role names (all it reads of the actor: its session's role); null for an actor of
+ * none. */
+export const appRole = (
+  info: { session?: { role?: string | null } | null } | null | undefined,
+): { app: string; key: string } | null => roleOf(info && info.session && info.session.role);
 /** The app an actor's role names, if it is one the page knows (host.ts): its manifest, as /api/apps lists it. */
 const appOfActor = (info: PageActor): App | null => {
   const r = appRole(info);

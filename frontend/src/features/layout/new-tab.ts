@@ -207,7 +207,7 @@ function tabKey(what: string): void {
 }
 /** Whether this runs on a Mac (the page's own keys, ⌃T and ⌃W, are a Mac's only). */
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   if (!snap() && IS_MAC)
     document.addEventListener(

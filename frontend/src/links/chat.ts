@@ -1,6 +1,6 @@
 // What Chat (features/chat/, TypeScript) takes from the page around it and from the other features, which a feature's
 // TypeScript may not import (ag_dashboard/DESIGN.md's Rules): filled here, at the app's level, once every module is loaded
-// and before any starts (src/page.js's linkChat). What Chat reads is typed in features/chat/link.ts; the page's modules
+// and before any starts (src/main.ts's linkChat). What Chat reads is typed in features/chat/link.ts; the page's modules
 // it comes from are imported typed, so what each hands over is checked. Each part is read as it is when Chat asks (the
 // page's state, a setting), not as it was when linked.
 import { createElement } from "react";

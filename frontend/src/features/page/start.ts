@@ -8,7 +8,7 @@ import { connect } from "./stream";
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   const { layout } = link;
   $("pause").addEventListener("click", async (ev) => {

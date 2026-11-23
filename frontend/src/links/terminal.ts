@@ -1,6 +1,6 @@
 // What the terminal (features/terminal/, TypeScript) takes from the page around it and from the other features: what a
 // session's terminal asks of the page (term.ts's TermHost), and what its view and a shell's pane need (link.ts's
-// TermPage). Filled here, at the app's level, before any module starts (src/page.js's linkTerminal).
+// TermPage). Filled here, at the app's level, before any module starts (src/main.ts's linkTerminal).
 import { readOnlyWhy } from "../features/chat/chat";
 import { addChatView } from "../features/chat/views";
 import { closeShell, firstAgent, isHidden } from "../features/list/list";

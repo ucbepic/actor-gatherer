@@ -128,7 +128,7 @@ test("a link to a page, clicked in an actor's Chat, opens Notes at that page and
   const line = /\[([a-z0-9]{8})\] second/.exec(made)![1];
   // the agent's reply, as Chat draws it (core/ui/md.ts)
   await page.locator("#pane-here").evaluate((here, md) => {
-    const ag = (window as unknown as { agNext: { ui: { markdown: (t: string) => HTMLElement } } }).agNext;
+    const ag = (window as unknown as { agPage: { ui: { markdown: (t: string) => HTMLElement } } }).agPage;
     const box = ag.ui.markdown(md);
     box.id = "said-notes";
     Object.assign(box.style, { position: "absolute", left: "40px", top: "60px", zIndex: "50" });

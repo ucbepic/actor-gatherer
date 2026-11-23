@@ -1,6 +1,6 @@
 // What History (features/history/, TypeScript) takes from the page around it: its view and its outline's feed added among
 // the panes' views (Chat's registry), the pane's actor, the page's home and whether it is paused. Filled here, at the
-// app's level, before any module starts (src/page.js's linkHistory).
+// app's level, before any module starts (src/main.ts's linkHistory).
 import * as state from "../core/page/state";
 import * as helpers from "../core/page/helpers";
 import type { Home } from "../core/api/types";
