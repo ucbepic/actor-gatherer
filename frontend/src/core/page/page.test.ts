@@ -1,6 +1,7 @@
 // The page's shared parts (core/page/): its state in its store, the nodes it builds, what it looks up in its home, an
 // actor's avatar as it draws it.
 import { afterEach, describe, expect, it } from "vitest";
+import { actorOf, agentOf, gathererOf, homeOf, readOf, workOf } from "../api/testing";
 import { usePage } from "../store/page";
 import { atRest, atWork, avatarMode, bareAvatar, buddy, greeting, hueInk, keepAvatarMode } from "./avatar";
 import { el, foldMark, signature, statusEl, svgEl } from "./dom";
@@ -9,12 +10,14 @@ import { gathererNamed, selectedInfo, shellOf, shellPath } from "./home";
 import { panes, state } from "./state";
 import type { Pane, PageHome } from "./types";
 
-const home: PageHome = {
+const home: PageHome = homeOf({
   now: 100,
   home_dir: "/Users/me",
-  gatherers: [{ name: "g", agents: [{ channel: "c1", avatar: "fox", avatar_hue: "red", avatar_motion: "bob glow" }] }],
-  shells: [{ id: "shell:1", cwd: "/Users/me/src" }],
-};
+  gatherers: [
+    gathererOf("g", { agents: [actorOf("c1", { avatar: "fox", avatar_hue: "red", avatar_motion: "bob glow" })] }),
+  ],
+  shells: [{ id: "shell:1", gatherer: "g", cwd: "/Users/me/src", since: 0, folder: null }],
+});
 
 afterEach(() => {
   usePage.setState({ home: null, selected: null, paused: false });
@@ -33,12 +36,12 @@ describe("the page's state", () => {
 
   it("keeps its own pane's actor's calls on that pane", () => {
     expect(state.agent).toBeNull();
-    state.agent = { reads: [] }; // no pane: dropped
+    state.agent = agentOf(); // no pane: dropped
     expect(state.agentVersion).toBe(0);
     panes.here = { agent: null, agentVersion: 0 } as unknown as Pane;
-    state.agent = { reads: [1] };
+    state.agent = agentOf({ reads: [readOf(1)] });
     state.agentVersion = 2;
-    expect(panes.here.agent).toEqual({ reads: [1] });
+    expect(panes.here.agent).toEqual(agentOf({ reads: [readOf(1)] }));
     expect(state.agentVersion).toBe(2);
   });
 });
@@ -81,9 +84,9 @@ describe("an actor's avatar", () => {
   const fox = home.gatherers[0].agents[0];
   it("its picture alone, its words' colour", () => {
     expect(bareAvatar(fox)).toBe("/avatars/fox.svg?bare=1");
-    expect(bareAvatar({ channel: "x" })).toBeNull();
+    expect(bareAvatar(actorOf("x"))).toBeNull();
     expect(hueInk(fox)).toBe("color: light-dark(#b91c1c, #f57474)");
-    expect(hueInk({ channel: "x" })).toBeNull();
+    expect(hueInk(actorOf("x"))).toBeNull();
   });
 
   it("small, moving as it does; done; acting, or simple", () => {
@@ -93,8 +96,8 @@ describe("an actor's avatar", () => {
     const done = atRest(fox, 4);
     expect(done.className).toBe("done");
     expect(done.querySelector("img")?.getAttribute("src")).toBe("/avatars/fox.svg?bare=1");
-    expect(atWork({ channel: "y" }, null).className).toBe("spin"); // no avatar: the turning glyph
-    expect(atWork(fox, { work: { doing: "read" } }).className).toBe("stage-box");
+    expect(atWork(actorOf("y"), null).className).toBe("spin"); // no avatar: the turning glyph
+    expect(atWork(fox, { work: workOf({ doing: "read" }) }).className).toBe("stage-box");
     keepAvatarMode("simple");
     expect(avatarMode).toBe("simple");
     expect(atWork(fox, null).className).toContain("buddy");

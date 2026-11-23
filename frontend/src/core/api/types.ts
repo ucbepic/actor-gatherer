@@ -86,6 +86,8 @@ export type Turn = Schemas["Turn"];
 export type Reply = Schemas["Reply"];
 /** What the agent does now: a call, or thinking. */
 export type Doing = Schemas["Doing"];
+/** What an actor's turn is doing, from its calls (work.py's summary). */
+export type Work = Schemas["Work"];
 /** A turn's latest call, while nothing readable followed it. */
 export type CallRun = Schemas["CallRun"];
 export type UserMessage = Schemas["UserMessage"];

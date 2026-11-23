@@ -198,7 +198,8 @@ class Session(Model):
     model: Optional[str]
     started_as: Optional[str]
     ended: Number
-    role: Any
+    role: Optional[str]
+    """a coordinator agent's role, or an app's actor's: its app and instance, as JSON (app_agents.py's `role_of`)"""
     over: Optional[str]
     harness_id: Optional[str]
     queued: List[str]
@@ -250,7 +251,8 @@ class Actor(Model):
     background: List[Background]
     avatar: Optional[str]
     avatar_hue: Optional[str]
-    avatar_motion: Any
+    avatar_motion: Optional[str]
+    """how its picture moves (its SVG's own word for it)"""
     avatar_hello: Optional[str]
     """what it says before its first message"""
     pid: Maybe[Optional[int]]
@@ -264,8 +266,8 @@ class Actor(Model):
     failing: Maybe[Optional[Failing]]
     taken_back: Maybe[Optional[TakenBack]]
     session: Maybe[Session]
-    role: Maybe[Any]
-    """a coordinator agent's, or an app's actor's ({app: key})"""
+    role: Maybe[str]
+    """its session's role: a coordinator agent's, or an app's actor's (its app and instance, as JSON)"""
     over: Maybe[str]
     """a coordinator agent's node (coordinators.py): "all", "groups:<id>", "folder:<id>"; none, its group's"""
     answer: Maybe[Answered]
@@ -274,12 +276,14 @@ class Actor(Model):
 class Notice(Model):
     """A notification an app sent, not settled since (app_kit's notices.py)."""
 
-    id: Optional[str]
+    id: str
     key: Optional[str]
     title: Optional[str]
     text: Optional[str]
-    show: Any
+    show: Optional[List[str]]
+    """where it pops up: some of "ag", "system"; none, only listed"""
     where: Any
+    """where in the app it is about, handed to its panel when opened"""
     at: Optional[Number]
 
 
@@ -1067,6 +1071,24 @@ class SentMessage(Model):
     at: Optional[Number]
 
 
+class WorkEnded(Model):
+    id: Any
+    kind: str
+    ok: bool
+    at: Number
+
+
+class Work(Model):
+    """What an actor's turn is doing, from its calls (work.py's `summary`): the kind of its newest call running, of its
+    newest call, its subagents running, its newest call ended, the calls that failed in a row."""
+
+    doing: Optional[str]
+    last: Optional[str]
+    helpers: int
+    ended: Optional[WorkEnded]
+    failed: int
+
+
 class Turn(Model):
     """A turn (files.py's): the user's message, what the agent said and did, how it ended."""
 
@@ -1086,8 +1108,8 @@ class Turn(Model):
     """its calls, as many as its commands list"""
     kind: str
     """what the user's message is, as its harness's wrapper says (harness_kit's `words`)"""
-    work: Any
-    """what the avatar acts out (work.py's summary)"""
+    work: Work
+    """what the avatar acts out"""
     sent: Maybe[List[SentMessage]]
     output: Maybe[Optional[str]]
     """a `!` command's output"""
@@ -1254,7 +1276,7 @@ class MonitorActor(Model):
     more: Maybe[int]
     said: Maybe[Optional[str]]
     now: Maybe[Optional[Doing]]
-    work: Maybe[Any]
+    work: Maybe[Work]
     steps: Maybe[List[MonitorStep]]
     calls: Maybe[int]
     files: Maybe[Dict[str, int]]

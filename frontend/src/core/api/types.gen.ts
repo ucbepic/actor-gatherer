@@ -2033,7 +2033,8 @@ export interface components {
       background: components["schemas"]["Background"][];
       avatar: string | null;
       avatar_hue: string | null;
-      avatar_motion: unknown;
+      /** @description how its picture moves (its SVG's own word for it) */
+      avatar_motion: string | null;
       /** @description what it says before its first message */
       avatar_hello: string | null;
       pid?: number | null;
@@ -2047,8 +2048,8 @@ export interface components {
       failing?: components["schemas"]["Failing"] | null;
       taken_back?: components["schemas"]["TakenBack"] | null;
       session?: components["schemas"]["Session"];
-      /** @description a coordinator agent's, or an app's actor's ({app: key}) */
-      role?: unknown;
+      /** @description its session's role: a coordinator agent's, or an app's actor's (its app and instance, as JSON) */
+      role?: string;
       /** @description a coordinator agent's node (coordinators.py): "all", "groups:<id>", "folder:<id>"; none, its group's */
       over?: string;
       answer?: components["schemas"]["Answered"];
@@ -3049,7 +3050,7 @@ export interface components {
       more?: number;
       said?: string | null;
       now?: components["schemas"]["Doing"] | null;
-      work?: unknown;
+      work?: components["schemas"]["Work"];
       steps?: components["schemas"]["MonitorStep"][];
       calls?: number;
       files?: {
@@ -3076,11 +3077,13 @@ export interface components {
      * @description A notification an app sent, not settled since (app_kit's notices.py).
      */
     Notice: {
-      id: string | null;
+      id: string;
       key: string | null;
       title: string | null;
       text: string | null;
-      show: unknown;
+      /** @description where it pops up: some of "ag", "system"; none, only listed */
+      show: string[] | null;
+      /** @description where in the app it is about, handed to its panel when opened */
       where: unknown;
       at: number | null;
     };
@@ -3289,7 +3292,8 @@ export interface components {
       model: string | null;
       started_as: string | null;
       ended: number;
-      role: unknown;
+      /** @description a coordinator agent's role, or an app's actor's: its app and instance, as JSON (app_agents.py's `role_of`) */
+      role: string | null;
       over: string | null;
       harness_id: string | null;
       /** @description its messages waiting in the dashboard's queue */
@@ -3543,8 +3547,8 @@ export interface components {
       calls: number;
       /** @description what the user's message is, as its harness's wrapper says (harness_kit's `words`) */
       kind: string;
-      /** @description what the avatar acts out (work.py's summary) */
-      work: unknown;
+      /** @description what the avatar acts out */
+      work: components["schemas"]["Work"];
       sent?: components["schemas"]["SentMessage"][];
       /** @description a `!` command's output */
       output?: string | null;
@@ -3667,6 +3671,25 @@ export interface components {
       cid: string | null;
       /** @enum {string} */
       how: "queued" | "chat" | "dashboard";
+    };
+    /**
+     * Work
+     * @description What an actor's turn is doing, from its calls (work.py's `summary`): the kind of its newest call running, of its
+     *     newest call, its subagents running, its newest call ended, the calls that failed in a row.
+     */
+    Work: {
+      doing: string | null;
+      last: string | null;
+      helpers: number;
+      ended: components["schemas"]["WorkEnded"] | null;
+      failed: number;
+    };
+    /** WorkEnded */
+    WorkEnded: {
+      id: unknown;
+      kind: string;
+      ok: boolean;
+      at: number;
     };
   };
   responses: never;

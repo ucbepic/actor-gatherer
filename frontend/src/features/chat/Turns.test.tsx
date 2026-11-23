@@ -14,6 +14,7 @@ import {
   sessionOf,
   userMessageOf,
   waitsOf,
+  workOf,
 } from "../../core/api/testing";
 import { sizesForTests } from "../../core/ui/lists";
 import { loadVendored } from "../../core/ui/testing";
@@ -202,7 +203,7 @@ describe("Turns", () => {
   });
 
   it("draws the actor at work under a running turn, from the view: the line under it, its stage below", () => {
-    const at = turn(1, { at: NOW - 120, began: NOW - 125, work: { doing: "read" } });
+    const at = turn(1, { at: NOW - 120, began: NOW - 125, work: workOf({ doing: "read" }) });
     const ts = [turn(0), at];
     const { page } = testPage(ts, {
       view: chatView(ts, { current: now(ts, "working") }),
@@ -219,7 +220,9 @@ describe("Turns", () => {
     expect(line.querySelector(".fl-mini img")!.getAttribute("src")).toBe("/avatars/animal/fox.svg?bare=1");
     const status = node.querySelector(".fl-foot > .fl-status")!;
     expect([...status.children].map((c) => c.className)).toEqual(["stage-box", "now"]);
-    expect(status.firstElementChild!.getAttribute("data-sig")).toBe('["work","animal/fox",{"doing":"read"}]');
+    expect(status.firstElementChild!.getAttribute("data-sig")).toBe(
+      '["work","animal/fox",{"doing":"read","last":null,"helpers":0,"ended":null,"failed":0}]',
+    );
     expect(node.querySelector(".fl-done")).toBeNull();
     expect(node.querySelector("#fl-turn-1 .fl-finished")).toBeNull();
     // thinking; its calls failing; Esc sent

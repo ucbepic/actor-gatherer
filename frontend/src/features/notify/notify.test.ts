@@ -1,33 +1,37 @@
 // What wants the reader, worked out apart (want.ts), and the pop-ups that say it (Pops.tsx).
 import { act, fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { actorOf, appNoticesOf, askOf, gathererOf, homeOf, noticeOf, questionOf } from "../../core/api/testing";
 import type { PageHome } from "../../core/page/types";
 import { POP_MOST, POP_SECONDS, popUp, usePops } from "./Pops";
 import { dropGoneIn, freshOf, saidOf, saidWhere, wanting, type Words } from "./want";
 
-const home = (): PageHome => ({
-  now: 100,
-  gatherers: [
-    {
-      name: "g",
-      agents: [
-        { channel: "c1", status: "asking", asking: { call: "x1", questions: [{ question: "Which fruit?" }] } },
-        { channel: "c2", status: "error", stopped: { text: "Overloaded", at: 50 } },
-        { channel: "c3", status: "idle" },
-      ],
-      apps: {
-        i1: {
-          app: "notepad",
-          notices: [
-            { id: "n1", title: "Build failed", text: "3 tests", at: 10, show: ["ag"] },
-            { id: "n2", title: "Old", at: 2 },
-          ],
-          last: 10,
+const home = (): PageHome =>
+  homeOf({
+    now: 100,
+    gatherers: [
+      gathererOf("g", {
+        agents: [
+          actorOf("c1", {
+            status: "asking",
+            asking: askOf({ call: "x1", questions: [questionOf({ question: "Which fruit?" })] }),
+          }),
+          actorOf("c2", { status: "error", stopped: { kind: "error", text: "Overloaded", at: 50 } }),
+          actorOf("c3", { status: "idle" }),
+        ],
+        apps: {
+          i1: appNoticesOf({
+            app: "notepad",
+            notices: [
+              noticeOf({ id: "n1", title: "Build failed", text: "3 tests", at: 10, show: ["ag"] }),
+              noticeOf({ id: "n2", title: "Old", at: 2 }),
+            ],
+            last: 10,
+          }),
         },
-      },
-    },
-  ],
-});
+      }),
+    ],
+  });
 const status = (a: { status?: string }) => a.status || "idle";
 const appKey = (g: string, id: string) => `${g}/${id}`;
 

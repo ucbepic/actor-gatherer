@@ -241,7 +241,7 @@ export interface ListPage {
   history: { enc(s: string): string };
   /** features/apps: an app's own agent, the Apps page, the apps' host, an agent's request to install one */
   appActors: {
-    appRole(s: { session: { role?: unknown } }): { key: string } | null;
+    appRole(s: { session: { role?: string | null } }): { key: string } | null;
     actorLogo(a: Actor): Node;
     appAsked(a: Actor, text: string): string;
     appAskedOf(text: string): unknown;

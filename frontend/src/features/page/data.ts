@@ -5,6 +5,7 @@
 // (link.ts: the list, the panes, Chat and its views, Details, the terminals).
 import { SNAPSHOT, panes, state } from "../../core/page/state";
 import { get } from "../../core/api/client";
+import { failed } from "../../core/api/types";
 import { clock } from "../../core/format";
 import { isShell, parse as parseKey } from "../../core/model/keys";
 import { signature } from "../../core/page/dom";
@@ -47,12 +48,13 @@ export async function loadAgent(p: Pane = panes.here as Pane): Promise<void> {
 export async function takeAgent(agent: AgentCalls | null, p: Pane = panes.here as Pane): Promise<void> {
   p.agent = agent;
   p.agentVersion = (p.agentVersion || 0) + 1;
-  const reads = (agent && agent.reads) || [];
+  const calls = agent && !failed(agent) ? agent : null; // ({error}: no calls)
+  const reads = (calls && calls.reads) || [];
   link.details.counted(reads); // ag's count of all each call sent
   const actor = paneKey(p);
   if (!actor) return;
   link.details.detailsShown(allPanes().map(paneKey).filter(Boolean) as string[]);
-  if (reads.length) await link.details.loadContext(parseKey(actor).group, link.details.shownRead(agent, actor));
+  if (reads.length) await link.details.loadContext(parseKey(actor).group, link.details.shownRead(calls, actor));
 }
 /** What pane `p` shows, loaded (this page's own, by default): the feed its view draws from (features/chat/views.js),
  * for its actor -- any actor: one that cannot be messaged here is shown all the same, without the message box. */

@@ -2,25 +2,25 @@
 // core/api/types.ts), and what the page tells it besides: each actor's status facts, the apps open, the reader's
 // choices, what is shown.
 import type * as api from "../../core/api/types";
+import type { PageActor as Actor, PageHome as ListHome } from "../../core/page/types";
 
 /** A status as the list says it: [its class, its word] ("running", "Running"). */
 export type Status = readonly [cls: string, label: string];
 
-/** A session the page started or keeps (sessions.py's). */
-export type Session = api.Session;
-
-/** An actor of a gatherer (data.py's), as the home has it -- and the page's key for it, its gatherer and channel
- * (seen.ts's takeHome sets it). */
-export type Actor = api.Actor & { key?: string };
+/** A session the page started or keeps, an actor (the home's, keyed by the page), a gatherer or group with its actors, a
+ * shell, an app instance's notifications, and the home itself as the page has it -- the server's, or a snapshot's
+ * (core/page/types.ts). */
+export type {
+  AppNotices,
+  PageActor as Actor,
+  PageGatherer as Gatherer,
+  PageHome as ListHome,
+  PageSession as Session,
+  PageShell as Shell,
+} from "../../core/page/types";
 
 /** What an actor waits on the reader for (data.py's `asking`), as the monitor says it. */
 export type Asking = api.Ask;
-
-/** An app instance's notifications, as the home has them (data.py's `app_notices`). */
-export type AppNotices = api.AppNotices;
-
-/** A gatherer, or group (data.py's), with its actors as the list has them. */
-export type Gatherer = Omit<api.Gatherer, "agents"> & { agents: Actor[] };
 
 /** A folder of a gatherer's tree (folders.py's), or of the gatherers' (gatherer_folders.py's). */
 export type Folder = api.Folder;
@@ -31,26 +31,6 @@ export type Tree = api.Folders;
 /** A gatherer's tasks (tasks.py's): its tasks, and the task each item is in. */
 export type Task = api.Task;
 export type Tasks = api.Tasks;
-
-/** A shell (sessions.py's `shell`), listed under its gatherer. */
-export type Shell = api.Shell;
-
-/** What of the home only a running dashboard sends (server.py's `read_home`): a snapshot's home has none of it. */
-type Served =
-  | "app_groups"
-  | "cwd"
-  | "permission_modes"
-  | "terminals"
-  | "harnesses"
-  | "shells"
-  | "home_dir"
-  | "branches"
-  | "app_requests";
-
-/** The home, as the list has it: the server's, its actors keyed by the page -- or a snapshot's, without what only a
- * running dashboard sends. */
-export type ListHome = Omit<api.Home, Served | "gatherers"> &
-  Partial<Pick<api.Home, Served>> & { gatherers: Gatherer[] };
 
 /** An app as its manifest says (the app host's), as the list reads it. */
 export type AppManifest = Pick<

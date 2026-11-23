@@ -1,6 +1,7 @@
 // What wants the reader in a home, worked out apart from the page (notify.ts says it): an actor waiting for them or
 // stopped on an error, an app's notification not yet seen -- each by a token naming it, the same home after home --
 // what of it is new, where it is said, in what words; and a home's notifications less those dismissed here.
+import type { Ask } from "../../core/api/types";
 import type { AppNotice, PageActor, PageGatherer, PageHome } from "../../core/page/types";
 
 /** What wants the reader: an actor (`a`, waiting: `why` "asking", or "error"), or an app instance's notification
@@ -11,7 +12,7 @@ export interface Want {
   why?: "asking" | "error";
   id?: string;
   n?: AppNotice;
-  app?: string;
+  app?: string | null;
 }
 
 /** What wants the reader in `home`, by a token naming it. `status`: an actor's status class; `seenAt`: when the reader
@@ -82,7 +83,7 @@ export function saidOf(w: Want, words: Words): [string, string, string] {
   }
   const a = w.a as PageActor;
   const who = words.actorTitle(a),
-    ask = a.asking || {};
+    ask: Partial<Ask> = a.asking || {};
   if (w.why === "error")
     return [
       `Stopped on an error: ${who}`,

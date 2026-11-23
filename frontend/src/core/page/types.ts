@@ -1,133 +1,53 @@
-// What the page's modules share of the home and of the page itself (core/page/): the home as the stream sends it, as far
-// as they read it; an actor's pane and the panes beside it; the page's state. Each field optional where an older server,
-// a snapshot or an actor not yet stored leaves it out.
+// What the page's modules share of the home and of the page itself (core/page/): the home as the stream sends it -- its
+// types generated from the server's schema (core/api/types.ts), with what the page adds to them --; an actor's pane and
+// the panes beside it; the page's state.
+import type * as api from "../api/types";
 
 /** An actor's place: its gatherer (group) and channel. */
 export type At = [string, string];
 
-/** A session the page started or keeps (sessions.py's), as the page reads it. */
-export interface PageSession {
-  session_id?: string;
-  status?: string;
-  /** an app's actor: its app and instance (app_agents.py), as JSON */
-  role?: string | null;
-  started_as?: string;
-  terminal?: unknown;
-  harness?: string | null;
-  cwd?: string;
-}
+/** A session the page started or keeps (sessions.py's). */
+export type PageSession = api.Session;
 
 /** What an actor's turn does now (work.py's summary): what it runs, what it ran last, how its last call ended. */
-export interface Work {
-  doing?: string | null;
-  last?: string | null;
-  ended?: { id: unknown; at?: number; ok?: boolean; kind?: string } | null;
-  helpers?: number;
-  failed?: number;
-}
+export type Work = api.Work;
 
-/** An actor of a gatherer (data.py's), as the page reads it. */
-export interface PageActor {
-  channel: string;
-  key?: string;
-  harness?: string | null;
-  session?: PageSession | null;
-  avatar?: string | null;
-  avatar_hue?: string | null;
-  avatar_motion?: string | null;
-  avatar_hello?: unknown;
-  cwd?: string | null;
-  last?: number | null;
-  last_user_message?: string | null;
-  chattable?: boolean;
-  holder?: unknown;
-  status?: string;
-  running?: boolean;
-  /** what it waits on the reader for: a question, a plan, a permission */
-  asking?: {
-    kind?: string;
-    call?: string;
-    at?: number;
-    questions?: { question?: string; header?: string }[];
-  } | null;
-  answer?: unknown;
-  /** its model's calls failing, retried */
-  failing?: { error?: string; attempts?: number; at?: number } | null;
-  /** how its last turn stopped */
-  stopped?: { text?: string; at?: number } | null;
-  background?: { id?: string; kind?: string; label?: string }[];
-  taken_back?: unknown;
-}
+/** An actor of a gatherer (data.py's), as the home has it -- and the page's key for it, its gatherer and channel
+ * (features/list/seen.ts's takeHome sets it). */
+export type PageActor = api.Actor & { key?: string };
 
-/** An app instance's notifications, as a gatherer has them (data.py's `app_notices`). */
-export interface AppNotice {
-  id: string;
-  title?: string;
-  text?: string;
-  at?: number;
-  /** where the pop-up and the computer's notification go: "ag", "system" */
-  show?: string[];
-  /** where in the app it is about, handed to its panel when opened */
-  where?: unknown;
-}
-export interface AppNotices {
-  app?: string;
-  notices?: AppNotice[];
-  last?: number | null;
-}
+/** An app instance's notifications, as a gatherer has them (data.py's `app_notices`), and one of them. */
+export type AppNotices = api.AppNotices;
+export type AppNotice = AppNotices["notices"][number];
 
-/** A gatherer, or group (data.py's). */
-export interface PageGatherer {
-  name: string;
-  agents: PageActor[];
-  alone?: boolean;
-  apps?: Record<string, AppNotices>;
-}
+/** A gatherer, or group (data.py's), with its actors as the page has them. */
+export type PageGatherer = Omit<api.Gatherer, "agents"> & { agents: PageActor[] };
 
 /** A shell (sessions.py's `shell`): the user's own, in a terminal, listed under its gatherer. */
-export interface PageShell {
-  id: string;
-  gatherer?: string;
-  cwd: string;
-}
+export type PageShell = api.Shell;
 
-/** A harness, as the page reads it (data.py's harness_info, from harness_kit). */
-export interface PageHarness {
-  label?: string;
-  runs?: boolean;
-  /** its mark: an SVG */
-  mark?: string;
-  /** it can give an agent the apps' tools */
-  mcp?: boolean;
-}
+/** A harness, as the dashboard describes it (data.py's harness_info, from harness_kit). */
+export type PageHarness = api.HarnessInfo;
 
-/** The home (/api/home, the stream's `home`), as the page's modules read it. */
-export interface PageHome {
-  home?: string;
-  now: number;
-  home_dir?: string;
-  cwd?: string;
-  gatherers: PageGatherer[];
-  shells?: PageShell[];
-  harnesses?: string[];
-  harness_info?: Record<string, PageHarness>;
-  harness_default?: string;
-  hook_servers?: unknown;
-  hiding?: unknown;
-  titles?: unknown;
-  saved?: unknown;
-  folders?: unknown;
-  gatherer_folders?: unknown;
-  places?: unknown;
-  tasks?: unknown;
-  seen?: unknown;
-  branches?: unknown;
-}
+/** What of the home only a running dashboard sends (server.py's `read_home`): a snapshot's home has none of it. */
+type Served =
+  | "app_groups"
+  | "cwd"
+  | "permission_modes"
+  | "terminals"
+  | "harnesses"
+  | "shells"
+  | "home_dir"
+  | "branches"
+  | "app_requests";
 
-/** What ag recorded of an actor's calls (/api/agent): each read, and the rest as the server sends it. */
-export interface AgentCalls {
-  reads?: unknown[];
-}
+/** The home as the page has it: the server's (/api/home, the stream's `home`), its actors keyed by the page -- or a
+ * snapshot's, without what only a running dashboard sends. */
+export type PageHome = Omit<api.Home, Served | "gatherers"> &
+  Partial<Pick<api.Home, Served>> & { gatherers: PageGatherer[] };
+
+/** What ag recorded of an actor's calls (/api/agent, the stream's `agent`), or why there is none ({error}). */
+export type AgentCalls = api.Agent | api.Failed;
 
 /** A snapshot's data (index.html's `window.AG_SNAPSHOT`): the home, each actor's calls, the avatars' pictures. */
 export interface Snapshot {

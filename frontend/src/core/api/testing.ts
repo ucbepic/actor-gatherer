@@ -167,7 +167,17 @@ export const turnOf = (n: number, more: Partial<api.Turn> = {}): api.Turn => ({
   stopped: null,
   calls: 0,
   kind: "user",
-  work: null,
+  work: workOf(),
+  ...more,
+});
+
+/** What a turn's calls are doing: nothing, none made yet. */
+export const workOf = (more: Partial<api.Work> = {}): api.Work => ({
+  doing: null,
+  last: null,
+  helpers: 0,
+  ended: null,
+  failed: 0,
   ...more,
 });
 
@@ -300,6 +310,25 @@ export const readOf = (read_id: number, more: Partial<api.Read> = {}): api.Read 
   ...more,
 });
 
+/** What ag recorded of an actor's calls: none yet. */
+export const agentOf = (more: Partial<api.Agent> = {}): api.Agent => ({
+  gatherer: "g",
+  channel: "c1",
+  harness: null,
+  reads: [],
+  pending: [],
+  typed: [],
+  after_read: [],
+  tasks: [],
+  builds: [],
+  checks: [],
+  rebuilds: 0,
+  llm: { by_purpose: [], total: { calls: 0, tokens_in: 0, tokens_out: 0, errors: 0, cost: 0, unpriced: 0 }, calls: [] },
+  usage: { tokens: 0, entries: [], not_counted: 0, calls: 0, real_tokens: 0, real_calls: 0 },
+  llm_attributed_by_time: 0,
+  ...more,
+});
+
 export const usageOf = (more: Partial<api.Usage> = {}): api.Usage => ({
   tokens: 0,
   entries: [],
@@ -357,7 +386,7 @@ export const appNoticesOf = (more: Partial<api.AppNotices> = {}): api.AppNotices
 });
 
 export const noticeOf = (more: Partial<api.AppNotices["notices"][number]> = {}): api.AppNotices["notices"][number] => ({
-  id: null,
+  id: "n1",
   key: null,
   title: null,
   text: null,
