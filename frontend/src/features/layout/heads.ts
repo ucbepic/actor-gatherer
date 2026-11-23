@@ -21,7 +21,7 @@ export function topRow(who: unknown, height: number | null): void {
   document.documentElement.style.setProperty("--top-h", `${tallest}px`);
 }
 /** Pane `who`'s head `node` (this page's own: "here") watched for its height. */
-export function watchTop(node: HTMLElement, who: Pane | "here"): void {
+export function watchTop(node: HTMLElement, who: Pane | string): void {
   const watch = new ResizeObserver(() => {
     if (node.isConnected) topRow(who, node.getBoundingClientRect().height);
   });

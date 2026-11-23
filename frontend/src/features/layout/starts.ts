@@ -290,7 +290,7 @@ export async function startSession(
   return s;
 }
 /** One of an app with an agent of its own started (app_agents.py's `start`): its actor listed and shown, its panel above. */
-export async function startWithApp(gatherer: string, cwd: string, name: string, harness: string): Promise<void> {
+export async function startWithApp(gatherer: string, cwd: string | null, name: string, harness: string): Promise<void> {
   state.starting = { gatherer, harness: `${APP_START}${name}:${harness}` };
   renderAgents();
   try {

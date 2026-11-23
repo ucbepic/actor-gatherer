@@ -1,6 +1,6 @@
 // Lint for the dashboard's front end, with the import rules between its folders (ag_dashboard/DESIGN.md, "Rules"):
 // core/ imports no feature; a feature imports core/ and itself, not another feature; the app's own files (main.ts,
-// bridge.ts, page.js, and links/: what a feature's TypeScript takes of the others, handed over) put them together.
+// bridge.ts, page.js, and links/, what links each feature to the others) put them together.
 import js from "@eslint/js";
 import boundaries from "eslint-plugin-boundaries";
 import reactHooks from "eslint-plugin-react-hooks";
@@ -38,6 +38,7 @@ export default tseslint.config(
         { type: "core", pattern: "src/core" },
         { type: "feature", pattern: "src/features/*", capture: ["name"] },
         { type: "app", pattern: "src/*.{ts,tsx,js}" },
+        // what links each feature's TypeScript to the others (src/links/: a feature's link.ts, filled), as page.js does
         { type: "app", pattern: "src/links" },
       ],
     },

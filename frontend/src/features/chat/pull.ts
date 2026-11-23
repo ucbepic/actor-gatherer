@@ -37,7 +37,7 @@ export async function keepTurn(key: string, n: number, change: () => unknown): P
   });
   await changed;
   const feed = drawn.get(key);
-  if (feed) foldsOf(key).getState().setShown(`${feed.key}:${feed.data.turn}`);
+  if (feed?.data) foldsOf(key).getState().setShown(`${feed.key}:${feed.data.turn}`);
   const now = talkNow(key),
     again = turnIn(now, n);
   if (y !== null && now && again) now.scrollTop += top(again) - top(now) - y;

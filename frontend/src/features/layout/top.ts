@@ -52,7 +52,8 @@ export function paneMinimized(node: HTMLElement): void {
  * minimized strip in it. Minimized, drawn once loaded: its strip drawn at once would grow as its last lines come, and the
  * line above it move under a pointer about to press it. */
 async function minRedraw(p: Pane): Promise<void> {
-  if (chatMin(p) && p.files && L.chat.chatOf(p.files.key).picked !== null) L.chat.showTurn(p.files.key, null);
+  const files = p.files as { key: string } | null; // (Chat's files feed: the actor it is for)
+  if (chatMin(p) && files && L.chat.chatOf(files.key).picked !== null) L.chat.showTurn(files.key, null);
   topMount();
   if (!chatMin(p)) L.mainView.drawPane(p);
   await L.data.loadChat(p);

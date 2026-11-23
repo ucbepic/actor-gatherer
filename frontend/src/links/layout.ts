@@ -1,10 +1,16 @@
 // WHAT THE LAYOUT IS HANDED of the page around it (features/layout/link.ts's LayoutPage), at the app's level, where a
-// file may import any feature (ag_dashboard/DESIGN.md's Rules): the other features' modules -- the list's, the apps'
-// host and links, Chat's actors and questions, the terminal's -- each checked here against what the layout says it reads
-// of them; and the old page's plain-JS modules (plain.js), which have no types to check, read as the link says. Called
-// once by src/page.js, before any module starts, as src/list-link.js's linkList is.
+// file may import any feature (ag_dashboard/DESIGN.md's Rules): the page's core and shell, the settings panel's stream,
+// the apps' actors and the Apps page, the list's modules, the apps' host and links, Chat's actors and questions, the
+// terminal's -- each checked here against what the layout says it reads of them; and Chat's modules still plain JS
+// (plain.js), which have no types to check, read as the link says. Called once by src/page.js, before any module starts,
+// as src/list-link.js's linkList is.
+import * as avatar from "../core/page/avatar";
+import * as helpers from "../core/page/helpers";
+import * as pageState from "../core/page/state";
 import * as askings from "../features/chat/asking/ask";
 import * as chatActors from "../features/chat/actors";
+import * as appActors from "../features/apps/app-actors";
+import * as appsPage from "../features/apps/apps-page";
 import * as appHost from "../features/apps/host";
 import * as appLinks from "../features/apps/links";
 import * as gathererFolders from "../features/list/gatherer-folders";
@@ -13,6 +19,10 @@ import * as list from "../features/list/list";
 import * as menus from "../features/list/Menus";
 import * as modes from "../features/list/modes";
 import * as seen from "../features/list/seen";
+import * as data from "../features/page/data";
+import * as mainView from "../features/page/main-view";
+import * as paneView from "../features/page/pane-view";
+import * as panel from "../features/settings/panel";
 import * as term from "../features/terminal/term";
 import { setLayoutPage, type LayoutPage } from "../features/layout/link";
 import * as plain from "./plain";
@@ -22,12 +32,15 @@ type Chat = LayoutPage["chat"];
 export function linkLayout(): void {
   const oldChat = plain.chat as Pick<Chat, "askWhere" | "chatToEnd">;
   setLayoutPage({
-    page: plain.state as LayoutPage["page"],
-    helpers: plain.helpers as LayoutPage["helpers"],
-    data: plain.data as LayoutPage["data"],
-    panel: plain.panel as LayoutPage["panel"],
-    mainView: plain.mainView as LayoutPage["mainView"],
-    paneView: plain.paneView as LayoutPage["paneView"],
+    // the page's state and panes, as the layout reads them: the panes' and the apps' panels' records are the layout's own
+    // (it makes and keeps them: more than core/page/types.ts says of them), and it reads more of the home (its tasks and
+    // branches) than the page's types say
+    page: pageState as unknown as LayoutPage["page"],
+    helpers: { ...helpers, bareAvatar: avatar.bareAvatar, restDelay: avatar.restDelay, HUE_MAIN: avatar.HUE_MAIN },
+    data,
+    panel,
+    mainView,
+    paneView,
     chat: {
       askKey: askings.askKey,
       askWhere: (a, ask) => oldChat.askWhere(a, ask),
@@ -38,8 +51,8 @@ export function linkLayout(): void {
     views: plain.views as LayoutPage["views"],
     mini: plain.mini as LayoutPage["mini"],
     terminal: term,
-    appActors: plain.appActors as LayoutPage["appActors"],
-    appsPage: plain.appsPage as LayoutPage["appsPage"],
+    appActors,
+    appsPage,
     appHost,
     // (the apps the layout hands back are those the host found: named, found, handlers)
     newPanel: (app, instance, hooks) => new appHost.AppPane(app as appHost.AppInfo, instance, hooks),

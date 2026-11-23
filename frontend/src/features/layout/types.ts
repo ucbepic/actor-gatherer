@@ -2,7 +2,7 @@
 // shown and the start boxes read it, the page's state, and the records the page keeps of its panes and the apps' panels.
 // Declared here, not imported, as a feature's TypeScript may import only core/ and its own folder (ag_dashboard/
 // DESIGN.md's Rules); what fills them is handed over through link.ts.
-import type { PaneParts } from "./pane";
+import type { Pane as PagePane } from "../../core/page/types";
 
 /** An actor's place: its gatherer and channel. */
 export type At = [string, string];
@@ -22,8 +22,8 @@ export interface Session {
  * it is). */
 export interface Asking {
   kind?: string;
-  id?: string | null;
-  call?: string | null;
+  id?: string;
+  call?: string;
   at?: number;
   /** asked as it goes on working */
   async?: boolean;
@@ -36,7 +36,7 @@ export interface Actor {
   last_user_message?: string | null;
   avatar?: string | null;
   avatar_hue?: string | null;
-  harness?: string;
+  harness?: string | null;
   cwd?: string | null;
   last?: number | null;
   status?: string;
@@ -48,7 +48,7 @@ export interface Actor {
   asked_of?: unknown;
   recap?: { text?: string; at?: number } | null;
   /** its model's calls failing, retried; how its last turn stopped */
-  failing?: { error?: string; attempts: number; at?: number } | null;
+  failing?: { error?: string; attempts?: number; at?: number } | null;
   stopped?: { text?: string; at?: number } | null;
   started_as?: string;
   session?: Session | null;
@@ -161,22 +161,9 @@ export interface PageState {
 /** What a pane's message box sends (Chat's), and whose draft it is. */
 export type ChatSend = ((text: string) => Promise<boolean>) & { draft?: string };
 
-/** An actor's pane (features/page/pane-view.js's record): its parts, its actor, and what it shows of it. */
-export interface Pane extends PaneParts {
-  /** this page's own pane (its actor the page's selection) */
-  here: boolean;
-  g: string | null;
-  c: string | null;
-  size: number;
-  view: string | null;
-  details: boolean;
-  agent: unknown;
-  agentVersion: number;
-  /** Chat's files feed: the actor it is for */
-  files: { key: string } | null;
-  chatSend: ChatSend;
-  drawn: { main: unknown; who: string | null };
-  /** its head watched for its height (heads.ts) */
+/** An actor's pane (features/page/pane-view.ts's record, core/page/types.ts's Pane): its parts, its actor, and what it
+ * shows of it -- and its head watched for its height (heads.ts). */
+export interface Pane extends PagePane {
   watch?: ResizeObserver;
 }
 /** A pane beside this page's own: its actor always given. */

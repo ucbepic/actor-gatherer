@@ -20,7 +20,7 @@ import { openApp } from "./app-hooks";
 import { L, snap, state } from "./link";
 import { ntFocus, ntInput, NT, ntShown, refreshNewTab } from "./NewTab";
 import { noHarness, startCwd, startSession, startable } from "./starts";
-import type { Actors, AppManifest, Gatherer } from "./types";
+import type { Actors, AppManifest, ChatSend, Gatherer } from "./types";
 import { workPlacer } from "./work-area";
 
 export { drawNewTab, refreshNewTab } from "./NewTab";
@@ -70,7 +70,7 @@ export function keptStart(gname: string, alone = false, folder: number | null | 
 export const keptHarness = (h: string): void => keepValue(START_HARNESS_KEY, h);
 /** The place picked on the tab's page, else where things start. */
 export const ntPlace = (): Place | null => placeNow(NT.place) || startPlace();
-export const ntGroup = (p: Place | null): Gatherer | null =>
+export const ntGroup = (p: { alone?: boolean; g?: string } | null): Gatherer | null =>
   !p ? null : p.alone ? L.groupMoves.aloneUnder() : realGroups().find((g) => g.name === p.g) || null;
 export function ntHarness(): string | null {
   const hs = startable(),
@@ -175,8 +175,9 @@ export async function ntSend(): Promise<void> {
   }
   const k = key(s.gatherer, s.session_id),
     shown = L.paneView.paneOf(s.gatherer, s.session_id);
-  if (shown && shown.chatSend.draft === k) {
-    if (await shown.chatSend(text)) return;
+  const send = shown?.chatSend as ChatSend | undefined; // (the latest draw's, with whose draft it is: Chat's)
+  if (shown && send && send.draft === k) {
+    if (await send(text)) return;
     if (!L.data.drafts()[k]) {
       L.data.keepDraft(k, text); // not sent (Chat says why): its draft, not lost
       L.mainView.drawPane(shown);

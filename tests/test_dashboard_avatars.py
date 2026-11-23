@@ -202,9 +202,13 @@ class AvatarsTest(AvatarsBase):
             self.assertTrue(len(words) == 1 or words[1] in effects, name)
             used.update(words)
         self.assertEqual(used, moves | effects)                              # each drawn, each used
-        ink = re.search(r"const HUE_INK = \{(.*?)\};", page, re.S).group(1)
+        avatar = ""                                                          # an actor's avatar as the page draws it
+        for name in ("avatar.ts", "stage.ts"):                               # (frontend/src/core/page/)
+            with open(os.path.join(page_source.SRC, "core", "page", name), encoding="utf-8") as fh:
+                avatar += fh.read()
+        ink = re.search(r"const HUE_INK\b[^=]*= \{(.*?)\};", avatar, re.S).group(1)
         self.assertEqual(set(re.findall(r"(\w+): \[", ink)), set(pool.values()))   # every hue's words in its color
-        main = re.search(r"const HUE_MAIN = \{(.*?)\};", page, re.S).group(1)
+        main = re.search(r"const HUE_MAIN\b[^=]*= \{(.*?)\};", avatar, re.S).group(1)
         self.assertEqual(set(re.findall(r"(\w+): \"", main)), set(pool.values()))   # and its thought's dots
 
     def test_the_drawn_avatars_each_say_four_lines_the_last_a_haiku(self):

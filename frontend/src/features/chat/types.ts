@@ -217,7 +217,8 @@ export interface ChatFeed {
   gatherer: string;
   /** the pane's files feed for the actor (its record's `files`): the turn list's folds start over with a new one */
   files: object;
-  data: FilesData;
+  /** the files of the turn shown (files.ts), as the page has them; null before they have come */
+  data: FilesData | null;
   /** the turn picked, or null: the latest, followed */
   picked: number | null;
   home: Home | null;

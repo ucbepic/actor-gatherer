@@ -57,7 +57,7 @@ export interface AppHostPart {
   start(
     app: string,
     gatherer: string,
-    cwd: string,
+    cwd: string | null,
     harness: string,
   ): Promise<{ session: { session_id: string }; instance: Instance }>;
   handlers(kind: string, mediaType?: string): AppManifest[];
@@ -105,7 +105,7 @@ export interface LayoutPage {
     harnessName(h: string | null | undefined): string;
     runsHere(h: string): boolean;
     runnableNames(join: string): string;
-    bareAvatar(a: Actor | null): string | null;
+    bareAvatar(a: Actor | null): string | null | undefined;
     doneCheck(): Node;
     restDelay(a: Actor | null, turn: number): string | null;
   };
@@ -162,7 +162,7 @@ export interface LayoutPage {
   /** features/apps: an app's own agent; the Apps page; the apps' host; links to apps */
   appActors: {
     actorLogo(a: Actor): Node;
-    appAsked(a: Actor, text: string): string;
+    appAsked(a: Actor, text: string): string | null | undefined;
     appAskedOf(text: string): unknown;
     appRole(a: Actor | undefined): { app: string; key: string } | null;
   };
@@ -201,7 +201,7 @@ export interface LayoutPage {
     gathererApps(gname: string): AppItem[];
     groupCrew(g: Gatherer): Actor | null;
     isAppItem(k: string | null | undefined): boolean;
-    isCoordinator(a: Actor): boolean;
+    isCoordinator(a: Actor | null | undefined): boolean;
     kidFolders(gname: string, parent: number | null): Folder[];
     openUp(tree: FolderTree, id: number | null): void;
     readApps(gname: string, now?: boolean): Promise<void>;
