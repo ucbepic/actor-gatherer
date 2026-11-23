@@ -2,6 +2,7 @@
 // it shows as a call runs, ends and its tool is put away; and its elements kept on the page while they show the same.
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { failingOf } from "../../api/testing";
 import { AtRest, AtWork, Buddy, Greeting } from "./Stage";
 import {
   bareAvatar,
@@ -116,7 +117,7 @@ describe("the stage drawn", () => {
     expect(container.querySelector(".stage-box")).not.toBe(box);
     rerender(<AtWork info={{ channel: "c-none" }} work={null} mode="acting" />);
     expect(container.innerHTML).toBe('<span class="spin" aria-hidden="true"></span>');
-    rerender(<AtWork info={{ ...a, failing: { at: 1 } }} work={null} mode="simple" />);
+    rerender(<AtWork info={{ ...a, failing: failingOf({ at: 1 }) }} work={null} mode="simple" />);
     expect(container.querySelector(".buddy")!.className).toBe("buddy m-bob f-sparkle still");
   });
 

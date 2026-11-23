@@ -1072,7 +1072,8 @@ class SentMessage(Model):
 
 
 class WorkEnded(Model):
-    id: Any
+    id: Optional[str]
+    """its call's id"""
     kind: str
     ok: bool
     at: Number

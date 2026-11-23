@@ -5,7 +5,7 @@
 // stream of its own; what is typed goes to it in order. A shell's pane (shell.js) draws the same.
 import { post } from "../../core/api/client";
 import { stream, type Stream } from "../../core/api/stream";
-import type { Home } from "../../core/api/types";
+import type { Actor, Home, Session } from "../../core/api/types";
 import { harnessOf } from "../../core/model/harness";
 import { isShell } from "../../core/model/keys";
 
@@ -35,11 +35,8 @@ declare global {
 }
 
 /** The actor whose terminal it is, as far as it is read here. */
-export interface TermActor {
-  channel: string;
-  harness?: string | null;
-  session?: { session_id?: string; terminal?: unknown; harness?: string | null } | null;
-}
+export type TermActor = Pick<Actor, "channel"> &
+  Partial<Pick<Actor, "harness">> & { session?: Partial<Pick<Session, "session_id" | "terminal" | "harness">> | null };
 
 /** What a terminal asks of the page: the actor of session `sid` as a pane shows it, its group, the page's data loaded
  * again, a link clicked in it, a shell that ended; and the session the page's own pane shows (`term`, below). */

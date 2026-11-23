@@ -52,6 +52,7 @@
 // failed; the others still work. A view that draws its frame itself (`mount`: the views that come with the page, React's)
 // returns the frame, #chat-list, the same node from draw to draw.
 import * as prefs from "../../core/prefs";
+import type { Session } from "../../core/api/types";
 import { P, type Pane } from "./link";
 import type { Actor } from "./types";
 
@@ -72,16 +73,11 @@ export interface FeedDef {
   signature?(p: Pane): unknown;
 }
 
-/** The actor's session, as the card reads it (data.py's): none yet, one stopped in its directory. */
-export interface CardSession {
-  cwd?: string | null;
-  permission_mode?: string;
-  queued?: string[];
-  status?: string;
-  last_error?: string | null;
-  terminal?: unknown;
-  session_id?: string;
-}
+/** The actor's session, as the card reads it (sessions.py's): or, none yet, one stopped in the actor's directory (none
+ * known: null). */
+export type CardSession = Partial<
+  Pick<Session, "permission_mode" | "queued" | "status" | "last_error" | "terminal" | "session_id">
+> & { cwd?: Session["cwd"] | null };
 
 /** What a view draws with (see above). */
 export interface ViewCtx {

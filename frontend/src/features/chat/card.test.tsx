@@ -3,6 +3,7 @@
 // places and kept while the same, the message box kept from draw to draw.
 import { act } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { actorOf } from "../../core/api/testing";
 import { cardShape, heldWhy, noneYetWords, readOnlyWhy } from "./card-model";
 import { drawCard, place, NONE_PLACED, type CardParts } from "./card";
 import type { Pane } from "./link";
@@ -89,10 +90,10 @@ describe("the views", () => {
   ]);
 
   it("offers a view to the actors it says, those for them alone first; picks Chat for one not offered", () => {
-    expect(offeredOf(views.values(), { channel: "c", harness: "x" }).map((v) => v.id)).toEqual(["mine", "files"]);
-    expect(offeredOf(views.values(), { channel: "c", harness: "y" }).map((v) => v.id)).toEqual(["files"]);
-    expect(viewPicked(views, "mine", { channel: "c", harness: "y" }).id).toBe("files");
-    expect(viewPicked(views, "mine", { channel: "c", harness: "x" }).id).toBe("mine");
+    expect(offeredOf(views.values(), actorOf("c", { harness: "x" })).map((v) => v.id)).toEqual(["mine", "files"]);
+    expect(offeredOf(views.values(), actorOf("c", { harness: "y" })).map((v) => v.id)).toEqual(["files"]);
+    expect(viewPicked(views, "mine", actorOf("c", { harness: "y" })).id).toBe("files");
+    expect(viewPicked(views, "mine", actorOf("c", { harness: "x" })).id).toBe("mine");
     expect(viewPicked(views, "gone", null).id).toBe("files");
   });
 
@@ -151,7 +152,9 @@ describe("the card drawn", () => {
   it("draws the parts in order in the pane's one section, its message box the same node from draw to draw", () => {
     const p = pane();
     const composer = { actor: "g\0c", held: false, send: () => true, fit: () => {}, say: () => {} };
-    const info = { channel: "c", background: [{ id: "t1", kind: "command", label: "npm test", started: 1 }] };
+    const info = actorOf("c", {
+      background: [{ id: "t1", kind: "command", label: "npm test", started: 1, active: null }],
+    });
     let node!: HTMLElement;
     act(() => {
       node = drawCard(

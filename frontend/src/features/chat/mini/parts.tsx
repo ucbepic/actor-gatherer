@@ -8,7 +8,7 @@ import { chatViewOf, foldSide, mySends, setFilesTurn, viewAtWork } from "../file
 import { P, type Pane } from "../link";
 import { CallLabel, CallView, Paths, shellCommand } from "../side/CallView";
 import { firstLine } from "../../../core/format";
-import type { Actor, CallRun, FilesData } from "../types";
+import type { Actor, CallRun, Command, FilesData } from "../types";
 import type { LineIcon, LinePart, Mark, MiniOf } from "./model";
 
 /** An actor as the home has it, with its key (a pane's actor). */
@@ -71,7 +71,7 @@ export function Icon({ icon, info }: { icon: LineIcon; info: Actor }) {
 }
 
 /** A call's line: its words, or (a shell command) its command coloured. */
-export const CallLine = ({ c, n }: { c: CallRun; n: number }) =>
+export const CallLine = ({ c, n }: { c: CallRun | Command; n: number }) =>
   shellCommand(c.call) === null || (c.call as { view: { description?: unknown } }).view.description ? (
     firstLine(c.text, n)
   ) : (

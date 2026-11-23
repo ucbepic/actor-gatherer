@@ -6,28 +6,18 @@
 // reacting to how a call ended, what shows on its head and at the stage's corner. Worked out here as SVG markup and what
 // it shows (its signature: drawn again the same, the one on the page is kept); drawn by Stage.tsx. On the page's clock
 // (performance.now), so a redraw does not start an animation over.
+import type * as api from "../../api/types";
 import { escapeHtml } from "../html";
 import { OVER, hand, propsOf } from "./props";
 
-/** An actor, as far as the stage reads it. */
-export interface StageActor {
-  channel: string;
-  avatar?: string | null;
-  avatar_hue?: string | null;
-  avatar_motion?: string | null;
-  failing?: unknown;
-  last?: number | null;
-}
+/** An actor, as far as the stage reads it: the home's (core/api/types.ts). */
+export type StageActor = Pick<api.Actor, "channel"> &
+  Partial<Pick<api.Actor, "avatar" | "avatar_hue" | "avatar_motion" | "failing" | "last">>;
 
-/** What its turn does (work.py's summary): the call under way (its kind), the one before, the last that ended (its kind,
- * whether it went well, when), the calls failed in a row, how many helpers it runs. */
-export interface Work {
-  doing?: string | null;
-  last?: string | null;
-  ended?: { id: string; kind?: string; ok?: boolean; at?: number } | null;
-  failed?: number;
-  helpers?: number;
-}
+/** What its turn does (work.py's summary, core/api/types.ts): the call under way (its kind), the one before, the last
+ * that ended (its kind, whether it went well, when), the calls failed in a row, how many helpers it runs -- as much of it
+ * as the stage is given (a turn not drawn yet: none). */
+export type Work = Partial<api.Work>;
 
 /** The words an actor at work says, in its avatar's hue (avatars/README.md's hues, assets/src/avatars/kit.py's shades):
  * its dark shade on a light page, halfway from its main shade to its light one on a dark page. */

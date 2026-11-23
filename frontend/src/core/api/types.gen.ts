@@ -3686,7 +3686,8 @@ export interface components {
     };
     /** WorkEnded */
     WorkEnded: {
-      id: unknown;
+      /** @description its call's id */
+      id: string | null;
       kind: string;
       ok: boolean;
       at: number;
