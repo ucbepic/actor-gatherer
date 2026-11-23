@@ -601,7 +601,7 @@ draws; and with them the parts the notes above left as the old page's:
   view of the reader's own's message box before the line under it, the footer last (a minimized pane's lines, avatar
   and ×, top.js's), each kept while the same, as patch() kept them. *Switching views* (and minimizing) draws the same card
   again: its frame put in place of the last, the message box kept where it is with its focus and caret; the pane around
-  it (its place kept, Details) is still the page's draw (main-view.js).
+  it (its place kept, Details) is still the page's draw (`features/page/main-view.ts`).
 - **Every built-in message box is React's** (`Composer.tsx`'s `ComposerForm`): Chat's, and the default one a view without
   its own gets -- a minimized pane's, which was the old page's `ctx.input` textarea. `ctx.input` stays only for the views
   of the reader's own, which build their box around the node it returns (`input.ts`: the draft kept by the page's input
@@ -634,15 +634,18 @@ draws; and with them the parts the notes above left as the old page's:
   faces and words, the other features' views, feeds and nodes for the reader's own views), the terminal's in
   `terminal/link.ts` (`TermPage`) and `term.ts`'s `TermHost`, History's in `history.ts` (`HistoryPage`); each is filled at
   the app's level, once every module is loaded and before any starts, by `src/links/chat.ts`, `links/terminal.ts` and
-  `links/history.ts` (called from `page.js`). They import the features they wire together; the old page's modules they
-  read come through `links/chat-page.js`, typed in `chat-page.d.ts` (TypeScript does not read plain JS): each line goes
-  as its module moves, its link then importing it directly. The names other old modules import of Chat's, the views',
-  the files view's, the terminal's and History's stay.
+  `links/history.ts` (called from `page.js`). They import the features they wire together, the page's modules typed
+  (where the page's own types, `core/page/types.ts`, and Chat's read the same pane or actor, the link hands one over as
+  the other, as `links/page.ts` does Chat's to the page); the layout's two modules still plain JS (top.js, panes.js) come
+  through `links/chat-page.js`, typed in `chat-page.d.ts` (TypeScript does not read plain JS), each line to go as its
+  module moves. The names other old modules import of Chat's, the views', the files view's, the terminal's and History's
+  stay.
 - Vitest: `card.test.tsx` (what the card says, its parts, the views offered, the card drawn), `core/ui/stage/stage.test.tsx`,
   `mini/model.test.ts`; `Composer.test.tsx` and `send.test.tsx` draw the box and the line as the card does.
-- **Left:** the pane around the card -- its draw, its place kept, Details -- is the page's (main-view.js, data.js); a view
-  of the reader's own still builds nodes (its frame's blocks patched in as before, its box `ctx.input`'s); the old page's
-  stage copy goes with the list's monitor and top.js.
+- **Left:** the pane around the card -- its draw, its place kept, Details -- is the page's (`features/page/`); a view of
+  the reader's own still builds nodes (its frame's blocks patched in as before, its box `ctx.input`'s); the page's own
+  stage (`core/page/stage.ts`, for the list's monitor and top.js's minimized avatar) and `core/ui/stage/` are to be made
+  one.
 
 **A5, the page's core and shell in TypeScript.** What the old page's modules share and what draws the page around the
 views -- core/page/'s state.js, helpers.js and code.js, features/page/'s data.js, main-view.js, pane-view.js and
