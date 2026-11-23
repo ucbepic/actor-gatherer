@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import data, files  # noqa: E402
+from ag_dashboard import data, files, git_found, store  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 words = lambda replies: [{k: v for k, v in r.items() if k != "after"} for r in replies]   # what they say, not where
@@ -437,6 +437,57 @@ class FilesTest(unittest.TestCase):
                                                                            "/w/y.py": (["delete"], [])})
         self.assertEqual(self.kinds(files.files("g", "c4", 0, cwd="/w")),   # an hour on: its own
                          {"/wt/late.py": (["write"], []), "/w/x.py": (["edit"], [])})
+
+    def test_what_git_did_is_kept_for_a_dashboard_started_again(self):
+        self.add(asked("pull"), call("k1", "Bash", {"command": "git pull", "description": "Pull"}), result("k1", ""))
+        self.touched(("k1", "/w/x.py", "modified", False, {}))
+        self.add(("model_call", {"kind": "turn", "harness": "claude"}), asked("run the tests"),
+                 call("o1", "Bash", {"command": "python3 -m unittest", "description": "Run the tests"}), result("o1", "OK"),
+                 channel="c2")
+        self.touched(("o1", "/w/x.py", "modified", False, {}), channel="c2")     # git's, as the pull ran
+        theirs = {"/w/x.py": ([], ["edit"])}
+        self.assertEqual(self.kinds(files.files("g", "c2", 0, cwd="/w")), theirs)
+        with store.reading() as kept:
+            self.assertEqual(kept.execute("SELECT kind, call, session, path, how FROM git_found ORDER BY row_id").fetchall(),
+                             [("call", "k1", "c1", None, None), ("changed", "k1", "c1", "/w/x.py", "modified")])
+
+        def restart():
+            files._GIT.clear()                       # a dashboard started again: nothing read in this process
+
+        def pull_is(command):                        # the pull's record changed under what is kept: read again or not
+            conn = sqlite3.connect(self.db)
+            conn.execute("UPDATE events SET payload_json = replace(payload_json, ?, ?) WHERE payload_json LIKE '%\"k1\"%'",
+                         (json.dumps(pull_was[0])[1:-1], json.dumps(command)[1:-1]))
+            conn.commit()
+            conn.close()
+            pull_was[0] = command
+        pull_was = ["git pull"]
+
+        restart()
+        pull_is("echo pull")
+        self.assertEqual(self.kinds(files.files("g", "c2", 0, cwd="/w")), theirs)       # as kept: not read again
+        self.add(asked("pull again"), call("k2", "Bash", {"command": "git pull --rebase", "description": "Pull"}),
+                 result("k2", ""), call("o2", "Bash", {"command": "python3 -m unittest", "description": "Again"}),
+                 result("o2", "OK"), channel="c3")
+        self.touched(("k2", "/w/y.py", "created", False, None), ("o2", "/w/y.py", "created", False, None), channel="c3")
+        self.assertEqual(self.kinds(files.files("g", "c3", 0, cwd="/w")), {"/w/y.py": ([], ["write"])})   # read on
+        restart()
+        self.assertEqual(self.kinds(files.files("g", "c3", 0, cwd="/w")), {"/w/y.py": ([], ["write"])})   # kept, too
+
+        restart()
+        rules, git_found.RULES = git_found.RULES, git_found.RULES + 1   # other rules: read again from the start
+        self.addCleanup(setattr, git_found, "RULES", rules)
+        self.assertEqual(self.kinds(files.files("g", "c2", 0, cwd="/w")), {"/w/x.py": (["edit"], [])})
+        pull_is("git pull")
+        restart()
+        self.assertEqual(self.kinds(files.files("g", "c2", 0, cwd="/w")), {"/w/x.py": (["edit"], [])})   # as kept again
+
+        restart()
+        conn = sqlite3.connect(self.db)              # the database replaced at its path: its last row read is another
+        conn.execute("UPDATE events SET inserted_at = '2026-10-25 09:00:00' WHERE row_id = (SELECT max(row_id) FROM events)")
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.kinds(files.files("g", "c2", 0, cwd="/w")), theirs)       # read again: the pull is git's
 
     def test_matches_of_files_searched_one_after_another_are_not_guessed(self):
         self.add(asked("find them"), call("g1", "Bash", {"command": "grep -n f a.py; grep -n x b.py"}), result("g1", "1:def f():\n7:x = 1"))

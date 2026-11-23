@@ -41,7 +41,7 @@ from typing import Dict, List, Optional
 import harness_kit
 from harness_kit import Kind, Shape, ToolCall
 
-from . import data, store, work
+from . import data, git_found, store, work
 from . import home as paths
 from harness_kit.shell import (  # noqa: F401 - python_changes: tested here
     GLOB, GREP_PATH_LINE, READ_LINE, _patch_files, _resolve, python_changes, runs_git, shell_changes, shell_reads,
@@ -259,8 +259,32 @@ def _sent(conn, channel: str) -> List[tuple]:
     return out
 
 
-_GIT: Dict[str, tuple] = {}   # a gatherer's database -> (the last row read, what git did up to it: `_git`'s)
+class _GitRead:
+    """What `_git` has of one database, in this process: what it found up to row `last`; `waiting`, of that, found
+    since row `kept` (what git_found.py keeps up to), not kept yet -- `fresh`: in place of what is kept."""
+
+    def __init__(self, last: int = 0, found=(), fresh: bool = True):
+        self.got: dict = {"calls": {}, "changed": {}, "trees": []}
+        self.last = self.kept = last
+        self.waiting: list = []
+        self.fresh = fresh
+        for f in found:
+            _git_take(self.got, f)
+
+
+_GIT: Dict[str, _GitRead] = {}   # a gatherer's database -> what `_git` has of it
 _GIT_LOCK = threading.Lock()
+
+
+def _git_take(got: dict, f) -> None:
+    """One thing `_git` found (git_found.Found) taken into what it has (`got`)."""
+    _, kind, cid, at, session, path, how = f
+    if kind == git_found.CALL:
+        got["calls"][cid] = (at, session)
+    elif kind == git_found.CHANGED:
+        got["changed"].setdefault(path, []).append((at, session, cid, how))
+    elif kind == git_found.TREE:
+        got["trees"].append({"root": path, "call": cid, "at": at})
 
 
 def _git(conn) -> dict:
@@ -270,27 +294,33 @@ def _git(conn) -> dict:
     modified, deleted); trees: [{root, call, at}] -- the work trees `git worktree add` made, each told by the `.git` file
     it writes at the root ("gitdir: <repository>/.git/worktrees/<name>"), which the hook found a call (`call`: the one
     that made it, or one running then, of any session) created, recorded at `at`}. Kept, and read on from the last row
-    read: a gatherer's calls and what they did to files are many, the ones that ran git a few."""
+    read: a gatherer's calls and what they did to files are many, what git did far fewer. Kept on disk too
+    (git_found.py): a dashboard started again reads on from where it was kept up to, not from the database's start."""
     types = dict(conn.execute("SELECT name, event_type_id FROM event_types WHERE name IN ('tool_call', 'file_touched')"))
     if "file_touched" not in types:
         return {"calls": {}, "changed": {}, "trees": []}
     path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
     top = conn.execute("SELECT max(row_id) FROM events").fetchone()[0] or 0
     with _GIT_LOCK:
-        last, got = _GIT.get(path, (0, None))
-        if got is None or top < last:                # not read before, or not the database read before: made again since
-            last, got = 0, {"calls": {}, "changed": {}, "trees": []}
-        if top == last:
-            return got
+        held = _GIT.get(path)
+        if held is None:                             # not read in this process: as kept
+            last, found = git_found.load(conn, path)
+            held = _GIT[path] = _GitRead(last, found, fresh=not last)
+        if top < held.last:                          # not the database read before: made again since
+            held = _GIT[path] = _GitRead()
+        if top == held.last:
+            return held.got
         call, touch = types.get("tool_call", -1), types["file_touched"]
         harnesses: Dict[str, Optional[str]] = {}         # each channel's harness, as its calls recorded it
         of = lambda key: f"CASE WHEN event_type_id = {touch} THEN json_extract(payload_json, '$.{key}') END"   # noqa: E731
-        for typ, session, inserted, raw, cid, at_path, how, gitdir in conn.execute(
-                f"SELECT event_type_id, p_channel, inserted_at, CASE WHEN event_type_id = ? THEN payload_json END, {of('call')}, "
-                f"{of('path')}, {of('how')}, CASE WHEN event_type_id = ? AND payload_json LIKE '%gitdir: %' THEN payload_json END "
+        found = []
+        for row_id, typ, session, inserted, raw, cid, at_path, how, gitdir in conn.execute(
+                f"SELECT row_id, event_type_id, p_channel, inserted_at, CASE WHEN event_type_id = ? THEN payload_json END, "
+                f"{of('call')}, {of('path')}, {of('how')}, "
+                "CASE WHEN event_type_id = ? AND payload_json LIKE '%gitdir: %' THEN payload_json END "
                 "FROM events WHERE event_type_id IN (?, ?) AND row_id > ? AND row_id <= ? "
                 "AND (event_type_id = ? OR text IS NULL OR text LIKE '%git%') ORDER BY row_id",
-                (call, touch, call, touch, last, top, touch)):
+                (call, touch, call, touch, held.last, top, touch)):
             at, session = data._seconds(inserted), session or ""
             if typ == call:                          # a call: whether it ran git, read by its channel's harness's rules
                 if session not in harnesses:
@@ -298,17 +328,24 @@ def _git(conn) -> dict:
                 for part in data.parts("tool_call", raw, None, None, harnesses[session]):
                     ran = [part] + list(part.get("calls") or [])                   # a script's calls, each
                     if part.get("kind") == "call" and part.get("id") and any(runs_git(_command(q)[0]) for q in ran):
-                        got["calls"][part["id"]] = (at, session)
+                        found.append((row_id, git_found.CALL, part["id"], at, session, None, None))
+                        _git_take(held.got, found[-1])
                 continue
-            if cid in got["calls"] and how in ("created", "modified", "deleted") and isinstance(at_path, str):
-                got["changed"].setdefault(at_path, []).append((at, session, cid, how))
+            if cid in held.got["calls"] and how in ("created", "modified", "deleted") and isinstance(at_path, str):
+                found.append((row_id, git_found.CHANGED, cid, at, session, at_path, how))
+                _git_take(held.got, found[-1])
             t = data._json(gitdir) if gitdir else None
             lines = t["detail"].get("lines") if isinstance(t, dict) and isinstance(t.get("detail"), dict) else None
             if lines and how == "created" and cid and isinstance(at_path, str) and at_path.endswith("/.git") \
                     and str(lines[0]).startswith("gitdir: "):
-                got["trees"].append({"root": at_path[:-len("/.git")], "call": cid, "at": at})
-        _GIT[path] = (top, got)
-        return got
+                found.append((row_id, git_found.TREE, cid, at, session, at_path[:-len("/.git")], None))
+                _git_take(held.got, found[-1])
+        held.last = top
+        held.waiting += found
+        if held.waiting or held.fresh or top - held.kept >= git_found.KEEP_ROWS:
+            if git_found.save(conn, path, top, held.waiting, held.fresh):
+                held.waiting, held.fresh, held.kept = [], False, top
+        return held.got
 
 
 TOUCH_KINDS = {"read": "read", "hit": "hit", "created": "write", "modified": "edit", "deleted": "delete"}
