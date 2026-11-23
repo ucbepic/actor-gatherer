@@ -1,9 +1,9 @@
 // The page's drop-downs and boxes hung from a button (Pops.tsx): a menu's choices, its first in focus, a choice run with
-// the button it hung from; a box -- the page's own form -- put in, its first box in focus; Esc closing either, the page
-// told how; one at a time.
+// the button it hung from; a box -- a form, React's -- put in, its first box in focus, told the pop-up it is in; Esc
+// closing either, the page told how; one at a time.
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { popShown, showPop, startPops, type Pop } from "./Pops";
+import { popShown, showPop, startPops, usePop, type Pop } from "./Pops";
 
 const closed: [string, string][] = [];
 let button: HTMLButtonElement;
@@ -74,17 +74,21 @@ describe("a menu hung from a button", () => {
 });
 
 describe("a box hung from a button", () => {
-  it("holds the page's form, its first box in focus at its end; Esc closes it", () => {
-    const box = document.createElement("div");
-    box.className = "dw-menu";
-    box.setAttribute("role", "dialog");
-    box.setAttribute("aria-label", "New actor on its own");
-    const input = Object.assign(document.createElement("input"), { value: "~/work" });
-    box.append(input);
-    act(() => showPop({ key: "start:g", anchor: button, box }));
-    expect(screen.getByRole("dialog", { name: "New actor on its own" })).toBe(box);
-    expect(box.isConnected).toBe(true);
-    expect(box.style.position).toBe("relative"); // laid out in the pop-up, not fixed where the page put it
+  it("holds its form, its first box in focus at its end, told the pop-up it is in; Esc closes it", () => {
+    let inPop: Pop | null = null;
+    function Form() {
+      inPop = usePop();
+      return (
+        <div className="dw-menu" role="dialog" aria-label="New actor on its own">
+          <input defaultValue="~/work" />
+        </div>
+      );
+    }
+    const pop: Pop = { key: "start:g", anchor: button, box: <Form /> };
+    act(() => showPop(pop));
+    const box = screen.getByRole("dialog", { name: "New actor on its own" });
+    const input = box.querySelector("input")!;
+    expect(inPop).toBe(pop);
     expect(document.activeElement).toBe(input);
     expect(input.selectionStart).toBe(6);
     act(() => fireEvent.keyDown(input, { key: "Escape" }));
@@ -93,12 +97,10 @@ describe("a box hung from a button", () => {
   });
 
   it("is one at a time: another shown in its place", () => {
-    const one = document.createElement("div"),
-      two = document.createElement("div");
-    act(() => showPop({ key: "a", anchor: button, box: one }));
-    act(() => showPop({ key: "b", anchor: button, box: two }));
-    expect(one.isConnected).toBe(false);
-    expect(two.isConnected).toBe(true);
+    act(() => showPop({ key: "a", anchor: button, box: <p>one</p> }));
+    act(() => showPop({ key: "b", anchor: button, box: <p>two</p> }));
+    expect(screen.queryByText("one")).toBeNull();
+    expect(screen.getByText("two")).not.toBeNull();
     expect(popShown()!.key).toBe("b");
   });
 });

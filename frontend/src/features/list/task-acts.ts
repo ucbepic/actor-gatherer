@@ -49,7 +49,7 @@ export async function discardSession(g: Gatherer, a: Actor): Promise<void> {
   renderAgents();
 }
 // An actor closed from the list (`how`: its process closed, or it discarded): closed in the screen tabs first, as its
-// tab's × or its pane's would (features/layout/panes.js's closedInTabs: alone, its tab closed if it held nothing else)
+// tab's × or its pane's would (features/layout/enter.ts's closedInTabs: alone, its tab closed if it held nothing else)
 export async function closeActor(g: Gatherer, a: Actor, how: (a: Actor) => Promise<void>): Promise<void> {
   await L.panes.closedInTabs(L.panes.taskKey(g.name, a.channel), a.channel);
   await how(a);
@@ -70,7 +70,7 @@ export async function saveTask(gname: string, id: number, save: boolean): Promis
     if (!!savedAs(CTX, gname, a) !== save) await setSaved(gname, a, save);
 }
 // A task CLOSED (its ×, while an actor of it runs): closed in the screen tabs first, as its tab's × would
-// (features/layout/panes.js's closedInTabs: kept as it is now, its tab closed if it held nothing else), its actors'
+// (features/layout/enter.ts's closedInTabs: kept as it is now, its tab closed if it held nothing else), its actors'
 // processes closed, as an actor's × does, and its apps put to sleep -- kept, in the task, with nothing running for them (a
 // Browser's tabs closed, their pages kept: app_host.py's `sleep_instance`) -- their panels here closed first. Clicked
 // again later, it opens as it was: its apps above (a Browser's tabs opened again), its actors as closed ones are,
@@ -104,7 +104,7 @@ const besideKey = (ev: Ev) => {
   const e = ev as { ctrlKey?: boolean; metaKey?: boolean } | null;
   return !!e && !!(e.ctrlKey || e.metaKey);
 };
-// An app SELECTED, as an actor is (features/layout/panes.js's selectAppPane): its task entered first, if another is
+// An app SELECTED, as an actor is (features/layout/open.ts's selectAppPane): its task entered first, if another is
 // shown -- as a click on that task would; one of apps only, its apps alone shown (enterAppTask) -- its panel shown
 // (opened, if it was not) and selected. ⌘/Ctrl: no task entered, its panel added beside the ones shown.
 export async function selectApp(gname: string, o: AppItem, ev: Ev = null): Promise<void> {
@@ -137,7 +137,7 @@ export async function selectApp(gname: string, o: AppItem, ev: Ev = null): Promi
   }
   P.selectAppPane(p);
 }
-// an app closed: closed in the screen tabs first (features/layout/panes.js's closedInTabs: one in no task, its tab closed
+// an app closed: closed in the screen tabs first (features/layout/enter.ts's closedInTabs: one in no task, its tab closed
 // if it held nothing else), its instance closed (its agents detached, out of its task), its panel gone
 export async function closeApp(gname: string, o: AppItem): Promise<void> {
   await L.panes.closedInTabs(L.panes.taskKey(gname, appItem(o.id)), appItem(o.id));
@@ -152,14 +152,14 @@ export async function closeApp(gname: string, o: AppItem): Promise<void> {
   void readApps(gname, true);
   renderAgents();
 }
-// A task opened: shown as it was left (features/layout/panes.js's enterTask and rememberTask) -- `focus`, else the one in
+// A task opened: shown as it was left (features/layout/enter.ts's enterTask, remember.ts's rememberTask) -- `focus`, else the one in
 // focus then, else its lead, in the pane in focus -- or, never left, its actors not closed side by side, its apps above.
 // The task shown already: as it is (an actor's pane closed in it stays closed) -- but one shown by chance, never laid out
 // in this page (as the page opened on one of its actors), laid out as at first; one whose actor is out of sight in this
 // page's pane with nothing else of it shown (its pane and panels closed), laid out again as it was left. One of apps
-// only: its apps alone (enterAppTask); one left with its actor's pane closed by the reader (panes.js's closeHerePane),
+// only: its apps alone (enterAppTask); one left with its actor's pane closed by the reader (features/layout/render.ts's closeHerePane),
 // its apps alone, that actor out of sight in this page's pane (`shut`) till it is asked for. ⌘/Ctrl: the whole task
-// beside the one shown (panes.js's openTaskBeside).
+// beside the one shown (features/layout/enter.ts's openTaskBeside).
 export async function openTask(gname: string, id: number, focus: string | null = null, ev: Ev = null): Promise<void> {
   if (!S().home!.gatherers.some((x) => x.name === gname)) return;
   const P = L.panes;
@@ -169,7 +169,7 @@ export async function openTask(gname: string, id: number, focus: string | null =
   const k = taskKeyOf(gname, id),
     sel = P.focusedActor(),
     was = P.taskLayout(k);
-  const wait = !(ev && (ev as { inTabs?: boolean }).inTabs); // a tab being shown (panes.js's enterTasks): its actor's Chat not waited on
+  const wait = !(ev && (ev as { inTabs?: boolean }).inTabs); // a tab being shown (features/layout/enter.ts's enterTasks): its actor's Chat not waited on
   const ok = (c: string | null | undefined) => !!c && LK.taskActors(CTX, g, id).some((a) => a.channel === c);
   const mine = !P.appsOnlyKey() && !!sel && P.taskKey(sel[0], sel[1]) === k; // its actor in the pane in focus
   const blank = mine && P.isAway() && !P.shownPanels().some((s) => s.key === k); // ... out of sight, nothing else of it shown
@@ -205,7 +205,7 @@ export async function openTask(gname: string, id: number, focus: string | null =
     return;
   }
   // as it was left, in place of what is shown -- or, shown by chance (as the page opened on it), laid out now: one plan
-  // (panes.js's openTaskHere), the actor in focus then in focus again
+  // (features/layout/enter.ts's openTaskHere), the actor in focus then in focus again
   await P.openTaskHere(k, focus, wait);
   if (!focus && was && (was.focusApp || shut)) {
     // an app selected in it when it was left: selected again (its actor's pane closed: one of its apps)

@@ -301,7 +301,7 @@ async function followMoved(
 }
 
 // ---- an actor on its own from its start (groups.py's `start_alone`): the list head's "+" beside its folder button. Its
-// box (features/layout/panes.js's railNewBox, `alone`) asks the directory it works in -- the latest active actor's to
+// box (features/layout/StartBoxes.tsx's railNewBox, `alone`) asks the directory it works in -- the latest active actor's to
 // start with -- and the harness, any that runs here. It runs under a group of the home's (ag runs every session in
 // one): the shown actor's, else the latest active -- and shares with no one. Only on the home's one database, as every
 // group of one: none with a database per gatherer, as no drop outside every group.

@@ -16,7 +16,7 @@ import type { Pane, PageActor } from "../core/page/types";
 import * as data from "../features/page/data";
 import * as paneView from "../features/page/pane-view";
 import * as settings from "../features/settings/panel";
-import { layout } from "./chat-page";
+import * as layout from "../features/layout/panes";
 
 // The page's own types are its reading of the same panes, groups and actors: handed over as the terminal's.
 const asPane = (p: TermPane) => p as unknown as Pane;

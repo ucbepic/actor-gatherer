@@ -2,7 +2,7 @@
 // screen tabs, the tab shown, what each task was left with, the panes and the apps' panels, the focus -- changed only by
 // the model's rules (`update`), kept in this browser under one key (`persist`), and read by its tasks' keys as they are
 // now (`now`): an item that joined a task since is read as the task, a task that lost items as itself and theirs (the
-// page's `keysWith`). The page renders what it holds (features/layout/panes.js's renderLayout, renderPanes,
+// page's `keysWith`). The page renders what it holds (render.ts's renderLayout, renderPanes,
 // renderApps). It began as the model run beside the page, checked against what the page showed; that check went once
 // every change the page makes was the model's.
 import * as M from "./model";
@@ -75,7 +75,7 @@ class LayoutStore {
   private canon: (k: string) => string | null = (k) => k;
   private keys: ((k: string) => string[]) | null = null;
   /** How a key the layout holds reads now: the task an item joined since, or -- a task that lost items -- itself and
-   * theirs, each a task of its own (features/layout/panes.js's keysNow, from the items each task held open). */
+   * theirs, each a task of its own (remember.ts's keysNow, from the items each task held open). */
   keysWith(keys: (k: string) => string[]): void {
     this.keys = keys;
   }
