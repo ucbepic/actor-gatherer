@@ -2,14 +2,15 @@
 // What the LaTeX editor adds to app_kit.fileedit's editor (its panel's code, from /_ag/lib/fileedit/), given to it by edAdd:
 // the project's preview in a column beside the file (preview.js: ed.pv), run by Execute (⌘↵); a LaTeX build's problems
 // marked on their lines; "→ PDF" and a double-click in a TeX source, to its place in the PDF; and ⌘B / ⌘I in LaTeX's
-// markup, \textbf{…} and \textit{…}. The panel's one entry (index.html): the rest imported, its parts given to edAdd,
-// then the panel started (edStart).
-import { el, ICONS, MAC, paneNote, strokeIcon, widthGrip } from "/_ag/lib/fileedit/page.js";
-import { ed, edAdd, edDiskConflicts, edSave } from "/_ag/lib/fileedit/editor.js";
+// markup, \textbf{…} and \textit{…}; and the file's text folded away, the preview taking the width. The panel's one entry
+// (index.html): the rest imported, its parts given to edAdd, then the panel started (edStart).
+import { agApp, el, ICONS, MAC, paneNote, strokeIcon, widthGrip } from "/_ag/lib/fileedit/page.js";
+import { ed, edAdd, edBase, edDiskConflicts, edHead, edRel, edSave } from "/_ag/lib/fileedit/editor.js";
 import { edStart } from "/_ag/lib/fileedit/start.js";
 import { pvLocate, pvMount, pvRun } from "./preview.js";
 
-Object.assign(ed, { problems: new Map(), problemsAt: 0, pv: null });   // a LaTeX build's, by file (edProblems); the column
+Object.assign(ed, { problems: new Map(), problemsAt: 0, pv: null,   // a LaTeX build's, by file (edProblems); the column
+  textBar: null, textHide: null, folded: null });   // the text's fold: its bar, its button; while folded, {file} it was on
 // Execute (⌘↵) runs the project's preview for the file open, else the folder shown (pvRun); → PDF, or a double-click
 // in a TeX source, shows that place in what it built (pvLocate). A place in a PDF's source it sends back is opened here
 // (edShowFile).
@@ -136,20 +137,79 @@ function edProblemsField(s) {
 const ED_TEX_MARKUP = { test: (ext) => /^(tex|latex|ltx|sty|cls|dtx|tikz)$/.test(ext),
   bold: { open: ["\\textbf{"], close: "}" }, italic: { open: ["\\textit{", "\\emph{"], close: "}" },
   off: (doc, from, to, k) => edLatexOff(doc, from, to, k.open) };
-// The preview's column, beside the file's (and the actor's changes'), its width dragged at its left edge.
+// The preview's column, beside the file's (and the actor's changes'), its width dragged at its left edge; and the text's
+// fold, its bar in the text's place, left of it.
 function edPreviewColumn(work) {
-  const grip = el("div", { class: "ed-col-grip", role: "separator", "aria-orientation": "vertical",
+  const grip = el("div", { class: "ed-col-grip ed-pv-grip", role: "separator", "aria-orientation": "vertical",
     title: "Drag to resize · double-click to reset" });
   ed.pv = el("section", { class: "ed-pv", hidden: "", "aria-label": "Preview" });
   work.append(grip, ed.pv);
   widthGrip(grip, "ag-editor-preview-width", ed.pv, "width", 220, (x) => ed.pv.getBoundingClientRect().right - x);
+  ed.body.id = "ed-text";
+  ed.textBar = el("button", { type: "button", class: "ed-fold ed-text-fold", hidden: "", "aria-label": "Show the text",
+    "aria-controls": "ed-text", "aria-expanded": "false", onclick: () => edFoldText(false, true) });
+  ed.textHide = el("button", { type: "button", class: "ed-act ed-text-hide", title: "Hide the text so the preview takes the width",
+    "aria-label": "Hide the text", "aria-controls": "ed-text", "aria-expanded": "true", onclick: () => edFoldText(true, true) },
+    strokeIcon(ED_TEXT_GLYPH, 15));
+  work.prepend(ed.textBar);
   pvMount(ed.pv);
+  let folded = false;
+  try { folded = localStorage.getItem(edTextKey()) === "1"; } catch (e) { /* this page only */ }
+  if (folded) queueMicrotask(() => edFoldText(true));   // once the preview is shown again (pvMount's, queued first) -- if it is
+}
+
+// The file's text folded away, so the preview takes the width, as the files fold away (editor-tree.js's edFoldTree):
+// offered while the preview is shown (else nothing would be left), by a button first in the header; while folded, a thin
+// bar in the text's place, the file's name down it, clicked to show the text again where it was (CodeMirror keeps its
+// scroll while hidden). The keys, in the panel as the reader folds it or shows it, move to the control that undoes it.
+// Shown again by itself when the preview is hidden, when another file is opened, or when a place in one is asked for from
+// outside the panel (a link, an agent's latex_open, a double-click in the PDF, a problem picked): that is what the reader
+// is to see. Kept in this browser for this LaTeX editor, as its preview is: its panel drawn again (its task left and come
+// back to, the page reloaded), it is folded again if its preview is shown again.
+const ED_TEXT_GLYPH = "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5"
+  + "a1.5 1.5 0 0 1 1.5-1.5zM8.5 2.75v10.5M4.25 6h2.25M4.25 8.25h2.25M4.25 10.5h1.25";   // two columns, text in the left
+const edTextKey = () => `ag-latex-text-folded:${(agApp && agApp.instance) || ""}`;
+const edPreviewOn = () => !!(ed.pv && !ed.pv.hidden);
+// `reader`: by the reader's click (the button, the bar), the keys moved with it if they were in the panel; else (the
+// preview hidden, another file opened) moved only off the bar, as it goes.
+export function edFoldText(fold, reader = false) {
+  if (!ed.textBar) return;
+  fold = fold && edPreviewOn();
+  try { if (fold) localStorage.setItem(edTextKey(), "1"); else localStorage.removeItem(edTextKey()); } catch (e) { /* this page only */ }
+  if (!!ed.folded === fold) return;
+  const had = document.activeElement, moving = reader ? ed.host.contains(had) : had === ed.textBar;
+  ed.folded = fold ? { file: ed.file } : null;
+  ed.host.classList.toggle("text-folded", fold);
+  ed.textBar.hidden = !fold;
+  edTextBar();
+  edHead();                                          // its button out of the header, or back first in it
+  if (moving) (fold ? ed.textBar : ed.textHide).focus({ preventScroll: true });
+}
+// The bar's name for the file open (the folder alone, gone since: none).
+function edTextBar() {
+  const f = ed.file || "", bar = ed.textBar;
+  if (!bar || bar.dataset.file === f) return;
+  bar.dataset.file = f;
+  bar.title = f ? `Show the text of ${edRel(f)}` : "Show the text";
+  bar.replaceChildren(strokeIcon(ED_TEXT_GLYPH, 15), ...(f ? [el("span", { class: "nm", text: edBase(f) })] : []));
+}
+// The preview shown, or hidden (preview.js): the fold offered, or not -- hidden, the text shown again, all there is.
+export function edPreviewShown(on) {
+  if (!on) edFoldText(false);
+  edHead();
+}
+// Another file opened, or a place in one asked for: the text shown again (not the panel's own file opened again as it
+// is drawn, or as the dashboard restarted: the same file).
+function edTextOpening(path, asked) {
+  if (ed.folded && (asked || path !== ed.folded.file)) edFoldText(false);
 }
 edAdd({
+  lead: () => { edTextBar(); return edPreviewOn() && !ed.folded ? ed.textHide : null; },
   head: (x) => [x && x === ed.s && edTexToPdf() ? el("button", { type: "button", class: "ed-topdf", onclick: () => edToPdf(),
     title: "Show the cursor's line in the PDF. Double-click in the source or the PDF to jump between them." }, "→ PDF") : null,
   edExecBtn()],
   work: edPreviewColumn,
+  opening: edTextOpening,
   keys: edExecKey,
   down: edToPdfClick,
   view: edProblemsField,

@@ -14,3 +14,10 @@
 .ed-body .cm-diagnostic-warning { border-left-color: var(--warning); }
 .ed-body .cm-diagnostic-info { border-left-color: var(--axis); }
 .ed-body .cm-diagnosticSource { color: var(--muted); opacity: 1; font-size: 11px; }
+/* The file's text folded away (latex.js, edFoldText): the preview takes the width -- its grip not offered, nothing being
+   beside it to give width to (the width it was dragged to comes back with the text) -- and a thin bar in the text's place,
+   as the files' (editor.css's .ed-fold), under the header; its button first in the header. */
+.ed.text-folded .ed-work > .ed-body, .ed.text-folded .ed-pv-grip { display: none; }
+.ed.text-folded .ed-pv { flex: 1 1 0; width: auto !important; max-width: none; }
+.ed-text-fold { padding-top: 10px; border-right: 0; }
+.ed-head > .ed-text-hide:first-child { margin-left: -6px; }

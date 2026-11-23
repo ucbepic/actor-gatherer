@@ -2,7 +2,7 @@
 
 Status: A0–A4, B1, B2, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
 the views share, in `core/ui/`; Chat; the list, all of it TypeScript; Details, Transcript, Messages, History and
-Terminal's frame); A6 begun (the layout model, steps 1-4c-3c, all of it: the model the page's source, rendered; the panes as parts of
+Terminal's frame; the page's core and shell, the notifications, the apps' actors and the Apps page in TypeScript); A6 begun (the layout model, steps 1-4c-3c, all of it: the model the page's source, rendered; the panes as parts of
 one page; the page's pop-ups on Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
@@ -83,7 +83,8 @@ frontend/                  the dashboard's front end: Vite, TypeScript, React
     apps/                  index.ts (APPS), docwriter/, browser/
     compat/                agDashboard.chatView, for <home>/dashboard/views/*.js
     page.js, styles.ts     page.html's script and styles as modules (A3, A3b): started in its order; each module goes
-                           as its view moves to React (core/page/ and the .js files of features/)
+                           as its view moves to React (the .js files of features/)
+    links/                 each feature's link filled: what its TypeScript takes of other features (page.js calls them)
   tests/                   Vitest
   e2e/                     Playwright: a spec per view, screenshots (tests/web_home.py builds and serves its home)
 ag_dashboard/
@@ -108,7 +109,9 @@ component mounts what a view's `render()` returns.
 Checked by ESLint and tests in CI:
 
 1. `core/` imports nothing from `features/`, `apps/` or `layout/`.
-2. A feature imports `core/` and its own folder, not another feature; what two features share moves to `core/`.
+2. A feature imports `core/` and its own folder, not another feature; what two features share moves to `core/`. What a
+   feature's TypeScript needs of another is typed in its own link (`link.ts`) and filled at the app's level
+   (`src/links/`, type-checked; the list's `src/list-link.js`), before any module starts.
 3. No code of the dashboard names an app (DocWriter, the Browser, the Preview): each is in `ag_apps/`, reached only
    through the app host and app_kit's contract (app_kit/DESIGN.md), as one written by anyone else would be
    (`test_dashboard_apps.py`).
@@ -580,6 +583,45 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
   the cover after it, `TerminalView.tsx`). terminal.js registers the view and hands on `term`, `termFor`, `termListen`,
   `termWebgl` and `fullscreenFor` to the old modules that use them (the shell's pane, the list, the panes, sending).
   Vitest: `terminal.test.tsx`.
+
+**A5, the page's core and shell in TypeScript.** What the old page's modules share and what draws the page around the
+views -- core/page/'s state.js, helpers.js and code.js, features/page/'s data.js, main-view.js, pane-view.js and
+start.js, settings/panel.js, notify.js, app-actors.js and apps-page.js -- are typed TypeScript now, every name the old
+modules import kept, with the same behaviour:
+- **core/page/**: `state.ts` keeps `state` and `panes` as the old modules read them, but the page's own fields (the home,
+  the selected actor, paused, the stream, the list's forms) are a Zustand store (`core/store/page.ts`'s `usePage`), which
+  `state.<field>` reads and sets; `state.agent` still reads the page's own pane's (`panes.here`). `types.ts` types the
+  home as the page reads it, a pane's record, the panes and the state. `helpers.ts` re-exports, under the old names,
+  modules split by what they do: `dom.ts` (`el`, `svgEl`, `signature`, ...), `icons.ts`, `harness.ts` (each harness's
+  facts and marks), `home.ts` (lookups in the home), `avatar.ts` (an actor at work, done, waving hello) and its stage,
+  `stage.ts`, drawn from what the pure `stage-model.ts` works out (its reactions, its look and the moves between, its
+  classes, when it looks again; Vitest: `stage-model.test.ts`) and its tools' SVG (`stage-props.ts`); `get` and `post`
+  are `core/api/client.ts`'s, which were the same. `test_dashboard_avatars.py` reads the hues from `avatar.ts` and
+  `stage.ts`.
+- **features/page/**, the shell: `data.ts` (the home, each pane's actor's calls and view feed, loaded; the page's draws,
+  `render`, `mainSignature`, `listSignature`; its live state), `look.ts` (the theme, the avatar mode, Chat's earlier
+  turns, the panel opened or closed: data.ts re-exports them), `box.ts` (the message box's height), `stream.ts` and
+  `place.ts` (the page's stream, `connect` and `streamTake`, and `keepingPlace`, which were settings/panel.js's),
+  `main-view.ts` (a pane drawn), `patch.ts` (its nodes put in place, kept where the same: pure, `patch.test.ts`),
+  `pane-view.ts` (the panes' records), `start.ts`. What the shell takes of the list, the panes, Chat and its views, the
+  terminals, Details, the Transcript, the settings and the apps is typed in `link.ts` (`PageLink`, by feature) and filled
+  by `src/links/page.ts`. `settings/panel.ts` keeps `$`, `connect`, `keepingPlace` and `streamTake` for the old modules
+  that import them there, through its link (`settings/link.ts`, `src/links/settings.ts`), and hands the bridge
+  `window.agLegacy`.
+- **The notifications** (`features/notify/`): what wants the reader in a home, what of it is new, where and in what words
+  it is said, and a home's notifications less those dismissed here are worked out by the pure `want.ts`; the pop-ups are
+  React's (`Pops.tsx`: a store of them, each its own timer, paused under the pointer, in `#pops`, its root), as is the
+  settings' note asking for the browser's leave (`Leave.tsx`, in `#notify-leave`) -- the same markup and classes.
+  `link.ts`, `src/links/notify.ts`. Vitest: `notify.test.ts`.
+- **The apps' actors and the Apps page** (`features/apps/`): what an app's actor's role and a message an app wrote say
+  (`asked.ts`, pure; `asked.test.ts`), the nodes built from it (`app-actors.ts`, which needs nothing outside the apps'
+  folder), the Apps page opened and an app opened from it (`apps-page.ts`; `page-link.ts`, `src/links/apps.ts`).
+- **The links** are app-level files (ESLint's `app` element takes `src/links/`): each may import any feature and is
+  type-checked, so what it hands over is checked against the feature's link -- but for the old page's modules still
+  plain JS, imported untyped (`@ts-ignore`, which does nothing once a module is TypeScript, when it is checked too).
+  `page.js` calls each before any module starts, after the list's. The list's link (`features/list/link.ts`) still
+  takes the page's core and these modules as namespaces from `src/list-link.js`; now that they are typed, it can import
+  core directly.
 
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
