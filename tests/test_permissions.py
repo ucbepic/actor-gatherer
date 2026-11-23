@@ -347,11 +347,13 @@ def dialog(cursor=0, options=("Yes", "Yes, and always allow access to /w from th
 
 
 class TypedTest(SessionsBase):
-    """Typed into the dashboard's terminal for the session (the fake ag echoes each read); its dialog as its screen
+    """Typed into the dashboard's terminal for the session (the fake ag logs each read); its dialog as its screen
     shows it, stood in for (`_shown`)."""
 
     def typed(self):
-        return [x["typed"] for x in self.logged() if "typed" in x]
+        """What the terminal has read, in one string: the keys typed, in order. Not counted by its reads -- the keys are
+        typed ANSWER_GAP apart, but a busy machine that holds the fake's process for longer has it read two at once."""
+        return "".join(x["typed"] for x in self.logged() if "typed" in x)
 
     def started(self):
         sid = self.s.create("g", self.work)["session_id"]
@@ -363,24 +365,24 @@ class TypedTest(SessionsBase):
         return {"id": "permission:k1", "kind": "permission", "harness": "claude", "call": None, "at": time.time(), **extra}
 
     def screens(self, *shown):
-        """`_shown` giving each of `shown` in turn, then the last again."""
+        """`_shown` giving each of `shown` in turn, then the last again -- this test's Sessions' only: an earlier test's
+        thread still at work (its `_closed`, watching its dialog CLOSE_SECONDS on) would take the first of them."""
         seen = list(shown)
-        return mock.patch.object(sessions.Sessions, "_shown", lambda *a: seen.pop(0) if len(seen) > 1 else seen[0])
+        return mock.patch.object(self.s, "_shown", lambda *a: seen.pop(0) if len(seen) > 1 else seen[0])
 
     def test_allowed_then_its_dialog_seen_closed(self):
         sid = self.started()
         with self.screens(dialog(), dialog(), None):                  # asking; the keys not taken yet; closed
             sent = self.s.answer(sid, self.ask(), {"allow": True})
             self.assertEqual((sent["call"], sent["summary"], sent["expect"]), ("permission:k1", "Allowed", []))
-            self.until(lambda: self.typed() == ["1"])
+            self.until(lambda: self.typed() == "1")
             self.until(lambda: self.session(sid)["answer"].get("closed"))
 
     def test_denied_with_why_its_cursor_moved_to_no_and_checked(self):
         sid = self.started()
         with self.screens(dialog(), dialog(cursor=2)):
             self.s.answer(sid, self.ask(), {"allow": False, "text": "use echo"})
-            self.until(lambda: len(self.typed()) == 5)
-            self.assertEqual(self.typed(), [DOWN, DOWN, TAB, "use echo", ENTER])
+            self.until(lambda: self.typed() == DOWN + DOWN + TAB + "use echo" + ENTER)
             time.sleep(0.4)
             self.assertNotIn("closed", self.session(sid)["answer"])            # its dialog still shown: not settled here
 
@@ -389,15 +391,15 @@ class TypedTest(SessionsBase):
         sid = self.started()
         with self.screens(dialog(cursor=2)):
             self.s.answer(sid, self.ask(), {"allow": False})
-            self.until(lambda: self.typed() == [ENTER])
+            self.until(lambda: self.typed() == ENTER)
 
     def test_its_cursor_not_on_no_nothing_more_typed(self):
         sid = self.started()
         with self.screens(dialog(), dialog(cursor=1)), mock.patch.object(sessions, "DENY_SECONDS", 0.3):
             self.s.answer(sid, self.ask(), {"allow": False})
-            self.until(lambda: len(self.typed()) == 2)
+            self.until(lambda: self.typed() == DOWN + DOWN)
             time.sleep(0.8)
-            self.assertEqual(self.typed(), [DOWN, DOWN])                # no Enter where the cursor isn't on No
+            self.assertEqual(self.typed(), DOWN + DOWN)                 # no Enter where the cursor isn't on No
 
     def test_refused_where_no_dialog_shows_or_its_terminal_opened_since(self):
         sid = self.started()
@@ -412,7 +414,7 @@ class TypedTest(SessionsBase):
         with self.screens(dialog(options=("Always", "No"))):
             with self.assertRaisesRegex(answers.AnswerError, "not Yes"):
                 self.s.answer(sid, self.ask(), {"allow": True})
-        self.assertEqual(self.typed(), [])
+        self.assertEqual(self.typed(), "")
 
 
 class WatchTest(SessionsBase):
