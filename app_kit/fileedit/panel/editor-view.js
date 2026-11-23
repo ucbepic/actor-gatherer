@@ -8,7 +8,7 @@
 // it is shown again where the reader was (a sound or a video once it is not playing: until then the header offers it),
 // credited to the actor whose recorded change is nearest, as an edited file's change is.
 import { ago, el, full, ICONS, plural, post, strokeIcon } from "./page.js";
-import { ed, edAdded, edAddedHead, edByChip, edCredit, edDir, edEntry, edHead, edHeadPut, edOpen,
+import { ed, edAdded, edAddedHead, edAddedLead, edByChip, edCredit, edDir, edEntry, edHead, edHeadPut, edOpen,
   edPdfOpen, edPdfTheme, edPdfViewer, edRel, edWhoColor, edWriterName, edWriters } from "./editor.js";
 import { edFileIcon } from "./editor-tree.js";
 import { edNote } from "./editor-open.js";
@@ -127,6 +127,7 @@ export function edViewHead(v) {
       : el("span", { class: "ed-changed", style: color ? `--who: ${color}` : null, title: tip }, `Changed on disk ${ago(v.changed)}`);
   }
   edHeadPut([
+    ...edAddedLead(v),
     el("span", { class: "ed-path", title: v.path, text: edRel(v.path) }),
     el("span", { class: `ed-status ${cls}`, role: "status", text: status }),
     edByChip(writers), changed,

@@ -8,7 +8,7 @@
 // file at its line, and marked on those lines in the LaTeX editor (edProblems).
 import { agApp, el } from "/_ag/lib/fileedit/page.js";
 import { ed, edShowFile } from "/_ag/lib/fileedit/editor.js";
-import { edExecute, edProblems, pvPath } from "./latex.js";
+import { edExecute, edPreviewShown, edProblems, pvPath } from "./latex.js";
 
 let pvApi = null;
 // What this LaTeX editor's preview showed, kept in this browser (as its file is: edKeepFile), so that, its panel drawn again
@@ -40,6 +40,7 @@ window.addEventListener("pagehide", pvFlush);       // what moved last, as the p
 function pvShow(on) {
   if (!ed.pv) return;
   ed.pv.hidden = !on;
+  edPreviewShown(on);                                // the file's text folded away offered, or not (hidden: shown again)
   try { localStorage.setItem("ag-editor-preview-shown", on ? "1" : ""); } catch (e) { /* this page only */ }   // a new LaTeX editor's
   pvKeep({ shown: !!on }); pvFlush();
   if (on && pvApi) pvApi.shown();                    // what it is, for the file open (or the folder shown), once
