@@ -54,7 +54,11 @@ export const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root +
 // What an app built on this adds to it (its own module, the panel's entry, before it starts the panel: start.js's
 // edStart), each part given to edAdd as one more of its kind:
 //   head(x)     -> controls for the header, before Save (x: the file open, ed.s; or one shown, ed.v; or null: none)
+//   lead(x)     -> controls for the header, first in it (x: as head's)
 //   work(box)   called once, as the panel is drawn: a column of its own added beside the file's (box: its .ed-work)
+//   opening(path, asked)  a file about to be opened (edOpen, whatever opens it: the reader, a link, an agent; the file
+//               the panel had open, opened again as it is drawn) -- asked: shown from outside the panel, at a place in it
+//               maybe, the file open already too (edShowFile: a link, an agent's <app>_open, a place in a PDF's source)
 //   keys(ev)    a keydown, before the file's own -- in the panel, and in a PDF's viewer
 //   down(ev)    a mousedown on the file's text, before CodeMirror's
 //   view(s)     -> CodeMirror extensions for a text file's view, as it is made
@@ -63,9 +67,12 @@ export const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root +
 //   message(m)  a message from its backend (start.js)
 //   plain       {open, edited, check, save, due, gone, head}: its text files edited plain, in place of a live document
 //               -- read whole, edited in this page alone, saved whole (plain.js's, the Files app's); one at most
-export const edAdded = { head: [], work: [], keys: [], down: [], view: [], viewed: [], markup: [], message: [], plain: [] };
+export const edAdded = { head: [], lead: [], work: [], opening: [], keys: [], down: [], view: [], viewed: [], markup: [],
+  message: [], plain: [] };
 export function edAdd(parts) { for (const [k, f] of Object.entries(parts)) edAdded[k].push(f); }
-export const edAddedHead = (x) => edAdded.head.flatMap((f) => [].concat(f(x) || [])).filter(Boolean);
+const edAddedParts = (kind, x) => edAdded[kind].flatMap((f) => [].concat(f(x) || [])).filter(Boolean);
+export const edAddedHead = (x) => edAddedParts("head", x);
+export const edAddedLead = (x) => edAddedParts("lead", x);
 // The part its text files are edited plain with, if the app gave one: no live document, no mode, no conflict zone, no
 // actors' branches to approve. A file opened so has it as its session's `plain` (ed.s.plain).
 const edPlainPart = () => edAdded.plain[0] || null;
@@ -166,6 +173,7 @@ export async function edShowFile(path, line) {
   path = path.replace(/\/+$/, "") || "/";
   if (!ed.root || !edUnder(path, ed.root)) edGo(edDir(path));
   if (await edIsFolder(path)) return edShowFolder(path);
+  for (const f of edAdded.opening) f(path, true);
   if (!ed.s || ed.s.path !== path) edOpen(path);
   if (line) edGoLine(path, line);
 }
@@ -368,6 +376,7 @@ export async function edOpen(path, how = null, kept = null) {
   edClose();
   const turn = ++ed.turn;                            // a later pick's, meanwhile, wins
   ed.file = path; ed.err = "";
+  for (const f of edAdded.opening) f(path, false);
   edKeepFile({ path, how, at: kept && kept.at ? { ...kept.at, focused: false } : null });   // the keys: as it next closes
   if (!ed.lists.has(edDir(path))) edList(edDir(path));      // its writers
   edReveal(path);                                    // and its row in the tree, the folders down to it opened
@@ -1335,7 +1344,7 @@ export function edHead() {
   const s = ed.s;
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
   if (!ed.file) {
-    edHeadPut([el("span", { class: "ed-hint", text: "Pick a file to open it." }),
+    edHeadPut([...edAddedLead(null), el("span", { class: "ed-hint", text: "Pick a file to open it." }),
       el("span", { class: "grow", style: "flex: 1" }), edModePick(), ...edAddedHead(null)].filter(Boolean));
     return;
   }
@@ -1366,6 +1375,7 @@ export function edHead() {
       onclick: () => edClearZone(s) }, "Clear")) : null;
   const by = edByChip(writers);
   edHeadPut([
+    ...edAddedLead(s),
     el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
     (nc || na || np) && !(ed.err || (s && s.err)) ? el("button", { type: "button", class: `ed-status ${cls}`, role: "status",
       title: nc && nasked !== nc ? "Go to the first conflict" : "Go to the first change",

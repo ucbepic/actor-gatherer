@@ -1,8 +1,8 @@
 // What Chat (features/chat/, TypeScript) takes from the page around it and from the other features, which a feature's
 // TypeScript may not import (ag_dashboard/DESIGN.md's Rules): filled here, at the app's level, once every module is loaded
-// and before any starts (src/page.js's linkChat). What Chat reads is typed in features/chat/link.ts; the old page's
-// modules it comes from, in chat-page.d.ts. Each part is read as it is when Chat asks (the page's state, a setting), not
-// as it was when linked.
+// and before any starts (src/page.js's linkChat). What Chat reads is typed in features/chat/link.ts; the page's modules
+// it comes from are imported typed, those still plain JS through chat-page.js (typed in chat-page.d.ts). Each part is
+// read as it is when Chat asks (the page's state, a setting), not as it was when linked.
 import { createElement } from "react";
 import type { Home } from "../core/api/types";
 import { BackgroundNote } from "../features/chat/Background";
@@ -28,7 +28,21 @@ import { PermissionCall, summary, type Call } from "../features/transcript/calls
 import { loadTranscript, txFeedOf } from "../features/transcript/data";
 import type { TxItem } from "../features/transcript/blocks";
 import { drawTranscript, foldedOutputNode, notesSwitchNode, transcriptBlockNodes } from "../features/transcript/mount";
-import { appActors, data, helpers, layout, mainView, paneView, state, top } from "./chat-page";
+import * as state from "../core/page/state";
+import * as helpers from "../core/page/helpers";
+import type { Pane as PagePane, PageActor } from "../core/page/types";
+import * as appActors from "../features/apps/app-actors";
+import type { Pane } from "../features/chat/link";
+import * as data from "../features/page/data";
+import * as mainView from "../features/page/main-view";
+import * as paneView from "../features/page/pane-view";
+import { layout, top } from "./chat-page";
+
+// The page's own types are its reading of the same panes and actors (core/page/types.ts): handed over as Chat's.
+const pageOf = (p: Pane | null | undefined) => p as unknown as PagePane;
+const chatOf = (p: PagePane | null) => p as unknown as Pane | null;
+const asPage = (a: Actor) => a as unknown as PageActor;
+const asChat = (a: PageActor | null) => a as unknown as Actor | null;
 
 /** The list reads an actor as its home has it: the same record Chat reads. */
 const listed = (a: Actor) => a as unknown as ListActor;
@@ -37,17 +51,17 @@ const listed = (a: Actor) => a as unknown as ListActor;
  * parts, as the Transcript draws them (features/transcript/data.ts). */
 const feeds: Record<string, FeedDef> = {
   history: {
-    load: (p) => loadEvents(paneView.paneKey(p)),
+    load: (p) => loadEvents(paneView.paneKey(pageOf(p))),
     data: (p) => {
-      const f = eventsOf(paneView.paneKey(p));
+      const f = eventsOf(paneView.paneKey(pageOf(p)));
       return f ? { items: f.items, pending: f.pending, earlier: false } : null;
     },
   },
   transcript: {
-    load: (p) => loadTranscript(paneView.paneKey(p)),
-    loadEarlier: (p) => loadTranscript(paneView.paneKey(p), true),
+    load: (p) => loadTranscript(paneView.paneKey(pageOf(p))),
+    loadEarlier: (p) => loadTranscript(paneView.paneKey(pageOf(p)), true),
     data: (p) => {
-      const f = txFeedOf(paneView.paneKey(p));
+      const f = txFeedOf(paneView.paneKey(pageOf(p)));
       return f ? { items: f.items, pending: f.pending, earlier: f.earlier } : null;
     },
   },
@@ -115,25 +129,25 @@ export function linkChat(): void {
     snapshot: !!state.SNAPSHOT,
     home: () => state.state.home as Home | null,
     streaming: () => !!state.state.stream && !state.state.paused,
-    here: () => state.panes.here,
-    panes: () => paneView.allPanes(),
-    paneKey: (p) => paneView.paneKey(p),
-    paneInfo: (p) => paneView.paneInfo(p),
-    paneOf: (g, c) => paneView.paneOf(g, c),
-    paneWith: (c) => paneView.paneWith(c),
-    paneAt: (n) => paneView.paneAt(n),
-    drawPane: (p, end) => mainView.drawPane(p, end),
-    renderPane: (p) => mainView.renderPane(p),
+    here: () => chatOf(state.panes.here)!,
+    panes: () => paneView.allPanes() as unknown as Pane[],
+    paneKey: (p) => paneView.paneKey(pageOf(p)),
+    paneInfo: (p) => asChat(paneView.paneInfo(pageOf(p))),
+    paneOf: (g, c) => chatOf(paneView.paneOf(g, c)),
+    paneWith: (c) => chatOf(paneView.paneWith(c)),
+    paneAt: (n) => chatOf(paneView.paneAt(n)),
+    drawPane: (p, end) => mainView.drawPane(pageOf(p), end),
+    renderPane: (p) => mainView.renderPane(pageOf(p)),
     render: (now) => data.render(now),
     refresh: (now) => data.refresh(now),
-    loadChat: (p) => data.loadChat(p),
+    loadChat: (p) => data.loadChat(p ? pageOf(p) : undefined),
     savePanes: () => layout.savePanes(),
     detailsTip: mainView.DETAILS_TIP,
-    setDetails: (p, open, part) => mainView.setDetails(p, open, part),
-    dashboardCommand: (text, p) => mainView.dashboardCommand(text, p),
-    chatMin: (p) => top.chatMin(p),
-    canMinimize: (p) => top.canMinimize(p),
-    setChatMin: (p, on) => top.setChatMin(p, on),
+    setDetails: (p, open, part) => mainView.setDetails(pageOf(p), open, part),
+    dashboardCommand: (text, p) => mainView.dashboardCommand(text, pageOf(p)),
+    chatMin: (p) => top.chatMin(pageOf(p)),
+    canMinimize: (p) => top.canMinimize(pageOf(p)),
+    setChatMin: (p, on) => top.setChatMin(pageOf(p), on),
     minTip: top.MIN_TIP,
     miniView: top.MINI_VIEW,
     topShown: () => top.topShown(),
@@ -145,7 +159,7 @@ export function linkChat(): void {
     icons: helpers.ICONS,
     besideKey: helpers.BESIDE_KEY,
     harnessName: (h) => helpers.harnessName(h),
-    hasChat: (a) => helpers.hasChat(a),
+    hasChat: (a) => helpers.hasChat(asPage(a)),
     runnableNames: (join) => helpers.runnableNames(join),
     statusOf: (a) => statusOf(listed(a)),
     turnStatus: (a) => turnStatus(listed(a)),
@@ -156,7 +170,7 @@ export function linkChat(): void {
     terminalOpens: (info) => {
       const t = termOf(info.channel);
       return {
-        fullscreen: fullscreenFor(state.state.home, info as TermActor),
+        fullscreen: fullscreenFor(state.state.home as Home | null, info as TermActor),
         ...(t && t.opened ? { cols: t.xterm.cols, rows: t.xterm.rows } : {}),
       };
     },
@@ -167,7 +181,7 @@ export function linkChat(): void {
     feeds,
     otherViews,
     reader: {
-      el: (tag, attrs, ...kids) => helpers.el(tag, attrs, ...kids),
+      el: (tag, attrs, ...kids) => helpers.el(tag, attrs as Parameters<typeof helpers.el>[1], ...(kids as never[])),
       svgEl: (tag, attrs) => helpers.svgEl(tag, attrs),
       contextItem: (it) => contextItemNode(it as Item),
       columns: () => columnsNode(),
@@ -183,7 +197,7 @@ export function linkChat(): void {
       harnessName: (h) => helpers.harnessName(h),
       harnessLogo: (h) => helpers.harnessLogo(h),
       harnessBadge: (h) => helpers.harnessBadge(h),
-      actorLogo: (a) => appActors.actorLogo(a),
+      actorLogo: (a) => appActors.actorLogo(asPage(a)),
     },
   };
   setChatPage(page);
