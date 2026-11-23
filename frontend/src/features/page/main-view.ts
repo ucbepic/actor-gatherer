@@ -38,6 +38,12 @@ export function renderPane(p: Pane): void {
       patch(main, [layout.chatMin(p) ? layout.shellMini(p, c) : link.terminal.shellCard(p, c)]);
       return;
     }
+    if (layout.chatMin(p) && chat.linesDue(p)) {
+      // minimized, its last lines not come (a reload: the actor's files and view not loaded yet): its "Loading…" kept
+      // till they have, not its strip drawn without them -- which would grow as they came, the line above it moving
+      patch(main, [el("div", { class: "empty", text: "Loading…" })]);
+      return;
+    }
     const info = paneInfo(p) || {};
     const kids = [chat.chatCard(p, info), ...(p.details && !layout.chatMin(p) ? [detailsPanel(p, info)] : [])];
     const open = new Set([...main.querySelectorAll<HTMLDetailsElement>("details[open][id]")].map((d) => d.id));

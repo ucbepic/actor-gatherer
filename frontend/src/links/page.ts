@@ -88,6 +88,7 @@ const chatPart: ChatPart = {
   chatCard: (p, info) => chat.chatCard(asChat(p), actorOf(info)),
   chatAtEnd: (p) => chat.chatAtEnd(asChat(p)),
   chatToEnd: (p) => chat.chatToEnd(asChat(p)),
+  linesDue: (p) => files.linesDue(asChat(p)),
   interrupt: (p, info) => files.interrupt(asChat(p), actorOf(info)),
   takeChatView: (g, c, got) => files.takeChatView(g, c, got),
   opened: (a) => files.opened(actorOf(a)),

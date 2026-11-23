@@ -46,13 +46,30 @@ export async function loadFiles(p: Pane, turn?: number | null): Promise<boolean>
   const f = p.files,
     at = turn === undefined ? chatOf(k).picked : turn,
     view = viewOf(k);
-  const got = await loadFilesOf(filesOf(f, page.paneInfo(p), at), {
-    fresh: !page.streaming(),
-    stamp: view ? stampOf(view.turns) : undefined,
-  });
+  let got: NonNullable<PaneFiles["data"]>;
+  try {
+    got = await loadFilesOf(filesOf(f, page.paneInfo(p), at), {
+      fresh: !page.streaming(),
+      stamp: view ? stampOf(view.turns) : undefined,
+    });
+  } catch (err) {
+    if (p.files === f) f.failed = true; // (what waits for them waits no more: linesDue)
+    throw err;
+  }
   if (p.files !== f || (turn === undefined && chatOf(k).picked !== at)) return false; // another actor or turn meanwhile
   f.data = got;
+  f.failed = false;
   return true;
+}
+
+/** Whether minimized pane `p`'s last lines (mini/) have yet to come: what they are drawn from -- the server's view of
+ * its actor, or its files -- has not come, nor has its files' load failed. Till then the page draws no strip (its
+ * "Loading…" kept: features/page/main-view.ts), which would grow as they came, moving the line above it. */
+export function linesDue(p: Pane): boolean {
+  const k = P().paneKey(p);
+  if (!k || viewOf(k)) return false;
+  const f = p.files && p.files.key === k ? p.files : null;
+  return !(f && (f.data || f.failed));
 }
 
 /** The actor's Chat as last loaded -- its latest turn's files kept (files.ts) and the server's view (data.ts) -- made the
@@ -189,6 +206,7 @@ export function start(): void {
             filesSeq(p.files.data),
             viewSeq(p.files.key),
             page.chatMin(p) ? chatOf(p.files.key).sends.length : null,
+            !!p.files.failed, // (a minimized pane's strip, held for its lines, drawn without them: linesDue)
           ]
         : null,
   };
