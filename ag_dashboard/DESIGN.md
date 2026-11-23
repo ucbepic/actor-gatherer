@@ -1,12 +1,13 @@
 # The dashboard on a standard stack: plan
 
-Status: A0–A4, B1, B2, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
-the views share, in `core/ui/`; Chat, all of it TypeScript -- its card, views, files feed, a minimized pane's lines and
-card, the actor's stage; the list, all of it TypeScript; Details, Transcript, Messages; History and Terminal, all of
-them TypeScript; the page's core and shell, the notifications, the apps' actors and the Apps page in TypeScript); A6
-begun (the layout model, steps 1-4c-3c, all of it: the model the page's source, rendered; the panes as parts of
-one page; the page's pop-ups on Radix; the layout in TypeScript). A1's build step, the server serving it and `publish.yml` building it come with A3, the
-first step with something to build. It moves the
+Status: A0–A4, B1, B2, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 built (the
+renderers the views share, in `core/ui/`; Chat, the list, Details, Transcript, Messages, History and Terminal, the
+page's core and shell, the notifications, the apps' actors and the Apps page, all TypeScript, React where they draw; one
+stage; no plain-JS module left, and `page.js`, `list-link.js` and the bridge gone, `main.ts` starting the page); A6's
+items built (the layout model, steps 1-4c-3c: the model the page's source, rendered; the panes as parts of one page; the
+page's pop-ups on Radix; the layout in TypeScript), but the page's frame and the pane around each view are TypeScript
+that builds its nodes by hand (`features/page/`'s `main-view.ts`, `patch.ts`), not React yet. A1's build step, the
+server serving it and `publish.yml` building it came with A3, the first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
 
 ## Why
@@ -36,7 +37,7 @@ dashboard to the tools most web front ends and Python APIs are built with now, i
 | Build and dev server | None; esbuild only for the Editor's bundle | **Vite**, **TypeScript**, **pnpm** | The default for new front ends: hot reload in development, a bundle for release, types checked in CI. pnpm keeps one package store for all worktrees. |
 | UI | Hand-built DOM and redraw checks | **React** | The most used UI library. The other choices below have React versions, and the agents that build this dashboard write it fluently. |
 | Client state | One `state` object and 47 globals | **Zustand** store, fed by the event stream; **TanStack Query** for data fetched on demand (history pages, files, search) | The common pairing: pushed state in a store, fetched data cached by key. |
-| Styling | 2,200 lines in one `<style>`, theme as CSS variables | **CSS Modules**, one per component; the theme's CSS variables kept | Keeps today's CSS and look, scoped to its component. |
+| Styling | 2,200 lines in one `<style>`, theme as CSS variables | **A stylesheet per feature** (`features/<name>/*.css`), imported by its module; the theme's CSS variables kept | Keeps today's CSS and look. CSS Modules were the plan, not taken: the page's classes are what its Playwright specs find its parts by, and scoped names would change every one of them. The sheets apply in the order `main.ts` imports them. |
 | Menus, popovers, dialogs, tooltips | Hand-written (`popMenu`, `placePop`, `openPop`) | **Radix UI** primitives, unstyled | Keyboard use, focus and placement handled; styled with our CSS. |
 | Long lists (chat, transcript) | `content-visibility`, its own "pull earlier" | **react-virtuoso** | Lists that follow new items at the bottom and load earlier ones at the top. |
 | Splits and resizing | `widthGrip`, `topGrip`, the panes' own layout | **Our own**: a tree of splits as data (`tree.ts`), the reader's moves on it (`arrange.ts`), each panel placed at its spot (`place.ts`) | Not react-resizable-panels (or dockview): a split there is a nesting of elements, so a split made or undone moves panels in the page -- and an app's panel is an iframe, which a move loads again (a Browser's page, an editor's state lost). Here a panel stays where it is in the page and only its box changes. |
@@ -84,10 +85,10 @@ frontend/                  the dashboard's front end: Vite, TypeScript, React
       editor/              CodeMirror and Yjs, Tree, Changes, Conflicts, Preview
     apps/                  index.ts (APPS), docwriter/, browser/
     compat/                agDashboard.chatView, for <home>/dashboard/views/*.js
-    page.js, styles.ts     page.html's script and styles as modules (A3, A3b): started in its order; each module goes
-                           as its view moves to React (the .js files of features/)
-    links/                 each feature's link filled: what its TypeScript takes of other features (page.js calls them;
-                           chat.ts, terminal.ts and history.ts among them)
+    main.ts, styles.ts     the page: its modules loaded in page.html's order, so their styles cascade as they did; each
+                           feature's link filled, then each module started in that order, then ag's settings
+    links/                 each feature's link filled: what it takes of other features (main.ts calls them: list.ts,
+                           page.ts, chat.ts, layout.ts, ...), type-checked against the feature's link.ts
   tests/                   Vitest
   e2e/                     Playwright: a spec per view, screenshots (tests/web_home.py builds and serves its home)
 ag_dashboard/
@@ -114,7 +115,7 @@ Checked by ESLint and tests in CI:
 1. `core/` imports nothing from `features/`, `apps/` or `layout/`.
 2. A feature imports `core/` and its own folder, not another feature; what two features share moves to `core/`. What a
    feature's TypeScript needs of another is typed in its own link (`link.ts`) and filled at the app's level
-   (`src/links/`, type-checked; the list's `src/list-link.js`), before any module starts.
+   (`src/links/`, type-checked), before any module starts.
 3. No code of the dashboard names an app (DocWriter, the Browser, the Preview): each is in `ag_apps/`, reached only
    through the app host and app_kit's contract (app_kit/DESIGN.md), as one written by anyone else would be
    (`test_dashboard_apps.py`).
@@ -642,9 +643,8 @@ draws; and with them the parts the notes above left as the old page's:
 - Vitest: `card.test.tsx` (what the card says, its parts, the views offered, the card drawn), `core/ui/stage/stage.test.tsx`,
   `mini/model.test.ts`; `Composer.test.tsx` and `send.test.tsx` draw the box and the line as the card does.
 - **Left:** the pane around the card -- its draw, its place kept, Details -- is the page's (`features/page/`); a view of
-  the reader's own still builds nodes (its frame's blocks patched in as before, its box `ctx.input`'s); the page's own
-  stage (`core/page/stage.ts`, for the list's monitor and top.js's minimized avatar) and `core/ui/stage/` are to be made
-  one.
+  the reader's own still builds nodes (its frame's blocks patched in as before, its box `ctx.input`'s). The page's own
+  stage and `core/ui/stage/` were made one in the last A5 step (below).
 
 **A5, the page's core and shell in TypeScript.** What the old page's modules share and what draws the page around the
 views -- core/page/'s state.js, helpers.js and code.js, features/page/'s data.js, main-view.js, pane-view.js and
@@ -679,11 +679,30 @@ modules import kept, with the same behaviour:
   (`asked.ts`, pure; `asked.test.ts`), the nodes built from it (`app-actors.ts`, which needs nothing outside the apps'
   folder), the Apps page opened and an app opened from it (`apps-page.ts`; `page-link.ts`, `src/links/apps.ts`).
 - **The links** are app-level files (ESLint's `app` element takes `src/links/`): each may import any feature and is
-  type-checked, so what it hands over is checked against the feature's link -- but for the old page's modules still
-  plain JS, imported untyped (`@ts-ignore`, which does nothing once a module is TypeScript, when it is checked too).
-  `page.js` calls each before any module starts, after the list's. The list's link (`features/list/link.ts`) still
-  takes the page's core and these modules as namespaces from `src/list-link.js`; now that they are typed, it can import
-  core directly.
+  type-checked, so what it hands over is checked against the feature's link. `page.js` called each before any module
+  started, after the list's, whose link was still plain JS (`src/list-link.js`) until the last A5 step (below).
+
+**A5, the last of the old page: one stage; `page.js`, `list-link.js` and the bridge gone (built).** Once every module
+was TypeScript, what was left of the old half went:
+- **One stage** (`core/ui/stage/`), in Chat, a minimized pane and the list's monitor. The page core's copy
+  (`core/page/stage.ts`, `stage-model.ts`, `stage-props.ts`) worked out the same as Chat's, each with its own record of
+  what an actor's stage last showed and reacted to. Now `step.ts` holds the pure steps (its reactions, its look from one
+  draw to the next, its classes, when it looks again; Vitest: `step.test.ts`, moved with it), `model.ts` makes the
+  markup from them, and `Stage.tsx` draws it. The monitor renders `AtWork` itself (its card keeps its own record, under
+  "monitor <channel>"); `core/page/avatar.ts` keeps only the avatar mode, re-exporting the picture, the done avatar's
+  grow-in and the hues. One record for the page: a done avatar grows in once, whichever view draws it.
+  `test_dashboard_avatars.py` reads the hues from `model.ts`.
+- **`main.ts` starts the page**, as `page.js` did: each feature's link filled, then each module's `start()` in the same
+  order, then ag's settings (`settings/panel.ts`'s `mountAgSettings`). Its imports keep the order the bridge,
+  `styles.ts` and `page.js` loaded them in, so the styles cascade as before (the built CSS was byte-identical).
+- **The list's link is TypeScript** (`src/links/list.ts`), so what it hands over is checked against
+  `features/list/link.ts`: core's `AppPane` says an app's panel has its group and node; the list's `ActorPane` is core's
+  `Pane`. Where an app's panel is the layout's `AppPanel` and core and the list each read less of it, the link converts
+  once, with a comment.
+- **The bridge:** `window.agLegacy` gave way to `mountAgSettings`; `window.agNext`, which only the tests used, is
+  `window.agPage` (`window.agDashboard` is the reader's own views' API).
+- **Tests that read the page** (`tests/page_source.py`) follow `main.ts`'s imports, every `.js`, `.ts` and `.tsx`
+  module: `page.js`'s, kept to `.js`, had come down to one file.
 
 **A6. The shell in React.**
 - The arrangement becomes the store's `layout` slice: the list's mode and width, the Editor open and its height, the
@@ -691,7 +710,7 @@ modules import kept, with the same behaviour:
 - The splits are our own (`tree.ts`, `arrange.ts`, `place.ts`), not react-resizable-panels: its splits nest the panels
   in the page, so changing one moves them, and an app's panel, an iframe, would load again (see "The stack").
 - Panes become components in one page, sharing one stream (built, below).
-- `page.js` has no module left to start, and goes with the bridge.
+- `page.js` had no module left to start, and went with the bridge (the last A5 step, above).
 
 **The panes in one page (built).** Each pane beside the first was the page again in an iframe (the `PANE` flag): a
 second copy of the bundle, the home and its actor's updates handed to it by the page's stream, a copy of everything the
