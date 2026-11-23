@@ -2288,7 +2288,8 @@ export interface components {
     };
     /**
      * Branch
-     * @description An actor's branch of a project, in a worktree of its own (branches.py's `listed`).
+     * @description An actor's branch of a project, in a worktree of its own (branches.py's `listed`): what the project has checked
+     *     out now (`onto`, its changes merged into it), and its changes held for the reader, by file.
      */
     Branch: {
       session_id: string;
@@ -2299,12 +2300,10 @@ export interface components {
       branch: string;
       start: string | null;
       started_on: string | null;
-      onto: {
-        [key: string]: unknown;
-      } | null;
+      onto: components["schemas"]["CheckedOut"];
       approve: boolean;
       held: {
-        [key: string]: unknown;
+        [key: string]: components["schemas"]["Held"];
       };
     };
     /**
@@ -2472,6 +2471,14 @@ export interface components {
       decided: number | null;
       new_task: boolean | null;
       why: string | null;
+    };
+    /**
+     * CheckedOut
+     * @description What a folder has checked out (branches.py's `checked_out`): its branch (None: a commit alone), its commit.
+     */
+    CheckedOut: {
+      branch: string | null;
+      head: string | null;
     };
     /** Choices */
     Choices: {
@@ -2737,6 +2744,14 @@ export interface components {
           [key: string]: unknown;
         };
       };
+    };
+    /**
+     * Held
+     * @description A branch's changes to a file held for the reader: how many places, and of what kind.
+     */
+    Held: {
+      n: number;
+      kind: string;
     };
     /**
      * History
@@ -3188,6 +3203,29 @@ export interface components {
     PollerChoices: {
       default: string[];
       available: string[];
+    };
+    /**
+     * Project
+     * @description A gatherer's project (branches.py's `_project`): a repository its actors' branches are made from, or one its
+     *     actors' directories are in.
+     */
+    Project: {
+      branch: string | null;
+      head: string | null;
+      path: string;
+      name: string;
+      remote: string | null;
+      github: string | null;
+      exists: boolean;
+    };
+    /**
+     * Projects
+     * @description A gatherer's projects, and the repositories its actors' directories are in that are not among them
+     *     (/api/projects).
+     */
+    Projects: {
+      projects: components["schemas"]["Project"][];
+      suggestions: components["schemas"]["Project"][];
     };
     /**
      * Read
@@ -4910,7 +4948,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["Projects"];
         };
       };
     };
@@ -4930,7 +4968,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["Projects"];
         };
       };
     };

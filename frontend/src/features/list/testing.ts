@@ -1,6 +1,6 @@
 // A home and the page's facts about it, for the list's tests: what each derivation reads (ListCtx), and the reader's
 // choices with nothing shown (ListView).
-import { actorOf, gathererOf, homeOf } from "../../core/api/testing";
+import { actorOf, appListedOf, gathererOf, homeOf } from "../../core/api/testing";
 import type { ListView } from "./rows";
 import type { Actor, AppItem, Gatherer, ListCtx, ListHome } from "./types";
 
@@ -42,15 +42,7 @@ export function ctxOf(
 
 /** An app's open instance in group `g`. */
 export const app = (g: string, id: string, more: Partial<AppItem> = {}): AppItem => ({
-  app: {
-    name: "notepad",
-    label: "Notepad",
-    mark: false,
-    access: "task",
-    on_task: "join",
-    instances: "one",
-    failed: null,
-  },
+  app: appListedOf("notepad", { label: "Notepad" }),
   id,
   title: "",
   name: "",

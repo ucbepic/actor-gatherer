@@ -32,11 +32,8 @@ export type Tree = api.Folders;
 export type Task = api.Task;
 export type Tasks = api.Tasks;
 
-/** An app as its manifest says (the app host's), as the list reads it. */
-export type AppManifest = Pick<
-  api.AppListed,
-  "name" | "label" | "mark" | "access" | "on_task" | "instances" | "failed"
->;
+/** An app as its manifest says (the app host's /api/apps). */
+export type AppManifest = api.AppListed;
 
 /** An open instance of an app, as the list has it (apps.ts's appOf). */
 export interface AppItem {

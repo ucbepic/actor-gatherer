@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from starlette.responses import Response
 
 from .. import branches
+from ..models import Projects
 from .common import Body, Errors, Parts, answer, local_only, not_found
 
 router = APIRouter(route_class=Errors)
@@ -24,7 +25,7 @@ def strings(raw) -> List[str]:
     return [x for x in raw if isinstance(x, str)][:64] if isinstance(raw, list) else []
 
 
-@router.get("/api/projects", dependencies=[Depends(local_only)])
+@router.get("/api/projects", dependencies=[Depends(local_only)], response_model=Projects)
 def projects(gatherer: str, dirs: Optional[str] = None) -> Response:
     """{projects, suggestions}: the gatherer's projects, the repositories its actors' branches are made from, and those
     the directories D (?dirs=[D, ...]) are in (branches.py)."""
@@ -40,7 +41,7 @@ def under(srv: Parts, root: str = "") -> Response:
     return answer(srv.branches.under(root))
 
 
-@router.post("/api/projects")
+@router.post("/api/projects", response_model=Projects)
 def set_project(body: Body) -> Response:
     """{gatherer, add | remove, dirs?}: a project set for the gatherer (a folder in a repository, or a GitHub
     repository: cloned), or no longer -> as GET /api/projects."""

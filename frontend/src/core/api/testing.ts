@@ -3,6 +3,42 @@
 // shape (./types.gen.ts) as it changes.
 import type * as api from "./types";
 
+/** An app found, as the host lists it: one per group, joining the task it is added to, giving agents nothing. */
+export const appListedOf = (name: string, more: Partial<api.AppListed> = {}): api.AppListed => ({
+  name,
+  label: name,
+  version: "1.0",
+  description: "",
+  instances: "one",
+  access: "task",
+  on_task: "join",
+  instructions: "",
+  agent: { offered: false, name: "{app} · {folder}" },
+  mark: false,
+  panel: null,
+  tools: [],
+  handles: [],
+  links: [],
+  capabilities: {
+    native_view: false,
+    reads: [],
+    files: false,
+    commands: false,
+    message_agents: false,
+    transcript: false,
+    edit_guard: false,
+    docs: false,
+    actors: false,
+    notify: false,
+    message_actors: false,
+  },
+  origin: `http://${name}.localhost:4200`,
+  folder: null,
+  opens_with_agent: false,
+  failed: null,
+  ...more,
+});
+
 export const harnessInfoOf = (more: Partial<api.HarnessInfo> = {}): api.HarnessInfo => ({
   label: "Harness",
   mark: null,

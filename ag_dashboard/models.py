@@ -422,8 +422,23 @@ class Shell(Model):
     folder: Optional[int]
 
 
+class CheckedOut(Model):
+    """What a folder has checked out (branches.py's `checked_out`): its branch (None: a commit alone), its commit."""
+
+    branch: Optional[str]
+    head: Optional[str]
+
+
+class Held(Model):
+    """A branch's changes to a file held for the reader: how many places, and of what kind."""
+
+    n: int
+    kind: str
+
+
 class Branch(Model):
-    """An actor's branch of a project, in a worktree of its own (branches.py's `listed`)."""
+    """An actor's branch of a project, in a worktree of its own (branches.py's `listed`): what the project has checked
+    out now (`onto`, its changes merged into it), and its changes held for the reader, by file."""
 
     session_id: str
     channel: Optional[str]
@@ -433,9 +448,28 @@ class Branch(Model):
     branch: str
     start: Optional[str]
     started_on: Optional[str]
-    onto: Optional[Dict[str, Any]]
+    onto: CheckedOut
     approve: bool
-    held: Dict[str, Any]
+    held: Dict[str, Held]
+
+
+class Project(CheckedOut):
+    """A gatherer's project (branches.py's `_project`): a repository its actors' branches are made from, or one its
+    actors' directories are in."""
+
+    path: str
+    name: str
+    remote: Optional[str]
+    github: Optional[str]
+    exists: bool
+
+
+class Projects(Model):
+    """A gatherer's projects, and the repositories its actors' directories are in that are not among them
+    (/api/projects)."""
+
+    projects: List[Project]
+    suggestions: List[Project]
 
 
 # ----------------------------------------------------------------------------------- the apps (and the Apps page)

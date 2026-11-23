@@ -46,6 +46,12 @@ export type Tasks = Schemas["Tasks"];
 export type Task = Schemas["Task"];
 /** A shell open, listed under its gatherer. */
 export type Shell = Schemas["Shell"];
+/** An actor's branch of a project, in a worktree of its own; what a folder has checked out. */
+export type Branch = Schemas["Branch"];
+export type CheckedOut = Schemas["CheckedOut"];
+/** A gatherer's project, and its projects with the repositories its actors are in (/api/projects). */
+export type Project = Schemas["Project"];
+export type Projects = Schemas["Projects"];
 /** What the dashboard knows of a harness (data.py's `harness_info`, from harness_kit). */
 export type HarnessInfo = Schemas["HarnessInfo"];
 /** A harness's words for a turn stopped short (harness_kit's `stopped_says`). */
