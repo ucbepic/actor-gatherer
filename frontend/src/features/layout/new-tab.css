@@ -1,4 +1,4 @@
-/* A new tab's page (features/layout/new-tab.js): in the well as a task's card would be, its message box and the apps under it */
+/* A new tab's page (features/layout/NewTab.tsx): in the well as a task's card would be, its message box and the apps under it */
 .work.placed > .lay-empty.nt:not([hidden]) { justify-content: flex-start; padding: max(24px, 12vh) 24px 24px; overflow-y: auto;
   border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); background: var(--surface); color: var(--ink-2); }
 .nt-page { width: min(640px, 100%); display: grid; gap: 14px; }

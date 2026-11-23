@@ -1,7 +1,6 @@
 // The notifications (features/notify/) linked to the page around them: the list's actors, apps and what the reader has
-// seen, the panes, the apps' host, the page's live state -- link.ts says what they take. The old page's modules among
-// them are plain JS, read untyped (`@ts-ignore` on their imports, which does nothing once a module is TypeScript, when
-// it is checked too). Called once by page.js before any module starts.
+// seen, the panes, the apps' host, the page's live state -- link.ts says what they take, checked here against each
+// module. Called once by page.js before any module starts.
 import { setNotifyLink } from "../features/notify/link";
 import { setLive } from "../features/page/data";
 import { markSeen, seen, statusOf } from "../features/list/seen";
@@ -10,10 +9,7 @@ import { appFace, plainFace } from "../features/list/faces";
 import { actorTitle, appInfo, appTitle, renderAgents, selectApp, titleOf } from "../features/list/list";
 import { cardDraw, hover } from "../features/list/modes";
 import * as appHost from "../features/apps/host";
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-ignore -- plain JS
 import * as panes from "../features/layout/panes";
-/* eslint-enable @typescript-eslint/ban-ts-comment */
 
 // The list's own types are its reading of the same home and apps: handed over as the notifications'.
 type ListActor = Parameters<typeof statusOf>[0];

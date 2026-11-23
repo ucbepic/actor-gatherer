@@ -1,9 +1,10 @@
 // What Chat (features/chat/, TypeScript) takes from the page around it and from the other features, which a feature's
 // TypeScript may not import (ag_dashboard/DESIGN.md's Rules): filled here, at the app's level, once every module is loaded
 // and before any starts (src/page.js's linkChat). What Chat reads is typed in features/chat/link.ts; the page's modules
-// it comes from are imported typed, those still plain JS through chat-page.js (typed in chat-page.d.ts). Each part is
-// read as it is when Chat asks (the page's state, a setting), not as it was when linked.
+// it comes from are imported typed, so what each hands over is checked. Each part is read as it is when Chat asks (the
+// page's state, a setting), not as it was when linked.
 import { createElement } from "react";
+import type { ChatView } from "../features/chat/views";
 import type { Home } from "../core/api/types";
 import { BackgroundNote } from "../features/chat/Background";
 import { setChatPage, type ChatPage } from "../features/chat/link";
@@ -36,7 +37,8 @@ import type { Pane } from "../features/chat/link";
 import * as data from "../features/page/data";
 import * as mainView from "../features/page/main-view";
 import * as paneView from "../features/page/pane-view";
-import { layout, top } from "./chat-page";
+import * as layout from "../features/layout/panes";
+import * as top from "../features/layout/top";
 
 // The page's own types are its reading of the same panes and actors (core/page/types.ts): handed over as Chat's.
 const pageOf = (p: Pane | null | undefined) => p as unknown as PagePane;
@@ -149,7 +151,7 @@ export function linkChat(): void {
     canMinimize: (p) => top.canMinimize(pageOf(p)),
     setChatMin: (p, on) => top.setChatMin(pageOf(p), on),
     minTip: top.MIN_TIP,
-    miniView: top.MINI_VIEW,
+    miniView: top.MINI_VIEW as unknown as ChatView, // (its footer reads a pane and an actor as the layout does)
     topShown: () => top.topShown(),
     meMarks: top.ME_MARKS,
     fitBox: (box) => data.fitBox(box),

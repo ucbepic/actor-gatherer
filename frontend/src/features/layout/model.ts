@@ -32,7 +32,7 @@ export interface TaskTab {
   tree: Node;
 }
 
-/** What a task was left with, to open it again as it was (panes.js's rememberTask) -- and whatever else an older page
+/** What a task was left with, to open it again as it was (remember.ts's rememberTask) -- and whatever else an older page
  * kept there (the widths it had: work.ts makes a first arrangement from them). */
 export interface Left {
   /** its actors' panes open, by channel, in order */
@@ -59,7 +59,7 @@ export interface TaskLayout {
   at: number;
 }
 
-/** The page's panes as it last showed them (panes.js's savePanes): the actor in its own pane, the others beside, the one
+/** The page's panes as it last showed them (render.ts's savePanes): the actor in its own pane, the others beside, the one
  * in focus, each one's size and view -- opened again at a reload once the home is known. */
 export interface PanesKept {
   here: [string, string] | null;

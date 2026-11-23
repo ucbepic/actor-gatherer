@@ -1,6 +1,6 @@
 // Links to things in apps, `ag://<app>/<path>[?instance=<id>][#<part>]` (app_kit/links.py, the same rules): an agent
 // writes one in a reply as markdown -- `[the To dos page](ag://notes/page/k3p9x2wq)` -- and the page opens it in the app
-// (src/features/layout/panes.js, openAppLink): the panel shown, and handed the link (the SDK's `ag.links.onOpen`). An app
+// (src/features/layout/pane-links.ts, openAppLink): the panel shown, and handed the link (the SDK's `ag.links.onOpen`). An app
 // takes only paths of the forms its manifest lists ([[links]]): words, `<name>` for one segment, a last `<name...>` for
 // the rest -- the values handed to its panel decoded.
 
@@ -89,7 +89,7 @@ export function matchPath(forms: LinkForm[] | undefined, path: string): LinkMatc
 
 // A FILE'S PATH, as agents write one in a reply without being told any form -- `[parser.py](src/parser.py#L12)`,
 // `[plan](/work/plan.md)`, `file:///work/plan.md`, `/work/plan.md:12` -- opened as a link to it in an app that shows
-// files: one whose [[links]] take FILE_FORM (src/features/layout/panes.js's openFileLink). A relative one is from the
+// files: one whose [[links]] take FILE_FORM (src/features/layout/pane-links.ts's openFileLink). A relative one is from the
 // agent's folder. Not one: a link with a scheme (http:, mailto:, ag:), one to a host (//…), an anchor or query alone,
 // one from the home folder (~/…: whose, the page can't say).
 

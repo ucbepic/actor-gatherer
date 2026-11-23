@@ -7,7 +7,7 @@ import type { ListHost } from "./host";
 import { ListButtons } from "./ListButtons";
 import { CrewButton, OutsideDrop } from "./Parts";
 
-/** What the head's "+" for an actor on its own opens: its box (panes.js's railNewBox), by this key (its data-pop). */
+/** What the head's "+" for an actor on its own opens: its box (features/layout/StartBoxes.tsx's railNewBox), by this key (its data-pop). */
 export const ALONE_NEW = "self:new";
 
 export function HeadParts({ host, merged }: { host: ListHost; merged: boolean }) {

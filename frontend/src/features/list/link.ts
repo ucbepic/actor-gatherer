@@ -37,7 +37,7 @@ export interface PageState {
   agentVersion?: number;
 }
 
-/** An actor's pane beside this page's own (panes.js's: a part of the page), and an app's panel above them. */
+/** An actor's pane beside this page's own (features/page/pane-view.js's: a part of the page), and an app's panel above them. */
 export interface ActorPane {
   g: string;
   c: string;
@@ -58,7 +58,7 @@ export interface TaskLeft {
   shut?: string | null;
   apps?: unknown[];
 }
-/** A start box's or menu's button, as the card's start buttons say it (panes.js's cardStart). */
+/** A start box's or menu's button, as the card's start buttons say it (features/layout/starts.ts's cardStart). */
 export interface CardStart {
   key: string | null;
   disabled: boolean;
@@ -69,7 +69,7 @@ export interface CardStart {
   expanded: boolean | null;
 }
 
-/** The layout's module (features/layout/panes.js): the panes, the tasks shown and their tabs, the start buttons. */
+/** The layout's module (features/layout/panes.ts): the panes, the tasks shown and their tabs, the start buttons. */
 export interface PanesPart {
   actorPanes(): ActorPane[];
   appClosed(id: string): void;
@@ -101,8 +101,8 @@ export interface PanesPart {
   noHarness(): string;
   openActors(): At[];
   openCoordinator(g: Gatherer | null, node: string): void;
-  /** a box (the page's node) or a menu hung from `button`, by its key (Pops.tsx draws it) */
-  openPop(key: string, button: HTMLElement, box: HTMLElement): void;
+  /** a box (its form, the layout's: railNewBox's) or a menu hung from `button`, by its key (Pops.tsx draws it) */
+  openPop(key: string, button: HTMLElement, what: object): void;
   openTaskBeside(gname: string, k: string, first: string): Promise<void>;
   paneNote(text: string): void;
   /** pane `p` drawn for the actor it is given now: its calls and view loaded */
@@ -113,18 +113,12 @@ export interface PanesPart {
   pickBeside(gname: string, c: string, ev: AnyEvent): void;
   placeIfShown(): void;
   popButton(): HTMLElement | null;
-  railNewBox(
-    g: Gatherer | null,
-    hs: string[],
-    harness: string,
-    cwd: string,
-    error: string,
-    alone: boolean,
-  ): HTMLElement;
+  railNewBox(g: Gatherer | null, hs: string[], harness: string, cwd: string, error: string, alone: boolean): object;
   rekeyTask(was: string, now: string): void;
   rememberTask(k: string): void;
   retarget(p: ActorPane, g: string, c: string): void;
-  readonly rowPop: { key: string; el: Element | null };
+  /** what is open: its button's key, and what it is (nothing: none) */
+  readonly rowPop: { key: string; el: unknown };
   savePanes(): void;
   selectAppPane(p: AppPane): void;
   selectedTask(): string | null;
@@ -210,7 +204,7 @@ export interface ListPage {
     render(now?: boolean): void;
   };
   panes: PanesPart;
-  /** features/layout/new-tab.js */
+  /** features/layout/new-tab.ts */
   newTab: { refreshNewTab(): void };
   /** features/chat/chat.js and files-view.js */
   chat: {

@@ -223,7 +223,7 @@ export function listView(): ListView {
     tab: tabAt,
   };
 }
-// Where a row's task is OPEN (features/layout/panes.js's screen tabs): its tab's number, for a screen reader only
+// Where a row's task is OPEN (features/layout/show.ts's screen tabs): its tab's number, for a screen reader only
 // (list.css) -- a boxed number by a face read as an unread count, and the row's bar already says it is open; the hover
 // card says which tab (CardParts.tsx's TabLine). None, open nowhere: a click opens it in a tab of its own, and it can be
 // dragged onto the work area.

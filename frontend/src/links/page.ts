@@ -19,12 +19,8 @@ import { txSignature, useTxFeed } from "../features/transcript/data";
 import { useNotes } from "../features/transcript/TranscriptView";
 import { useSettings } from "../features/settings/store";
 import * as appHost from "../features/apps/host";
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-ignore -- plain JS
 import * as panes from "../features/layout/panes";
-// @ts-ignore -- plain JS
 import * as top from "../features/layout/top";
-/* eslint-enable @typescript-eslint/ban-ts-comment */
 import * as views from "../features/chat/views";
 import * as chat from "../features/chat/chat";
 import * as files from "../features/chat/files-view";

@@ -33,6 +33,7 @@ import { linkApps } from "./links/apps";
 import { linkChat } from "./links/chat";
 import { linkHistory } from "./links/history";
 import { linkTerminal } from "./links/terminal";
+import { linkLayout } from "./links/layout";
 
 linkList(); // the list (TypeScript) handed the old page's modules it calls
 linkPage(); // the page's shell (features/page/) handed the features it draws
@@ -42,6 +43,7 @@ linkApps(); // the Apps page handed the page around it
 linkChat(); // Chat (TypeScript) handed what it takes of the page and the other features
 linkTerminal(); // and the terminal
 linkHistory(); // and History
+linkLayout(); // the layout (TypeScript) handed the page around it
 startPageData();
 startSettingsPanel();
 startListSeen();

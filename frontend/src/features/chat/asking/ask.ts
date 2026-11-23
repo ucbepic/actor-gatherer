@@ -1,6 +1,6 @@
 // What the agent waits on the user for, and the model call it stopped on, as the home has them (data.py's `asking`,
 // `answer`, `failing`, `stopped`): read the same wherever they show -- Chat's cards (Cards.tsx), the other views' (the
-// old page's chatCard, through mount.tsx), a panel told of its actor (features/layout/panes.js).
+// old page's chatCard, through mount.tsx), a panel told of its actor (features/layout/app-hooks.ts).
 import type { Answered, Ask, AskSays, Failing, Home, Session, Stopped } from "../../../core/api/types";
 import type { Actor } from "../types";
 

@@ -171,7 +171,7 @@ function askedByAgents() {
   L.catalog.askedByAgent(home.app_requests!, who, () => void L.appsPage.appsChanged());
 }
 // An actor is looked at while it is open in a pane -- not this page's own, out of sight while a screen tab without it
-// shows (features/layout/panes.js's isAway). An app is looked at as an actor is: its panel shown (not held out of sight)
+// shows (features/layout/open.ts's isAway). An app is looked at as an actor is: its panel shown (not held out of sight)
 // -- while the page is in FRONT of the reader, not only visible, as what it notified them of is said on the computer
 // until then (features/notify/notify.js) -- its newest notification then seen (status.ts's appStatusOf), kept as the
 // item "app:<its id>"; the list drawn again for it.

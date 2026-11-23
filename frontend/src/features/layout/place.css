@@ -338,7 +338,7 @@
   height: 100%;
   background: none;
 }
-/* a phone's width (nothing placed: the page flows, features/layout/panes.js): the tabs still there, a row that scrolls sideways, each
+/* a phone's width (nothing placed: the page flows, features/layout/work-area.ts): the tabs still there, a row that scrolls sideways, each
    tab no narrower than its map and a few letters */
 @media (max-width: 760px) {
   :root:not(.list-full):has(.work) .tab-slot > .lay-tabs {
