@@ -15,6 +15,8 @@ export type SendFn = ((text: string) => Promise<boolean>) & { draft?: string };
 export interface PaneFiles {
   key: string;
   data: FilesData | null;
+  /** its last load failed (a gatherer with no database yet: made on its first call), no files had */
+  failed?: boolean;
 }
 
 /** An actor's pane, as the page keeps its record (features/page/pane-view.js's makePane): its actor, what it shows of

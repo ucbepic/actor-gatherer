@@ -92,6 +92,9 @@ export interface ChatPart {
   chatCard(p: Pane, info: PageActor | Record<string, never>): Node;
   chatAtEnd(p: Pane): boolean;
   chatToEnd(p: Pane): void;
+  /** whether a minimized pane's last lines have yet to come (what they are drawn from, not come nor failed): its strip
+   * not drawn till then */
+  linesDue(p: Pane): boolean;
   /** Esc for a pane's actor: its turn interrupted, or what it asks dismissed; whether it was taken */
   interrupt(p: Pane, info: PageActor | null): boolean;
   /** what Chat shows of an actor, as the stream sent it */
