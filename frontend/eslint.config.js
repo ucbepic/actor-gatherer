@@ -30,7 +30,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/**/*.{ts,tsx}", "src/core/**/*.js", "src/*.js", "src/links/*.js"],
+    files: ["src/**/*.{ts,tsx}", "src/core/**/*.js", "src/*.js"],
     plugins: { boundaries },
     settings: {
       "import/resolver": { node: { extensions: [".ts", ".tsx", ".js"] } },

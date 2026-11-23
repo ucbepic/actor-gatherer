@@ -107,7 +107,7 @@ export interface LayoutPage {
     runnableNames(join: string): string;
     bareAvatar(a: Actor | null): string | null | undefined;
     doneCheck(): Node;
-    restDelay(a: Actor | null, turn: number): string | null;
+    restDelay(a: Actor | null, turn: unknown): string | null;
   };
   /** features/page/data.js: the home and each pane's actor, loaded; what the page says in passing; Chat's drafts */
   data: {
@@ -153,7 +153,7 @@ export interface LayoutPage {
   mini: {
     readonly miniCard: { shut(): void };
     miniHistory(ctx: MiniCtx): Node | null;
-    miniRest(ctx: MiniCtx): { row_id: number } | null;
+    miniRest(ctx: MiniCtx): { row_id?: number | null } | null;
   };
   /** features/terminal: the terminal a session's pane draws, if one is kept */
   terminal: {

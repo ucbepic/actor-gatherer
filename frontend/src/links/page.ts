@@ -21,20 +21,15 @@ import { useSettings } from "../features/settings/store";
 import * as appHost from "../features/apps/host";
 import * as panes from "../features/layout/panes";
 import * as top from "../features/layout/top";
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-ignore -- plain JS
 import * as views from "../features/chat/views";
-// @ts-ignore -- plain JS
 import * as chat from "../features/chat/chat";
-// @ts-ignore -- plain JS
 import * as files from "../features/chat/files-view";
-// @ts-ignore -- plain JS
 import * as ownViews from "../features/chat/own-views";
-// @ts-ignore -- plain JS
 import * as shell from "../features/terminal/shell";
-/* eslint-enable @typescript-eslint/ban-ts-comment */
+import type { Pane as ChatPane } from "../features/chat/link";
+import type { Actor as ChatActor } from "../features/chat/types";
 import type { ChatPart, DetailsPart, LayoutPart, ListPart } from "../features/page/link";
-import type { PageActor, PageGatherer, PageHome } from "../core/page/types";
+import type { Pane, PageActor, PageGatherer, PageHome } from "../core/page/types";
 
 // The list's own types are its reading of the same home: handed over as the page's.
 type ListActor = Parameters<typeof seen.statusOf>[0];
@@ -75,19 +70,23 @@ const layoutPart: LayoutPart = {
   shellMini: (p, id) => top.shellMini(p, id),
 };
 
+// Chat's own types are its reading of the same pane and actor (features/chat/link.ts, types.ts): handed over as the page's.
+const asChat = (p: Pane) => p as unknown as ChatPane;
+const actorOf = (a: PageActor | Record<string, never> | null) => a as unknown as ChatActor;
+
 const chatPart: ChatPart = {
   get CHAT_VIEWS() {
     return views.CHAT_VIEWS;
   },
-  chatView: (p) => views.chatView(p),
-  setChatView: (p, id) => views.setChatView(p, id),
-  chatFeed: (p) => views.chatFeed(p),
-  chatCard: (p, info) => chat.chatCard(p, info),
-  chatAtEnd: (p) => chat.chatAtEnd(p),
-  chatToEnd: (p) => chat.chatToEnd(p),
-  interrupt: (p, info) => files.interrupt(p, info),
+  chatView: (p) => views.chatView(asChat(p)),
+  setChatView: (p, id) => views.setChatView(asChat(p), id),
+  chatFeed: (p) => views.chatFeed(asChat(p)) as unknown as ReturnType<ChatPart["chatFeed"]>, // (its pane Chat's)
+  chatCard: (p, info) => chat.chatCard(asChat(p), actorOf(info)),
+  chatAtEnd: (p) => chat.chatAtEnd(asChat(p)),
+  chatToEnd: (p) => chat.chatToEnd(asChat(p)),
+  interrupt: (p, info) => files.interrupt(asChat(p), actorOf(info)),
   takeChatView: (g, c, got) => files.takeChatView(g, c, got),
-  opened: (a) => files.opened(a),
+  opened: (a) => files.opened(actorOf(a)),
   clearFlips: () => chatStore.clearFlips(),
   drafts: () => drafts.drafts(),
   keepDraft: (actor, text) => drafts.keepDraft(actor, text),

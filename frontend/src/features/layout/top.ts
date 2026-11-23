@@ -199,7 +199,7 @@ export const ME_MARKS: Readonly<Record<string, readonly [string, string]>> = {
 };
 export const meMark = (m: readonly [string, string] | undefined | null): HTMLElement | null =>
   m ? el("span", { class: "mk " + m[0], text: m[1] }) : null;
-function miniMe(p: Pane, info: Actor | null, rest: { row_id: number } | null): HTMLElement {
+function miniMe(p: Pane, info: Actor | null, rest: { row_id?: number | null } | null): HTMLElement {
   const src = L.helpers.bareAvatar(info),
     [st, word] = info ? L.seen.statusOf(info) : ["", ""],
     says = `${rest ? "Done" : word}. Show the chat`;

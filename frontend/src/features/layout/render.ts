@@ -176,9 +176,9 @@ function dropPane(p: OtherPane): void {
   if (focusedPane() === p) focusPane(panes.others[i - 1] || panes.here);
 }
 /** An actor's pane closed (its ×, its task left, a tab cleared): no longer wanted. */
-export function closePane(p: OtherPane): void {
-  if (!panes.others.includes(p)) return;
-  shadow.update(model.unwantPanes, (o) => isAt([o.g, o.c], p.g, p.c));
+export function closePane(p: Pane): void {
+  if (!panes.others.includes(p as OtherPane)) return;
+  shadow.update(model.unwantPanes, (o) => isAt([o.g, o.c], p.g!, p.c));
   renderPanes();
 }
 /** This page's own pane closed: the next pane's actor -- and view -- moves into it, its frame gone (herePlan). */
