@@ -76,8 +76,8 @@ describe("Bubble", () => {
     t.host.envelopes[text] = { from: "actor", id: "abc12345-6789", name: null, text: "Done with the parser." };
     const news = "Update (watch 3): actor abc12345-6789 is done: its turn is over.";
     t.host.envelopes[news] = { from: "update", id: "abc12345-6789", name: null, how: "its turn is over", text: "" };
-    t.page.feed.data.turns.push(turn(1, { text: news }));
-    t.page.feed.data.turn = 1;
+    t.page.feed.data!.turns.push(turn(1, { text: news }));
+    t.page.feed.data!.turn = 1;
     const node = t.page.draw();
     const from = node.querySelector("#fl-turn-0 .fl-crew .fl-user")!;
     expect(from.querySelector(".crew-from")!.textContent).toBe("Fixer");

@@ -2,18 +2,21 @@
 // back as the actor's draft and why kept for the line under the box (SendError.tsx); the dashboard's own commands done,
 // not sent; a harness's "/" command not shown pending, its terminal shown; nothing sent while another process holds it
 // or a message is on its way. And the line under the box (SendError.tsx), the header's controls (Controls.tsx).
-import { act } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { actorOf, sessionOf } from "../../core/api/testing";
 import { chatOf, useActors, viewTaken } from "./actors";
 import { drawControls, type ControlsProps } from "./Controls";
 import { drafts, keepDraft } from "./drafts";
 import { send, type SendFrom } from "./send";
-import { drawSendError } from "./SendError";
+import { SendError, type SendErrorProps } from "./SendError";
 import { chatView } from "./testing";
 import type { Actor } from "./types";
 
 const A = "g\u0000c";
+/** The line under the box, drawn: its box. */
+const errLine = (props: SendErrorProps): HTMLElement =>
+  render(<SendError {...props} />).container.firstElementChild as HTMLElement;
 let answer: { status: number; body: Record<string, unknown> };
 let posted: [string, Record<string, unknown>][];
 let calls: string[];
@@ -78,7 +81,7 @@ describe("a send", () => {
     expect(drafts()[A]).toBe("try this");
     expect(calls).toContain("boxed:try this");
     expect(chatOf(A).failed).toEqual({ text: "not at its box", box: true });
-    const line = drawSendError({ actor: A, held: "", session: null, toTerminal: () => calls.push("to terminal") });
+    const line = errLine({ actor: A, held: "", session: null, toTerminal: () => calls.push("to terminal") });
     expect(line.className).toBe("err");
     expect(line.textContent).toBe("not at its box Open the terminal");
     act(() => line.querySelector("button")!.click());
@@ -113,9 +116,9 @@ describe("a send", () => {
   });
 
   it("says why nothing is sent from here, before why the last one was not", () => {
-    const line = drawSendError({ actor: A, held: "Open in another process.", session: null, toTerminal: null });
+    const line = errLine({ actor: A, held: "Open in another process.", session: null, toTerminal: null });
     expect(line.textContent).toBe("Open in another process.");
-    const failed = drawSendError({
+    const failed = errLine({
       actor: "g\u0000x",
       held: "",
       session: { status: "failed", last_error: "no directory" },

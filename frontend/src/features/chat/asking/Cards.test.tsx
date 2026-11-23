@@ -58,8 +58,7 @@ beforeEach(() => {
     icons: { terminal: "M1 1h14" },
     setChatView: (id) => views.push(id),
     permissionVerb: () => "run a command",
-    permissionView: (ask) =>
-      Object.assign(document.createElement("div"), { className: "perm", textContent: `${ask.tool}` }),
+    PermissionCall: ({ ask }) => <div className="perm">{`${ask.tool}`}</div>,
     refresh: async () => {},
   };
 });

@@ -1,15 +1,18 @@
 // The Transcript view (blocks.ts, calls.tsx, TranscriptView.tsx, mount.tsx) and its feed (data.ts): which blocks, how a
 // call is shown, the frame drawn by its mount, and its events loaded a page at a time.
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { key } from "../../core/model/keys";
 import { transcriptBlocks, type Part, type TxItem } from "./blocks";
-import { callLine, diffRows, patchRows, permissionNode, summary } from "./calls";
+import { callLine, diffRows, patchRows, PermissionCall, summary, type PermissionAsk } from "./calls";
 import { loadTranscript, txFeedOf, useTxFeed } from "./data";
 import { drawTranscript, foldedOutputNode, notesSwitchNode, transcriptBlockNodes } from "./mount";
 import { useNotes, type TxFrame } from "./TranscriptView";
 
 const ev = (row_id: number | null, ...parts: Part[]): TxItem => ({ row_id, type: "?", at: null, parts });
+/** A permission's call, drawn: its box. */
+const permissionNode = (ask: PermissionAsk, id: string): Element =>
+  render(<PermissionCall ask={ask} id={id} />).container.firstElementChild!;
 const call = (id: string, view: Record<string, unknown> = { shape: "shell", command: `run ${id}` }): Part => ({
   kind: "call",
   id,

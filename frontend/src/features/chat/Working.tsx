@@ -1,16 +1,17 @@
 // The actor under its turn: at work (the line under a running turn, and its stage below the turn), done (its avatar
 // still, a check at its corner), and how a turn stopped short.
-import { useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { Home, StoppedSays } from "../../core/api/types";
 import { ago, lasting, spell } from "../../core/format";
-import { inkOf, useChat } from "./context";
-import { useStage } from "./Hosted";
+import { AtRest, AtWork } from "../../core/ui/stage/Stage";
+import { bareAvatar, type Work } from "../../core/ui/stage/model";
+import { inkStyle, useChat } from "./context";
 import type { Actor, Turn } from "./types";
 
 /** The actor's avatar small, out of its circle (`none`: what stands for it without one); a line short of height shows it. */
 function MiniAvatar({ none }: { none: ReactNode }) {
-  const { feed, host } = useChat();
-  const src = host.bareAvatar(feed.info);
+  const { feed } = useChat();
+  const src = bareAvatar(feed.info);
   return (
     <span className="fl-mini" aria-hidden="true">
       {src ? <img src={src} alt="" draggable="false" /> : none}
@@ -32,7 +33,7 @@ export function Working({
   now: string;
   retrying?: boolean;
 }) {
-  const { feed, host } = useChat();
+  const { feed } = useChat();
   return (
     <div className="fl-working">
       <MiniAvatar none={<span className="spin" />} />
@@ -44,7 +45,7 @@ export function Working({
         {at ? " so far" : null}
         {feed.canInterrupt ? " · esc to interrupt" : null}
       </div>
-      <div className="now" role="status" style={inkOf(host.hueInk(feed.info))}>
+      <div className="now" role="status" style={inkStyle(feed.info)}>
         {now}
       </div>
     </div>
@@ -55,39 +56,39 @@ export function Working({
  * the turn took, from its message to its last event (`end`; from a server without it, the actor's last activity) -- in
  * place of the actor done under it (Done). Otherwise not shown. */
 export function Finished({ t }: { t: Turn }) {
-  const { feed, host } = useChat();
+  const { feed } = useChat();
   return (
     <div className="fl-working fl-finished">
       <MiniAvatar none={<span>✓</span>} />
       <div className="fl-times">{t.at ? `took ${spell((t.end || feed.info.last || t.at) - t.at)}` : ""}</div>
-      <div className="now" style={inkOf(host.hueInk(feed.info))}>
+      <div className="now" style={inkStyle(feed.info)}>
         Done
       </div>
     </div>
   );
 }
 
-/** Under the turn at work: the actor acting out its turn on its stage (the host's atWork), and what it does now. */
+/** Under the turn at work: the actor acting out its turn on its stage (core/ui/stage), and what it does now. */
 export function Status({ work, now }: { work: unknown; now: string }) {
   const { feed, host } = useChat();
-  const box = useRef<HTMLDivElement>(null),
-    words = useRef<HTMLSpanElement>(null);
-  useStage(box, () => host.atWork(feed.info, { work }), words);
   return (
-    <div ref={box} className="fl-status" aria-hidden="true">
-      <span ref={words} className="now" style={inkOf(host.hueInk(feed.info))}>
+    <div className="fl-status" aria-hidden="true">
+      <AtWork info={feed.info} work={work as Work | null} mode={host.avatarMode()} />
+      <span className="now" style={inkStyle(feed.info)}>
         {now}
       </span>
     </div>
   );
 }
 
-/** Under the latest turn, over: the actor done (the host's atRest) -- its check grown in, if the page saw the turn end. */
+/** Under the latest turn, over: the actor done -- its check grown in, if the page saw the turn end. */
 export function Done({ t }: { t: Turn }) {
-  const { feed, host } = useChat();
-  const box = useRef<HTMLDivElement>(null);
-  useStage(box, () => host.atRest(feed.info, t.row_id));
-  return <div ref={box} className="fl-done" title={`Done · ${ago(feed.info.last)}`} />;
+  const { feed } = useChat();
+  return (
+    <div className="fl-done" title={`Done · ${ago(feed.info.last)}`}>
+      <AtRest info={feed.info} turn={t.row_id} />
+    </div>
+  );
 }
 
 const STOPPED_ANY: StoppedSays = { lead: "⎿", interrupted: "Interrupted", error: "Error" };

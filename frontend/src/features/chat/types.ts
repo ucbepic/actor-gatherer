@@ -5,6 +5,7 @@
 // the actor is the home's (data.py's), as far as the turn list reads it.
 import type { Actor, ChatView, Files, Home } from "../../core/api/types";
 import type { CardsHost } from "./asking/Cards";
+import type { PaneActsProps } from "./side/PaneActs";
 
 // What the server sends of the conversation, as generated from its schema (core/api/types.ts): a turn and its parts,
 // its files and commands (/api/files), the actor (the home's), Chat's view (the stream's `chat`).
@@ -45,7 +46,8 @@ export interface ChatFeed {
   gatherer: string;
   /** the pane's files feed for the actor (its record's `files`): the turn list's folds start over with a new one */
   files: object;
-  data: FilesData;
+  /** the files of the turn shown (files.ts), as the page has them; null before they have come */
+  data: FilesData | null;
   /** the turn picked, or null: the latest, followed */
   picked: number | null;
   home: Home | null;
@@ -83,18 +85,12 @@ export type PageFeed = Omit<ChatFeed, "mine" | "picked" | "interrupting" | "canI
 
 /** What the turn list calls of the old page, until those parts move too; and the cards under it (asking/Cards.tsx). */
 export interface ChatHost extends CardsHost {
-  /** the actor's stage (core/page/helpers.js): at work, done, waving hello */
-  atWork(info: Actor, t: { work?: unknown }): Node;
-  atRest(info: Actor, turn: number | null | undefined): Node;
-  greeting(info: Actor): Node | null;
+  /** how the actor at work is drawn: "acting" (its stage) or "simple" (the setting) */
+  avatarMode(): string;
   /** an actor's face, small (features/list/list.js's crewFace); the gatherer agent's picture for one with none */
   crewFace(a: Actor | null, coordinator: boolean): Node;
   /** a message an app wrote with its own block (a Browser's), as the app draws it; null for any other */
   appWords(text: string): Node | null;
-  /** the actor's avatar without its circle: where to get it */
-  bareAvatar(info: Actor): string | null;
-  /** the words in the actor's hue: a style ("color: ...") */
-  hueInk(info: Actor): string | null;
   /** a message between actors (coordination.py's envelope) */
   envelope(text: string): Envelope | null;
   /** a message's words as matched with one stored, and whether two say the same */
@@ -105,7 +101,7 @@ export interface ChatHost extends CardsHost {
   /** the files and commands folded to their bar, or shown (folded: the latest turn's, which the bar counts) */
   foldSide(actor: string, fold: boolean): unknown;
   /** the head of the pane showing `actor`, put in the files' folded bar with a panel open above the panes; null: none */
-  barActs(actor: string): Node | null;
+  paneActs(actor: string): PaneActsProps | null;
   /** a turn's files and commands shown: null, the latest's */
   setFilesTurn(actor: string, n: number | null): Promise<unknown>;
 }

@@ -6,8 +6,9 @@ import type { ChatFeed, Current, Opening, Turn, Waits } from "./types";
 /** The states of a turn at work: a message sent from here waits for the agent's next step. */
 export const AT_WORK: ReadonlySet<string> = new Set(["opening", "working", "asking"]);
 
-/** The turns: the view's -- before it has come for this actor, the page's files feed's, drawn with no state. */
-export const turnsOf = (feed: ChatFeed): Turn[] => feed.view?.turns ?? feed.data.turns;
+/** The turns: the view's -- before it has come for this actor, the page's files feed's, drawn with no state; none before
+ * either has come (an actor shown for the first time, or the page's first draw after a reload: Chat says "Loading…"). */
+export const turnsOf = (feed: ChatFeed): Turn[] => feed.view?.turns ?? feed.data?.turns ?? [];
 
 /** The turn sent and not stored yet: the view's; else a send from here the view does not have yet, while the actor is
  * not at work (at work, it waits). Null: none. */
