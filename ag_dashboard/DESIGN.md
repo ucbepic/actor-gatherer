@@ -1,8 +1,10 @@
 # The dashboard on a standard stack: plan
 
 Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
-the views share, in `core/ui/`; Chat; the list, all of it TypeScript; Details, Transcript, Messages, History and
-Terminal's frame; the page's core and shell, the notifications, the apps' actors and the Apps page in TypeScript); A6 begun (the layout model, steps 1-4c-3c, all of it: the model the page's source, rendered; the panes as parts of
+the views share, in `core/ui/`; Chat, all of it TypeScript -- its card, views, files feed, a minimized pane's lines and
+card, the actor's stage; the list, all of it TypeScript; Details, Transcript, Messages; History and Terminal, all of
+them TypeScript; the page's core and shell, the notifications, the apps' actors and the Apps page in TypeScript); A6
+begun (the layout model, steps 1-4c-3c, all of it: the model the page's source, rendered; the panes as parts of
 one page; the page's pop-ups on Radix). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
@@ -84,7 +86,8 @@ frontend/                  the dashboard's front end: Vite, TypeScript, React
     compat/                agDashboard.chatView, for <home>/dashboard/views/*.js
     page.js, styles.ts     page.html's script and styles as modules (A3, A3b): started in its order; each module goes
                            as its view moves to React (the .js files of features/)
-    links/                 each feature's link filled: what its TypeScript takes of other features (page.js calls them)
+    links/                 each feature's link filled: what its TypeScript takes of other features (page.js calls them;
+                           chat.ts, terminal.ts and history.ts among them)
   tests/                   Vitest
   e2e/                     Playwright: a spec per view, screenshots (tests/web_home.py builds and serves its home)
 ag_dashboard/
@@ -433,10 +436,9 @@ as components of one page:
   becomes that key in one place (`files-view.js`'s `chatActor`). The host's calls name the actor (`setFilesTurn`,
   `foldSide`). A minimized pane's lines (`mini-history.js`, still the old page's) are drawn again when the store
   changes. `chat.js` (the chat card and Details' cards) is off the long files' list.
-- **Left:** the turn list's own state is one actor's at a time (`store.ts`'s folds, `useOnPage`), and its pulls and a
-  turn kept in place by a click find the conversation on the page (`pull.ts`); switching views is the page's draw
-  (its other views are its DOM); the message box of the other views (`ctx.input`) and a minimized pane are the old
-  page's.
+- **Left** (then; since done -- each actor's own state with the panes in one page, below; the rest in "A5, the rest of
+  Chat, History and Terminal in TypeScript"): the turn list's own state was one actor's at a time, switching views the
+  page's draw, the other views' message box (`ctx.input`) and a minimized pane the old page's.
 
 **A5, the Apps page in React (`features/apps/catalog/`), and Radix with it.** The Apps page (Nov 17) had been built by
 hand again, with its own `el()`, menu and modal; it was the smallest view standing alone, so it came first, to set the
@@ -568,8 +570,8 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
   an actor shown again, where it was fetched afresh), the gatherer's records (fetched again after 10 s, every 2 s while
   one is made), a search's hits, an opened message's whole text. The types shown are Radix's DropdownMenu (checkbox
   items; a pick keeps it open), in place of a `details` closed by a click elsewhere; its button and menu restyled as the
-  summary and box were. history.js only registers the view (and keeps `enc`, which the list's monitor feed uses); it is
-  off the long files' list. Its rows are react-virtuoso's list (`Rows`): every row listed -- the 2,000-row cap and its
+  summary and box were. `history.ts` registers the view through what the page hands it (`setHistoryPage`, filled by
+  `src/links/history.ts`) and keeps `enc`, which the list's monitor feed uses. Its rows are react-virtuoso's list (`Rows`): every row listed -- the 2,000-row cap and its
   "Show more" went -- those in sight and `OVERSCAN_PX` around them on the page, the first 200 as the view opens; "Load
   more" (the outline not all loaded) its footer. A row is told whether it is the first or the last (`first`, `last`:
   where the timeline down the left begins and ends, which `:first-child` and `:last-of-type` said while the rows were
@@ -580,9 +582,70 @@ Chat was: a component scoped to the actor key the page hands it (taken from `sta
 - **Terminal**: xterm.js as it was, wrapped -- the terminal's session (`terminal/term.ts`: one xterm at a time, its node
   kept across draws, its stream, what is typed sent in order; TypeScript now, what it asks of the page handed to it,
   `setTermHost`) and the view's frame React's (`mount.tsx`'s `drawTerminal`: xterm's node first in it, never React's,
-  the cover after it, `TerminalView.tsx`). terminal.js registers the view and hands on `term`, `termFor`, `termListen`,
-  `termWebgl` and `fullscreenFor` to the old modules that use them (the shell's pane, the list, the panes, sending).
-  Vitest: `terminal.test.tsx`.
+  the cover after it, `TerminalView.tsx`). `terminal.ts` registers the view (through `link.ts`'s `TermPage`, filled by
+  `src/links/terminal.ts` with the term's own host) and hands on `term`, `termFor`, `termListen`, `termOf` and
+  `termWebgl` to the old modules that use them (the list, the panes); a shell's pane is `shell.tsx` (below). Vitest:
+  `terminal.test.tsx`.
+
+**A5, the rest of Chat, History and Terminal in TypeScript.** What was left of them on the old page's JS -- the chat
+card and the views registry (`chat.js`, `views.js`), the Chat view's loading and host (`files-view.js`), the reader's own
+views (`own-views.js`), a minimized pane's lines and card (`mini-history.js`), and the History and Terminal views' and a
+shell's registration (`history.js`, `terminal.js`, `shell.js`) -- is typed modules of their features now, React where it
+draws; and with them the parts the notes above left as the old page's:
+- **The card** (`chat/card.tsx`): each pane's `section.chat` is a React root, the same node from draw to draw (the page's
+  patch() leaves it where it is: it is the node there, its `data-sig` says so), drawn as the page draws the pane
+  (`chat.ts`'s `chatCard`, which builds the view's context and hands the card its parts; what it holds is worked out in
+  `card-model.ts`). React draws its own parts -- the cards (`asking/Cards.tsx`, no longer a node each), what runs in the
+  background (`Background.tsx`), the read-only line, the message box, the line under it -- and puts the nodes made
+  outside it in their places after each draw: the view's frame first (a view's own, React's too, kept per actor), a
+  view of the reader's own's message box before the line under it, the footer last (a minimized pane's lines, avatar
+  and ×, top.js's), each kept while the same, as patch() kept them. *Switching views* (and minimizing) draws the same card
+  again: its frame put in place of the last, the message box kept where it is with its focus and caret; the pane around
+  it (its place kept, Details) is still the page's draw (`features/page/main-view.ts`).
+- **Every built-in message box is React's** (`Composer.tsx`'s `ComposerForm`): Chat's, and the default one a view without
+  its own gets -- a minimized pane's, which was the old page's `ctx.input` textarea. `ctx.input` stays only for the views
+  of the reader's own, which build their box around the node it returns (`input.ts`: the draft kept by the page's input
+  listener, as before); `ownBox` tells the page's listener which boxes are React's.
+- **The views** (`views.ts`): the registry typed (`ChatViewDef`, `ViewCtx`, `FeedDef`), what a view is offered and which is
+  picked worked out apart (`offeredOf`, `viewPicked`, `wrongView`, `settled`). Messages and the Transcript are registered
+  by the app's link (they are other features'), at the same point of the page's start, so the views keep their order.
+- **The Chat view's loading** (`files-view.ts`: the files feed, a turn picked, the side folded, the stream's view taken)
+  and **its host** (`host.ts`'s `CHAT_HOST`). The pane's head in the files' folded bar (barActs) is React's
+  (`side/PaneActs.tsx`), not a node the bar put in; the permission card's call is a component the cards render
+  (transcript's `PermissionCall`), not the page's node (`permissionView`); the Transcript takes its background line as a
+  React node.
+- **The actor's stage** (`core/ui/stage/`: `model.ts`, `props.ts`, `Stage.tsx`), shared by Chat and a minimized pane: the
+  stage worked out as markup and what it shows (its look, the reactions seen once, the tool put away, the action winding
+  down), drawn by `AtWork`, `AtRest`, `Greeting`, `Buddy`, `DoneIcon`, each element kept while it shows the same and made
+  anew (keyed) when that changes, the stage drawing itself again for its next moment. Chat draws them directly; its host
+  only says which way the actor at work is drawn (the setting). `useStage` went. The old page's copy in helpers.js stays
+  for its own callers (the list's monitor's `atWork`, top.js's minimized avatar) until they move.
+- **A minimized pane** (`chat/mini/`): its lines and its card worked out apart (`model.ts`: the lines, the turn over, a
+  turn's steps), its lines a React root per pane, the `.mini-hist` box itself (`Lines.tsx`, a line kept while it shows
+  the same and drawn anew when it changes, as patch() had it), the card React's (`CardBody.tsx`), opened, placed and
+  shut as before (`card.ts`: one at a time, for the pane hovered; a line drawn anew before the card opens found again in
+  its pane by its kind). Its pointer and focus are heard as the browser says them: React's own enter and leave miss a
+  line entered from the card, another root's node. Its replies are `core/ui/Markdown.tsx`'s, math and all.
+- **History and Terminal**: `history/history.ts` and `terminal/terminal.ts` register their views at the same point of the
+  page's start through what the page hands them; a shell's pane is `terminal/shell.tsx` -- its card a React root per
+  pane, xterm's node put first in its frame, its Terminate button a root of its own in the head -- and `shownGone`.
+- **The boundary** (Rule 2): a feature's TypeScript imports only `core/` and itself, so what Chat takes of the page and
+  of other features is typed in `chat/link.ts` (`ChatPage`: the panes and their drawing, the minimized panes, the list's
+  faces and words, the other features' views, feeds and nodes for the reader's own views), the terminal's in
+  `terminal/link.ts` (`TermPage`) and `term.ts`'s `TermHost`, History's in `history.ts` (`HistoryPage`); each is filled at
+  the app's level, once every module is loaded and before any starts, by `src/links/chat.ts`, `links/terminal.ts` and
+  `links/history.ts` (called from `page.js`). They import the features they wire together, the page's modules typed
+  (where the page's own types, `core/page/types.ts`, and Chat's read the same pane or actor, the link hands one over as
+  the other, as `links/page.ts` does Chat's to the page); the layout's two modules still plain JS (top.js, panes.js) come
+  through `links/chat-page.js`, typed in `chat-page.d.ts` (TypeScript does not read plain JS), each line to go as its
+  module moves. The names other old modules import of Chat's, the views', the files view's, the terminal's and History's
+  stay.
+- Vitest: `card.test.tsx` (what the card says, its parts, the views offered, the card drawn), `core/ui/stage/stage.test.tsx`,
+  `mini/model.test.ts`; `Composer.test.tsx` and `send.test.tsx` draw the box and the line as the card does.
+- **Left:** the pane around the card -- its draw, its place kept, Details -- is the page's (`features/page/`); a view of
+  the reader's own still builds nodes (its frame's blocks patched in as before, its box `ctx.input`'s); the page's own
+  stage (`core/page/stage.ts`, for the list's monitor and top.js's minimized avatar) and `core/ui/stage/` are to be made
+  one.
 
 **A5, the page's core and shell in TypeScript.** What the old page's modules share and what draws the page around the
 views -- core/page/'s state.js, helpers.js and code.js, features/page/'s data.js, main-view.js, pane-view.js and
@@ -645,8 +708,8 @@ page drew. Now each actor's pane is a part of the one page:
   place kept by `keepingPlace(draw, p)`), data.js's `loadAgent(p)`, `takeAgent(agent, p)`, `loadChat(p)` and
   `mainSignature(p)` (render() draws each pane whose signature moved), Chat's card (`chatCard(p, info)`), views
   (`chatView(p)`, `setChatView(p, id)`, the feeds' `load(p)`/`data(p)`), files feed (`loadFiles(p)`, `setFilesTurn(p,
-  n)`, `foldSide(p, fold)`, `barActs(p)`), a minimized pane (top.js's `chatMin(p)`, `setChatMin(p, on)`, `minRedraw(p)`;
-  mini-history.js's lines and its one card, for the pane hovered), the shell's pane, Details, History, Esc
+  n)`, `foldSide(p, fold)`, the pane's head in the files' bar), a minimized pane (top.js's `chatMin(p)`, `setChatMin(p,
+  on)`, `minRedraw(p)`; `chat/mini/`'s lines and its one card, for the pane hovered), the shell's pane, Details, History, Esc
   (`escapeShown(p)`, `interrupt(p, info)`), the links clicked in a pane (`linkClicked(href, ev, path, p)`). Nothing in a
   view reads `state.selected`; a list module calling with no pane (`select`'s `loadChat()`, `chatToEnd()`, `showKept`)
   means the page's own. The reader's own views (`agDashboard`) are drawn for the pane being drawn (`drawingPane`).
@@ -656,7 +719,7 @@ page drew. Now each actor's pane is a part of the one page:
   (`details/store.ts`'s `picks`); one view frame per view and actor (`core/ui/frame.tsx`), one Details panel per actor,
   one head's controls per pane (`Controls.tsx`); one xterm per session a pane shows (`terminal/term.ts`'s `termFor`, let
   go of by `termsKept` once no pane shows it; `term` stays for the list's following of a renamed codex session). The
-  host's calls from React name their actor (`barActs(actor)`, `setChatView(id, channel)`).
+  host's calls from React name their actor (`paneActs(actor)`, `setChatView(id, channel)`).
 - *One stream, one home*: a pane opened beside loads its actor's calls and view from the page (`paneGiven`), its actor
   an `actor` of the page's stream from then on -- no frame, no page loaded again, no home of its own
   (`pane-home.spec.ts`).

@@ -1,4 +1,4 @@
-// A tool call as the Transcript shows it, and the cards' permission (chat.js's permissionView): by its shape
+// A tool call as the Transcript shows it, and the cards' permission (Chat's PermissionCall): by its shape
 // (harness_kit's Shape: the harness's rules read each tool's input into it, data.py's `view`) -- the argument beside its
 // title, a note on the right, and what goes under it instead of its plain result. The title is its harness's
 // (`view.title`), as is any argument a shape's own does not give (`view.arg`). A call no rules read: its name and inputs.
@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 import { firstLine, plural } from "../../core/format";
 import { str } from "../../core/model/items";
 import { hlLines } from "../../core/ui/highlight";
-import { nodeOf } from "../../core/ui/node";
 
 /** A call as the history has it: its tool's name, its input, its view (the shape its harness's rules read), and the
  * calls a script made. */
@@ -277,6 +276,11 @@ function PermissionBody({ ask, id }: { ask: PermissionAsk; id: string }) {
   );
 }
 
-/** The permission's call, as a node (the cards draw it: the page's host's permissionView). */
-export const permissionNode = (ask: PermissionAsk, id: string): HTMLDivElement =>
-  nodeOf("div", { class: "perm" }, <PermissionBody ask={ask} id={id} />);
+/** The permission's call in its box (Chat's cards draw it: src/links/chat.ts hands it to them). */
+export function PermissionCall({ ask, id }: { ask: PermissionAsk; id: string }) {
+  return (
+    <div className="perm">
+      <PermissionBody ask={ask} id={id} />
+    </div>
+  );
+}

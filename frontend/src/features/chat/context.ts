@@ -2,7 +2,8 @@
 // (store.ts) and the side panel's state as the frame read them (ChatMain.tsx).
 import { createContext, useContext } from "react";
 import type { Folds } from "./store";
-import type { ChatFeed, ChatHost } from "./types";
+import { inkOf } from "../../core/ui/stage/model";
+import type { Actor, ChatFeed, ChatHost } from "./types";
 
 export interface Chat {
   feed: ChatFeed;
@@ -20,6 +21,8 @@ export function useChat(): Chat {
   return chat;
 }
 
-/** The actor's words in its hue (the host's hueInk, a style "color: ..."), as React takes a style. */
-export const inkOf = (style: string | null): { color: string } | undefined =>
-  style ? { color: style.replace(/^color:\s*/, "") } : undefined;
+/** The actor's words in its hue (core/ui/stage's inkOf), as React takes a style. */
+export const inkStyle = (a: Actor): { color: string } | undefined => {
+  const ink = inkOf(a);
+  return ink ? { color: ink } : undefined;
+};

@@ -1,9 +1,9 @@
 // Before the actor's first turn is stored: the turn a message opened, in full with the actor at work under it; or none
-// yet -- the actor waving hello (the host's greeting), saying its line (or that there is none yet), under the first
+// yet -- the actor waving hello (core/ui/stage's Greeting), saying its line (or that there is none yet), under the first
 // message while it waits to reach the agent.
-import { Fragment, useRef } from "react";
+import { Fragment } from "react";
+import { Greeting } from "../../core/ui/stage/Stage";
 import { useChat } from "./context";
-import { useStage } from "./Hosted";
 import { OpenedTurn, Pending, waiting } from "./Pending";
 import { openingOf } from "./view";
 
@@ -22,9 +22,6 @@ function Hello() {
   // haiku's lines each on its own
   const says = writable && !held && session.status !== "starting" && info.avatar ? info.avatar_hello : null;
   const parts = says ? String(says).split("\n") : [];
-  const box = useRef<HTMLDivElement>(null),
-    line = useRef<HTMLDivElement>(null);
-  useStage(box, () => host.greeting(info), line);
   return (
     <>
       {w ? (
@@ -32,9 +29,10 @@ function Hello() {
           <Pending w={w} />
         </div>
       ) : null}
-      <div ref={box} className="fl-hello">
+      <div className="fl-hello">
+        <Greeting info={info} mode={host.avatarMode()} />
         {w ? null : says ? (
-          <div ref={line} className={"fl-say" + (parts.length > 1 ? " verse" : "")}>
+          <div className={"fl-say" + (parts.length > 1 ? " verse" : "")}>
             {parts.map((part, k) => (
               <Fragment key={k}>
                 {k ? <br /> : null}
@@ -43,7 +41,7 @@ function Hello() {
             ))}
           </div>
         ) : (
-          <div ref={line}>
+          <div>
             {session.status === "starting"
               ? "Starting the agent…"
               : writable && !held

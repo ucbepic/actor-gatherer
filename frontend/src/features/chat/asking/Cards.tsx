@@ -3,6 +3,7 @@
 // the home has it, and the answers as the reader makes them (answers.ts) -- in Chat (ChatMain.tsx), and in the other
 // views and the views of the reader's own (mount.tsx, for the old page). Each card is its box (`shellOf`: its classes,
 // role and name) and what is in it.
+import type { ComponentType } from "react";
 import { ago } from "../../../core/format";
 import type { Home } from "../../../core/api/types";
 import type { Actor } from "../types";
@@ -18,8 +19,8 @@ export interface CardsHost {
   setChatView(id: string, channel: string): unknown;
   /** what a permission is for, after "asks to", as its harness reads the call */
   permissionVerb(ask: Ask): string;
-  /** the call a permission is asked for, as Chat shows a call (the old page's node) */
-  permissionView(ask: Ask, id: string): Node;
+  /** the call a permission is asked for, as a call is shown (features/transcript/'s), in its box (.perm) */
+  PermissionCall: ComponentType<{ ask: Ask; id: string }>;
   /** the page's data loaded again: an answer sent */
   refresh(): Promise<unknown>;
 }

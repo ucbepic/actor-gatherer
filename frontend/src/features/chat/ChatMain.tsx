@@ -18,6 +18,7 @@ import { filesKey, type FilesOf } from "./files";
 import { drawn as pulled } from "./pull";
 import { Paths } from "./side/CallView";
 import { FileView } from "./side/FileView";
+import { PaneActs } from "./side/PaneActs";
 import { cmdCounts, gitOnly, shownFiles, Side, SideBar, type Task } from "./side/Side";
 import { NARROW_SIDE, sideFolded, useSideOf, useSide, type SideOf } from "./side/store";
 import { foldsOf, useFoldsOf, useOnPage } from "./store";
@@ -185,6 +186,7 @@ function Grid({ chat, side, d, children }: { chat: Chat; side: SideOf; d: FilesD
         : p;
   const background = (feed.info.background || []) as Task[];
   const pick = (p: string | null) => foldsOf(feed.key).getState().pick(p);
+  const acts = chat.sideFolded ? host.paneActs(feed.key) : null;
   const panel = chat.sideFolded ? (
     <SideBar
       files={shownFiles(d.files, hiddenKinds, showTmp, showGit).files}
@@ -193,7 +195,7 @@ function Grid({ chat, side, d, children }: { chat: Chat; side: SideOf; d: FilesD
       hiddenKinds={hiddenKinds}
       icons={host.icons}
       foldSide={(f) => host.foldSide(feed.key, f)}
-      acts={host.barActs(feed.key)}
+      acts={acts ? <PaneActs icons={host.icons} {...acts} /> : null}
     />
   ) : (
     <Side

@@ -1,12 +1,10 @@
-// The Chat view's message box: what is typed is the actor's draft (drafts.ts), the box showing it as it is kept -- so
+// A pane's message box (Chat's, and any view's that brings none of its own): what is typed is the actor's draft (drafts.ts), the box showing it as it is kept -- so
 // what the page does to it (a send emptying it, a failed one putting it back, an Esc's take-back put in it) shows as it
 // happens, and the page's draws never touch it. Enter sends it, Shift+Enter starts a new line; a line high, growing with
 // the lines typed (the page's fitBox). An image pasted or dropped in is saved in the home (/api/upload) and its path
-// typed in the message, for the agent to read. Each actor's box a node of its own (`drawComposer`), the same from draw
-// to draw, as the frame (mount.tsx): the reader typing in it keeps the focus and the caret through every draw.
+// typed in the message, for the agent to read. Drawn by the pane's card (card.tsx), in the same place from draw to draw:
+// the reader typing in it keeps the focus and the caret through every draw.
 import { useLayoutEffect, useRef, type ClipboardEvent, type DragEvent } from "react";
-import { flushSync } from "react-dom";
-import { createRoot, type Root } from "react-dom/client";
 import { post } from "../../core/api/client";
 import { keepDraft, useDrafts } from "./drafts";
 
@@ -15,7 +13,7 @@ export interface ComposerProps {
   actor: string;
   /** another process has its session open: nothing sent from here */
   held: boolean;
-  /** what is typed, sent (the page's: chat.js's chatSend) */
+  /** what is typed, sent (the pane's chatSend: card.tsx) */
   send: (text: string) => unknown;
   /** the box as tall as what is typed in it (the page's fitBox) */
   fit: (box: HTMLTextAreaElement) => void;
@@ -90,37 +88,20 @@ export function Composer({ actor, held, send, fit, say }: ComposerProps) {
   );
 }
 
-/** The boxes kept, by actor, as many as the frames (mount.tsx's KEPT_TALKS); an older one off the page let go of. */
-const KEPT = 12;
-const boxes = new Map<string, { node: HTMLFormElement; root: Root; send: (text: string) => unknown }>();
-
-/** The actor's message box, in its form (.composer), drawn as `props` say: its node, for the page to put where it goes. */
-export function drawComposer(props: ComposerProps): HTMLFormElement {
-  let kept = boxes.get(props.actor);
-  if (kept) boxes.delete(props.actor);
-  else {
-    const node = document.createElement("form");
-    node.className = "composer";
-    const made = { node, root: createRoot(node), send: props.send };
-    node.addEventListener("submit", (ev) => {
-      ev.preventDefault();
-      made.send(node.querySelector("textarea")?.value ?? "");
-    });
-    kept = made;
-  }
-  kept.send = props.send;
-  boxes.set(props.actor, kept);
-  for (const [k, b] of boxes) {
-    if (boxes.size <= KEPT) break;
-    if (k === props.actor || b.node.isConnected) continue;
-    b.root.unmount();
-    boxes.delete(k);
-  }
-  const box = kept;
-  flushSync(() => box.root.render(<Composer {...props} />));
-  return box.node;
+/** The box in its form (.composer), as a pane's card draws it: Enter, or the form submitted, sends what is typed. */
+export function ComposerForm(props: ComposerProps) {
+  return (
+    <form
+      className="composer"
+      onSubmit={(ev) => {
+        ev.preventDefault();
+        props.send(ev.currentTarget.querySelector("textarea")?.value ?? "");
+      }}
+    >
+      <Composer {...props} />
+    </form>
+  );
 }
 
-/** Whether `n` is a box drawn here: the page's draws do not wait while it is typed in. */
-export const ownBox = (n: EventTarget | null): boolean =>
-  n instanceof HTMLTextAreaElement && [...boxes.values()].some((b) => b.node.contains(n));
+// whether a box is React's (the page's input listener leaves those to it): input.ts's
+export { ownBox } from "./input";
