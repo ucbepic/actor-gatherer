@@ -2,7 +2,7 @@
 // file may import any feature (ag_dashboard/DESIGN.md's Rules): the page's core and shell, the settings panel's stream,
 // the apps' actors and the Apps page, the list's modules, the apps' host and links, Chat's (its card, views, a minimized
 // pane's lines, its actors and questions), the terminal's -- each checked here against what the layout says it reads of
-// them. Called once by src/page.js, before any module starts, as src/list-link.js's linkList is.
+// them. Called once by src/main.ts, before any module starts, as links/list.ts's linkList is.
 import * as avatar from "../core/page/avatar";
 import * as helpers from "../core/page/helpers";
 import * as pageState from "../core/page/state";

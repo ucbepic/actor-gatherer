@@ -40,7 +40,7 @@ test("streams many at once leave the browser's connections free for its requests
   // as many and more on the page's socket: answered at once
   const free = await page.evaluate(async (fn) => {
     const answeredIn = new Function(`return (${fn})`)() as (ms: number) => Promise<string>;
-    const on = Array.from({ length: 10 }, () => window.agNext.stream("/api/stream"));
+    const on = Array.from({ length: 10 }, () => window.agPage.stream("/api/stream"));
     await Promise.all(on.map((s) => new Promise((ok) => s.addEventListener("home", ok, { once: true }))));
     const got = await answeredIn(5000);
     on.forEach((s) => s.close());

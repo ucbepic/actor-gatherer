@@ -1,7 +1,7 @@
 // WHAT CHAT TAKES FROM THE PAGE AROUND IT: the panes and how they are drawn, the page's state, the layout's minimized
 // panes, the list's faces and words, the other features' views and nodes -- which a feature's TypeScript may not import
 // (ag_dashboard/DESIGN.md's Rules). src/links/chat.ts fills it once every module is loaded and before any starts
-// (src/page.js); what Chat reads of the page is typed here, and nothing else. It shrinks as those parts move.
+// (src/main.ts); what Chat reads of the page is typed here, and nothing else.
 import type { ComponentType } from "react";
 import type { Home } from "../../core/api/types";
 import type { Ask } from "./asking/ask";

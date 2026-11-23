@@ -1,7 +1,8 @@
-// What an actor's stage shows (stage.ts draws it), worked out apart from the page: what it reacts to and for how long,
-// what it does and holds, how it moves from one tool to the next, how its action winds down as a call ends -- each from
-// the actor's work, what the stage showed before and the time, given, so the same moment always draws the same.
-import type { Work } from "./types";
+// What an actor's stage shows (model.ts makes its markup, Stage.tsx draws it), worked out apart from the page: what it
+// reacts to and for how long, what it does and holds, how it moves from one tool to the next, how its action winds down
+// as a call ends -- each from the actor's work, what the stage showed before and the time, given, so the same moment
+// always draws the same.
+import type { Work } from "../../api/types";
 
 /** How long the stage reacts to a call's end or a turn's; one that ended longer ago than REACT_LATE seconds before the
  * page first saw it is not reacted to. */
@@ -43,8 +44,8 @@ export function reactOf(ended: Work["ended"] | undefined, gone: number | null): 
   return ended.kind === "test" ? "pass" : ended.kind === "ship" ? "ship" : null;
 }
 
-/** An avatar's motion (its avatar_motion): its move, and an effect round it -- each a CSS name, or "". */
-export const motionOf = (m: string | null | undefined): [string, string] => {
+/** An avatar's motion (its avatar_motion, the words): its move, and an effect round it -- each a CSS name, or "". */
+export const splitMotion = (m: string | null | undefined): [string, string] => {
   const [move = "", fx = ""] = (m || "").split(/\s+/).map((w) => (/^[a-z0-9-]+$/.test(w) ? w : ""));
   return [move, fx];
 };

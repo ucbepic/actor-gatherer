@@ -186,7 +186,7 @@ function filesMount(ctx: ViewCtx): HTMLDivElement {
   return drawChat(talkFeed(p, ctx, afresh), CHAT_HOST);
 }
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   const page = P();
   CHAT_FEEDS.files = {

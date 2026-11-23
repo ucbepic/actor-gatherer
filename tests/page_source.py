@@ -1,7 +1,7 @@
 """The dashboard's page as one text, as page.html held it before it was split into frontend/ (ag_dashboard/DESIGN.md,
 steps A3 and after): its markup (frontend/index.html), its styles (those src/styles.ts imports, in order) and its
-script (src/page.js's modules in core/page/ and features/: each one page.js imports, then each of theirs, in import
-order). For the tests that read the page, or run a part of its script in Node."""
+script (src/main.ts's modules: each one main.ts imports, then each of theirs, in import order). For the tests that
+read the page."""
 import os
 import re
 
@@ -33,16 +33,16 @@ def _imports(path: str) -> list:
 
 
 def script_files() -> list:
-    """The paths of the script's modules: page.js's, then each one's own, depth first, each once."""
+    """The paths of the script's modules: main.ts's, then each one's own, depth first, each once."""
     seen, out = set(), []
 
     def visit(path):
         for p in _imports(path):
-            if p.endswith(".js") and p not in seen:
+            if p.endswith(EXTENSIONS) and p not in seen:
                 seen.add(p)
                 out.append(p)
                 visit(p)
-    visit(os.path.join(SRC, "page.js"))
+    visit(os.path.join(SRC, "main.ts"))
     return out
 
 

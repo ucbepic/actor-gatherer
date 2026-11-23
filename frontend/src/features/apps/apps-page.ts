@@ -49,7 +49,7 @@ export async function appsChanged(): Promise<void> {
   link.topChanged();
   link.renderAgents();
 }
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   if (!SNAPSHOT) {
     (document.getElementById("apps-cfg") as HTMLElement).hidden = false;

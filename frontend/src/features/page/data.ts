@@ -224,7 +224,7 @@ export const setLive = (text: string): void => {
 export const drafts = (): Record<string, string> => link.chat.drafts();
 export const keepDraft = (actor: string | null | undefined, text: string): void => link.chat.keepDraft(actor, text);
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   document.addEventListener(
     "input",

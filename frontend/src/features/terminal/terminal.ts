@@ -23,7 +23,7 @@ import {
 /** Whether a terminal the dashboard opens for `info` takes the whole screen (its harness's). */
 export const fullscreenFor = (info: TermActor): boolean => fullscreenIn(T().home(), info);
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   const page = T();
   window.addEventListener("ag-theme", () => {

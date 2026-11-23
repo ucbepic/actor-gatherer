@@ -1,8 +1,9 @@
-// WHAT THE LIST TAKES FROM THE PAGE AROUND IT: the old page's modules (plain JS, src/page.js's) and the other features'
-// own -- the panes and their tasks, the page's data and its stream, Chat, the apps -- which a feature's TypeScript may not
-// import (ag_dashboard/DESIGN.md's Rules). src/list-link.js hands them over as the page starts (linkList), each a module's
-// namespace, so a value one of them changes later (the work area, the actor being dragged's task) is read as it is now;
-// what the list reads of each is typed here, and nothing else. It shrinks as those modules move.
+// WHAT THE LIST TAKES FROM THE PAGE AROUND IT: the page's core and shell and the other features' own -- the panes and
+// their tasks, the page's data and its stream, Chat, the apps -- which a feature may not import
+// (ag_dashboard/DESIGN.md's Rules). src/links/list.ts hands them over as the page starts (linkList, from src/main.ts),
+// each a module's namespace, so a value one of them changes later (the work area, the actor being dragged's task) is
+// read as it is now; what the list reads of each is typed here, and nothing else (checked there).
+import type { AppPane as CoreAppPane, Pane } from "../../core/page/types";
 import type { AnyEvent, StartMenu } from "./host";
 import type { Actor, AppItem, AppManifest, Folder, Gatherer, ListHome, Shell } from "./types";
 
@@ -37,19 +38,14 @@ export interface PageState {
   agentVersion?: number;
 }
 
-/** An actor's pane beside this page's own (features/page/pane-view.js's: a part of the page), and an app's panel above them. */
-export interface ActorPane {
+/** An actor's pane (core/page/types.ts's: a part of the page), and an app's panel above them. */
+export type ActorPane = Pane;
+export type AppPane = CoreAppPane & {
   g: string;
-  c: string;
-  view?: string;
-}
-export interface AppPane {
-  g: string;
-  instance: { id: string; gatherer: string };
-  held?: boolean;
+  instance: { gatherer: string };
   panel: { refresh(): void };
   node: HTMLElement;
-}
+};
 /** A task's layout as it was left (the layout model's `left`). */
 export interface TaskLeft {
   actors: string[];
@@ -94,7 +90,7 @@ export interface PanesPart {
   enterAppTask(gname: string, k: string): void;
   focusPane(p: ActorPane): void;
   focusedActor(): At | null;
-  isAt(sel: At | null | undefined, g: string, c: string | null): boolean;
+  isAt(sel: At | readonly [string | null, string | null] | null | undefined, g: string, c: string | null): boolean;
   isAway(): boolean;
   moveEnd(): void;
   newForm(): Node;
@@ -133,7 +129,7 @@ export interface PanesPart {
     cwd: string,
     harness: string,
     join: (s: { session_id: string }) => Promise<void>,
-  ): Promise<void>;
+  ): Promise<unknown>;
   startable(): string[];
   swapAppPane(p: AppPane, inst: unknown): void;
   readonly taskAppsOpening: Promise<unknown> | null;
@@ -152,7 +148,7 @@ export interface PanesPart {
 /** An app's manifest as the apps' host has it (features/apps/host.ts), and an instance it opens. */
 export interface AppHostPart {
   found(): AppManifest[];
-  named(name: string): AppManifest | null;
+  named(name: string): AppManifest | undefined;
   instanceOf(app: string, gname: string, id: string): Promise<unknown>;
   open(
     app: string,
@@ -178,7 +174,6 @@ export interface ListPage {
     readonly MAC: boolean;
     readonly ICONS: Readonly<Record<string, string>>;
     readonly avatarMode: string;
-    atWork(a: Actor, work: unknown): Node;
     closeIcon(): Node;
     saveIcon(on: boolean): Node;
     hideIcon(): Node;
@@ -235,9 +230,9 @@ export interface ListPage {
   history: { enc(s: string): string };
   /** features/apps: an app's own agent, the Apps page, the apps' host, an agent's request to install one */
   appActors: {
-    appRole(s: { session: { role?: string | null } }): { key: string } | null;
+    appRole(s: { session?: { role?: string | null } | null }): { key: string } | null;
     actorLogo(a: Actor): Node;
-    appAsked(a: Actor, text: string): string;
+    appAsked(a: Actor, text: string | null | undefined): string | null | undefined;
     appAskedOf(text: string): unknown;
   };
   appsPage: { appsChanged(): Promise<void> | void };

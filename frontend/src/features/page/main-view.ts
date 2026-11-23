@@ -144,7 +144,7 @@ export const callsNow = () => {
   return { actor, gatherer: actor ? parseKey(actor).group : "", agent: p.agent, snapshot: !!SNAPSHOT };
 };
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   // the types the lists show, picked (features/details/'s chips): this page's own views of them, and the reader's, drawn
   // again -- React's draw themselves

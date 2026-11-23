@@ -1,6 +1,6 @@
 // The Apps page (features/apps/apps-page.ts) linked to the page around it: the settings panel, the list, the panes and
 // the work area's tabs, where a new tab starts things -- page-link.ts says what it takes, checked here against each
-// module. Called once by page.js before any module starts.
+// module. Called once by src/main.ts before any module starts.
 import { setAppsPageLink } from "../features/apps/page-link";
 import { setAbout } from "../features/page/look";
 import { aimStart } from "../features/list/folders";

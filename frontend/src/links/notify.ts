@@ -1,6 +1,6 @@
 // The notifications (features/notify/) linked to the page around them: the list's actors, apps and what the reader has
 // seen, the panes, the apps' host, the page's live state -- link.ts says what they take, checked here against each
-// module. Called once by page.js before any module starts.
+// module. Called once by src/main.ts before any module starts.
 import { setNotifyLink } from "../features/notify/link";
 import { setLive } from "../features/page/data";
 import { markSeen, seen, statusOf } from "../features/list/seen";

@@ -210,7 +210,7 @@ function miniMe(p: Pane, info: Actor | null, rest: { row_id?: number | null } | 
       class: "mini-me" + (rest ? " at-rest" : ""),
       title: says,
       "aria-label": says,
-      style: rest ? L.helpers.restDelay(info, rest.row_id) : null,
+      style: rest ? `--r: ${L.helpers.restDelay(info, rest.row_id)}` : null,
       onclick: () => setChatMin(p, false),
     },
     src ? el("img", { src, alt: "", draggable: "false" }) : icon("restore", 14),
@@ -233,7 +233,7 @@ export function shellMini(p: Pane, id: string): HTMLElement {
     miniClose(p),
   );
 }
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   setMiniSplit(keptMiniSplit());
   window.addEventListener("storage", (ev) => {

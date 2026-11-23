@@ -85,7 +85,7 @@ export { newForm } from "./new-form";
 export { branchChip } from "./Branches";
 export { moveEnd };
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   panes.here = L.paneView.makePane(herePane(), true, { view: prefs.text(L.views.CHAT_VIEW_KEY) || "files" });
   startPops({ icon: (icon, size) => L.helpers.strokeIcon(L.helpers.ICONS[icon] || icon, size), closed: popClosed });

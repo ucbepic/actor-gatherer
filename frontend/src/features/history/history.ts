@@ -51,7 +51,7 @@ export const setHistoryPage = <P>(link: HistoryPage<P>): void => {
   page = link as HistoryPage;
 };
 
-/** What this module did as the page's script ran, in that order: page.js runs it once every module is loaded. */
+/** What this module did as the page's script ran, in that order: main.ts runs it once every module is loaded. */
 export function start(): void {
   const H = page!;
   // what its data asks of the page: the view shown, the page paused (no polling then)
