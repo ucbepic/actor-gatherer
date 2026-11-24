@@ -908,7 +908,7 @@ function edModePick() {
 function edOnDiskPick() {
   if (edPlainPart()) return null;                    // edited plain: changes on disk are reloaded or kept (plain.js)
   const now = ED_ON_DISK.find((m) => m[0] === ed.onDisk) || ED_ON_DISK[1];
-  ed.onDiskPick ||= el("label", { class: "ed-mode-pick", title: `Changes made outside the editor (a sync, a shell command):\n${ED_ON_DISK.map((m) => `${m[1]}: ${m[2]}`).join("\n")}` },
+  ed.onDiskPick ||= el("label", { class: "ed-disk-pick", title: `Changes made outside the editor (a sync, a shell command):\n${ED_ON_DISK.map((m) => `${m[1]}: ${m[2]}`).join("\n")}` },
     el("span", { class: "lbl", text: "On disk:" }),
     el("select", { "aria-label": "How changes made outside the editor are taken", onchange: (ev) => edSetOnDisk(ev.target.value) },
       ...ED_ON_DISK.map(([v, label]) => el("option", { value: v }, label))));

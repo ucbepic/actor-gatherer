@@ -72,8 +72,8 @@ button.ed-person { cursor: pointer; }
 .ed-hint { color: var(--muted); }
 .ed-auto { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; cursor: pointer; }
 .ed-auto input { margin: 0; }
-.ed-mode-pick { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
-.ed-mode-pick select { font: inherit; color: var(--ink); background: var(--page); border: 1px solid var(--ring); border-radius: 5px; padding: 1px 4px; }
+.ed-mode-pick, .ed-disk-pick { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.ed-mode-pick select, .ed-disk-pick select { font: inherit; color: var(--ink); background: var(--page); border: 1px solid var(--ring); border-radius: 5px; padding: 1px 4px; }
 .ed-all { display: inline-flex; gap: 4px; }
 .ed-all button { font-size: 12px; padding: 1px 7px; border: 1px solid var(--ring); border-radius: 5px; background: var(--page); color: var(--ink); }
 .ed-all button:hover { background: var(--wash); }
