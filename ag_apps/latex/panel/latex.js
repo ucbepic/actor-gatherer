@@ -2,12 +2,14 @@
 // What the LaTeX editor adds to app_kit.fileedit's editor (its panel's code, from /_ag/lib/fileedit/), given to it by edAdd:
 // the project's preview in a column beside the file (preview.js: ed.pv), run by Execute (⌘↵); a LaTeX build's problems
 // marked on their lines; "→ PDF" and a double-click in a TeX source, to its place in the PDF; and ⌘B / ⌘I in LaTeX's
-// markup, \textbf{…} and \textit{…}; and the file's text folded away, the preview taking the width. The panel's one entry
+// markup, \textbf{…} and \textit{…}; the file's text folded away, the preview taking the width; and who changed its
+// lines on Overleaf (overleaf.js). The panel's one entry
 // (index.html): the rest imported, its parts given to edAdd, then the panel started (edStart).
 import { agApp, el, ICONS, MAC, paneNote, strokeIcon, widthGrip } from "/_ag/lib/fileedit/page.js";
 import { ed, edAdd, edBase, edDiskConflicts, edHead, edRel, edSave } from "/_ag/lib/fileedit/editor.js";
 import { edStart } from "/_ag/lib/fileedit/start.js";
 import { pvLocate, pvMount, pvRun } from "./preview.js";
+import { olParts, olStart } from "./overleaf.js";
 
 Object.assign(ed, { problems: new Map(), problemsAt: 0, pv: null,   // a LaTeX build's, by file (edProblems); the column
   textBar: null, textHide: null, folded: null });   // the text's fold: its bar, its button; while folded, {file} it was on
@@ -216,4 +218,5 @@ edAdd({
   viewed: edMarkProblems,
   markup: ED_TEX_MARKUP,
 });
-edStart();
+edAdd(olParts);                                      // who changed the paper's lines on Overleaf (overleaf.js)
+edStart().then(olStart);

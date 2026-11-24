@@ -97,6 +97,10 @@ name = "latex.mode"
 description = "The LaTeX editor's mode, set: {mode (live, review, handsoff), by}."
 
 [[events]]
+name = "latex.overleaf"
+description = "The Overleaf project the LaTeX editor's folder is, named by the user: {project (its id; \"\": the folder's own, found by name), name, root, by}."
+
+[[events]]
 name = "latex.on_disk"
 description = "How the LaTeX editor takes its files' changes on disk, set: {on_disk (zone, ask, never), by}."
 
