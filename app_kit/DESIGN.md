@@ -667,10 +667,14 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    **(b) Agents work with it, DocWriter's way: built** (2026-11-08). Its agents change files with its tools, and the
    user picks how their changes land.
    - **Tools** (`editor_read`, `editor_edit`, `editor_write`, `editor_open`): `editor_edit` is Claude Code's Edit
-     (old_string, unique unless replace_all), `editor_read` numbers its lines as Read does. A file no Editor has open
-     is read and written on disk, whatever the mode; one open is changed through the host's live document.
+     (old_string, unique unless replace_all), `editor_read` numbers its lines as Read does. A file in an Editor's
+     folder takes its mode whether or not a page has it open (the user, 2026-11-24: "make the changes so review applies
+     to all files"); one open is changed through the host's live document, and so is one not open in Review: the
+     document is opened for the proposal, and kept open while proposals wait in it (the tree counts them on the file
+     and its folders; the head says how many wait in other files, and opens the next). A file in no Editor's folder,
+     and open in none, is read and written on disk; so is one not open in Live, and a new file in Review.
    - **Modes**, one per Editor, picked in its head ("Agents: Live / Review / Hands off"), kept as `editor.mode`
-     events; a file open in two Editors takes the strictest. Live: the change lands at once, in the agent's hue
+     events; a file in two Editors' folders, or open in them, takes the strictest. Live: the change lands at once, in the agent's hue
      (the document's `marks`), and is written to the file -- its lines only, what the user typed and did not save
      left unsaved; one to the conflict zone's lines is held in a box. Review: each change a proposal in place
      (Accept / Reject / Keep both / Edit, and Accept all / Reject all in the head), the file on disk unchanged until
@@ -684,8 +688,9 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      2026-11-24). Until then Review and Hands off asked about each one (`Conflict.asked`), so a paper synced from
      Overleaf asked about every co-author's edit. Never ask merges the conflict zone too, and lines the user changed
      differently and has not saved take the file's.
-   - **The guard**: Claude Code's own Edit and Write on a file open in an Editor refused (the existing `edit_guard`
-     capability), pointing at `editor_edit` -- for an agent attached to an Editor, which has its tools.
+   - **The guard**: Claude Code's own Edit and Write refused (the existing `edit_guard` capability), pointing at
+     `editor_edit` -- for an agent attached to an Editor, which has its tools: in Review and Hands off on any file of
+     its folder; in Live, on a file open in it.
    - **Told**: the agent whose change was held, what the user chose (a `context_stream` message in its channel);
      agents that used the tools, when the mode changes (one that never started would otherwise be listed as having a
      conversation).

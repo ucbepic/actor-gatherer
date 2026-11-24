@@ -272,6 +272,36 @@ export async function edList(dir, draw = true) {
   if (draw) { edTree(); edHead(); }
 }
 export const edWaiting = (n) => n && !edPlainPart() ? el("span", { class: "mk br", title: `${plural(n, "change")} from an actor's branch waiting for you`, text: String(n) }) : null;
+// Actors' proposals waiting in a file (a folder's: in the files in it), open or not -- Review covers every file of the
+// folder: their count, on its row.
+export const edProposed = (n, dir) => n && !edPlainPart() ? el("span", { class: "mk pr", text: String(n),
+  title: `${plural(n, "proposed change")} waiting for you${dir ? " in files here" : ""}. Open the file to accept or reject ${n === 1 ? "it" : "them"}.` }) : null;
+// The proposals waiting in files other than the one open, as the folder's listing counts them; the header's chip for
+// them, which opens the next of those files at its first.
+function edProposedElsewhere(np) {
+  const got = ed.lists.get(ed.root);
+  const all = got && got.entries ? got.entries.reduce((n, e) => n + (e.proposed || 0), 0) : 0;
+  return Math.max(0, all - (np || 0));
+}
+function edProposedChip(np) {
+  const n = edPlainPart() ? 0 : edProposedElsewhere(np);
+  return n ? el("button", { type: "button", class: "ed-status warn ed-pr-next", onclick: edNextProposed,
+    title: "Agents' proposed changes waiting in files you don't have open. Click to open the next one." },
+  `${plural(n, "proposal")} in other files`) : null;
+}
+async function edNextProposed() {
+  let got;
+  try { got = await get(`/api/edit/proposals?${new URLSearchParams({ root: ed.root })}`); } catch (e) { ed.err = e.message; edHead(); return; }
+  const files = (got.files || []).filter((f) => f.path !== ed.file);
+  if (!files.length) return;
+  const next = files.find((f) => ed.file && f.path > ed.file) || files[0];
+  await edShowFile(next.path);
+  for (let i = 0; i < 40; i++) {                     // its first proposal shown, once its state is in
+    const s = ed.s;
+    if (s && s.path === next.path && s.state && s.view) { edToConflict(s); return; }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
 // Above the tree, under the folder: the actors on branches of the project shown (branches.py), and what waits from them.
 async function edFetchBranches() {
   if (!ed.root || edPlainPart()) return;             // edited plain: no actors' branches to approve
@@ -878,13 +908,13 @@ async function edSettleAll(s, take) {
   catch (e) { s.err = e.message; }
   if (ed.s === s) { edConflicts(s); edHead(); }
 }
-// How an agent's change to a file open here lands, for the whole Editor (its backend's MODES): Live, at once (lines
-// you are editing asked about); Review, each change a proposal to accept or reject; Hands off, refused. Its agents are
+// How an agent's change to a file of the folder lands, open here or not, for the whole Editor (its backend's MODES): Live,
+// at once (lines you are editing asked about); Review, each change a proposal to accept or reject; Hands off, refused. Its agents are
 // told when it changes. A change made around its tools (a shell command's, a sync's) is taken as ED_ON_DISK says.
 const ED_MODES = [
   ["live", "Live", "Agents' changes apply as they come, in their colour, and are saved. You're asked only about lines you're editing."],
-  ["review", "Review", "Each agent change is a proposal to accept or reject, and reaches the file only when you accept."],
-  ["handsoff", "Hands off", "Agents can't change files open here and are told to ask you first."]];
+  ["review", "Review", "Each agent change to a file in this folder, open here or not, is a proposal to accept or reject, and reaches the file only when you accept."],
+  ["handsoff", "Hands off", "Agents can't change files in this folder and are told to ask you first."]];
 // How a change made outside the editor -- a sync's (Dropbox, Overleaf), a shell command's, another program's -- is
 // taken, for the whole Editor (its backend's ON_DISK): asked about everywhere, in the conflict zone only, or never.
 const ED_ON_DISK = [
@@ -1378,7 +1408,7 @@ export function edHead() {
   const s = ed.s;
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
   if (!ed.file) {
-    edHeadPut([...edAddedLead(null), el("span", { class: "ed-hint", text: "Pick a file to open it." }),
+    edHeadPut([...edAddedLead(null), el("span", { class: "ed-hint", text: "Pick a file to open it." }), edProposedChip(0),
       ...edAddedParts("who", null), el("span", { class: "grow", style: "flex: 1" }), edModePick(), edOnDiskPick(), ...edAddedHead(null)].filter(Boolean));
     return;
   }
@@ -1417,7 +1447,7 @@ export function edHead() {
     np > 1 && !nb ? el("span", { class: "ed-all" },
       el("button", { type: "button", title: "Accept all proposed changes and write them to disk. Their actors are told.", onclick: () => edSettleAll(s, "theirs") }, "Accept all"),
       el("button", { type: "button", title: "Reject all proposed changes. Their actors are told.", onclick: () => edSettleAll(s, "mine") }, "Reject all")) : null,
-    zoned, by, ...edAddedParts("who", s), changed,
+    edProposedChip(np), zoned, by, ...edAddedParts("who", s), changed,
     s && s.note ? el("span", { class: "ed-status bad", text: s.note }) : null,
     el("span", { class: "ed-people" },
       ...others.map(([, v]) => el("span", { class: "ed-person", style: `--who: ${v.user.color}`, title: `${v.user.name} has it open`, text: v.user.name })),

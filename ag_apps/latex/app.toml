@@ -17,12 +17,12 @@ mark = "mark.svg"
 replaces = ["editor"]
 instructions = """You work with the user's LaTeX editor, in the dashboard: it edits the files of a folder (a paper's) live,
 the user and you together. Change files with its tools -- latex_read, latex_edit (old_string -> new_string, as your own
-Edit), latex_write (a whole file) -- not your own edit tools or shell commands: they work on any file, and a file the user
-has open is changed there, as its mode says. Live (the default): your change shows to the user as it lands and is written
-to the file, but one to lines they are editing is held for them to settle. Review: each change is a proposal they accept
-or reject in their own time -- propose and carry on with your task, never waiting for them; your next edits build on
-your proposals (latex_read shows them in), and the file on disk changes only when they accept. Hands off: do not change
-files they have open; ask them first. You are told when they settle a change of yours, and when the mode changes.
+Edit), latex_write (a whole file) -- not your own edit tools or shell commands: a file in its folder is changed as its mode
+says, whether or not the user has it open. Live (the default): your change is written to the file, shown to the user as
+it lands where they have it open, but one to lines they are editing is held for them to settle. Review: each change is a
+proposal they accept or reject in their own time -- propose and carry on with your task, never waiting for them; your
+next edits build on your proposals (latex_read shows them in), and the file on disk changes only when they accept (a new
+file is made at once). Hands off: do not change files in its folder; ask them first. You are told when they settle a change of yours, and when the mode changes.
 latex_open shows the user a file, at a line. Beside the file it shows the paper's build -- the command that builds it,
 latexmk on its main .tex unless another is set (any command will do: a dev server, an HTML build) -- and what it makes:
 the PDF, a file it writes, the page of a server it starts, or its output. Set it with latex_preview_set (command, and
@@ -49,17 +49,17 @@ message_actors = true
 
 [[tools]]
 name = "read"
-description = "Read a file as the user's LaTeX editor has it: with what they typed and have not saved, if it is open there (in Review, your waiting changes in). Lines numbered, as your own Read."
+description = "Read a file as the user's LaTeX editor has it: with what they typed and have not saved, if it is open there, and in Review your waiting changes in, open or not. Lines numbered, as your own Read."
 input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, offset = { type = "integer", description = "the first line (default 1)" }, limit = { type = "integer", description = "how many lines (default 2000)" } }, required = ["path"] }
 
 [[tools]]
 name = "edit"
-description = "Change a file: old_string, which must be in it once (or replace_all), replaced by new_string -- through the user's LaTeX editor if it is open there (shown as it lands, or a proposal for them to review, as its mode says), else on disk."
+description = "Change a file: old_string, which must be in it once (or replace_all), replaced by new_string -- as the user's LaTeX editor's mode says, for a file in its folder or open there (shown as it lands, or a proposal for them to review), else on disk."
 input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, old_string = { type = "string" }, new_string = { type = "string" }, replace_all = { type = "boolean", description = "every place old_string is (default false)" } }, required = ["path", "old_string", "new_string"] }
 
 [[tools]]
 name = "write"
-description = "Write a whole file (made if it is not there) -- through the user's LaTeX editor if it is open there, as latex_edit, else on disk."
+description = "Write a whole file (made if it is not there) -- as the user's LaTeX editor's mode says for a file in its folder or open there, as latex_edit, else on disk."
 input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, content = { type = "string", description = "the whole file" } }, required = ["path", "content"] }
 
 [[tools]]
