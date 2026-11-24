@@ -10,7 +10,7 @@
 // command has no recorded lines (only its avatar on the file); lines changed again since are not found; deleted lines
 // show only in the Changes list. An avatar pressed, anywhere, opens its actor (edShowActor) as its row in the list does.
 import { agApp, ago, changedCount, el, fileBlock, firstLine, get, kindMark, langOfPath, state } from "./page.js";
-import { ed, edAvatar, edDir, edEntry, edHead, edKey, edList, edRel, edSelectText, edTilde,
+import { ed, edAdded, edAvatar, edDir, edEntry, edHead, edKey, edList, edRel, edSelectText, edTilde,
   edWhoColor, edWriterName, edWriters } from "./editor.js";
 import { edTree } from "./editor-tree.js";
 import { edNote } from "./editor-open.js";
@@ -36,6 +36,7 @@ function edWindowSet(secs) {
   ed.treeSig = "";
   const dirs = new Set([ed.root, ...ed.open, ...(ed.file ? [edDir(ed.file)] : [])].filter(Boolean));
   Promise.all([...dirs].map((d) => edList(d, false))).then(() => { edTree(); edHead(); edRecentFetch(true); });
+  for (const f of edAdded.windowPicked) f(secs);   // an app's own changes (the LaTeX editor's Overleaf ones), asked again
 }
 // The picker, over the tree: "Changes: last 30 min ▾".
 export function edWindowPick() {

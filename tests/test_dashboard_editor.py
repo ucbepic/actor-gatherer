@@ -699,13 +699,47 @@ class PutTest(RoomBase):
         (c,) = room.conflicts.values()
         room.settle(c.id, "theirs")
         self.assertEqual(str(room.text), "def f():\n    return 3\n\nx = f()\n")
-        room.hold("p1", "merge")                     # merged again, as before
+        room.hold("p1", "zone")                      # merged again, as before
         self.write("def f():\n    return 4\n\nx = f()\n")
         room.check()
         self.assertFalse(room.conflicts)
         self.assertIn("return 4", str(room.text))
         with self.assertRaises(livedocs.DocError):
             room.hold("p1", "sometimes")
+
+    def test_a_page_that_never_asks_has_the_zone_merged_and_the_file_s_lines_win_over_unsaved_ones(self):
+        room, conn, doc, text = self.open("p1")
+        room.hold("p1", "never")
+        self.assertEqual((room.state()["hold"], room.state()["asking"]), ("never", False))
+        self.edit(room, "p1", doc, "return 1", "return 5")
+        room.save()                                                      # in the zone, saved
+        self.write("def f():\n    return 6\n\nx = f()\n")              # an actor's rewrite of it: merged in
+        room.check()
+        self.assertFalse(room.conflicts)
+        self.assertEqual(str(room.text), "def f():\n    return 6\n\nx = f()\n")
+        self.edit(room, "p1", doc, "x = f()", "x = f() + 1")             # typed, not saved
+        self.write("def f():\n    return 6\n\nx = f() * 2\n")          # the same line on disk, differently
+        room.check()
+        self.assertFalse(room.conflicts)
+        self.assertEqual(str(room.text), "def f():\n    return 6\n\nx = f() * 2\n")   # the file's lines taken
+        self.sync(conn, doc)
+        self.assertEqual(str(text), str(room.text))                      # and sent to the page
+
+    def test_the_strictest_page_s_hold_counts(self):
+        room, conn, doc, text = self.open("p1")
+        room.hold("p1", "never")
+        room2, conn2, doc2, text2 = self.open("p2", client=2)
+        self.assertEqual(room.state()["hold"], "zone")                   # p2 opened it as the default: the zone asked about
+        self.edit(room, "p1", doc, "return 1", "return 5")
+        room.save()
+        self.write("def f():\n    return 6\n\nx = f()\n")
+        room.check()
+        (c,) = room.conflicts.values()
+        self.assertTrue(c.zone)
+        room.hold("p2", "ask")
+        self.assertEqual(room.state()["hold"], "ask")
+        room.leave(conn2)
+        self.assertEqual(room.state()["hold"], "never")                  # the other page gone: its hold with it
 
 
 class WritersTest(unittest.TestCase):

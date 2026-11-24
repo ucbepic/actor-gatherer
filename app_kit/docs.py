@@ -29,7 +29,7 @@ What a stream of an open file sends (Joined.take), each (name, value):
     aware    {update}: another page's cursor
     left     {client}: a page gone
     state    the file's state, after each edit, any page's and the disk's: {dirty, missing, error, changed, saved,
-             pages, now, asking, conflicts: [{id, from, to (UTF-16), base, theirs, at, since, zone, asked, agent}],
+             pages, now, hold, asking, conflicts: [{id, from, to (UTF-16), base, theirs, at, since, zone, asked, agent}],
              zone: [[from, to]...], marks: [{from, to, gatherer, channel}]} -- a conflict's `agent`: an actor's change
              held (a branch's: with `branch`; one put in: `put`, and `why` -- "approve", a proposal; "zone", lines the
              pages are editing); `asked`: the file's change, asked about as a page holds it "ask"
@@ -87,14 +87,16 @@ class Docs(ABC):
     # -- a file open
 
     @abstractmethod
-    def open(self, path: str, root: str, conn: str, client: int, hold: str = "merge") -> Joined:
+    def open(self, path: str, root: str, conn: str, client: int, hold: str = "zone") -> Joined:
         """The file opened by a page (`conn`: its id, `client`: its document's Yjs client id): its events (module
         doc). The same page opening it again takes the place of its stream before. `hold`: how it takes the file's
-        changes on disk -- "merge" (merged in, but for the lines it is editing) or "ask" (each one asked about)."""
+        changes on disk -- "zone" (merged in, but for the lines the pages are editing: the conflict zone), "ask" (each one
+        asked about) or "never" (each merged in, the zone too)."""
 
     @abstractmethod
     def hold(self, path: str, root: str, conn: str, how: str) -> dict:
-        """How the page takes the file's changes on disk from now ("merge" or "ask", as `open`'s) -> its state."""
+        """How the page takes the file's changes on disk from now ("zone", "ask" or "never", as `open`'s) -> its
+        state: the file's taken as the strictest of its pages' holds."""
 
     @abstractmethod
     def state(self, path: str, root: str) -> dict:

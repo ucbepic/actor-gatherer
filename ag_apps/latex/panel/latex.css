@@ -21,3 +21,35 @@
 .ed.text-folded .ed-pv { flex: 1 1 0; width: auto !important; max-width: none; }
 .ed-text-fold { padding-top: 10px; border-right: 0; }
 .ed-head > .ed-text-hide:first-child { margin-left: -6px; }
+
+/* who changed a line on Overleaf (overleaf.js): a bar in their colour, as an actor's change has (.ed-recent), dashed */
+.ed-body .ed-ol { background-image: linear-gradient(to bottom, color-mix(in srgb, var(--who) 80%, transparent) 60%, transparent 60%);
+  background-size: 3px 6px; background-repeat: repeat-y; background-position: left top;
+  background-color: color-mix(in srgb, var(--who) 7%, transparent); }
+.ed-ol-chip { display: inline-flex; gap: 2px; vertical-align: -2px; margin-left: 8px; }
+.ed-ol-who { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 3px;
+  border-radius: 8px; font: 600 9px/1 var(--sans, system-ui); letter-spacing: .02em; color: #fff; background: var(--who); }
+.ed-ol-btn { display: inline-flex; align-items: center; gap: 4px; }
+.ed-ol-btn.quiet { color: var(--muted); }
+.ed-ol-btn.want { border-color: color-mix(in srgb, var(--accent, #38bdf8) 60%, var(--ring)); }
+.ed-olpop .ed-ol-say { color: var(--ink); line-height: 1.4; }
+.ed-olpop .ed-ol-say.quiet, .ed-olpop .ed-ol-wait { color: var(--muted); }
+.ed-olpop .ed-ol-row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.ed-olpop .ed-ol-url { flex: 1; min-width: 0; font: inherit; padding: 3px 6px; border: 1px solid var(--ring); border-radius: 5px;
+  background: var(--page); color: var(--ink); }
+.ed-olpop .ed-ol-err { color: var(--bad, #ef4444); }
+/* their initials as a button (the header's, a tree row's): pressed, their latest change */
+button.ed-ol-who { border: 0; cursor: pointer; }
+button.ed-ol-who:hover, button.ed-ol-who:focus-visible { box-shadow: 0 0 0 2px var(--axis); outline: none; }
+.ed-ol-people { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.ed-ol-people .n { font-size: 11px; color: var(--muted); }
+.ed-ol-row { display: inline-flex; gap: 2px; flex: none; margin-left: 4px; }
+.ed-ol-row .ed-ol-who { min-width: 15px; height: 15px; font-size: 8px; }
+/* the card their initials show on hover (overleaf.js's olShowCard): drawn in the page, not the browser's tooltip */
+.ed-ol-card { position: fixed; z-index: 70; max-width: 320px; display: flex; flex-direction: column; gap: 3px; padding: 8px 10px;
+  font-size: 12px; line-height: 1.35; color: var(--ink); background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.3); pointer-events: none; }
+.ed-ol-card .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.ed-ol-card .q { color: var(--muted); overflow-wrap: anywhere; }
+.ed-ol-card .go { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.ed-ol-chip { cursor: default; }

@@ -4,6 +4,10 @@ checkout (latexmk on the main .tex, guessed until one is set), set by the user i
 tools (or `ag preview`), run by either, and what it makes. Its own panel requests, beside FileEdit's:
 
     preview/about, preview/files/<token>/<rel>, preview/synctex     the project's preview and what it made
+    overleaf, overleaf/signin, signout, cancel, link, files,        who changed the paper on Overleaf (overleaf.py):
+    changes                                                         the user's sign-in, the instance's project, which
+                                                                    files each person changed, and a file's lines
+                                                                    credited to who changed them there
 
 The preview's settings are its events, each with the repository it is for (`key`), shared by the gatherer's LaTeX
 editors open:
@@ -12,6 +16,12 @@ editors open:
     latex.preview_allowed   {key, command}: a command an agent set, let run by the user
     latex.preview_cleared   {key}: none any more
     latex.preview_ran       {key, checkout, command, show, by, file, state, code, started, ended}: a run, once over
+
+A folder synced with an Overleaf project (Overleaf's Dropbox sync) is that project's, found by its name once the user
+has signed in to Overleaf (from the panel: a Chrome window of its own, the session kept in the app's data folder); or
+the one the user names (`latex.overleaf` {project, name, root, by}: "" none, back to the folder's own). The file open's
+lines changed there -- by a co-author, or by the user on overleaf.com, not through their own Dropbox -- are credited
+to who changed them, as its panel asks (`overleaf/changes`, each few seconds while the file is open).
 
 It takes over the Editor's instances (the app it was, before the Files app and it were made of it: `replaces`) on a
 folder with a LaTeX source at its top (`takes_over`); the Files app takes the rest.
@@ -24,6 +34,7 @@ The panel hears of each run as it goes (`tell_panel`): {"run": view}, {"out": {i
 errors and warnings as `file:line: message` (runs.said_problems)."""
 
 import os
+import re
 import threading
 import time
 from typing import Dict, Optional, Tuple
@@ -33,6 +44,7 @@ from app_kit import AppError, Caller, Instance, Response, ToolResult
 from app_kit.fileedit import FileEdit
 from app_kit.fileedit.backend import USER, _body
 
+from . import overleaf as O
 from . import runs as R
 
 IDLE = 600.0                # seconds a server is kept running with no LaTeX editor open
@@ -69,14 +81,22 @@ class LatexApp(FileEdit):
         self.keys: Dict[str, Instance] = {}                      # repository -> the instance last asked of it
         self.closed = threading.Event()
         threading.Thread(target=self._idle, name="latex-preview-idle", daemon=True).start()
+        self.overleaf = O.Account(host.folder())
+        self.history = O.History(self.overleaf)
 
     def stop(self) -> None:
         super().stop()
         self.closed.set()
         self.runs.close()
+        self.overleaf.cancel()
 
     def request(self, instance: Optional[Instance], method: str, path: str, query: Dict[str, str],
                 body: bytes) -> Response:
+        if path == "overleaf" or path.startswith("overleaf/"):
+            try:
+                return Response.json(self._overleaf_request(instance, method, path[len("overleaf/"):], query, body))
+            except AppError as exc:
+                return Response.json({"error": str(exc)}, exc.status)
         if not path.startswith("preview/"):
             return super().request(instance, method, path, query, body)
         try:
@@ -245,6 +265,106 @@ class LatexApp(FileEdit):
         return Response(404, b"not found")
 
     # -- runs, told and kept
+
+    # -- Overleaf (overleaf.py)
+
+    def overleaf_project(self, instance: Instance) -> Optional[dict]:
+        """The instance's Overleaf project: {id, name, root (its folder here), how ("set": the user named it; "auto":
+        its folder's)} -- None: none (or the user is not signed in, to find it by name). SignedOut, OverleafError."""
+        got = self.host.read(instance, ["latex.overleaf"], limit=200)
+        named = next((e["payload"] for e in reversed(got) if isinstance(e.get("payload"), dict)), None)
+        if named and named.get("project"):
+            return {"id": named["project"], "name": named.get("name") or named["project"],
+                    "root": named.get("root") or instance.folder, "how": "set"}
+        top = O.project_root(instance.folder or "")
+        if top is None or self.overleaf.kept() is None:
+            return None
+        found = self.overleaf.find(top[1])
+        return {"id": found["id"], "name": found["name"], "root": top[0], "how": "auto"} if found else None
+
+    def _overleaf_request(self, instance: Optional[Instance], method: str, path: str, query: Dict[str, str],
+                          body: bytes) -> dict:
+        if instance is None:
+            raise AppError("which one? (its gatherer and instance)", 404)
+        b = _body(body) if method == "POST" else {}
+        if method == "POST" and path == "signin":
+            return {**self.overleaf.view(), "signing": self.overleaf.sign_in()}
+        if method == "POST" and path == "cancel":
+            self.overleaf.cancel()
+            return self.overleaf.view()
+        if method == "POST" and path == "signout":
+            self.overleaf.sign_out()
+            return self.overleaf.view()
+        if method == "POST" and path == "link":
+            url = str(b.get("url") or "").strip()
+            m = re.search(r"([0-9a-f]{24})", url)
+            if url and not m:
+                raise AppError("that isn't an Overleaf project's link (overleaf.com/project/<id>)")
+            pid = m.group(1) if m else ""
+            name = next((p["name"] for p in self._projects_or_none() if p["id"] == pid), "") if pid else ""
+            self.host.insert(instance, [{"type": "latex.overleaf", "payload": {
+                "project": pid, "name": name, "root": instance.folder if pid else "", "by": USER}}])
+        if method == "GET" and path == "changes":
+            return self._overleaf_changes(instance, query)
+        if method == "GET" and path == "files":
+            return self._overleaf_files(instance, query)
+        if path not in ("", "link"):
+            raise AppError(f"overleaf/{path}: no such request", 404)
+        got = self.overleaf.view()
+        try:
+            got["project"] = self.overleaf_project(instance)
+        except O.SignedOut as exc:
+            got.update(project=None, signed_out=str(exc))
+        except O.OverleafError as exc:
+            got.update(project=None, error=str(exc))
+        top = O.project_root(instance.folder or "")
+        got["synced"] = top[1] if top else None          # the folder is Overleaf's Dropbox copy of a project so named
+        return got
+
+    def _projects_or_none(self) -> list:
+        try:
+            return self.overleaf.projects()
+        except (O.SignedOut, O.OverleafError):
+            return []
+
+    def _overleaf_files(self, instance: Instance, query: Dict[str, str]) -> dict:
+        """Who changed which of the project's files on Overleaf since `since` (seconds): overleaf.who_changed's."""
+        try:
+            since = float(query.get("since") or 0)
+            project = self.overleaf_project(instance)
+            if project is None:
+                return {"files": {}, "people": [], "project": None}
+            me = (self.overleaf.kept() or {}).get("user_id", "")
+            return {**O.who_changed(self.history, project["id"], os.path.realpath(project["root"]), me, since),
+                    "project": project}
+        except O.SignedOut as exc:
+            return {"files": {}, "people": [], "signed_out": str(exc)}
+        except (O.OverleafError, ValueError) as exc:
+            return {"files": {}, "people": [], "error": str(exc)}
+
+    def _overleaf_changes(self, instance: Instance, query: Dict[str, str]) -> dict:
+        """The file's lines changed on Overleaf since `since` (seconds), by others than the user's own Dropbox, credited:
+        overleaf.changes' -- the file as it is here (with what is typed and not saved, if it is open)."""
+        path, root = query.get("path", ""), query.get("root", "") or instance.folder or "/"
+        try:
+            since = float(query.get("since") or 0)
+            project = self.overleaf_project(instance)
+            if project is None:
+                return {"lines": [], "people": [], "project": None}
+            real = os.path.realpath(path)
+            if os.path.commonpath([real, os.path.realpath(project["root"])]) != os.path.realpath(project["root"]):
+                return {"lines": [], "people": [], "project": project}
+            try:
+                text = self.host.docs().view(path, root)
+            except AppError:                                 # not open live: as on disk
+                with open(real, encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            me = (self.overleaf.kept() or {}).get("user_id", "")
+            return {**O.changes(self.history, project["id"], project["root"], real, text, me, since), "project": project}
+        except O.SignedOut as exc:
+            return {"lines": [], "people": [], "signed_out": str(exc)}
+        except (O.OverleafError, OSError, ValueError) as exc:
+            return {"lines": [], "people": [], "error": str(exc)}
 
     def _told(self, run: "R.Run", name: str, value: dict) -> None:
         with self.lock:

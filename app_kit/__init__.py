@@ -15,6 +15,7 @@ ag or of the dashboard (tests/test_app_kit.py).
     docs.py       Docs, Joined: the host's files shared live, for an app that asks `docs` (Host.docs())
     schedules.py  Schedule: an app's [[schedules]], when each is due (`last`, `next`)
     tex.py        SyncTeX between a PDF and its TeX source, for an app that builds one (LaTeX, DocWriter)
+    signin.py     a site signed in to in a Chrome window of its own, its session read from the window (SignIn)
     finding.py    where apps are: find(home), search_path(home), removed(home), origin(folder, home)
     installing.py an app staged from a folder or git URL, installed into <home>/apps, uninstalled
     remote.py     the same calls over HTTP, for an app in a process of its own: launch / RemoteApp (the host's side),
