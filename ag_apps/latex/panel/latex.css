@@ -45,3 +45,11 @@ button.ed-ol-who:hover, button.ed-ol-who:focus-visible { box-shadow: 0 0 0 2px v
 .ed-ol-people .n { font-size: 11px; color: var(--muted); }
 .ed-ol-row { display: inline-flex; gap: 2px; flex: none; margin-left: 4px; }
 .ed-ol-row .ed-ol-who { min-width: 15px; height: 15px; font-size: 8px; }
+/* the card their initials show on hover (overleaf.js's olShowCard): drawn in the page, not the browser's tooltip */
+.ed-ol-card { position: fixed; z-index: 70; max-width: 320px; display: flex; flex-direction: column; gap: 3px; padding: 8px 10px;
+  font-size: 12px; line-height: 1.35; color: var(--ink); background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.3); pointer-events: none; }
+.ed-ol-card .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.ed-ol-card .q { color: var(--muted); overflow-wrap: anywhere; }
+.ed-ol-card .go { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.ed-ol-chip { cursor: default; }

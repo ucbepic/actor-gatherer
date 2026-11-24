@@ -69,11 +69,13 @@ export const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root +
 //               header's actors' avatars (x: as head's)
 //   marks(path, dir)  -> the same, on a file's row of the tree, or a closed folder's (the app sets ed.treeSig = "" and
 //               draws the tree again when they change)
+//   windowPicked(secs)  the Changes window picked again (recent.js's: the last 10 min, 30 min, …): what the app shows
+//               of it, asked for again
 //   message(m)  a message from its backend (start.js)
 //   plain       {open, edited, check, save, due, gone, head}: its text files edited plain, in place of a live document
 //               -- read whole, edited in this page alone, saved whole (plain.js's, the Files app's); one at most
 export const edAdded = { head: [], lead: [], work: [], opening: [], keys: [], down: [], view: [], viewed: [], markup: [],
-  message: [], plain: [], who: [], marks: [] };
+  message: [], plain: [], who: [], marks: [], windowPicked: [] };
 export function edAdd(parts) { for (const [k, f] of Object.entries(parts)) edAdded[k].push(f); }
 const edAddedParts = (kind, x) => edAdded[kind].flatMap((f) => [].concat(f(x) || [])).filter(Boolean);
 export const edAddedHead = (x) => edAddedParts("head", x);

@@ -10,7 +10,8 @@
 // rows (a file they changed, a closed folder with one in it). Their initials pressed: their latest change -- in the
 // project, the file or the folder -- opened, its lines selected. The header's "Overleaf" button, pressed: its menu --
 // sign in (or again, once it lapsed), sign out, the project (the folder's own, or one linked by its link). Who changed
-// which file, and the open file's lines, are asked for every OL_EVERY ms while a project is known.
+// which file, and the open file's lines, are asked for every OL_EVERY ms while a project is known, and at once when the
+// Changes window is picked again.
 import { agApp, ago, el, get, HUE_MAIN, paneNote, post } from "/_ag/lib/fileedit/page.js";
 import { ed, edHead, edRel, edShowFile, edUnder } from "/_ag/lib/fileedit/editor.js";
 import { edTree } from "/_ag/lib/fileedit/editor-tree.js";
@@ -19,8 +20,10 @@ import { edSince, edWindowSaid } from "/_ag/lib/fileedit/recent.js";
 const OL_EVERY = 5000;           // ms between asks for the file open's lines, while it is open
 const OL_SIGNING_EVERY = 1500;   // ms between looks at the sign-in, while its window is open
 
-ed.ol = { view: null, lines: [], people: [], path: "", err: "", pop: null, timer: 0, asking: false,
-  files: {}, everyone: [], filesSig: "", goto: null };   // who changed which file (overleaf/files); a latest change to go to
+ed.ol = { view: null, lines: [], people: [], path: "", err: "", pop: null, timer: 0,
+  files: {}, everyone: [], filesSig: "", goto: null,      // who changed which file (overleaf/files); a latest change to go to
+  asked: 0, askedFiles: 0,                                // the latest ask of each: an earlier one's answer, come late, dropped
+  whoNode: null, whoSig: "" };                            // the header's people, kept while the same (olWho)
 
 const hues = Object.values(HUE_MAIN);
 // A person's colour: always the same one for them.
@@ -46,12 +49,13 @@ async function olLoad() {
 // Who changed which of the project's files in the window (GET overleaf/files): the tree and the header drawn again
 // when it changed.
 async function olFiles() {
-  const v = ed.ol.view;
+  const v = ed.ol.view, turn = ++ed.ol.askedFiles;
   let got = { files: {}, people: [] };
   if (v && v.project) {
     try { got = await get(`/api/overleaf/files?${new URLSearchParams({ since: String(edSince()) })}`); }
     catch (e) { ed.ol.err = e.message; return; }
   }
+  if (turn !== ed.ol.askedFiles) return;
   const sig = JSON.stringify([got.files, got.people.map((p) => [p.id, p.at])]);
   if (sig === ed.ol.filesSig) return;
   ed.ol.filesSig = sig; ed.ol.files = got.files || {}; ed.ol.everyone = got.people || [];
@@ -61,12 +65,12 @@ async function olFiles() {
 // The file open's lines changed on Overleaf (GET overleaf/changes), marked.
 async function olAsk(force = false) {
   const s = ed.s, v = ed.ol.view;
-  if (!s || !s.view || !s.ol || !v || !v.project || ed.ol.asking) { if (s && s.ol && (!v || !v.project)) olMark(s, []); return; }
+  if (!s || !s.view || !s.ol || !v || !v.project) { if (s && s.ol && (!v || !v.project)) olMark(s, []); return; }
   if (!force && document.hidden) return;
-  ed.ol.asking = true;
+  const turn = ++ed.ol.asked;
   try {
     const got = await get(`/api/overleaf/changes?${new URLSearchParams({ path: s.path, root: s.root, since: String(edSince()) })}`);
-    if (ed.s !== s) return;
+    if (ed.s !== s || turn !== ed.ol.asked) return;
     if (got.signed_out) { ed.ol.view = { ...v, signed_in: null, project: null, signed_out: got.signed_out }; ed.ol.lines = []; ed.ol.people = []; }
     else { ed.ol.lines = got.lines || []; ed.ol.people = got.people || []; }
     ed.ol.err = got.error || ""; ed.ol.path = s.path;
@@ -74,7 +78,6 @@ async function olAsk(force = false) {
     olGoDue(s);
     edHead();
   } catch (e) { ed.ol.err = e.message; }
-  finally { ed.ol.asking = false; }
 }
 
 // The marks: each line the backend credits, found where it is now (the line it names, else the nearest with its text --
@@ -102,7 +105,7 @@ function olMark(s, lines) {
     const what = [olPieces("added", l.inserted), olPieces("removed", l.deleted)].filter(Boolean).join("; ");
     out.push(A.Decoration.line({ class: "ed-ol", attributes: { style: `--who: ${olColor(who)}`,
       title: `Changed by ${olNames(l.who)} on Overleaf, ${ago(l.at)}${what ? ` · ${what}` : ""}` } }).range(line.from));
-    if (!prev || prev.key !== key || prev.n !== n - 1) out.push(A.Decoration.widget({ widget: new (olChipWidget(A))(l.who), side: 1 }).range(line.to));
+    if (!prev || prev.key !== key || prev.n !== n - 1) out.push(A.Decoration.widget({ widget: new (olChipWidget(A))(l.who, l.at, what), side: 1 }).range(line.to));
     prev = { key, n };
   }
   v.dispatch({ effects: s.ol.set.of(A.Decoration.set(out, true)) });
@@ -143,26 +146,77 @@ const olPieces = (did, list) => !list || !list.length ? ""
 let OlChip = null;
 function olChipWidget(A) {
   return OlChip ||= class extends A.WidgetType {
-    constructor(who) { super(); this.who = who; }
-    eq(o) { return olNames(o.who) === olNames(this.who); }
-    toDOM() { return el("span", { class: "ed-ol-chip", title: `${olNames(this.who)}, on Overleaf` }, ...this.who.slice(0, 2).map(olChip)); }
+    constructor(who, at, what) { super(); this.who = who; this.at = at; this.what = what; }
+    eq(o) { return olNames(o.who) === olNames(this.who) && o.at === this.at && o.what === this.what; }
+    toDOM() {
+      const n = el("span", { class: "ed-ol-chip" }, ...this.who.slice(0, 2).map(olChip));
+      olHover(n, () => [olCardHead(this.who), el("div", { text: `Edited here: ${olWhen(this.at)}` }),
+        this.what ? el("div", { class: "q", text: this.what }) : null].filter(Boolean));
+      return n;
+    }
     ignoreEvent() { return true; }
   };
 }
 const olChip = (p) => el("span", { class: "ed-ol-who", style: `--who: ${olColor(p)}`, text: olInitials(p) });
 // A person's initials, pressed: their latest change under `under` (olGoTo).
-function olChipButton(p, under, what) {
-  return el("button", { type: "button", class: "ed-ol-who", style: `--who: ${olColor(p)}`, "aria-label": `${p.name}'s latest change`,
-    title: `${p.name} changed ${what} on Overleaf, latest ${ago(p.at)} · click to go to it`,
+// `rows()`: what its card says, worked out as it is shown (its "ago" as of then).
+function olChipButton(p, under, rows) {
+  const b = el("button", { type: "button", class: "ed-ol-who", style: `--who: ${olColor(p)}`,
+    "aria-label": `${p.name}, last edit ${olWhen(p.at)}: click to go to it`,
     onmousedown: (ev) => ev.stopPropagation(),
-    onclick: (ev) => { ev.preventDefault(); ev.stopPropagation(); olGoTo(p, under); } }, olInitials(p));
+    onclick: (ev) => { ev.preventDefault(); ev.stopPropagation(); olHideCard(); olGoTo(p, under); } }, olInitials(p));
+  olHover(b, rows);
+  return b;
 }
+
+// ---- the card a person's initials show on hover: drawn in the page, not the browser's own tooltip (which a page
+// shown as a screencast, as the dashboard's Browser shows one, never draws)
+// "1:19 PM (2 min ago)", or "Nov 23, 1:19 PM (…)" for another day.
+function olWhen(at) {
+  const d = new Date(at * 1000), today = d.toDateString() === new Date().toDateString();
+  const t = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${today ? t : `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${t}`} (${ago(at)})`;
+}
+const olCard = { box: null, anchor: null, timer: 0, watch: 0 };
+function olHover(node, rows) {
+  node.addEventListener("mouseenter", () => {
+    clearTimeout(olCard.timer);
+    olCard.timer = setTimeout(() => olShowCard(node, rows()), olCard.box ? 0 : 250);
+  });
+  node.addEventListener("mouseleave", () => { clearTimeout(olCard.timer); olCard.timer = setTimeout(olHideCard, 80); });
+}
+function olShowCard(anchor, rows) {
+  olHideCard();
+  const box = olCard.box = el("div", { class: "ed-ol-card", role: "tooltip" }, ...rows);
+  olCard.anchor = anchor;
+  document.body.append(box);
+  const r = anchor.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
+  box.style.left = `${Math.round(Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8)))}px`;
+  box.style.top = `${Math.round(r.bottom + 6 + h > window.innerHeight - 8 ? r.top - h - 6 : r.bottom + 6)}px`;
+  olCard.watch = setInterval(() => { if (!anchor.isConnected || !anchor.matches(":hover")) olHideCard(); }, 300);
+}
+function olHideCard() {
+  clearInterval(olCard.watch);
+  if (olCard.box) olCard.box.remove();
+  olCard.box = olCard.anchor = null;
+}
+const olCardHead = (who) => el("div", { class: "hd" }, ...who.slice(0, 2).map(olChip),
+  el("b", { text: olNames(who) }), el("span", { class: "q", text: "on Overleaf" }));
 // Beside the header's actors' avatars: everyone who changed the project in the window, the latest first.
+// Kept from one header to the next while they are the same (the header is drawn again every few seconds: a card shown
+// over one of them would go with it).
 function olWho(x) {
   const v = ed.ol.view, all = ed.ol.everyone;
   if (!v || !v.project || !all.length || (x && x !== ed.s)) return null;
-  return el("span", { class: "ed-ol-people", title: `Changed on Overleaf in the last ${edWindowSaid()}` },
-    ...all.slice(0, 5).map((p) => olChipButton(p, null, `${p.files} file${p.files === 1 ? "" : "s"} (latest ${edRel(p.path)})`)),
+  const sig = JSON.stringify([all.length, all.slice(0, 5).map((p) => [olKey(p), p.at, p.files, p.path])]);
+  if (ed.ol.whoNode && ed.ol.whoSig === sig) return ed.ol.whoNode;
+  ed.ol.whoSig = sig;
+  return ed.ol.whoNode = el("span", { class: "ed-ol-people" },
+    ...all.slice(0, 5).map((p) => olChipButton(p, null, () => [olCardHead([p]),
+      el("div", { text: `Last edit: ${olWhen(p.at)}` }),
+      el("div", { class: "q", text: `in ${edRel(p.path)}` }),
+      el("div", { class: "q", text: `${p.files} file${p.files === 1 ? "" : "s"} changed in the last ${edWindowSaid()}` }),
+      el("div", { class: "go", text: "Click to go to it" })])),
     all.length > 5 ? el("span", { class: "n", text: `+${all.length - 5}` }) : null);
 }
 // On a tree's row: who changed the file, or (a closed folder's) one in it.
@@ -174,7 +228,9 @@ function olRowMarks(path, dir) {
   }
   if (!by.size) return null;
   const people = [...by.values()].sort((a, b) => b.at - a.at);
-  return el("span", { class: "ed-ol-row" }, ...people.slice(0, 3).map((p) => olChipButton(p, path, dir ? "files in it" : "it")));
+  return el("span", { class: "ed-ol-row" }, ...people.slice(0, 3).map((p) => olChipButton(p, path, () => [olCardHead([p]),
+    el("div", { text: `Last edit ${dir ? "in this folder" : "to this file"}: ${olWhen(p.at)}` }),
+    el("div", { class: "go", text: "Click to go to it" })])));
 }
 
 // Its decorations, in each text file's view (edAdd's view).
@@ -276,6 +332,7 @@ function olDrawPop() {
 
 // Its parts, for latex.js to give to edAdd; started once the panel is (olStart).
 export const olParts = { head: olButton, who: olWho, marks: olRowMarks, view: olField,
+  windowPicked: () => { olFiles(); olAsk(true); },        // the Changes window picked: asked again at once
   viewed: (s) => { s.ol.sig = ""; olMark(s, ed.ol.path === s.path ? ed.ol.lines : []); olAsk(true); } };
 export function olStart() {
   if (!agApp) return;
