@@ -10,3 +10,4 @@ from app_kit.fileedit import FileEdit
 
 class FilesApp(FileEdit):
     CALLED = "Files app"
+    LIVE = False                    # plain: no mode, its folder's files changed by agents as on disk

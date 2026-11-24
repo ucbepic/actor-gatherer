@@ -827,6 +827,71 @@ class EditToolsTest(ServedBase):
         self.h.backend("latex").modes.clear()
         self.assertEqual(self.h.backend("latex").mode(self.inst), "review")
 
+    def test_review_covers_every_file_of_its_folder_open_or_not(self):
+        self.post("mode", {"mode": "review"})                            # the file not open anywhere
+        was = self.disk()
+        self.tool("read", {"path": self.plot})
+        said = self.tool("edit", {"path": self.plot, "old_string": "import sys", "new_string": "import os, sys"})
+        self.assertIn("Proposed", said)
+        self.assertIn("in the folder of the user's LaTeX editor", said)
+        self.assertEqual(self.disk(), was)                                # until the user accepts
+        read = self.tool("read", {"path": self.plot})
+        self.assertIn("In the folder of the user's LaTeX editor (Review)", read)
+        self.assertIn("import os, sys", read)                             # its own, in
+        self.assertIn("Review", self.h.guard("g", "c1", self.plot))      # its own Edit: pointed at latex_edit
+        self.assertIn("latex_edit", self.h.guard("g", "c1", self.plot))
+        self.assertIsNone(self.h.guard("g", "c2", self.plot))             # an actor not attached: its own tools
+        listed = self.at_json(f"edit/list?{urllib.parse.urlencode({'dir': os.path.dirname(self.plot), 'root': self.repo})}")
+        (entry,) = [e for e in listed["entries"] if e["name"] == os.path.basename(self.plot)]
+        self.assertEqual(entry["proposed"], 1)
+        files = self.at_json(f"edit/proposals?{urllib.parse.urlencode({'root': self.repo})}")["files"]
+        self.assertEqual([(f["path"], f["n"]) for f in files], [(os.path.realpath(self.plot), 1)])
+        live = self.h.docs._docs                                          # no page ever came: kept while it waits
+        room = live.rooms[os.path.realpath(self.plot)]
+        room.idle_since = time.time() - 3600
+        live.look()
+        self.assertIn(os.path.realpath(self.plot), live.rooms)
+        self.post("edit/settle_all", {"path": self.plot, "root": self.repo, "take": "theirs", "channel": "c1"})
+        self.assertTrue(self.disk().startswith("import os, sys\n"))       # accepted: on disk
+        self.assertIn("The user accepted the change you proposed", self.told[-1][0]["payload"]["text"])
+        room.idle_since = time.time() - 3600
+        live.look()
+        self.assertNotIn(os.path.realpath(self.plot), live.rooms)         # nothing waits: closed
+        made = os.path.join(self.repo, "notes.md")                        # a new file: made at once
+        self.assertIn("made at once", self.tool("write", {"path": made, "content": "hi\n"}))
+        with open(made) as fh:
+            self.assertEqual(fh.read(), "hi\n")
+
+    def test_hands_off_refuses_a_file_of_its_folder_not_open(self):
+        self.post("mode", {"mode": "handsoff"})
+        self.assertIn("Ask them first", self.tool("edit", {"path": self.plot, "old_string": "import sys",
+                                                            "new_string": "import os"}))
+        self.assertIn("Hands off", self.h.guard("g", "c1", self.plot))
+        self.post("mode", {"mode": "live"})                               # live: a file open nowhere, on disk
+        self.assertIsNone(self.h.guard("g", "c1", self.plot))
+        self.assertIn("written on disk", self.tool("edit", {"path": self.plot, "old_string": "import sys",
+                                                             "new_string": "import os"}))
+
+    def test_a_mode_set_while_the_stored_one_is_read_is_kept(self):
+        app = self.h.backend("latex")
+        app.modes.clear()
+        read, done = app.host.read, []
+
+        def slow(instance, types, *a, **kw):           # the panel's ask, as the user picks Review meanwhile
+            got = read(instance, types, *a, **kw)
+            if types == ["latex.mode"] and not done:
+                done.append(1)
+                app.set_mode(instance, "review")
+            return got
+        with mock.patch.object(app.host, "read", side_effect=slow):
+            self.assertEqual(app.mode(self.inst), "review")          # not the "live" read before it was set
+        self.assertEqual(app.mode(self.inst), "review")
+
+    def at_json(self, path):
+        status, _, raw = self.at_app(f"/api/{path}&{self.q}")
+        self.assertEqual(status, 200, raw)
+        return json.loads(raw)
+
     def test_hands_off_it_is_refused_and_a_write_around_it_is_merged_in(self):
         self.opened()
         self.post("mode", {"mode": "handsoff"})

@@ -110,6 +110,9 @@ class HostDocs(Docs):
     def put(self, path: str, root: str, seen: str, wanted: str, by: dict, how: str) -> dict:
         return self._call(self._docs.put, path, root, seen, wanted, by, how)
 
+    def proposals(self, root: str) -> List[dict]:
+        return self._call(self._docs.proposals, root)
+
     # -- the actors
 
     def _need_branches(self):

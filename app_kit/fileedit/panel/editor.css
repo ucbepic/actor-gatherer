@@ -176,6 +176,9 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .ed-brs:not(:empty) { padding: 0 8px 6px; }
 .ed-row .mk.br { font-size: 10.5px; font-weight: 700; color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 60%, transparent);
   border-radius: 7px; padding: 0 5px; line-height: 13px; }
+/* actors' proposals waiting in it (Review), open or not */
+.ed-row .mk.pr { font-size: 10.5px; font-weight: 700; color: #fff; background: color-mix(in srgb, var(--warning) 85%, transparent);
+  border-radius: 7px; padding: 0 5px; line-height: 14px; }
 /* above the tree: the actors on branches of the project shown, each with its changes waiting */
 .ed-brs { display: grid; gap: 4px; }
 .ed-br { border: 1px solid color-mix(in srgb, var(--who, var(--s1)) 40%, var(--ring)); border-radius: 6px; padding: 4px 6px;

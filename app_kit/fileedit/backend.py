@@ -24,18 +24,21 @@ in the page alone, and saved whole -- no live document, no mode, no conflict zon
 since it was read is refused, for the reader to reload it or keep theirs (`edit/put`, `force`). Its agents then have
 only <app>_open.
 
-Its agents change files with its tools, not their own -- Claude Code's Edit and Write on a file open in one are
-refused (`guard`, the host's edit_guard), pointing at <app>_edit. A file no such app has open is read and written on
-disk, whatever the mode. One open in one is changed through the host's live documents, as its MODE says -- the
-strictest of those that have it open, of every app built on this (the Files app's and the LaTeX editor's alike: they
-edit the same files):
+Its agents change files with its tools, not their own. A file's MODE is that of the instances whose folder holds it
+-- open there or not -- and of those that have it open: the strictest of them, of every app built on this that edits
+live (LIVE: the LaTeX editor's; the Files app edits plain, with no mode). In review and handsoff, Claude Code's Edit and
+Write on any such file are refused (`guard`, the host's edit_guard), pointing at <app>_edit; in live, on a file open in
+one. A file in no instance's folder, and open in none, is read and written on disk:
 
-    live        the change lands at once, in the agent's hue, and is written to the file; what meets the lines the
-                user is editing (the conflict zone) is held for them, in a box (docs.put "live")
-    review      each change a proposal, shown in place, the user accepting or rejecting it when they choose -- the
-                file on disk as it was until they accept (docs.put "propose"); the agent does not wait for them: it
-                carries on, reading the file with its proposals in, and is told what they chose when they do
-    handsoff    refused: the user is editing it, the agent to ask them first
+    live        the change lands at once and is written to the file -- shown in the agent's hue where the file is
+                open, and what meets the lines the user is editing (the conflict zone) held for them, in a box
+                (docs.put "live"); a file open nowhere, written on disk
+    review      each change a proposal, the user accepting or rejecting it when they choose -- the file on disk as it
+                was until they accept (docs.put "propose"), open or not: a file not open is opened for it, and stays
+                open while its proposals wait (the tree counts them, the header too, for the files not shown); the
+                agent does not wait for them: it carries on, reading the file with its proposals in, and is told what
+                they chose when they do
+    handsoff    refused: the user is editing in that folder, the agent to ask them first
 
 The mode is only of what its agents change through its tools. Whatever else changes the file on disk -- a shell
 command, another harness's edit tool, a sync (Dropbox's, Overleaf's), a co-author -- is taken as the instance's ON_DISK
@@ -110,6 +113,8 @@ def _opt(body: dict, key: str) -> Optional[str]:
 class FileEdit(App):
     #: What its agents are told it is: "the user's <CALLED>" (a subclass names itself: "Files app", "LaTeX editor").
     CALLED = "editor"
+    #: Whether it edits its files live, as its mode says (the package doc); False: plain, with no mode (the Files app).
+    LIVE = True
 
     @property
     def name(self) -> str:
@@ -206,6 +211,8 @@ class FileEdit(App):
             return {**docs.about(q.get("path", ""), q.get("root", "")), "reveal": chooser.shower() if here else None}
         if path == "edit/files":
             return docs.files(q.get("dir", ""), q.get("root", ""))
+        if path == "edit/proposals":                # the files with actors' proposals waiting, open or not
+            return {"files": docs.proposals(q.get("root", ""))}
         if path == "branches":
             return docs.branches(q.get("root", ""))
         if path == "files/changes":
@@ -293,9 +300,8 @@ class FileEdit(App):
         got = self.host.read(instance, [f"{self.name}.mode"], limit=5000)
         mode = next((e["payload"].get("mode") for e in reversed(got) if (e["payload"] or {}).get("mode") in MODES),
                     "live")
-        with self.lock:
-            self.modes[instance.id] = mode
-        return mode
+        with self.lock:                             # one set meanwhile (set_mode) is newer than what was read
+            return self.modes.setdefault(instance.id, mode)
 
     def set_mode(self, instance: Instance, mode: str, by: str = USER) -> None:
         """The instance's mode, set: kept as its event, its panels and its agents told."""
@@ -311,14 +317,14 @@ class FileEdit(App):
         except AppError:
             pass
         edit, write, read = self.tool("edit"), self.tool("write"), self.tool("read")
-        said = {"live": f"Live: your edits to files open there ({edit}, {write}) land at once, shown to the user as "
-                        f"they land, and are written to the file; one to lines the user is editing is held for them "
-                        f"to settle.",
-                "review": f"Review: your edits to files open there ({edit}, {write}) are proposals the user accepts "
-                          f"or rejects in their own time -- propose and carry on with your task, without waiting for "
-                          f"them. The file on disk changes only when they accept; {read} shows your proposals in, so "
-                          f"your next edits build on them.",
-                "handsoff": f"Hands off: do not change files open there; ask the user first ({edit} and {write} "
+        said = {"live": f"Live: your edits to files in its folder ({edit}, {write}) land at once, and are written to "
+                        f"the file -- shown to the user as they land where they have it open; one to lines the user "
+                        f"is editing is held for them to settle.",
+                "review": f"Review: your edits to files in its folder, open there or not ({edit}, {write}), are "
+                          f"proposals the user accepts or rejects in their own time -- propose and carry on with your "
+                          f"task, without waiting for them. The file on disk changes only when they accept; {read} "
+                          f"shows your proposals in, so your next edits build on them.",
+                "handsoff": f"Hands off: do not change files in its folder; ask the user first ({edit} and {write} "
                             f"refuse them)."}[mode]
         for channel in self.host.attached(instance):
             if channel not in self.used:
@@ -339,9 +345,8 @@ class FileEdit(App):
         got = self.host.read(instance, [f"{self.name}.on_disk"], limit=5000)
         how = next((e["payload"].get("on_disk") for e in reversed(got)
                     if (e["payload"] or {}).get("on_disk") in ON_DISK), "zone")
-        with self.lock:
-            self.on_disks[instance.id] = how
-        return how
+        with self.lock:                             # one set meanwhile (set_on_disk) is newer than what was read
+            return self.on_disks.setdefault(instance.id, how)
 
     def set_on_disk(self, instance: Instance, how: str, by: str = USER) -> None:
         """How the instance takes changes on disk, set: kept as its event, its pages' hold on their files changed to
@@ -388,21 +393,21 @@ class FileEdit(App):
         return out
 
     def file_mode(self, real: str) -> Optional[str]:
-        """How an agent's change to the file lands: the strictest mode of those that have it open; None, none has it
-        open (its tools write the file on disk)."""
-        modes = [app.mode(i) for app, i, _ in self._open_in(real)]
-        return max(modes, key=MODES.index) if modes else None
+        """How an agent's change to the file lands: the strictest mode of the instances that have it open or whose
+        folder holds it; None, none (its tools write the file on disk)."""
+        return self._where(real)[0]
 
-    # -- its agents' own edit tools, on a file open in it
+    # -- its agents' own edit tools, on a file in its folder or open in it
 
     def guard(self, instance: Instance, path: str, caller: Caller) -> Optional[str]:
         real = os.path.realpath(os.path.expanduser(path or ""))
-        mode = self.file_mode(real)
-        if mode is None:
-            return None
+        mode, _, shown = self._where(real)
+        if mode is None or (mode == "live" and not shown):
+            return None                             # its own tools: the file on disk, as theirs would
+        where = self._said_where(shown)
         if mode == "handsoff":
-            return f"{path} is open in the user's {self.CALLED}, set to Hands off: do not change it; ask the user first."
-        return (f"{path} is open in the user's {self.CALLED}: change it with {self.tool('edit')} (or "
+            return f"{path} is {where}, set to Hands off: do not change it; ask the user first."
+        return (f"{path} is {where}: change it with {self.tool('edit')} (or "
                 f"{self.tool('write')} for the whole file) instead, so your change goes through it"
                 + (" -- shown to the user as it lands." if mode == "live" else
                    " -- it is set to Review: your change is a proposal the user reviews in their own time, and you "
@@ -430,22 +435,54 @@ class FileEdit(App):
             p = os.path.join(caller.folder or os.getcwd(), p)
         return os.path.realpath(p)
 
-    def _where(self, real: str) -> Tuple[Optional[str], Optional[str]]:
-        """(mode, root) of the file: as those that have it open open it, else (None, None) -- not open in one."""
-        got = self._open_in(real)
+    def _where(self, real: str) -> Tuple[Optional[str], Optional[str], bool]:
+        """(mode, root, shown) of the file: the strictest mode of the instances that have it open and of those whose
+        folder holds it, the folder it is opened under, and whether a page has it open -- (None, None, False): none."""
+        got = [(app.mode(i), root) for app, i, root in self._open_in(real) if app.LIVE]
+        shown = bool(got)
+        got += [(app.mode(i), os.path.realpath(i.folder)) for app, i in self._covering(real)]
         if not got:
-            return None, None
-        return max((app.mode(i) for app, i, _ in got), key=MODES.index), got[0][2]
+            return None, None, False
+        mode = max((m for m, _ in got), key=MODES.index)
+        return mode, got[0][1], shown
+
+    def _opened(self, real: str, root: str) -> bool:
+        """Whether the host's live documents have the file open now (a page has, or proposals wait in it)."""
+        try:
+            self.host.docs().state(real, root)
+        except AppError:
+            return False
+        return True
+
+    def _said_where(self, shown: bool) -> str:
+        """Where a file is, as its agents are told: open in the user's app, or in its folder."""
+        return f"open in the user's {self.CALLED}" if shown else f"in the folder of the user's {self.CALLED}"
+
+    @staticmethod
+    def _covering(real: str) -> List[Tuple["FileEdit", Instance]]:
+        """The instances, of any app built on this that edits live, whose folder holds the file (open there or not)."""
+        with _lock:
+            apps = [a for a in _apps if a.LIVE]
+        out = []
+        for app in apps:
+            for i in app.host.instances():
+                top = os.path.realpath(i.folder) if i.folder else ""
+                if top and (real == top or real.startswith(top.rstrip("/") + "/")):
+                    out.append((app, i))
+        return out
 
     def _tool_read(self, instance: Instance, args: dict, caller: Caller) -> ToolResult:
         real = self._path(args, caller)
-        mode, root = self._where(real)
+        mode, root, shown = self._where(real)
         note = ""
-        if mode is not None:
+        if mode is not None and not shown and (mode != "review" or not self._opened(real, root)):
+            text = _read_file(real)                 # open nowhere, and no proposal waiting in it: as on disk
+        elif mode is not None:
             text = self.host.docs().view(real, root, caller.channel if mode == "review" else None)
             mine = sum(1 for c in self.host.docs().state(real, root)["conflicts"] if _held_by(c, caller.channel))
-            note = (f"Open in the user's {self.CALLED} ({MODE_SAID[mode]}): as it is there, with what they typed and "
-                    f"have not saved" + (f"; your {mine} change{'s' if mine != 1 else ''} waiting for them shown in"
+            note = (f"{self._said_where(shown)[0].upper()}{self._said_where(shown)[1:]} ({MODE_SAID[mode]}): "
+                    + ("as it is there, with what they typed and have not saved" if shown else "as it is on disk")
+                    + (f"; your {mine} change{'s' if mine != 1 else ''} waiting for them shown in"
                                          if mine and mode == "review" else
                                          f"; {mine} change{'s' if mine != 1 else ''} of yours held for them, not in"
                                          if mine else "") + ".")
@@ -478,7 +515,7 @@ class FileEdit(App):
             n = text.count(old)
             if n == 0:
                 raise AppError(f"old_string is not in {real}" + (f" as it is in the {self.CALLED}: read it again"
-                                                                  if self._where(real)[0] else ""))
+                                                                  if self._where(real)[2] else ""))
             if n > 1 and not every:
                 raise AppError(f"old_string is in {real} {n} times: give more of the lines around it to say which, "
                                f"or replace_all")
@@ -495,9 +532,12 @@ class FileEdit(App):
     def _change(self, instance: Instance, real: str, edited, caller: Caller, create: bool = False) -> ToolResult:
         """An agent's change to the file -- `edited(text)`, the whole of it as the agent wants it -- as its mode says
         (module doc)."""
-        mode, root = self._where(real)
-        if mode is None:                            # none has it open: on disk
-            exists = os.path.isfile(real)
+        mode, root, shown = self._where(real)
+        if mode == "handsoff":
+            raise AppError(f"{real} is {self._said_where(shown)}, set to Hands off: they are editing there. Ask "
+                           f"them first.")
+        exists = os.path.isfile(real)
+        if mode is None or (mode == "live" and not shown) or not exists:   # on disk: open nowhere, or a new file
             if not exists and not create:
                 raise AppError(f"{real}: no such file ({self.tool('write')} makes one)")
             text = _read_file(real) if exists else ""
@@ -505,11 +545,11 @@ class FileEdit(App):
             if len(wanted.encode("utf-8")) > MAX_WRITE:
                 raise AppError(f"too large: the most it writes is {MAX_WRITE} bytes")
             _write_file(real, wanted)
+            if mode == "review":                    # a new file: nothing in it to propose a change to
+                return ToolResult.text(f"Made {real}: a new file, so it is made at once, though the user's "
+                                       f"{self.CALLED} is set to Review. Tell the user you made it.")
             return ToolResult.text(f"{'Wrote' if exists else 'Made'} {real}: the user doesn't have it open, so it is "
                                    f"written on disk.")
-        if mode == "handsoff":
-            raise AppError(f"{real} is open in the user's {self.CALLED}, set to Hands off: they are editing it. Ask "
-                           f"them first.")
         docs = self.host.docs()
         how = "propose" if mode == "review" else "live"
         seen = docs.view(real, root, caller.channel if how == "propose" else None)
@@ -521,7 +561,7 @@ class FileEdit(App):
         if how == "propose":
             n = len(got["proposed"])
             return ToolResult.text(
-                f"Proposed: {real} is open in the user's {self.CALLED}, set to Review, so your change is a proposal "
+                f"Proposed: {real} is {self._said_where(shown)}, set to Review, so your change is a proposal "
                 f"there ({n} of yours in this file now). Do not wait for the user: carry on with your task. They "
                 f"review proposals in their own time, and you are told what they choose when they do. Your next edits "
                 f"build on it ({self.tool('read')} shows the file with your proposals in); until they accept, the "

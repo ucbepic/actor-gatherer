@@ -63,8 +63,9 @@ class Docs(ABC):
     @abstractmethod
     def listing(self, directory: str, root: str, since: Optional[float] = None) -> dict:
         """The folder's entries: {dir, entries: [{name, dir, size, mtime, pages (open in how many), dirty, conflicts,
-        pending (an actor's branch's changes waiting), writers: [{gatherer, channel, at, how}], waiting (the actors
-        whose changes to it wait for the reader: their branch's, a proposal, a conflict): [{gatherer, channel}]}], more},
+        pending (an actor's branch's changes waiting), proposed (actors' proposals waiting, open or not), writers:
+        [{gatherer, channel, at, how}], waiting (the actors whose changes to it wait for the reader: their branch's, a
+        proposal, a conflict): [{gatherer, channel}]}], more},
         ... `since`: the writers since then (seconds; none: the last half hour)."""
 
     @abstractmethod
@@ -104,14 +105,21 @@ class Docs(ABC):
 
     @abstractmethod
     def view(self, path: str, root: str, channel: Optional[str] = None) -> str:
-        """The open file's text -- with the proposals of the actor `channel` in, each in place of its lines."""
+        """The file's text, as the pages have it -- with the proposals of the actor `channel` in, each in place of its
+        lines. A file no page has open is opened for it (and closed again as one its last page left)."""
 
     @abstractmethod
     def put(self, path: str, root: str, seen: str, wanted: str, by: Dict[str, Any], how: str) -> dict:
         """An actor's change to the open file: `wanted`, the whole text as it wants it, made of `seen` (its `view`:
         with its own proposals in, for "propose") -- merged onto what changed meanwhile, refused where that meets
         it. `by`: who it is ({channel, gatherer, ...}, kept on what is held: a conflict's `agent`). `how`: "live" or
-        "propose" (module doc) -> {landed (changes put in), held, proposed (conflict ids), state}."""
+        "propose" (module doc) -> {landed (changes put in), held, proposed (conflict ids), state}. A file no page has
+        open is opened for it, and stays open while what it holds waits for a page to settle it."""
+
+    @abstractmethod
+    def proposals(self, root: str) -> List[dict]:
+        """The files under `root` with an actor's proposals waiting, open by a page or not: [{path, n, whose:
+        [{gatherer, channel}]}], by path."""
 
     @abstractmethod
     def edit(self, path: str, root: str, conn: str, update: bytes) -> dict:

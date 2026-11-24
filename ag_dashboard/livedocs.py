@@ -40,8 +40,10 @@ kept, the file's shown beside them, for a page to take or not.
                                "approve": its proposals) -- the actor reading the text with its own proposals in
                                (`view`), its next change building on them; accepted, written to the file
 
-A file whose document has changes no one saved stays open after its last page goes (a page opened again finds
-them); one with none is closed LINGER seconds after. Only a regular file of UTF-8 text, at most MAX_BYTES, opens,
+A file whose document has changes no one saved, or an actor's changes put in through an app waiting for the pages
+(its proposals: Room.put), stays open after its last page goes (a page opened again finds them); one with none is
+closed LINGER seconds after. An actor may put a change into a file no page has open (`view`, `put`): it is opened for
+it, and closed as one its last page left. Only a regular file of UTF-8 text, at most MAX_BYTES, opens,
 and only under the root the page names (the actor's working directory). Needs pycrdt: without it (`AVAILABLE`
 false) the page does not offer the view.
 
@@ -577,7 +579,7 @@ class Room:
         self.conflicts: Dict[str, Conflict] = {}
         self.marks: List[list] = []                 # the lines actors on branches changed: [start, end, gatherer, channel]
         self.conns: Dict[str, Conn] = {}
-        self.idle_since: Optional[float] = None     # when its last page went
+        self.idle_since: Optional[float] = time.time()   # when its last page went (or, none came yet, it opened)
         self._moves = self.text.observe(self._move)
 
     def _move(self, event) -> None:
@@ -1091,10 +1093,30 @@ class LiveDocs:
             return room.state()
 
     def view(self, path: str, root: str, channel: Optional[str] = None) -> str:
-        return self._room(path, root).view(channel)
+        return self._room(path, root, create=True).view(channel)
 
     def put(self, path: str, root: str, seen: str, wanted: str, by: dict, how: str) -> dict:
-        return self._room(path, root).put(seen, wanted, by, how)
+        return self._room(path, root, create=True).put(seen, wanted, by, how)
+
+    def proposals(self, root: str) -> List[dict]:
+        """The files under `root` with an actor's proposals waiting for the pages, open or not: [{path, n, whose:
+        [{gatherer, channel}]}], by path."""
+        top = resolve(root, root).rstrip("/") + "/"
+        out = []
+        for path, room in sorted(list(self.rooms.items())):
+            if not path.startswith(top):
+                continue
+            held = [c for c in list(room.conflicts.values()) if _put_by(c, why="approve")]
+            if held:
+                whose = sorted({(c.agent.get("gatherer") or "", c.agent.get("channel") or "") for c in held})
+                out.append({"path": path, "n": len(held), "whose": [{"gatherer": g, "channel": c} for g, c in whose]})
+        return out
+
+    def _proposed(self, path: str, folder: bool) -> int:
+        """How many proposals wait in the file `path` (a real path) -- or, a folder, in the files under it."""
+        top = path.rstrip("/") + "/"
+        return sum(_put_by(c, why="approve") for p, room in list(self.rooms.items())
+                   if (p.startswith(top) if folder else p == path) for c in list(room.conflicts.values()))
 
     def edit(self, path: str, root: str, cid: str, update: bytes) -> dict:
         return self._room(path, root).edit(cid, update)
@@ -1118,8 +1140,9 @@ class LiveDocs:
 
     def listing(self, directory: str, root: str, since: Optional[float] = None) -> dict:
         """The directory's entries -- folders first, then files, by name -- each with whether pages edit it now,
-        whether it has changes no one saved, the actors that changed it since `since` (`writers`; none: in the last
-        RECENT seconds), and the actors whose
+        whether it has changes no one saved, how many actors' proposals wait in it (`proposed`: a folder's, in the
+        files in it), the actors that changed it since `since` (`writers`; none: in the last RECENT seconds), and the
+        actors whose
         changes to it wait for the reader (`waiting`: [{gatherer, channel}]; `_waiting`) -- a folder's: of the files in
         it, all the way down."""
         real = resolve(directory, root)
@@ -1140,6 +1163,7 @@ class LiveDocs:
                     entries.append({"name": entry.name, "dir": is_dir, "size": st.st_size, "mtime": st.st_mtime,
                                     "pages": len(room.conns) if room else 0, "dirty": bool(room and room.dirty),
                                     "conflicts": sum(c.agent is None for c in room.conflicts.values()) if room else 0,
+                                    "proposed": self._proposed(os.path.realpath(entry.path), is_dir),
                                     "pending": self.branches.pending(os.path.join(real, entry.name), is_dir)
                                     if self.branches is not None else 0})
         except (FileNotFoundError, NotADirectoryError):
@@ -1194,7 +1218,8 @@ class LiveDocs:
                 idle = None if room.idle_since is None else time.time() - room.idle_since
                 if idle is not None and idle > ZONE_GRACE and room.zone:
                     room.zone = []                  # its pages closed it
-                if idle is not None and not room.dirty and idle > LINGER:
+                held = any(_put_by(c) for c in room.conflicts.values())   # an actor's, waiting for the pages
+                if idle is not None and not room.dirty and not held and idle > LINGER:
                     self.rooms.pop(real, None)
 
     def close(self) -> None:
