@@ -4,9 +4,10 @@ checkout (latexmk on the main .tex, guessed until one is set), set by the user i
 tools (or `ag preview`), run by either, and what it makes. Its own panel requests, beside FileEdit's:
 
     preview/about, preview/files/<token>/<rel>, preview/synctex     the project's preview and what it made
-    overleaf, overleaf/signin, signout, cancel, link, changes       who changed the paper on Overleaf (overleaf.py):
-                                                                    the user's sign-in, the instance's project, and
-                                                                    a file's lines credited to who changed them there
+    overleaf, overleaf/signin, signout, cancel, link, files,        who changed the paper on Overleaf (overleaf.py):
+    changes                                                         the user's sign-in, the instance's project, which
+                                                                    files each person changed, and a file's lines
+                                                                    credited to who changed them there
 
 The preview's settings are its events, each with the repository it is for (`key`), shared by the gatherer's LaTeX
 editors open:
@@ -305,6 +306,8 @@ class LatexApp(FileEdit):
                 "project": pid, "name": name, "root": instance.folder if pid else "", "by": USER}}])
         if method == "GET" and path == "changes":
             return self._overleaf_changes(instance, query)
+        if method == "GET" and path == "files":
+            return self._overleaf_files(instance, query)
         if path not in ("", "link"):
             raise AppError(f"overleaf/{path}: no such request", 404)
         got = self.overleaf.view()
@@ -323,6 +326,21 @@ class LatexApp(FileEdit):
             return self.overleaf.projects()
         except (O.SignedOut, O.OverleafError):
             return []
+
+    def _overleaf_files(self, instance: Instance, query: Dict[str, str]) -> dict:
+        """Who changed which of the project's files on Overleaf since `since` (seconds): overleaf.who_changed's."""
+        try:
+            since = float(query.get("since") or 0)
+            project = self.overleaf_project(instance)
+            if project is None:
+                return {"files": {}, "people": [], "project": None}
+            me = (self.overleaf.kept() or {}).get("user_id", "")
+            return {**O.who_changed(self.history, project["id"], os.path.realpath(project["root"]), me, since),
+                    "project": project}
+        except O.SignedOut as exc:
+            return {"files": {}, "people": [], "signed_out": str(exc)}
+        except (O.OverleafError, ValueError) as exc:
+            return {"files": {}, "people": [], "error": str(exc)}
 
     def _overleaf_changes(self, instance: Instance, query: Dict[str, str]) -> dict:
         """The file's lines changed on Overleaf since `since` (seconds), by others than the user's own Dropbox, credited:

@@ -4,7 +4,7 @@
 // folders first, with a twistie, an icon of its kind, guides down the levels and what actors and pages do to each;
 // moved through with the keys (edTreeKey), and a menu on a right-click (edMenu).
 import { agApp, ago, el, ICONS, MAC, plural, post, state, statusOf, strokeIcon } from "./page.js";
-import { ed, edAvatars, edBase, edDir, edGo, edJoin, edList, edOpen, edTilde, edTreeWriters,
+import { ed, edAddedMarks, edAvatars, edBase, edDir, edGo, edJoin, edList, edOpen, edTilde, edTreeWriters,
   edUnder, edWaiting, edWhoName, edWriters } from "./editor.js";
 import { edGoClose, edGoto, edNative, edNativeName, edNote } from "./editor-open.js";
 import { edSince, edStartOpen } from "./recent.js";
@@ -406,7 +406,7 @@ export function edTree() {
         rows.push(el("button", { ...at, class: "ed-row dir" + dim + flash, "data-dir": "1", title: edTilde(p), "aria-expanded": open ? "true" : "false",
           onclick: () => edToggle(p) },
           el("span", { class: "tw" + (open ? " open" : "") }, strokeIcon(ICONS.chevron, 12)), edDirIcon(open), el("span", { class: "n", text: e.name }),
-          open ? null : edAvatars(writers, "files in it"), open ? null : edWaiting(e.pending)));
+          open ? null : edAvatars(writers, "files in it"), ...(open ? [] : edAddedMarks(p, true)), open ? null : edWaiting(e.pending)));
         if (open) walk(p, depth + 1);
         continue;
       }
@@ -416,7 +416,7 @@ export function edTree() {
         title: [edTilde(p), fresh ? `Changed ${ago(e.mtime)}` : "", e.pages ? `Open in ${plural(e.pages, "editor")}` : "",
           e.dirty ? "Unsaved changes" : ""].filter(Boolean).join("\n"), onclick: () => edOpen(p) },
         el("span", { class: "tw" }), edFileIcon(e.name), el("span", { class: "n", text: e.name }),
-        edAvatars(writers, "it"),
+        edAvatars(writers, "it"), ...edAddedMarks(p, false),
         fresh ? el("span", { class: "mk fresh", title: "Changed in the last minute" }) : null,
         e.conflicts ? el("span", { class: "mk cf", title: `${plural(e.conflicts, "conflict")} with the file on disk`, text: "!" }) : null,
         edWaiting(e.pending),

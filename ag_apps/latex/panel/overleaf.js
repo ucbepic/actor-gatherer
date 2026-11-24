@@ -5,17 +5,22 @@
 // first line, who and when on hover. Its backend reads Overleaf's history as the reader (overleaf.py), once they have
 // signed in from here: a Chrome window of its own opens on Overleaf's sign-in, and closes once they are in.
 //
-// The header's "Overleaf" button: who changed the file there in the window (recent.js's: the last 30 min, …), the
-// people's initials; pressed, its menu -- sign in (or again, once it lapsed), sign out, the project (the folder's own, or
-// one linked by its link). The lines are asked for every OL_EVERY ms while a file is open and a project is known.
-import { agApp, ago, el, get, HUE_MAIN, post } from "/_ag/lib/fileedit/page.js";
-import { ed, edHead } from "/_ag/lib/fileedit/editor.js";
+// Who changed the project there in the window (recent.js's: the last 30 min, …), each by their initials, as actors are
+// shown by their avatars: in the header, beside the actors' (everyone who changed any of its files), and on the tree's
+// rows (a file they changed, a closed folder with one in it). Their initials pressed: their latest change -- in the
+// project, the file or the folder -- opened, its lines selected. The header's "Overleaf" button, pressed: its menu --
+// sign in (or again, once it lapsed), sign out, the project (the folder's own, or one linked by its link). Who changed
+// which file, and the open file's lines, are asked for every OL_EVERY ms while a project is known.
+import { agApp, ago, el, get, HUE_MAIN, paneNote, post } from "/_ag/lib/fileedit/page.js";
+import { ed, edHead, edRel, edShowFile, edUnder } from "/_ag/lib/fileedit/editor.js";
+import { edTree } from "/_ag/lib/fileedit/editor-tree.js";
 import { edSince, edWindowSaid } from "/_ag/lib/fileedit/recent.js";
 
 const OL_EVERY = 5000;           // ms between asks for the file open's lines, while it is open
 const OL_SIGNING_EVERY = 1500;   // ms between looks at the sign-in, while its window is open
 
-ed.ol = { view: null, lines: [], people: [], path: "", err: "", pop: null, timer: 0, asking: false };
+ed.ol = { view: null, lines: [], people: [], path: "", err: "", pop: null, timer: 0, asking: false,
+  files: {}, everyone: [], filesSig: "", goto: null };   // who changed which file (overleaf/files); a latest change to go to
 
 const hues = Object.values(HUE_MAIN);
 // A person's colour: always the same one for them.
@@ -35,7 +40,22 @@ async function olLoad() {
   const v = ed.ol.view;
   clearTimeout(ed.ol.signing);
   if (v && v.signing && v.signing.state === "open") ed.ol.signing = setTimeout(olLoad, OL_SIGNING_EVERY);
-  edHead(); olDrawPop(); olAsk(true);
+  edHead(); olDrawPop(); olAsk(true); olFiles();
+}
+
+// Who changed which of the project's files in the window (GET overleaf/files): the tree and the header drawn again
+// when it changed.
+async function olFiles() {
+  const v = ed.ol.view;
+  let got = { files: {}, people: [] };
+  if (v && v.project) {
+    try { got = await get(`/api/overleaf/files?${new URLSearchParams({ since: String(edSince()) })}`); }
+    catch (e) { ed.ol.err = e.message; return; }
+  }
+  const sig = JSON.stringify([got.files, got.people.map((p) => [p.id, p.at])]);
+  if (sig === ed.ol.filesSig) return;
+  ed.ol.filesSig = sig; ed.ol.files = got.files || {}; ed.ol.everyone = got.people || [];
+  ed.treeSig = ""; edTree(); edHead();
 }
 
 // The file open's lines changed on Overleaf (GET overleaf/changes), marked.
@@ -51,6 +71,7 @@ async function olAsk(force = false) {
     else { ed.ol.lines = got.lines || []; ed.ol.people = got.people || []; }
     ed.ol.err = got.error || ""; ed.ol.path = s.path;
     olMark(s, ed.ol.lines);
+    olGoDue(s);
     edHead();
   } catch (e) { ed.ol.err = e.message; }
   finally { ed.ol.asking = false; }
@@ -70,6 +91,7 @@ function olMark(s, lines) {
     if (n) found.push([n, l]);
   }
   found.sort((a, b) => a[0] - b[0]);
+  s.ol.found = found;
   const sig = JSON.stringify(found.map(([n, l]) => [n, l.at, l.who.map((p) => p.id || p.name)]));
   if (sig === s.ol.sig) return;
   s.ol.sig = sig;
@@ -85,6 +107,36 @@ function olMark(s, lines) {
   }
   v.dispatch({ effects: s.ol.set.of(A.Decoration.set(out, true)) });
 }
+// ---- a person's latest change, gone to
+const olKey = (p) => p.id || p.name;
+// Their latest change under `under` (a file, a folder; null: the whole project): its file opened, and -- once its lines
+// are in (olAsk) -- the first line of it selected.
+function olGoTo(p, under = null) {
+  let best = null;
+  for (const [path, by] of Object.entries(ed.ol.files)) {
+    if (under && !edUnder(path, under)) continue;
+    const mine = by.find((x) => olKey(x) === olKey(p));
+    if (mine && (!best || mine.at > best.at)) best = { path, at: mine.at };
+  }
+  if (!best) { paneNote(`${p.name} changed nothing here on Overleaf in the last ${edWindowSaid()}`); return; }
+  ed.ol.goto = { path: best.path, key: olKey(p), name: p.name };
+  if (ed.s && ed.s.path === best.path && ed.ol.path === best.path) olGoDue(ed.s);
+  else edShowFile(best.path);                      // its lines asked for as it opens (olParts' viewed)
+}
+// The change to go to, if its file's lines are in: the first line of their latest one, selected.
+function olGoDue(s) {
+  const g = ed.ol.goto;
+  if (!g || !s || s.path !== g.path || !s.ol || ed.ol.path !== g.path) return;
+  ed.ol.goto = null;
+  let at = -1, line = 0;
+  for (const [n, l] of s.ol.found || []) {
+    if (!l.who.some((x) => olKey(x) === g.key)) continue;
+    if (l.at > at + 1) { at = l.at; line = n; }          // the latest; of one change's lines, its first
+  }
+  if (line) edShowFile(g.path, line);
+  else paneNote(`${g.name} changed ${edRel(g.path)} on Overleaf, but not on lines as they are here (not synced yet, or only deleted)`);
+}
+
 // "added “three”, “components”": a line's pieces, each quoted, the first few.
 const olPieces = (did, list) => !list || !list.length ? ""
   : `${did} ${list.slice(0, 3).map((t) => `“${t.length > 60 ? t.slice(0, 60) + "…" : t}”`).join(", ")}${list.length > 3 ? ` and ${list.length - 3} more` : ""}`;
@@ -98,6 +150,32 @@ function olChipWidget(A) {
   };
 }
 const olChip = (p) => el("span", { class: "ed-ol-who", style: `--who: ${olColor(p)}`, text: olInitials(p) });
+// A person's initials, pressed: their latest change under `under` (olGoTo).
+function olChipButton(p, under, what) {
+  return el("button", { type: "button", class: "ed-ol-who", style: `--who: ${olColor(p)}`, "aria-label": `${p.name}'s latest change`,
+    title: `${p.name} changed ${what} on Overleaf, latest ${ago(p.at)} · click to go to it`,
+    onmousedown: (ev) => ev.stopPropagation(),
+    onclick: (ev) => { ev.preventDefault(); ev.stopPropagation(); olGoTo(p, under); } }, olInitials(p));
+}
+// Beside the header's actors' avatars: everyone who changed the project in the window, the latest first.
+function olWho(x) {
+  const v = ed.ol.view, all = ed.ol.everyone;
+  if (!v || !v.project || !all.length || (x && x !== ed.s)) return null;
+  return el("span", { class: "ed-ol-people", title: `Changed on Overleaf in the last ${edWindowSaid()}` },
+    ...all.slice(0, 5).map((p) => olChipButton(p, null, `${p.files} file${p.files === 1 ? "" : "s"} (latest ${edRel(p.path)})`)),
+    all.length > 5 ? el("span", { class: "n", text: `+${all.length - 5}` }) : null);
+}
+// On a tree's row: who changed the file, or (a closed folder's) one in it.
+function olRowMarks(path, dir) {
+  const by = new Map();
+  for (const [p, people] of Object.entries(ed.ol.files)) {
+    if (dir ? !edUnder(p, path) : p !== path) continue;
+    for (const x of people) if (!by.has(olKey(x)) || by.get(olKey(x)).at < x.at) by.set(olKey(x), x);
+  }
+  if (!by.size) return null;
+  const people = [...by.values()].sort((a, b) => b.at - a.at);
+  return el("span", { class: "ed-ol-row" }, ...people.slice(0, 3).map((p) => olChipButton(p, path, dir ? "files in it" : "it")));
+}
 
 // Its decorations, in each text file's view (edAdd's view).
 function olField(s) {
@@ -124,12 +202,10 @@ function olButton(x) {
   if (!v.signed_in) return el("button", { type: "button", class: "ed-ol-btn want", onclick: (ev) => olOpenPop(ev.currentTarget),
     title: v.signed_out ? "Your Overleaf sign-in lapsed. Sign in again to see who changed lines there." : "Sign in to Overleaf to see who changed lines there" },
     v.signing && v.signing.state === "open" ? "Signing in to Overleaf…" : v.signed_out ? "Overleaf: sign in again" : "Sign in to Overleaf");
-  const people = ed.ol.path === (ed.s && ed.s.path) ? ed.ol.people : [];
   return el("button", { type: "button", class: "ed-ol-btn", onclick: (ev) => olOpenPop(ev.currentTarget),
     title: !v.project ? "No Overleaf project for this folder. Click to link one."
-      : people.length ? `Changed on Overleaf in the last ${edWindowSaid()}: ${people.map((p) => `${p.name} (${p.lines} line${p.lines === 1 ? "" : "s"}, ${ago(p.at)})`).join("; ")}`
-      : `No one else changed this file on Overleaf in the last ${edWindowSaid()}` },
-    "Overleaf", ...people.slice(0, 4).map(olChip));
+      : `Overleaf project: ${v.project.name}. Who changed it there in the last ${edWindowSaid()} is shown by their initials.` },
+    "Overleaf");
 }
 function olOpenPop(anchor) {
   if (ed.ol.pop) return olClosePop();
@@ -199,10 +275,11 @@ function olDrawPop() {
 }
 
 // Its parts, for latex.js to give to edAdd; started once the panel is (olStart).
-export const olParts = { head: olButton, view: olField, viewed: (s) => { s.ol.sig = ""; olMark(s, ed.ol.path === s.path ? ed.ol.lines : []); olAsk(true); } };
+export const olParts = { head: olButton, who: olWho, marks: olRowMarks, view: olField,
+  viewed: (s) => { s.ol.sig = ""; olMark(s, ed.ol.path === s.path ? ed.ol.lines : []); olAsk(true); } };
 export function olStart() {
   if (!agApp) return;
   olLoad();
   clearInterval(ed.ol.timer);
-  ed.ol.timer = setInterval(() => olAsk(), OL_EVERY);
+  ed.ol.timer = setInterval(() => { olAsk(); if (!document.hidden) olFiles(); }, OL_EVERY);
 }

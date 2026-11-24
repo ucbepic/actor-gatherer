@@ -166,6 +166,28 @@ class AccountTest(SiteBase, unittest.TestCase):
         self.assertEqual(O.changes(h, "c" * 24, root, os.path.join(root, "b.tex"), "x\n", ME, NOW - 3600)["lines"], [])
 
 
+class WhoChangedTest(SiteBase, unittest.TestCase):
+    """Who changed which file, from the updates alone."""
+
+    def test_each_person_s_files_and_latest_the_user_s_own_dropbox_left_out(self):
+        self.site()
+        both = meta(CO, NOW - 30, "dropbox")
+        both["users"].append({"id": ME, "first_name": "Sam", "last_name": "Lee", "email": "me@x.edu"})
+        _Overleaf.updates = [
+            {"fromV": 9, "toV": 10, "pathnames": ["main.tex", "sec/b.tex"], "meta": both},        # both, from Dropbox
+            {"fromV": 8, "toV": 9, "pathnames": ["sec/a.tex"], "meta": meta(ME, NOW - 40)},       # the user, on the site
+            {"fromV": 7, "toV": 8, "pathnames": ["sec/a.tex"], "meta": meta(CO, NOW - 60)},
+            {"fromV": 5, "toV": 7, "pathnames": ["sec/c.tex"], "meta": meta(ME, NOW - 120, "dropbox")},   # from here
+            {"fromV": 4, "toV": 5, "pathnames": ["old.tex"], "meta": meta(CO, NOW - 9000)}]               # long ago
+        account = O.Account(tempfile.mkdtemp())
+        account._signed_in([{"name": "overleaf_session2", "value": "good"}])
+        got = O.who_changed(O.History(account), "c" * 24, "/p", ME, NOW - 3600)
+        self.assertEqual({path: [p["name"] for p in people] for path, people in got["files"].items()}, {
+            "/p/main.tex": ["Pat Lee"], "/p/sec/b.tex": ["Pat Lee"], "/p/sec/a.tex": ["Sam Lee", "Pat Lee"]})
+        self.assertEqual([(p["name"], p["path"], p["files"]) for p in got["people"]],
+                         [("Pat Lee", "/p/main.tex", 3), ("Sam Lee", "/p/sec/a.tex", 1)])
+
+
 class RoutesTest(SiteBase, ServedBase):
     """The panel's routes, through the dashboard."""
 
@@ -196,6 +218,9 @@ class RoutesTest(SiteBase, ServedBase):
             fh.write("one\ntwo\nthree\n")
         got = self.ask(f"overleaf/changes?{urllib.parse.urlencode({'path': path, 'since': NOW - 3600})}")
         self.assertEqual([(l["line"], l["text"], l["who"][0]["name"]) for l in got["lines"]], [(2, "two", "Pat Lee")])
+        got = self.ask(f"overleaf/files?{urllib.parse.urlencode({'since': NOW - 3600})}")
+        self.assertEqual(list(got["files"]), [os.path.join(os.path.realpath(self.repo), "sec", "a.tex")])
+        self.assertEqual([p["name"] for p in got["people"]], ["Pat Lee"])
         self.assertEqual(self.ask("overleaf/link", {"url": ""})["project"], None)    # back to the folder's own: none
         app.overleaf.sign_out()
         got = self.ask(f"overleaf/changes?{urllib.parse.urlencode({'path': path, 'since': 0})}")

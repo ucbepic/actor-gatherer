@@ -38,3 +38,10 @@
 .ed-olpop .ed-ol-url { flex: 1; min-width: 0; font: inherit; padding: 3px 6px; border: 1px solid var(--ring); border-radius: 5px;
   background: var(--page); color: var(--ink); }
 .ed-olpop .ed-ol-err { color: var(--bad, #ef4444); }
+/* their initials as a button (the header's, a tree row's): pressed, their latest change */
+button.ed-ol-who { border: 0; cursor: pointer; }
+button.ed-ol-who:hover, button.ed-ol-who:focus-visible { box-shadow: 0 0 0 2px var(--axis); outline: none; }
+.ed-ol-people { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.ed-ol-people .n { font-size: 11px; color: var(--muted); }
+.ed-ol-row { display: inline-flex; gap: 2px; flex: none; margin-left: 4px; }
+.ed-ol-row .ed-ol-who { min-width: 15px; height: 15px; font-size: 8px; }

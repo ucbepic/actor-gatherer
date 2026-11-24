@@ -357,3 +357,36 @@ def changes(history: History, project: str, root: str, path: str, text: str, me:
             got = people.setdefault(p["id"] or p["name"], {**p, "at": 0, "lines": 0})
             got["at"], got["lines"] = max(got["at"], line["at"]), got["lines"] + 1
     return {"lines": lines, "people": sorted(people.values(), key=lambda p: -p["at"]), "version": head}
+
+
+def who_changed(history: History, project: str, root: str, me: str, since: float) -> dict:
+    """Who changed which of the project's files on Overleaf since `since`, from its updates alone (no diffs): {files:
+    {path here: [{...person, at}] the latest first}, people: [{...person, at, path (the file of their latest change),
+    files (how many)}] the latest first} -- the user themself only for what they did on overleaf.com, not through their
+    own Dropbox (from this machine). An update several people made counts for each of them on each of its files."""
+    files: Dict[str, Dict[str, dict]] = {}
+    for u in history.updates(project, since):
+        meta = u.get("meta") or {}
+        end = (meta.get("end_ts") or 0) / 1000
+        if end < since:
+            continue
+        here = (meta.get("origin") or {}).get("kind") == "dropbox"
+        users = [x for x in meta.get("users") or [] if isinstance(x, dict)] or [{}]
+        for user in users:
+            if here and user.get("id") == me:
+                continue
+            p = person(user)
+            for pathname in u.get("pathnames") or []:
+                got = files.setdefault(os.path.join(root, pathname), {})
+                key = p["id"] or p["name"]
+                if key not in got or got[key]["at"] < end:
+                    got[key] = {**p, "at": end}
+    people: Dict[str, dict] = {}
+    for path, by in files.items():
+        for key, p in by.items():
+            got = people.setdefault(key, {**p, "at": 0, "path": path, "files": 0})
+            got["files"] += 1
+            if p["at"] > got["at"]:
+                got["at"], got["path"] = p["at"], path
+    return {"files": {path: sorted(by.values(), key=lambda p: -p["at"]) for path, by in files.items()},
+            "people": sorted(people.values(), key=lambda p: -p["at"])}

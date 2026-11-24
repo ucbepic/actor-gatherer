@@ -65,15 +65,20 @@ export const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root +
 //   view(s)     -> CodeMirror extensions for a text file's view, as it is made
 //   viewed(s)   its view, made
 //   markup      {test(path), bold, italic, off(doc, from, to, k)}: bold and italic in a kind of file (edMarkupKeys)
+//   who(x)      -> who else changed things lately (not actors: the LaTeX editor's Overleaf co-authors), beside the
+//               header's actors' avatars (x: as head's)
+//   marks(path, dir)  -> the same, on a file's row of the tree, or a closed folder's (the app sets ed.treeSig = "" and
+//               draws the tree again when they change)
 //   message(m)  a message from its backend (start.js)
 //   plain       {open, edited, check, save, due, gone, head}: its text files edited plain, in place of a live document
 //               -- read whole, edited in this page alone, saved whole (plain.js's, the Files app's); one at most
 export const edAdded = { head: [], lead: [], work: [], opening: [], keys: [], down: [], view: [], viewed: [], markup: [],
-  message: [], plain: [] };
+  message: [], plain: [], who: [], marks: [] };
 export function edAdd(parts) { for (const [k, f] of Object.entries(parts)) edAdded[k].push(f); }
 const edAddedParts = (kind, x) => edAdded[kind].flatMap((f) => [].concat(f(x) || [])).filter(Boolean);
 export const edAddedHead = (x) => edAddedParts("head", x);
 export const edAddedLead = (x) => edAddedParts("lead", x);
+export const edAddedMarks = (path, dir) => edAdded.marks.flatMap((f) => [].concat(f(path, dir) || [])).filter(Boolean);
 // The part its text files are edited plain with, if the app gave one: no live document, no mode, no conflict zone, no
 // actors' branches to approve. A file opened so has it as its session's `plain` (ed.s.plain).
 const edPlainPart = () => edAdded.plain[0] || null;
@@ -1372,7 +1377,7 @@ export function edHead() {
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
   if (!ed.file) {
     edHeadPut([...edAddedLead(null), el("span", { class: "ed-hint", text: "Pick a file to open it." }),
-      el("span", { class: "grow", style: "flex: 1" }), edModePick(), edOnDiskPick(), ...edAddedHead(null)].filter(Boolean));
+      ...edAddedParts("who", null), el("span", { class: "grow", style: "flex: 1" }), edModePick(), edOnDiskPick(), ...edAddedHead(null)].filter(Boolean));
     return;
   }
   if (s && s.plain) return edHeadPut(s.plain.head(s));
@@ -1410,7 +1415,7 @@ export function edHead() {
     np > 1 && !nb ? el("span", { class: "ed-all" },
       el("button", { type: "button", title: "Accept all proposed changes and write them to disk. Their actors are told.", onclick: () => edSettleAll(s, "theirs") }, "Accept all"),
       el("button", { type: "button", title: "Reject all proposed changes. Their actors are told.", onclick: () => edSettleAll(s, "mine") }, "Reject all")) : null,
-    zoned, by, changed,
+    zoned, by, ...edAddedParts("who", s), changed,
     s && s.note ? el("span", { class: "ed-status bad", text: s.note }) : null,
     el("span", { class: "ed-people" },
       ...others.map(([, v]) => el("span", { class: "ed-person", style: `--who: ${v.user.color}`, title: `${v.user.name} has it open`, text: v.user.name })),
