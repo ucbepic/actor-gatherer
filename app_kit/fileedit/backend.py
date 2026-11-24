@@ -13,6 +13,7 @@ with a status, refused):
                                                                     saved -- refused (409) if it changed on disk since
     edit/settle_all                                                 an actor's changes held there, all taken or not
     mode                                                            its mode: GET it, POST {mode}
+    on_disk                                                         how it takes changes on disk: GET it, POST {on_disk}
     branches, branches/approve, branches/decide                     the actors on branches of the project shown
     files/changes                                                   an actor's changes to the file open
 
@@ -37,14 +38,22 @@ edit the same files):
     handsoff    refused: the user is editing it, the agent to ask them first
 
 The mode is only of what its agents change through its tools. Whatever else changes the file on disk -- a shell
-command, another harness's edit tool, a sync (Dropbox's, Overleaf's), a co-author -- is merged in, in every mode, but
-for the lines the user is editing (the conflict zone): those are held for them, in a box (docs.open "merge"). The
-agent that made a change held is told what the user chose (a context_stream message, `_told_settled`); one attached to
+command, another harness's edit tool, a sync (Dropbox's, Overleaf's), a co-author -- is taken as the instance's ON_DISK
+says, whatever the mode (the user, 2026-11-24: a selectable property), the strictest of those with the file open
+counting (docs.open / docs.hold):
+
+    zone        merged in, but for the lines the user is editing (the conflict zone): held for them, in a box (the
+                default)
+    ask         each change asked about, not merged in: Reject puts the user's lines back on the file
+    never       merged in, the conflict zone too; lines the user changed differently, and did not save, take the file's
+
+The agent that made a change held is told what the user chose (a context_stream message, `_told_settled`); one attached to
 an instance that has used its file tools, when its mode changes (another learns it from its tools' answers, or the
 guard, when it next changes a file: a message to an agent that never started would list it as one with a
 conversation).
 
     <app>.mode             {mode, by}: the instance's mode (live until one is set)
+    <app>.on_disk          {on_disk, by}: how the instance takes the files' changes on disk (zone until one is set)
 """
 
 import base64
@@ -63,6 +72,7 @@ from . import chooser
 USER = ""                   # `by` of what the user did, in the panel
 MODES = ("live", "review", "handsoff")      # strictest last
 MODE_SAID = {"live": "Live", "review": "Review", "handsoff": "Hands off"}
+ON_DISK = ("never", "zone", "ask")          # how changes on disk are taken (livedocs.HOLDS), strictest last
 READ_LINES = 2000                           # the most lines <app>_read gives at once
 MAX_WRITE = 2_000_000                       # the largest file its tools write
 TOLD_TEXT = 1500                            # the most characters of lines the user wrote in that an agent is told
@@ -113,6 +123,7 @@ class FileEdit(App):
         super().start(host)
         self.lock = threading.Lock()
         self.modes: Dict[str, str] = {}                          # instance id -> its mode, as its events say
+        self.on_disks: Dict[str, str] = {}                       # instance id -> how it takes changes on disk, likewise
         self.used: set = set()                                   # the agents that used its file tools (channels)
         with _lock:
             _apps.add(self)
@@ -150,6 +161,12 @@ class FileEdit(App):
                 if method == "POST":
                     self.set_mode(instance, str(_body(body).get("mode") or ""))
                 return Response.json({"mode": self.mode(instance), "modes": list(MODES)})
+            if path == "on_disk":
+                if instance is None:
+                    raise AppError("which one? (its gatherer and instance)", 404)
+                if method == "POST":
+                    self.set_on_disk(instance, str(_body(body).get("on_disk") or ""))
+                return Response.json({"on_disk": self.on_disk(instance), "choices": list(ON_DISK)})
             if path in ("edit/settle", "edit/settle_all") and method == "POST":
                 return Response.json(self._settle(path, _body(body)))
             if method == "GET":
@@ -243,12 +260,13 @@ class FileEdit(App):
 
     def _stream(self, instance: Optional[Instance], q: Dict[str, str]) -> Response:
         """The file opened by the page (app_kit.docs's `open`), its events until it goes; `failed` if it cannot be.
-        Kept as one of its instance's pages while it is open. The file's changes on disk are merged in, whatever the
-        mode, but for the conflict zone's lines (the package's doc)."""
+        Kept as one of its instance's pages while it is open: its changes on disk taken as the instance's ON_DISK
+        says."""
         client, path, root, conn = q.get("client", ""), q.get("path", ""), q.get("root", ""), q.get("conn", "")
         docs = self.host.docs()
         try:
-            joined = docs.open(path, root, conn, int(client) if client.isdigit() else 0, "merge")
+            hold = self.on_disk(instance) if instance is not None else "zone"
+            joined = docs.open(path, root, conn, int(client) if client.isdigit() else 0, hold)
             real = docs.resolve(path, root)
         except AppError as exc:
             said = [[("failed", {"error": str(exc)})]]
@@ -310,6 +328,44 @@ class FileEdit(App):
                                                            f"The user set the {self.CALLED} to {said}")], channel)
             except AppError:
                 pass
+
+    # -- how it takes changes on disk
+
+    def on_disk(self, instance: Instance) -> str:
+        """How the instance takes its files' changes on disk (ON_DISK), as its events say ("zone" until one is set)."""
+        with self.lock:
+            if instance.id in self.on_disks:
+                return self.on_disks[instance.id]
+        got = self.host.read(instance, [f"{self.name}.on_disk"], limit=5000)
+        how = next((e["payload"].get("on_disk") for e in reversed(got)
+                    if (e["payload"] or {}).get("on_disk") in ON_DISK), "zone")
+        with self.lock:
+            self.on_disks[instance.id] = how
+        return how
+
+    def set_on_disk(self, instance: Instance, how: str, by: str = USER) -> None:
+        """How the instance takes changes on disk, set: kept as its event, its pages' hold on their files changed to
+        it, its panels told."""
+        if how not in ON_DISK:
+            raise AppError(f"on_disk {how!r}: {', '.join(ON_DISK)}")
+        if how == self.on_disk(instance):
+            return
+        with self.lock:
+            self.on_disks[instance.id] = how
+        with _lock:
+            mine = [(real, conn, root) for real, got in _pages.items() for conn, (app, i, root) in got.items()
+                    if app is self and i == instance.id]
+        self.host.insert(instance, [{"type": f"{self.name}.on_disk", "payload": {"on_disk": how, "by": by}}])
+        docs = self.host.docs()
+        for real, conn, root in mine:
+            try:
+                docs.hold(real, root, conn, how)
+            except AppError:
+                pass                                # closed meanwhile
+        try:
+            self.host.tell_panel(instance, {"on_disk": how})
+        except AppError:
+            pass
 
     def _stream_name(self) -> str:
         """What its agents' messages say they come from: its label."""

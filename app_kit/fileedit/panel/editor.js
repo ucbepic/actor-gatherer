@@ -41,6 +41,7 @@ export const ed = { root: "", home: "", lists: new Map(), open: new Set(), file:
   nav: null, fold: null, cursor: null, revealing: null, flashFolder: null, flash: null, newItem: null, pick: null, menu: null, find: null,   // editor-tree.js's
   choose: null, choosing: null, go: null,                                                                     // editor-open.js's
   mode: "live", modePick: null,                                                    // how an agent's change lands, its menu (edModePick)
+  onDisk: "zone", onDiskPick: null,                                                // how a change on disk is taken, its menu (edOnDiskPick)
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })(),   // on unless turned off
   wrap: (() => { try { return localStorage.getItem(ED_WRAP_KEY) !== "0"; } catch (e) { return true; } })() };  // long lines wrapped: likewise
 const edB64 = (u8) => { let t = ""; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
@@ -743,7 +744,7 @@ function edConflictWidget(A) {
           pick("theirs", "Accept", c.theirs ? "Replace these lines with its lines (written to disk)" : "Delete these lines"),
           pick("mine", "Reject", "Keep these lines. The actor is told."),
           kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, with its lines after them") : null];
-      } else if (c.asked) {                          // a page holding the file "ask" (app_kit.docs): none of FileEdit's
+      } else if (c.asked) {                          // On disk: Always ask -- the file changed on disk, outside the editor
         const nm = name || "Something";
         what = { rewrote: `${nm} changed these lines on disk`, deleted: `${nm} deleted these lines on disk`, added: `${nm} added lines here on disk` }[kind];
         picks = [
@@ -872,12 +873,17 @@ async function edSettleAll(s, take) {
 }
 // How an agent's change to a file open here lands, for the whole Editor (its backend's MODES): Live, at once (lines
 // you are editing asked about); Review, each change a proposal to accept or reject; Hands off, refused. Its agents are
-// told when it changes. A change made around its tools (a shell command's, a sync's) is merged in, in every mode, but
-// for the lines you are editing.
+// told when it changes. A change made around its tools (a shell command's, a sync's) is taken as ED_ON_DISK says.
 const ED_MODES = [
   ["live", "Live", "Agents' changes apply as they come, in their colour, and are saved. You're asked only about lines you're editing."],
-  ["review", "Review", "Each agent change is a proposal to accept or reject, and reaches the file only when you accept. Changes made outside the editor, such as a sync or a shell command, are merged in, except to lines you're editing."],
-  ["handsoff", "Hands off", "Agents can't change files open here and are told to ask you first. Changes made outside the editor are merged in, except to lines you're editing."]];
+  ["review", "Review", "Each agent change is a proposal to accept or reject, and reaches the file only when you accept."],
+  ["handsoff", "Hands off", "Agents can't change files open here and are told to ask you first."]];
+// How a change made outside the editor -- a sync's (Dropbox, Overleaf), a shell command's, another program's -- is
+// taken, for the whole Editor (its backend's ON_DISK): asked about everywhere, in the conflict zone only, or never.
+const ED_ON_DISK = [
+  ["ask", "Always ask", "Each change made outside the editor is shown for you to accept or reject."],
+  ["zone", "Ask in conflict zone", "Changes made outside the editor apply as they come, except to lines you've edited since opening the file: those are shown for you to settle."],
+  ["never", "Never ask", "Changes made outside the editor always apply, even to lines you're editing. Lines you haven't saved yet take the file's version."]];
 // Its menu: one, made once and kept from one header to the next (edHeadPut) -- the header is drawn again every ED_TICK
 // and at each edit, and a menu taken out of the page then closes under the reader as they pick.
 function edModePick() {
@@ -890,6 +896,26 @@ function edModePick() {
   const select = ed.modePick.querySelector("select");
   if (select.value !== now[0]) select.value = now[0];
   return ed.modePick;
+}
+// Its menu, beside the mode's: made once and kept, as the mode's is.
+function edOnDiskPick() {
+  if (edPlainPart()) return null;                    // edited plain: changes on disk are reloaded or kept (plain.js)
+  const now = ED_ON_DISK.find((m) => m[0] === ed.onDisk) || ED_ON_DISK[1];
+  ed.onDiskPick ||= el("label", { class: "ed-mode-pick", title: `Changes made outside the editor (a sync, a shell command):\n${ED_ON_DISK.map((m) => `${m[1]}: ${m[2]}`).join("\n")}` },
+    el("span", { class: "lbl", text: "On disk:" }),
+    el("select", { "aria-label": "How changes made outside the editor are taken", onchange: (ev) => edSetOnDisk(ev.target.value) },
+      ...ED_ON_DISK.map(([v, label]) => el("option", { value: v }, label))));
+  const select = ed.onDiskPick.querySelector("select");
+  if (select.value !== now[0]) select.value = now[0];
+  return ed.onDiskPick;
+}
+async function edSetOnDisk(how) {
+  const was = ed.onDisk;
+  ed.onDisk = how;
+  edHead();
+  try { ed.onDisk = (await post("/api/on_disk", { on_disk: how })).on_disk; ed.err = ""; }
+  catch (e) { ed.onDisk = was; ed.err = e.message; }
+  edHead();
 }
 async function edSetMode(mode) {
   const was = ed.mode;
@@ -1346,7 +1372,7 @@ export function edHead() {
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
   if (!ed.file) {
     edHeadPut([...edAddedLead(null), el("span", { class: "ed-hint", text: "Pick a file to open it." }),
-      el("span", { class: "grow", style: "flex: 1" }), edModePick(), ...edAddedHead(null)].filter(Boolean));
+      el("span", { class: "grow", style: "flex: 1" }), edModePick(), edOnDiskPick(), ...edAddedHead(null)].filter(Boolean));
     return;
   }
   if (s && s.plain) return edHeadPut(s.plain.head(s));
@@ -1396,6 +1422,7 @@ export function edHead() {
     el("label", { class: "ed-auto", title: "Save a moment after each edit. Paused while a conflict waits." },
       el("input", { type: "checkbox", checked: ed.auto ? "" : null, onchange: (ev) => edSetAuto(ev.target.checked) }), "Auto-save"),
     edModePick(),
+    edOnDiskPick(),
     s && s.info && s.info.kind !== "text" ? el("button", { type: "button", class: "ed-mode", title: `Show ${edBase(s.path)} as ${ED_VIEW_SAID[s.info.kind] === "image" ? "an image" : `a ${ED_VIEW_SAID[s.info.kind]}`}`,
       onclick: () => edOpen(s.path, "view") }, strokeIcon(ICONS.page, 13), "View") : null,
     ...edAddedHead(s),

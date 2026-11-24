@@ -679,17 +679,18 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      to carry on with its task, and what the user chose reaches it whenever they choose. Hands off: refused, "ask the
      user first".
    - **Writes around the tools** (a shell command, Codex's or Antigravity's own edits, an agent not attached, a sync
-     such as Dropbox's or Overleaf's): merged in, in every mode, except to the conflict zone's lines, which become a
-     conflict box (the user, 2026-11-24: "just merge in changes on disk except for the conflict zone"). Until then
-     Review and Hands off asked about each one (`Conflict.asked`), so a paper synced from Overleaf asked about every
-     co-author's edit. The docs' "ask" hold is still there for an app that wants it; FileEdit no longer uses it.
+     such as Dropbox's or Overleaf's): taken as the Editor's own setting says, whatever its mode -- "On disk: Always
+     ask / Ask in conflict zone / Never ask" (`<app>.on_disk`: "ask", "zone", the default, or "never"; the user,
+     2026-11-24). Until then Review and Hands off asked about each one (`Conflict.asked`), so a paper synced from
+     Overleaf asked about every co-author's edit. Never ask merges the conflict zone too, and lines the user changed
+     differently and has not saved take the file's.
    - **The guard**: Claude Code's own Edit and Write on a file open in an Editor refused (the existing `edit_guard`
      capability), pointing at `editor_edit` -- for an agent attached to an Editor, which has its tools.
    - **Told**: the agent whose change was held, what the user chose (a `context_stream` message in its channel);
      agents that used the tools, when the mode changes (one that never started would otherwise be listed as having a
      conversation).
-   - **The contract** (`app_kit.docs`), each general: `open(..., hold)` and `hold(...)` ("merge" or "ask": how a page
-     takes the file's changes on disk); `state`; `view(path, root, channel)` (the text with an actor's proposals in);
+   - **The contract** (`app_kit.docs`), each general: `open(..., hold)` and `hold(...)` ("zone", "ask" or "never": how a
+     page takes the file's changes on disk, the strictest page's counting); `state`; `view(path, root, channel)` (the text with an actor's proposals in);
      `put(path, root, seen, wanted, by, how)` (an actor's change, "live" or "propose", merged onto what changed since it
      read). A conflict's `agent` now also marks a change put in (`put`, `why`: "approve" or "zone"). A branch's held
      changes are unchanged; settling routes to the branches only for those (`branch`).

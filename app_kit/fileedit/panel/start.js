@@ -38,12 +38,14 @@ export async function edStart() {
     if (l.form === "folder/<path...>") edShowFolder(path);
     else edShowFile(path, line ? Number(line[1]) : 0);
   });
-  ag.onMessage((m) => {                              // its backend's: the mode set (here or elsewhere), a file to show
+  ag.onMessage((m) => {                              // its backend's: the mode or on_disk set (here or elsewhere), a file to show
     if (m && m.mode) { ed.mode = m.mode; edHead(); }
+    if (m && m.on_disk) { ed.onDisk = m.on_disk; edHead(); }
     if (m && m.show && m.show.path) edShowFile(String(m.show.path), Number(m.show.line) || 0);   // an agent's <app>_open
     for (const f of edAdded.message) f(m);
   });
   get("/api/mode").then((got) => { ed.mode = got.mode; edHead(); }).catch(() => {});
+  get("/api/on_disk").then((got) => { ed.onDisk = got.on_disk; edHead(); }).catch(() => {});
   edMount();
   document.body.dataset.ready = "1";
 }

@@ -97,6 +97,10 @@ name = "latex.mode"
 description = "The LaTeX editor's mode, set: {mode (live, review, handsoff), by}."
 
 [[events]]
+name = "latex.on_disk"
+description = "How the LaTeX editor takes its files' changes on disk, set: {on_disk (zone, ask, never), by}."
+
+[[events]]
 name = "latex.preview_set"
 properties = ["by"]
 description = "A project's build set: {key (its repository), command, show, by} (by: \"\" the user, else the agent's channel)."

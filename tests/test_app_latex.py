@@ -840,6 +840,28 @@ class EditToolsTest(ServedBase):
         self.post("mode", {"mode": "review"})
         self.around("# synced\n")
 
+    def test_on_disk_always_ask_asks_about_a_write_around_the_tools_and_never_takes_it_whatever_the_mode(self):
+        self.opened()
+        status, _, raw = self.at_app(f"/api/on_disk?{self.q}")
+        self.assertEqual((status, json.loads(raw)["on_disk"]), (200, "zone"))   # the default
+        self.assertEqual(self.post("on_disk", {"on_disk": "ask"})["on_disk"], "ask")
+        self.assertTrue(self.h.docs.state(self.plot, self.repo)["asking"])       # the page open: held so at once
+        with open(self.plot, "a") as fh:            # a shell's write, around the tools -- Live, the mode
+            fh.write("# appended\n")
+        deadline = time.time() + 10
+        while time.time() < deadline and not self.h.docs.state(self.plot, self.repo)["conflicts"]:
+            time.sleep(0.05)
+        (c,) = self.h.docs.state(self.plot, self.repo)["conflicts"]
+        self.assertEqual((c["asked"], c["theirs"]), (True, "# appended\n"))
+        self.post("edit/settle", {"path": self.plot, "root": self.repo, "conflict": c["id"], "take": "mine"})
+        self.assertNotIn("# appended", self.disk())                      # put back
+        self.post("on_disk", {"on_disk": "never"})
+        self.assertEqual(self.h.docs.state(self.plot, self.repo)["hold"], "never")
+        self.h.backend("latex").on_disks.clear()                         # kept: its event
+        self.assertEqual(self.h.backend("latex").on_disk(self.inst), "never")
+        with self.assertRaises(AssertionError):
+            self.post("on_disk", {"on_disk": "sometimes"})
+
     def around(self, line):
         """A write to the file around the tools (a shell's, a sync's): merged into the open file, not asked about."""
         self.assertFalse(self.h.docs.state(self.plot, self.repo)["asking"])

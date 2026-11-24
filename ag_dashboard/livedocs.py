@@ -26,9 +26,12 @@ kept, the file's shown beside them, for a page to take or not.
                                is settled as the pages' lines. Saved, the zone's lines are still its: a change on disk
                                to them -- an actor rewriting what was typed, a script's write from the file before the
                                save -- is a conflict (`Conflict.zone`), the pages say which
-    a page asks first          `Room.hold`: a page holding the file "ask" -- every change on disk asked about, not merged
-                               in (`Conflict.asked`: the document keeps its lines; the file's beside them, taken or
-                               put back -- Reject writes the document's lines over the file's)
+    a page holds it            `Room.hold`: how a page takes the file's changes on disk (HOLDS), the strictest of the
+                               pages' counting -- "zone" (the default: merged, but for the conflict zone), "ask" (every
+                               change asked about, not merged in -- `Conflict.asked`: the document keeps its lines; the
+                               file's beside them, taken or put back, Reject writing the document's lines over the
+                               file's), or "never" (every change merged in, the zone too; lines the pages changed
+                               differently, and did not save, take the file's)
     an actor changes it        `Room.put`: the whole text as the actor wants it (from what it read: `view`) -- "live",
     through an app             its changes in the document at once, marked in its hue (`marks`), and written to the
                                file (its lines only: what the pages typed and did not save stays unsaved); those to
@@ -85,7 +88,8 @@ SKIPPED = frozenset({".git", "node_modules", "__pycache__", ".venv", "venv", ".m
 FILES_MAX = 20000           # the most files Go to file is given of one folder
 FILES_S = 2.0               # seconds a folder's walk for them may take
 TAKES = ("mine", "theirs", "both", "edited")   # how a conflict is settled (Room.settle)
-HOLDS = ("merge", "ask")    # how a page takes the file's changes on disk (Room.hold): merged in, or each asked about
+HOLDS = ("never", "zone", "ask")   # how a page takes the file's changes on disk (Room.hold), the least strict first:
+                                   # never asked about, asked about in the conflict zone, each asked about
 PUTS = ("live", "propose")  # how an actor's change is put in (Room.put): at once, or held for the pages to accept
 TEMP = ".ag-edit"           # what a file being saved is written as first, beside it: not listed
 ROOT = "text"               # the document's one shared type: the file's text
@@ -374,14 +378,15 @@ def syncs(o: List[str], a: List[str], b: List[str]) -> List[Tuple[int, int, int,
 
 
 def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = (),
-          held: List[Tuple[int, int]] = ()) -> Tuple[str, List[tuple], int]:
+          held: List[Tuple[int, int]] = (), theirs_wins: bool = False) -> Tuple[str, List[tuple], int]:
     """Three ways, by line, as version control merges: `base`, and what `mine` and `theirs` each made of it. The
     merged text; each conflict -- lines both changed, differently, or that `theirs` changed among `guard`'s (ranges
     of `mine`'s lines it may not change unasked: the conflict zone), or changed again where `held`'s are (`mine`'s
     lines of the conflicts still open: what `theirs` does there is that conflict's, not merged around it) -- as
     (start, end) of `mine`'s lines kept in the
     merged text (characters), with `base`'s and `theirs`' lines there, and whether it is one for `guard`; and how many
-    of `mine`'s changes `theirs` lacks (kept from `mine` alone)."""
+    of `mine`'s changes `theirs` lacks (kept from `mine` alone). `theirs_wins`: lines both changed, differently, take
+    `theirs`' -- no conflict -- but where `held`'s are."""
     o, a, b = base.splitlines(True), mine.splitlines(True), theirs.splitlines(True)
     out, conflicts, kept, size = [], [], 0, 0
     zo = za = zb = 0
@@ -396,8 +401,11 @@ def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = (),
             else:
                 put = others
         else:
-            both = None if _meets(za, sa, held) else _both(was, ours, others)
-            if both is None:                        # both, differently (or a conflict still open): mine kept, a conflict
+            meets = _meets(za, sa, held)
+            both = None if meets else _both(was, ours, others)
+            if both is None and theirs_wins and not meets:   # both, differently, and never asked: theirs taken
+                put = others
+            elif both is None:                      # both, differently (or a conflict still open): mine kept, a conflict
                 conflict = _guarded(za, sa, guard)
             elif _theirs_guarded(was, ours, others, za, guard):
                 conflict = True
@@ -525,7 +533,7 @@ class Conn:
     """One page's stream of a file: what it is sent (`queue`: (event, value), or None to end), its Yjs client id,
     its last awareness update (its user and cursor), and how it takes the file's changes on disk (`hold`: HOLDS)."""
 
-    def __init__(self, cid: str, client: int, hold: str = "merge"):
+    def __init__(self, cid: str, client: int, hold: str = "zone"):
         self.id, self.client, self.queue, self.aware, self.hold = cid, client, queue.Queue(), None, hold
 
 
@@ -661,7 +669,7 @@ class Room:
                 "conflicts": [{"id": c.id, "from": _utf16(raw, c.start), "to": _utf16(raw, c.end), "base": c.base,
                                "theirs": c.theirs, "at": c.at, "since": c.since, "zone": c.zone, "agent": c.agent,
                                "asked": c.asked} for c in sorted(self.conflicts.values(), key=lambda c: c.start)],
-                "asking": self._asking(),
+                "hold": self._hold(), "asking": self._hold() == "ask",
                 "zone": [[_utf16(raw, a), _utf16(raw, b)] for a, b in self.zone],
                 "marks": [{"from": _utf16(raw, a), "to": _utf16(raw, b), "gatherer": g, "channel": c}
                           for a, b, g, c in self.marks if b > a]}
@@ -680,9 +688,9 @@ class Room:
         self.dirty = text != self.disk
         self._send("state", self.state())
 
-    def _asking(self) -> bool:
-        """Whether a page with the file open asks about each change on disk (`hold`), not merging it in."""
-        return any(c.hold == "ask" for c in self.conns.values())
+    def _hold(self) -> str:
+        """How the file's changes on disk are taken: the strictest of its pages' holds (HOLDS), "zone" with none."""
+        return max((c.hold for c in self.conns.values()), key=HOLDS.index, default="zone")
 
     def hold(self, cid: str, how: str) -> dict:
         """How the page `cid` takes the file's changes on disk from now: HOLDS."""
@@ -696,7 +704,7 @@ class Room:
             self._restate()
             return self.state()
 
-    def join(self, cid: str, client: int, hold: str = "merge") -> Conn:
+    def join(self, cid: str, client: int, hold: str = "zone") -> Conn:
         if hold not in HOLDS:
             raise DocError(f"hold {hold!r}: {', '.join(HOLDS)}")
         with self.lock:
@@ -765,10 +773,12 @@ class Room:
                 return self._restate()
             mine = str(self.text)
             ours = [c for c in self.conflicts.values() if c.agent is None]     # the disk's (a branch's are branches.py's)
-            asking = self._asking()                 # every line guarded: each change asked about
-            guard = [(-1, len(mine.splitlines(True)) + 1)] if asking else self._lines(mine, self.zone)
+            hold = self._hold()
+            asking = hold == "ask"                  # every line guarded: each change asked about
+            guard = [(-1, len(mine.splitlines(True)) + 1)] if asking else \
+                [] if hold == "never" else self._lines(mine, self.zone)
             merged, found, _ = merge(self.disk, mine, text, guard,
-                                     self._lines(mine, [(c.start, c.end) for c in ours]))
+                                     self._lines(mine, [(c.start, c.end) for c in ours]), theirs_wins=hold == "never")
             if merged != mine:
                 before = self.doc.get_state()
                 change(self.text, merged)
@@ -1066,7 +1076,7 @@ class LiveDocs:
                     self.branches.opened(real)
             return room
 
-    def join(self, path: str, root: str, cid: str, client: int, hold: str = "merge") -> Tuple[Room, Conn]:
+    def join(self, path: str, root: str, cid: str, client: int, hold: str = "zone") -> Tuple[Room, Conn]:
         if not cid:
             raise DocError("a connection id, please")
         room = self._room(path, root, create=True)

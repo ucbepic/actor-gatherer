@@ -53,7 +53,7 @@ class HostDocs(Docs):
 
     # -- a file open
 
-    def open(self, path: str, root: str, conn: str, client: int, hold: str = "merge") -> Joined:
+    def open(self, path: str, root: str, conn: str, client: int, hold: str = "zone") -> Joined:
         room, joined = self._call(self._docs.join, path, root, conn, client, hold)
         q = joined.queue
 
