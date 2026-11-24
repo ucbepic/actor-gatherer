@@ -36,8 +36,9 @@ edit the same files):
                 carries on, reading the file with its proposals in, and is told what they chose when they do
     handsoff    refused: the user is editing it, the agent to ask them first
 
-In review and handsoff, a write that does not come through the tools -- a shell command's, another harness's edit
-tool's -- is asked about too, not merged in (docs.hold "ask"): Reject puts the user's lines back on the file. The
+The mode is only of what its agents change through its tools. Whatever else changes the file on disk -- a shell
+command, another harness's edit tool, a sync (Dropbox's, Overleaf's), a co-author -- is merged in, in every mode, but
+for the lines the user is editing (the conflict zone): those are held for them, in a box (docs.open "merge"). The
 agent that made a change held is told what the user chose (a context_stream message, `_told_settled`); one attached to
 an instance that has used its file tools, when its mode changes (another learns it from its tools' answers, or the
 guard, when it next changes a file: a message to an agent that never started would list it as one with a
@@ -242,12 +243,12 @@ class FileEdit(App):
 
     def _stream(self, instance: Optional[Instance], q: Dict[str, str]) -> Response:
         """The file opened by the page (app_kit.docs's `open`), its events until it goes; `failed` if it cannot be.
-        Kept as one of its instance's pages while it is open: how it takes the file's changes on disk is its mode's."""
+        Kept as one of its instance's pages while it is open. The file's changes on disk are merged in, whatever the
+        mode, but for the conflict zone's lines (the package's doc)."""
         client, path, root, conn = q.get("client", ""), q.get("path", ""), q.get("root", ""), q.get("conn", "")
         docs = self.host.docs()
         try:
-            hold = "ask" if instance is not None and self.mode(instance) != "live" else "merge"
-            joined = docs.open(path, root, conn, int(client) if client.isdigit() else 0, hold)
+            joined = docs.open(path, root, conn, int(client) if client.isdigit() else 0, "merge")
             real = docs.resolve(path, root)
         except AppError as exc:
             said = [[("failed", {"error": str(exc)})]]
@@ -279,24 +280,14 @@ class FileEdit(App):
         return mode
 
     def set_mode(self, instance: Instance, mode: str, by: str = USER) -> None:
-        """The instance's mode, set: kept as its event, its pages' hold on their files changed to it, its panels and
-        its agents told."""
+        """The instance's mode, set: kept as its event, its panels and its agents told."""
         if mode not in MODES:
             raise AppError(f"mode {mode!r}: {', '.join(MODES)}")
         if mode == self.mode(instance):
             return
         with self.lock:
             self.modes[instance.id] = mode
-        with _lock:
-            mine = [(real, conn, root) for real, got in _pages.items() for conn, (app, i, root) in got.items()
-                    if app is self and i == instance.id]
         self.host.insert(instance, [{"type": f"{self.name}.mode", "payload": {"mode": mode, "by": by}}])
-        docs = self.host.docs()
-        for real, conn, root in mine:
-            try:
-                docs.hold(real, root, conn, "merge" if mode == "live" else "ask")
-            except AppError:
-                pass                                # closed meanwhile
         try:
             self.host.tell_panel(instance, {"mode": mode})
         except AppError:

@@ -678,9 +678,11 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      place). It never waits on one (the user, 2026-11-08: "propose and move on"): its tool answers at once, it is told
      to carry on with its task, and what the user chose reaches it whenever they choose. Hands off: refused, "ask the
      user first".
-   - **Writes around the tools** (a shell command, Codex's or Antigravity's own edits, an agent not attached): in Live
-     merged as before; in Review and Hands off asked about (`Conflict.asked`), Reject putting the user's lines back on
-     the file.
+   - **Writes around the tools** (a shell command, Codex's or Antigravity's own edits, an agent not attached, a sync
+     such as Dropbox's or Overleaf's): merged in, in every mode, except to the conflict zone's lines, which become a
+     conflict box (the user, 2026-11-24: "just merge in changes on disk except for the conflict zone"). Until then
+     Review and Hands off asked about each one (`Conflict.asked`), so a paper synced from Overleaf asked about every
+     co-author's edit. The docs' "ask" hold is still there for an app that wants it; FileEdit no longer uses it.
    - **The guard**: Claude Code's own Edit and Write on a file open in an Editor refused (the existing `edit_guard`
      capability), pointing at `editor_edit` -- for an agent attached to an Editor, which has its tools.
    - **Told**: the agent whose change was held, what the user chose (a `context_stream` message in its channel);

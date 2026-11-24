@@ -827,23 +827,30 @@ class EditToolsTest(ServedBase):
         self.h.backend("latex").modes.clear()
         self.assertEqual(self.h.backend("latex").mode(self.inst), "review")
 
-    def test_hands_off_it_is_refused_and_a_write_around_it_is_asked_about(self):
+    def test_hands_off_it_is_refused_and_a_write_around_it_is_merged_in(self):
         self.opened()
         self.post("mode", {"mode": "handsoff"})
         self.assertIn("ask the user first", self.h.guard("g", "c1", self.plot))
         self.assertIn("Ask them first", self.tool("edit", {"path": self.plot, "old_string": "import sys",
                                                             "new_string": "import os"}))
-        with open(self.plot, "a") as fh:            # a shell's write, around the tools
-            fh.write("# appended\n")
-        deadline = time.time() + 10
-        while time.time() < deadline and not self.h.docs.state(self.plot, self.repo)["conflicts"]:
-            time.sleep(0.05)
-        (c,) = self.h.docs.state(self.plot, self.repo)["conflicts"]
-        self.assertEqual((c["asked"], c["theirs"]), (True, "# appended\n"))
-        self.post("edit/settle", {"path": self.plot, "root": self.repo, "conflict": c["id"], "take": "mine"})
-        self.assertNotIn("# appended", self.disk())                      # put back
-        self.post("mode", {"mode": "live"})                              # merged again
+        self.around("# appended\n")
+
+    def test_review_a_write_around_its_tools_is_merged_in_not_asked_about(self):
+        self.opened()
+        self.post("mode", {"mode": "review"})
+        self.around("# synced\n")
+
+    def around(self, line):
+        """A write to the file around the tools (a shell's, a sync's): merged into the open file, not asked about."""
         self.assertFalse(self.h.docs.state(self.plot, self.repo)["asking"])
+        with open(self.plot, "a") as fh:
+            fh.write(line)
+        deadline = time.time() + 10
+        while time.time() < deadline and not self.h.docs.view(self.plot, self.repo).endswith(line):
+            time.sleep(0.05)
+        self.assertTrue(self.h.docs.view(self.plot, self.repo).endswith(line))
+        self.assertFalse(self.h.docs.state(self.plot, self.repo)["conflicts"])
+        self.assertTrue(self.disk().endswith(line))
 
     def test_open_shows_the_file_in_its_panel(self):
         self.assertIn("not open now", self.tool("open", {"path": self.plot, "line": 2}))

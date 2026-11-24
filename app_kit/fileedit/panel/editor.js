@@ -743,7 +743,7 @@ function edConflictWidget(A) {
           pick("theirs", "Accept", c.theirs ? "Replace these lines with its lines (written to disk)" : "Delete these lines"),
           pick("mine", "Reject", "Keep these lines. The actor is told."),
           kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, with its lines after them") : null];
-      } else if (c.asked) {                          // Review or Hands off: the file changed on disk, around the tools
+      } else if (c.asked) {                          // a page holding the file "ask" (app_kit.docs): none of FileEdit's
         const nm = name || "Something";
         what = { rewrote: `${nm} changed these lines on disk`, deleted: `${nm} deleted these lines on disk`, added: `${nm} added lines here on disk` }[kind];
         picks = [
@@ -871,12 +871,13 @@ async function edSettleAll(s, take) {
   if (ed.s === s) { edConflicts(s); edHead(); }
 }
 // How an agent's change to a file open here lands, for the whole Editor (its backend's MODES): Live, at once (lines
-// you are editing asked about); Review, each change a proposal to accept or reject; Hands off, refused -- and in both of
-// those, a write around the Editor's tools (a shell command's) asked about too. Its agents are told when it changes.
+// you are editing asked about); Review, each change a proposal to accept or reject; Hands off, refused. Its agents are
+// told when it changes. A change made around its tools (a shell command's, a sync's) is merged in, in every mode, but
+// for the lines you are editing.
 const ED_MODES = [
   ["live", "Live", "Agents' changes apply as they come, in their colour, and are saved. You're asked only about lines you're editing."],
-  ["review", "Review", "Each agent change is a proposal to accept or reject. The file on disk changes only when you accept. Changes made elsewhere, such as by a shell command, are asked about too."],
-  ["handsoff", "Hands off", "Agents can't change files open here and are told to ask you first. Changes made elsewhere are asked about."]];
+  ["review", "Review", "Each agent change is a proposal to accept or reject, and reaches the file only when you accept. Changes made outside the editor, such as a sync or a shell command, are merged in, except to lines you're editing."],
+  ["handsoff", "Hands off", "Agents can't change files open here and are told to ask you first. Changes made outside the editor are merged in, except to lines you're editing."]];
 // Its menu: one, made once and kept from one header to the next (edHeadPut) -- the header is drawn again every ED_TICK
 // and at each edit, and a menu taken out of the page then closes under the reader as they pick.
 function edModePick() {
