@@ -21,7 +21,7 @@ from ag.integrations.tools.ag_orchestrator.file_touches.calls import opened  # n
 import harness_kit  # noqa: E402
 from harness_kit.claude import tool_call  # noqa: E402
 from harness_kit.shell import (  # noqa: E402
-    opened_script, script_calls, script_output, script_prints_result, shell_changes, shell_reads)
+    opened_script, script_calls, script_output, script_prints_result, shell_changes, shell_reads, read_only)
 
 # As codex 0.164 wrote it live: its code-mode script (`exec`), and what the call gave back
 SCRIPT = ("const r = await tools.exec_command({cmd:\"printf 'one\\\\n' > notes.txt && printf 'two\\\\n' > notes.txt "
@@ -78,6 +78,27 @@ def write(path, text):
 
 def sh(command, cwd):
     return subprocess.run(["/bin/sh", "-c", command], cwd=cwd, capture_output=True, text=True).stdout
+
+
+class ReadOnlyTest(unittest.TestCase):
+    """Commands that only read: nothing on disk changes for them, whatever files they name."""
+
+    def test_reading_commands_and_those_that_may_write(self):
+        reads = ["ls -l a.tex", "cat a.tex | grep x | wc -l", "sed -n 1,5p a.tex", "git log -1 -- a.tex",
+                 "git -C ../p diff", "git branch -a", "find . -name '*.tex'", "curl -s --resolve h:1:127.0.0.1 http://h/x",
+                 "sqlite3 -readonly db 'select 1'", "echo hi >/dev/null 2>&1", "cd .. && ls", "env -u X ls a",
+                 "for f in a b; do cat $f; done", "cat <<EOF\nhi\nEOF", "ls -l a | awk '{print $6}'",
+                 "x=$(date +%s); ls", "since=$(( $(date +%s) - 1800 )); ls",
+                 "curl -s http://h/x | python3 -c \"import json,sys; print(json.load(sys.stdin)['a'])\""]
+        writes = ["echo hi > a.tex", "sed -i s/a/b/ a.tex", "rm a.tex", "make", "npm run build", "git pull",
+                  "git branch -d x", "find . -delete", "curl -o out http://h/x", "curl -sO http://h/x",
+                  "curl -X POST http://h/x", "curl -d a=1 http://h/x", "sqlite3 db 'select 1'", "tee a < b",
+                  "x=$(rm a); ls", "ls `touch a`", "diff <(ls) b", "cat > a <<EOF\nhi\nEOF", "env X=1 rm a",
+                  "awk '{print > \"o\"}' a", "python3 x.py", "python3 -c \"open('x', 'w').write('1')\"",
+                  "python3 -c \"import subprocess\"", "python3 -c \"import os; os.remove('a')\"",
+                  "python3 -c \"from pathlib import Path; Path('a').write_text('x')\"", "osascript -e 'x'"]
+        self.assertEqual([c for c in reads if not read_only(c)], [])
+        self.assertEqual([c for c in writes if read_only(c)], [])
 
 
 class CheckTest(unittest.TestCase):
@@ -146,6 +167,19 @@ class CheckTest(unittest.TestCase):
                          (False, {"lines": ["made"]}))
         self.assertNotIn(("e", "out.txt", "created"), got)                     # an edit changes its own file only
 
+    def test_a_file_changed_while_a_reading_command_naming_it_ran_is_not_its(self):
+        # a sync (Dropbox) writes the file while a command that only reads it runs: not the command's, named or not;
+        # one that may write it (a script) is credited as before
+        def synced():
+            write(self.p("b.py"), "bar()\nz = 9\n")
+        got = self.run_calls(("r", "Bash", {"command": "ls -l b.py && curl -s http://127.0.0.1:9/x?path=b.py || true"}),
+                             change=synced, watched={self.p("b.py"): "modified"})
+        self.assertFalse([k for k in got if k[2] in ("created", "modified", "deleted")])
+        write(self.p("b.py"), "bar()\nz = 3\n")
+        got = self.run_calls(("s", "Bash", {"command": "python3 tools.py b.py"}), change=synced,
+                             watched={self.p("b.py"): "modified"})
+        self.assertTrue(got["s", "b.py", "modified"]["named"])
+
     def unnamed_of(self, command, cwd, changed):
         """The files changed while `command` ran (none of them named by it) that are taken as its: {name: how}."""
         call = tool_call({"type": "tool_use", "id": "s", "name": "Bash", "input": {"command": command}})
@@ -173,6 +207,7 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(self.unnamed_of("git worktree add ../theirs", mine, [other]), {"theirs/x.py": "created"})
         self.assertEqual(self.unnamed_of("ls .. && ls ../theirs/..", mine, [other]), {})   # a folder in no repository:
                                                                                          # not where it works
+        self.assertEqual(self.unnamed_of("git status && ls", mine, [out]), {})           # only reads: none is its
         self.assertEqual(self.unnamed_of("cd $SOMEWHERE && make", mine, [out, other]),     # where it runs not known:
                          {"mine/out.txt": "created", "theirs/x.py": "created"})            # any change may be its
         plain = self.p("plain")                                                 # a folder in no repository: itself

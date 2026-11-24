@@ -2,7 +2,8 @@
 (by a command that only prints part of a file: `sed -n`, `cat`, `head`, `tail`, `nl`, `grep -n`)
 and which of its output lines are each one's; the files it changes, and how, when the command
 says (`cat > F <<EOF`, `tee`, `sed -i`, a Python script that replaces constant strings in a file
-and writes it back); and the files a codex patch adds, changes or deletes. A codex code-mode call
+and writes it back); whether a command only reads (`read_only`: one that changes nothing on disk, whatever
+files it names); and the files a codex patch adds, changes or deletes. A codex code-mode call
 (`exec`: a JavaScript script that calls the other tools, `tools.exec_command({cmd: ...})`) is read as
 the calls its script makes, where it writes their arguments out (`opened_script`).
 
@@ -18,6 +19,7 @@ import functools
 import os
 import re
 import shlex
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 READ_LINE = re.compile(r"^\s*(\d+)(?:\t|→)(.*)$")              # a Read result's line: "12\ttext"
@@ -399,6 +401,236 @@ def _read_commands(command: str):
     if cur or redirs:
         cmds.append((cur, redirs))
     return cmds
+
+
+# ------------------------------------------------------------------ shell commands that only read
+
+#: Commands that only read (and print): nothing on disk changes for them, whatever files they name. Those that write
+#: with some options or arguments are checked apart (_reads_only); one not known here may write.
+READS_ONLY = frozenset({
+    "ls", "cat", "head", "tail", "grep", "egrep", "fgrep", "rg", "wc", "stat", "file", "du", "df", "echo", "printf",
+    "pwd", "date", "which", "whereis", "type", "true", "false", "test", "[", "[[", "cut", "tr", "nl", "diff", "cmp",
+    "comm", "md5", "md5sum", "shasum", "sha1sum", "sha256sum", "basename", "dirname", "realpath", "readlink", "sleep",
+    "jq", "column", "fold", "paste", "rev", "tac", "join", "expand", "tree", "id", "whoami", "hostname", "uname",
+    "printenv", "seq", "lsof", "ps", "pgrep", "mdls", "sw_vers", "xxd", "od", "hexdump", "strings", "cd", "pushd",
+    "popd", "export", "unset", "set", "shift", "read", "getconf", "locale"})
+SHELL_LEADS = frozenset({"do", "then", "else", "elif", "if", "while", "until", "!", "{", "time"})   # before a command
+SHELL_ENDS = frozenset({"done", "fi", "esac", "}"})
+WRAPPERS = frozenset({"env", "nohup", "nice", "exec", "builtin", "command"})   # run the command after them
+GIT_READS = frozenset({"log", "show", "diff", "status", "rev-parse", "rev-list", "ls-files", "ls-tree", "blame",
+                       "cat-file", "describe", "shortlog", "grep", "merge-base", "name-rev", "for-each-ref"})
+FIND_WRITES = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"})
+CURL_WRITES = frozenset({"-o", "-O", "--output", "--remote-name", "--remote-name-all", "-D", "--dump-header", "-c",
+                         "--cookie-jar", "-T", "--upload-file", "-d", "--data", "--data-raw", "--data-binary",
+                         "--data-urlencode", "-F", "--form", "--json", "--output-dir"})
+#: A `python -c` script that imports only these, and calls nothing that writes, only reads.
+PY_READ_MODULES = frozenset({"json", "sys", "time", "re", "math", "datetime", "collections", "itertools", "functools",
+                             "string", "textwrap", "pprint", "statistics", "os", "os.path", "pathlib", "base64",
+                             "hashlib", "difflib", "glob", "fnmatch", "shlex", "struct", "operator", "decimal",
+                             "fractions", "random", "uuid", "zlib", "html", "unicodedata", "urllib", "urllib.parse",
+                             "typing", "dataclasses", "enum", "copy", "bisect", "heapq", "calendar", "locale"})
+PY_WRITES = frozenset({"write", "writelines", "write_text", "write_bytes", "remove", "unlink", "rmdir", "removedirs",
+                       "rename", "renames", "replace", "mkdir", "makedirs", "touch", "chmod", "chown", "symlink",
+                       "symlink_to", "link", "hardlink_to", "truncate", "system", "popen", "spawnl", "spawnv",
+                       "execv", "execvp", "dump", "save", "savefig", "to_csv", "to_json", "mkfifo", "mknod",
+                       "utime", "putenv", "chdir", "fork", "kill"})
+PY_RUNS = frozenset({"exec", "eval", "compile", "__import__", "breakpoint", "input"})
+PY_READ_FLAGS = re.compile(r"^-[IuBEsSOqb]+$")
+
+
+def read_only(command: str) -> bool:
+    """Whether a shell command only reads: each of its commands -- those it runs in `$(...)` and backticks too -- one
+    that changes nothing on disk (READS_ONLY; `git log`, `curl` with no output file and no request body, `find` with no
+    -delete or -exec, `sed` with no -i, `sqlite3 -readonly`, `python -c` with a script that imports and calls nothing
+    that writes, ...), and no output sent to a file but /dev/null. A command not read, or not known, may write: False.
+    A file that changed while it ran was changed by something else."""
+    got = _substituted(command)
+    if got is None or "<(" in command or ">(" in command:
+        return False
+    outer, inner = got
+    if not all(read_only(c) for c in inner):
+        return False
+    cmds = _simple_commands(outer)
+    if cmds is None:
+        return False
+    for words, redirs in cmds:
+        if any(">" in op and target not in ("/dev/null", "1", "2", "&1", "&2") for op, target in redirs):
+            return False
+        if not _reads_only(list(words)):
+            return False
+    return True
+
+
+def _close(s: str, i: int) -> Optional[int]:
+    """Where the parenthesis open before `i` closes (quotes and escapes skipped); None, never."""
+    depth, quote = 1, None
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and quote != "'":
+            i += 2
+            continue
+        if quote:
+            if c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+
+def _substituted(command: str) -> Optional[Tuple[str, List[str]]]:
+    """The command with each `$(...)` and backtick run in it as a word, and those runs' commands; an arithmetic
+    `$((...))` a word too, the runs in it taken. None: not read (a parenthesis or backtick never closed)."""
+    out, inner, i, quote = [], [], 0, None
+    while i < len(command):
+        c = command[i]
+        if c == "\\" and quote != "'":
+            out.append(command[i:i + 2])
+            i += 2
+            continue
+        if quote == "'":
+            if c == "'":
+                quote = None
+            out.append(c)
+            i += 1
+            continue
+        if c == "'" and quote is None:
+            quote = "'"
+        elif c == '"':
+            quote = None if quote == '"' else '"'
+        if command.startswith("$(", i):
+            end = _close(command, i + 2)
+            if end is None:
+                return None
+            body = command[i + 2:end]
+            if body.startswith("(") and body.endswith(")"):          # $((...)): arithmetic, and the runs in it
+                got = _substituted(body[1:-1])
+                if got is None:
+                    return None
+                inner += got[1]
+                out.append("0")
+            else:
+                inner.append(body)
+                out.append("X")
+            i = end + 1
+            continue
+        if c == "`":
+            end = command.find("`", i + 1)
+            if end < 0:
+                return None
+            inner.append(command[i + 1:end])
+            out.append("X")
+            i = end + 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out), inner
+
+
+def _reads_only(words: List[str]) -> bool:
+    """Whether a simple command (its words) only reads -- after the words a shell puts before a command (`do`, `if`,
+    `!`), its assignments, and the commands that run the one after them (`env -u X`, `nohup`, `command`)."""
+    while words and (words[0] in SHELL_LEADS or ASSIGNMENT.fullmatch(words[0])):
+        words.pop(0)
+    if not words or words[0] in SHELL_ENDS or words[0] in ("for", "select", "case", "in", ";;"):
+        return True                                           # a loop's head, an end: words only
+    while words and words[0] in WRAPPERS:
+        w = words.pop(0)
+        if w == "command" and words and words[0] in ("-v", "-V"):
+            return True
+        while words and (words[0].startswith("-") or (w == "env" and ASSIGNMENT.fullmatch(words[0]))):
+            opt = words.pop(0)
+            if opt in ("-u", "--unset", "-C", "--chdir", "-n", "-S") and words:   # an option's value
+                words.pop(0)
+    if not words:
+        return True
+    cmd, args = os.path.basename(words[0]), words[1:]
+    if cmd in READS_ONLY:
+        return True
+    if cmd == "sed":
+        scripts = [a for a in args if not a.startswith("-")][:1] + [args[k + 1] for k, a in enumerate(args[:-1]) if a == "-e"]
+        return not any(a.startswith("-i") or a.startswith("--in-place") for a in args) \
+            and not any(re.search(r"[wW]\s+\S", t) for t in scripts)
+    if cmd == "awk":
+        progs = [a for a in args if not a.startswith("-")][:1]
+        return "-f" not in args and bool(progs) and not re.search(r"[>|]|system\s*\(", progs[0])
+    if cmd == "find":
+        return not FIND_WRITES & set(args)
+    if cmd == "sort":
+        return not any(a == "-o" or a.startswith("--output") for a in args)
+    if cmd == "uniq":
+        return len([a for a in args if not a.startswith("-")]) <= 1
+    if cmd == "xattr":
+        return not any(a.startswith("-") and set(a[1:]) & set("wdc") for a in args)
+    if cmd == "sqlite3":
+        return "-readonly" in args
+    if cmd == "curl":
+        for k, a in enumerate(args):
+            if a in CURL_WRITES or (a.startswith("-") and not a.startswith("--") and set(a[1:]) & set("oODcTdF")):
+                return False
+            if a in ("-X", "--request") and (args[k + 1:k + 2] or [""])[0].upper() not in ("GET", "HEAD"):
+                return False
+        return True
+    if cmd == "git":
+        while args and args[0].startswith("-"):              # git -C dir, -c k=v, --no-pager
+            opt = args.pop(0)
+            if opt in ("-C", "-c") and args:
+                args.pop(0)
+        sub, rest = (args[0], args[1:]) if args else ("", [])
+        if sub in GIT_READS:
+            return True
+        if sub == "remote":
+            return all(a in ("-v", "--verbose", "show", "get-url") or not a.startswith("-") for a in rest) \
+                and not set(rest) & {"add", "remove", "rm", "rename", "set-url", "prune", "update", "set-head"}
+        if sub == "branch":
+            return all(a in ("-a", "-r", "-v", "-vv", "--all", "--remotes", "--list", "--show-current", "--verbose")
+                       for a in rest)
+        if sub == "config":
+            return bool(set(rest) & {"--get", "--get-all", "--get-regexp", "--list", "-l"})
+        if sub in ("stash", "worktree", "tag"):
+            return (rest[:1] or [""])[0] in ("list", "show", "-l", "--list")
+        return False
+    if re.fullmatch(r"python(3(\.\d+)?)?", cmd):
+        while args and PY_READ_FLAGS.match(args[0]):
+            args.pop(0)
+        return len(args) >= 2 and args[0] == "-c" and _python_reads_only(args[1])
+    return False
+
+
+def _python_reads_only(code: str) -> bool:
+    """Whether a `python -c` script only reads: it imports nothing but PY_READ_MODULES, opens files only to read them,
+    and calls nothing that writes, removes or runs (PY_WRITES, PY_RUNS)."""
+    try:
+        with warnings.catch_warnings():                       # a script's odd escapes: not the hook log's to say
+            warnings.simplefilter("ignore")
+            tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import) and any(a.name not in PY_READ_MODULES for a in node.names):
+            return False
+        if isinstance(node, ast.ImportFrom) and (node.level or node.module not in PY_READ_MODULES):
+            return False
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
+        if name in PY_RUNS or (isinstance(f, ast.Attribute) and name in PY_WRITES):
+            return False
+        if name == "open":                                        # open(path, mode), Path(...).open(mode)
+            given = [k.value for k in node.keywords if k.arg == "mode"]
+            spots = node.args[1:2] if isinstance(f, ast.Name) else node.args[:1]
+            mode = given[0] if given else spots[0] if spots else None
+            if mode is not None and not (isinstance(mode, ast.Constant) and isinstance(mode.value, str)
+                                         and not set(mode.value) & set("wax+")):
+                return False
+    return True
 
 
 def shell_changes(command: str, cwd: str):

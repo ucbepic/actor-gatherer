@@ -9,6 +9,9 @@ naming it (`created`, `modified` with the lines that changed, `deleted`). A file
 names is one the watcher saw change while they ran (watch.py): it is the calls' too, but not named -- a
 shell command's or a subagent's, and only one whose project holds it (`_scope`): the watcher sees every actor's
 folders, and a file another actor changed in its own folder, while this call ran, is not this call's.
+A shell command that only reads (harness_kit.shell.read_only: `ls`, `cat`, `git log`, `curl` with no output
+file, ...) changed nothing, named or not: a file that changed while it ran -- a sync's write (Dropbox), another
+program's -- was changed by something else, and is not the command's.
 A change to a file in ag's home (AG_HOME, ~/.ag: its databases, its logs) is ag's own -- it writes them
 as the calls run, a gatherer's database at every model call -- and is left out, unless a call says it
 writes the file: `sqlite3 ~/.ag/.../context.db "SELECT ..."` is not an edit of it.
@@ -37,7 +40,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from ag.integrations.tools.ag_connection.ag_client import home
 from harness_kit import Action, Shape, ToolCall
 from harness_kit.shell import (GLOB, GREP_PATH_LINE, READ_LINE, _expand, _patch_files, _path, _resolve, _simple_commands,
-                       shell_changes, shell_reads)
+                       read_only, shell_changes, shell_reads)
 
 MAX_BYTES = 2 << 20        # the most of a file read: a larger one is told changed by its size and time alone
 MAX_NAMED = 64             # the most files an answer's calls name that are looked at
@@ -513,8 +516,10 @@ def check(calls: List[Tuple[str, ToolCall, str, bool]], cwd: Optional[str],
             if got[0] == "modified":
                 got[1]["path"] = path                      # for _share; not sent (see below)
             changes[path] = got
-    runners = [cid for cid, call, _, _ in calls if (call.view or {}).get("shape") in CHANGES]
-    shells = [cid for cid, call, _, _ in calls if (call.view or {}).get("shape") == Shape.SHELL
+    reading = {cid for cid, call, _, _ in calls if (call.view or {}).get("shape") == Shape.SHELL
+               and read_only(_shell(call, cwd)[0])}    # changed nothing, whatever changed while it ran
+    runners = [cid for cid, call, _, _ in calls if (call.view or {}).get("shape") in CHANGES and cid not in reading]
+    shells = [cid for cid, call, _, _ in calls if ((call.view or {}).get("shape") == Shape.SHELL and cid not in reading)
               or call.action == Action.DELEGATE]    # may change a file it doesn't name: a subagent's tools, its
     owners: Dict[str, List[str]] = {}                       # a change's calls: those that say they write it,
     for p in changes:                                       # else those of the runners that name it
