@@ -77,7 +77,7 @@ function olMark(s, lines) {
   let prev = null;
   for (const [n, l] of found) {
     const line = doc.line(n), who = l.who[0], key = l.who.map((p) => p.id || p.name).join(",");
-    const what = [l.inserted ? `added “${l.inserted.trim().slice(0, 80)}”` : "", l.deleted ? `removed “${l.deleted.trim().slice(0, 80)}”` : ""].filter(Boolean).join(", ");
+    const what = [olPieces("added", l.inserted), olPieces("removed", l.deleted)].filter(Boolean).join("; ");
     out.push(A.Decoration.line({ class: "ed-ol", attributes: { style: `--who: ${olColor(who)}`,
       title: `Changed by ${olNames(l.who)} on Overleaf, ${ago(l.at)}${what ? ` · ${what}` : ""}` } }).range(line.from));
     if (!prev || prev.key !== key || prev.n !== n - 1) out.push(A.Decoration.widget({ widget: new (olChipWidget(A))(l.who), side: 1 }).range(line.to));
@@ -85,6 +85,9 @@ function olMark(s, lines) {
   }
   v.dispatch({ effects: s.ol.set.of(A.Decoration.set(out, true)) });
 }
+// "added “three”, “components”": a line's pieces, each quoted, the first few.
+const olPieces = (did, list) => !list || !list.length ? ""
+  : `${did} ${list.slice(0, 3).map((t) => `“${t.length > 60 ? t.slice(0, 60) + "…" : t}”`).join(", ")}${list.length > 3 ? ` and ${list.length - 3} more` : ""}`;
 let OlChip = null;
 function olChipWidget(A) {
   return OlChip ||= class extends A.WidgetType {
@@ -115,7 +118,7 @@ function olField(s) {
 // ---- the header's button, and its menu
 function olButton(x) {
   const v = ed.ol.view;
-  if (!v || !x || x !== ed.s) return null;
+  if (!v || (x && x !== ed.s)) return null;          // a file shown, not edited (an image, a PDF): none
   if (!v.project && !v.synced && !v.signed_in) return el("button", { type: "button", class: "ed-ol-btn quiet", title: "Link an Overleaf project to see who changed lines there",
     onclick: (ev) => olOpenPop(ev.currentTarget) }, "Overleaf");
   if (!v.signed_in) return el("button", { type: "button", class: "ed-ol-btn want", onclick: (ev) => olOpenPop(ev.currentTarget),

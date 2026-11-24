@@ -39,9 +39,9 @@ class AttributeTest(unittest.TestCase):
                "Mine, from this machine.\nMine, on overleaf.com.\nLong ago.\n"
         got = O.attribute(diff, here, ME, NOW - 3600)
         self.assertEqual([(l["line"], l["who"][0]["name"], l["inserted"], l["deleted"]) for l in got], [
-            (3, "Pat Lee", "A new sentence.\n", ""),
-            (4, "Pat Lee", "new", "old"),
-            (6, "Sam Lee", "Mine, on overleaf.com.\n", "")])
+            (3, "Pat Lee", ["A new sentence."], []),
+            (4, "Pat Lee", ["new"], ["old"]),
+            (6, "Sam Lee", ["Mine, on overleaf.com."], [])])
         self.assertEqual(got[1]["text"], "Some text new here.")
         self.assertAlmostEqual(got[1]["at"], NOW - 30, places=2)
 
@@ -50,6 +50,16 @@ class AttributeTest(unittest.TestCase):
         self.assertEqual(O.attribute(diff, "one\nthree\n", ME, 0), [])                  # not synced here yet
         self.assertEqual(O.attribute(diff, "one\ntwo, then typed here\nthree\n", ME, 0), [])   # changed here since
         self.assertEqual([l["line"] for l in O.attribute(diff, "one\ntwo\nthree\n", ME, 0)], [2])
+
+    def test_a_line_alike_only_by_chance_is_not_taken_for_the_one_changed(self):
+        # Overleaf moved on: a new table, its `\centering` the co-author's; here, an older table's `\centering` alone
+        diff = [{"u": "\\section{Results}\nWe ran it.\n"},
+                {"i": "\\begin{table}\n  \\centering\n  \\caption{New}\n\\end{table}\n", "meta": meta(CO, NOW)},
+                {"u": "Done.\n"}]
+        here = "\\section{Results}\nWe ran it.\n\\begin{figure}\n  \\centering\n  \\caption{Old}\n\\end{figure}\nDone.\n"
+        self.assertEqual(O.attribute(diff, here, ME, 0), [])
+        synced = "\\section{Results}\nWe ran it.\n\\begin{table}\n  \\centering\n  \\caption{New}\n\\end{table}\nDone.\n"
+        self.assertEqual([l["line"] for l in O.attribute(diff, synced, ME, 0)], [3, 4, 5, 6])   # synced: all four
 
     def test_the_folder_of_a_dropbox_synced_project(self):
         top = tempfile.mkdtemp()

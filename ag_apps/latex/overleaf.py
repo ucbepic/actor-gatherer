@@ -256,10 +256,36 @@ def _mine_from_here(meta: dict, me: str) -> bool:
     return users == [me] and (meta.get("origin") or {}).get("kind") == "dropbox"
 
 
+SURE_RUN = 3                # lines alike in a row: where they are in one text is where they are in the other
+SURE_LINE = 20              # characters a line alone must have (stripped) to be placed by itself, if no other is like it:
+                            # a sentence, not boilerplate (`\centering`, `\toprule`, `\end{table}`)
+
+
+def _same_lines(there: List[str], here: List[str]) -> Dict[int, int]:
+    """Overleaf's line -> the same line here: in a run of SURE_RUN alike, or a line like no other in either text (and
+    not a short one) -- never a lone `\\centering`, `}` or blank line that only happens to be alike."""
+    count_there, count_here = {}, {}
+    for line in there:
+        count_there[line] = count_there.get(line, 0) + 1
+    for line in here:
+        count_here[line] = count_here.get(line, 0) + 1
+    got: Dict[int, int] = {}
+    for tag, a1, a2, b1, _ in difflib.SequenceMatcher(None, there, here, autojunk=False).get_opcodes():
+        if tag != "equal":
+            continue
+        for k in range(a2 - a1):
+            line = there[a1 + k]
+            if a2 - a1 >= SURE_RUN or (count_there[line] == 1 and count_here.get(line) == 1
+                                         and len(line.strip()) >= SURE_LINE):
+                got[a1 + k] = b1 + k
+    return got
+
+
 def attribute(diff: list, text: str, me: str, since: float) -> List[dict]:
     """The pieces of `diff` made since `since` (seconds) by others than the user's Dropbox (`me`: their id), placed on
-    the lines of `text` (the file as it is here) where the line is as Overleaf has it: [{line (1-based), text (the
-    line's, here), who: [person], at (seconds), inserted, deleted}], each line once -- who made its latest piece.
+    the lines of `text` (the file as it is here) where the line is as Overleaf has it (_same_lines): [{line
+    (1-based), text (the line's, here), who: [person], at (seconds), inserted, deleted (the pieces begun on it, each
+    stripped)}], each line once -- who made its latest piece.
     A line that differs here (not synced yet, or edited since) is left out."""
     overleaf, pieces, at = [], [], 0
     for part in diff:
@@ -275,11 +301,7 @@ def attribute(diff: list, text: str, me: str, since: float) -> List[dict]:
     theirs = "".join(overleaf)
     there = theirs.splitlines(True)
     here = text.splitlines(True)
-    to_here: Dict[int, int] = {}
-    for tag, a1, a2, b1, _ in difflib.SequenceMatcher(None, there, here, autojunk=False).get_opcodes():
-        if tag == "equal":
-            for k in range(a2 - a1):
-                to_here[a1 + k] = b1 + k
+    to_here = _same_lines(there, here)
     starts = [0]
     for line in there:
         starts.append(starts[-1] + len(line))
@@ -306,11 +328,11 @@ def attribute(diff: list, text: str, me: str, since: float) -> List[dict]:
             if h is None:
                 continue
             got = lines.setdefault(h, {"line": h + 1, "text": here[h].rstrip("\n")[:LINE_TEXT], "who": who, "at": end,
-                                       "inserted": "", "deleted": ""})
+                                       "inserted": [], "deleted": []})
             if end >= got["at"]:
                 got["who"], got["at"] = who, end
-            if n == first:
-                got["inserted" if kind == "i" else "deleted"] += piece[:LINE_TEXT]
+            if n == first and piece.strip():
+                got["inserted" if kind == "i" else "deleted"].append(piece.strip()[:LINE_TEXT])
     return [lines[k] for k in sorted(lines)]
 
 
