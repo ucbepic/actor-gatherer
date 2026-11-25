@@ -59,7 +59,7 @@ async function olFiles() {
   const sig = JSON.stringify([got.files, got.people.map((p) => [p.id, p.at])]);
   if (sig === ed.ol.filesSig) return;
   ed.ol.filesSig = sig; ed.ol.files = got.files || {}; ed.ol.everyone = got.people || [];
-  ed.treeSig = ""; edTree(); edHead();
+  ed.treeSig = ""; edTree(); edHead(); olRedrawPop();
 }
 
 // The file open's lines changed on Overleaf (GET overleaf/changes), marked.
@@ -76,7 +76,7 @@ async function olAsk(force = false) {
     ed.ol.err = got.error || ""; ed.ol.path = s.path;
     olMark(s, ed.ol.lines);
     olGoDue(s);
-    edHead();
+    edHead(); olRedrawPop();
   } catch (e) { ed.ol.err = e.message; }
 }
 
@@ -137,7 +137,7 @@ function olGoDue(s) {
     if (l.at > at + 1) { at = l.at; line = n; }          // the latest; of one change's lines, its first
   }
   if (line) edShowFile(g.path, line);
-  else paneNote(`${g.name} changed ${edRel(g.path)} on Overleaf, but not on lines as they are here (not synced yet, or only deleted)`);
+  else paneNote(`${g.name}'s change to ${edRel(g.path)} isn't in your copy of the file yet: Dropbox hasn't brought it here, or those lines were changed here since`);
 }
 
 // "added “three”, “components”": a line's pieces, each quoted, the first few.
@@ -275,6 +275,8 @@ function olOpenPop(anchor) {
   document.body.append(box);
   olDrawPop();
 }
+// The menu drawn again as what it says changed -- not while a project's link is typed in it.
+function olRedrawPop() { if (ed.ol.pop && !ed.ol.pop.linking) olDrawPop(); }
 function olClosePop() {
   const p = ed.ol.pop;
   if (!p) return;
@@ -286,6 +288,23 @@ async function olDo(path, body = {}) {
   catch (e) { ed.ol.err = e.message; }
   if (ed.s && ed.s.ol) ed.s.ol.sig = "";
   await olLoad();
+}
+// Who changed the open file (no file open: the project) in the window, as Overleaf's history has it (overleaf/files) --
+// as the header and the tree have it, whether or not Dropbox has brought the change here yet: one of whose no line here
+// is marked, said not in the file here yet (Dropbox has not brought it, or its lines were changed here since).
+function olMenuWho() {
+  const win = edWindowSaid(), open = ed.s && ed.s.path;
+  if (!open) {
+    const all = ed.ol.everyone;
+    return el("div", { class: "ed-ol-say quiet", text: all.length
+      ? `Changed on Overleaf in the last ${win}: ${all.map((p) => `${p.name}, ${p.files} file${p.files === 1 ? "" : "s"}, last edit ${olWhen(p.at)}`).join("; ")}`
+      : `No one else changed this project on Overleaf in the last ${win}.` });
+  }
+  const who = ed.ol.files[open] || [];
+  const here = new Set(ed.ol.path === open ? ed.ol.people.map(olKey) : []);
+  return el("div", { class: "ed-ol-say quiet", text: who.length
+    ? `Changed this file on Overleaf in the last ${win}: ${who.map((p) => `${p.name}, last edit ${olWhen(p.at)}${here.has(olKey(p)) ? "" : " (not in your copy of the file yet)"}`).join("; ")}`
+    : `No one else changed this file on Overleaf in the last ${win}.` });
 }
 function olDrawPop() {
   const p = ed.ol.pop, v = ed.ol.view;
@@ -307,10 +326,7 @@ function olDrawPop() {
     rows.push(el("div", { class: "ed-ol-say", text: v.project
       ? `Project: ${v.project.name}${v.project.how === "auto" ? " (this folder is its Dropbox copy)" : " (linked)"}`
       : v.synced ? `No project of yours is called “${v.synced}”. Link it by its Overleaf link:` : "No Overleaf project for this folder. Link one by its Overleaf link:" }));
-    const people = ed.ol.path === (ed.s && ed.s.path) ? ed.ol.people : [];
-    if (v.project) rows.push(el("div", { class: "ed-ol-say quiet", text: people.length
-      ? `Changed ${ed.s ? "this file" : "it"} in the last ${edWindowSaid()}: ${people.map((x) => `${x.name}, ${ago(x.at)}`).join("; ")}`
-      : `No one else changed this file on Overleaf in the last ${edWindowSaid()}.` }));
+    if (v.project) rows.push(olMenuWho());
     if (!v.project || p.linking) {
       const input = el("input", { type: "url", class: "ed-ol-url", placeholder: "https://www.overleaf.com/project/…", "aria-label": "The project's Overleaf link" });
       input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") olDo("link", { url: input.value }); });
