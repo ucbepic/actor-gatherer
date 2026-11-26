@@ -1,7 +1,9 @@
 """The LaTeX editor's Overleaf part (ag_apps/latex/overleaf.py): who changed a paper's lines on Overleaf -- a diff's pieces
-placed on the file as it is here, the user's own Dropbox's left out; the sign-in kept, and found lapsed; a Dropbox-synced
-folder's project found by its name; and the panel's routes (overleaf, overleaf/link, overleaf/changes) -- against a
-stand-in for Overleaf's site, here, that answers as its History panel's endpoints do."""
+placed on the file as it is here, the user's own Dropbox's left out; a file put in whole (removed and added again) compared
+before and after; who changed which file from the changes one by one (not the updates, which merge people); the sign-in
+kept, and found lapsed; a Dropbox-synced folder's project found by its name; and the panel's routes (overleaf,
+overleaf/link, overleaf/changes) -- against a stand-in for Overleaf's site, here, that answers as its History panel's
+endpoints do."""
 import http.server
 import json
 import os
@@ -11,6 +13,7 @@ import threading
 import time
 import unittest
 import urllib.parse
+from datetime import datetime, timezone
 
 from ag_apps.latex import overleaf as O
 from test_app_latex import ServedBase
@@ -22,6 +25,19 @@ NOW = time.time()
 def meta(user, at, origin=None, last="Lee"):
     u = {"id": user, "first_name": "Pat" if user == CO else "Sam", "last_name": last, "email": f"{user[:3]}@x.edu"}
     return {"users": [u], "start_ts": at * 1000 - 5000, "end_ts": at * 1000, **({"origin": {"kind": origin}} if origin else {})}
+
+
+def change(user, at, *ops, origin=None):
+    """One of Overleaf's changes, as /changes gives it."""
+    return {"operations": list(ops), "v2Authors": [user], "authors": [],
+            "timestamp": datetime.fromtimestamp(at, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            **({"origin": {"kind": origin}} if origin else {})}
+
+
+edit = lambda path: {"pathname": path, "textOperation": [3, "x"]}                     # noqa: E731
+removed = lambda path: {"pathname": path, "newPathname": ""}                          # noqa: E731
+added = lambda path, h="h1": {"pathname": path, "file": {"hash": h, "stringLength": 9}}   # noqa: E731
+renamed = lambda path, to: {"pathname": path, "newPathname": to}                      # noqa: E731
 
 
 class AttributeTest(unittest.TestCase):
@@ -73,6 +89,8 @@ class _Overleaf(http.server.BaseHTTPRequestHandler):
     """Overleaf's endpoints, as the History panel reads them: a session that is the user's, or a visitor's."""
     updates = []
     diffs = {}
+    raw = None                                       # (the first change's version, [change]); None: /changes not served
+    page = 2000
     asked = []
 
     def do_GET(self):                                # noqa: N802
@@ -96,7 +114,15 @@ class _Overleaf(http.server.BaseHTTPRequestHandler):
         if url.path.endswith("/updates"):
             return self.reply(200, {"updates": _Overleaf.updates})
         if url.path.endswith("/diff"):
-            return self.reply(200, {"diff": _Overleaf.diffs[(q["pathname"], int(q["from"]), int(q["to"]))]})
+            key = (q["pathname"], int(q["from"]), int(q["to"]))
+            if key not in _Overleaf.diffs:
+                return self.reply(404, {})
+            return self.reply(200, {"diff": _Overleaf.diffs[key]})
+        if url.path.endswith("/changes") and _Overleaf.raw is not None:
+            _Overleaf.asked.append(f"changes since {q['since']}")
+            first, all_ = _Overleaf.raw
+            k = max(0, int(q["since"]) - first)
+            return self.reply(200, {"changes": all_[k:k + _Overleaf.page], "hasMore": k + _Overleaf.page < len(all_)})
         self.reply(404, {})
 
     def reply(self, status, body, kind="application/json"):
@@ -126,6 +152,11 @@ class SiteBase:
                              {"fromV": 5, "toV": 7, "pathnames": ["sec/a.tex"], "meta": meta(ME, NOW - 120, "dropbox")}]
         _Overleaf.diffs = {("sec/a.tex", 7, 9): [{"u": "one\n"}, {"i": "two\n", "meta": meta(CO, NOW - 60)},
                                                  {"u": "three\n"}]}
+        _Overleaf.diffs[("sec/a.tex", 5, 9)] = _Overleaf.diffs[("sec/a.tex", 7, 9)]
+        _Overleaf.raw = (5, [change(ME, NOW - 121, edit("sec/a.tex"), origin="dropbox"),
+                             change(ME, NOW - 120, edit("sec/a.tex"), origin="dropbox"),
+                             change(CO, NOW - 61, edit("sec/a.tex")), change(CO, NOW - 60, edit("sec/a.tex"))])
+        _Overleaf.page = 2000
 
 
 class AccountTest(SiteBase, unittest.TestCase):
@@ -169,8 +200,14 @@ class AccountTest(SiteBase, unittest.TestCase):
 class WhoChangedTest(SiteBase, unittest.TestCase):
     """Who changed which file, from the updates alone."""
 
-    def test_each_person_s_files_and_latest_the_user_s_own_dropbox_left_out(self):
+    def account(self):
+        account = O.Account(tempfile.mkdtemp())
+        account._signed_in([{"name": "overleaf_session2", "value": "good"}])
+        return account
+
+    def test_without_the_changes_by_the_updates_each_person_s_files_the_user_s_own_dropbox_left_out(self):
         self.site()
+        _Overleaf.raw = None
         both = meta(CO, NOW - 30, "dropbox")
         both["users"].append({"id": ME, "first_name": "Sam", "last_name": "Lee", "email": "me@x.edu"})
         _Overleaf.updates = [
@@ -186,6 +223,135 @@ class WhoChangedTest(SiteBase, unittest.TestCase):
             "/p/main.tex": ["Pat Lee"], "/p/sec/b.tex": ["Pat Lee"], "/p/sec/a.tex": ["Sam Lee", "Pat Lee"]})
         self.assertEqual([(p["name"], p["path"], p["files"]) for p in got["people"]],
                          [("Pat Lee", "/p/main.tex", 3), ("Sam Lee", "/p/sec/a.tex", 1)])
+
+    def test_without_the_changes_a_file_added_again_or_renamed_counts_too(self):
+        self.site()
+        _Overleaf.raw = None
+        _Overleaf.updates = [{"fromV": 4, "toV": 8, "pathnames": [], "meta": meta(CO, NOW - 30, "dropbox"),
+                              "project_ops": [{"add": {"pathname": "sec/a.tex"}, "atV": 5},
+                                              {"remove": {"pathname": "sec/a.tex"}, "atV": 4},
+                                              {"rename": {"pathname": "b.tex", "newPathname": "c.tex"}, "atV": 6}]}]
+        got = O.who_changed(O.History(self.account()), "c" * 24, "/p", ME, NOW - 3600)
+        self.assertEqual({path: [p["name"] for p in people] for path, people in got["files"].items()},
+                         {"/p/sec/a.tex": ["Pat Lee"], "/p/c.tex": ["Pat Lee"]})
+
+    def test_from_the_changes_each_one_s_own_files_a_file_put_in_whole_included(self):
+        self.site()
+        # one update merges them all, with both people; each change says who made it
+        _Overleaf.updates = [{"fromV": 3, "toV": 16, "pathnames": ["sec/c.tex", "sec/e.tex"],
+                              "meta": {**meta(CO, NOW - 10, "dropbox"), "users": [
+                                  meta(CO, 0)["users"][0], meta(ME, 0)["users"][0]]}}]
+        _Overleaf.raw = (3, [
+            change(CO, NOW - 9000, added("sec/d.tex", "d1"), origin="dropbox"),              # 3: before the window
+            change(ME, NOW - 60, edit("sec/c.tex"), origin="dropbox"),                        # 4: the user, from here
+            change(ME, NOW - 59, removed("main.pdf"), origin="dropbox"),                      # 5, 6: their build's PDF
+            change(ME, NOW - 59, added("main.pdf", "p1"), origin="dropbox"),
+            change(CO, NOW - 50, removed("sec/a.tex"), origin="dropbox"),                     # 7, 8: put in whole
+            change(CO, NOW - 50, added("sec/a.tex", "a1"), origin="dropbox"),
+            change(CO, NOW - 40, added("out/backup.tex", "b1"), origin="dropbox"),            # 9: a new file
+            change(CO, NOW - 30, renamed("sec/b.tex", "sec/b2.tex")),                         # 10: renamed
+            change(CO, NOW - 20, removed("sec/d.tex"), origin="dropbox"),                     # 11, 12: put back as it
+            change(CO, NOW - 20, added("sec/d.tex", "d1"), origin="dropbox"),                 #  was: not a change
+            change(ME, NOW - 10, edit("sec/e.tex")),                                          # 13: the user, on the site
+            change(CO, NOW - 5, removed("old.tex")),                                          # 14: removed: gone
+        ])
+        got = O.who_changed(O.History(self.account()), "c" * 24, "/p", ME, NOW - 3600)
+        self.assertEqual({path: [p["name"] for p in people] for path, people in got["files"].items()}, {
+            "/p/sec/a.tex": ["Pat Lee"], "/p/out/backup.tex": ["Pat Lee"], "/p/sec/b2.tex": ["Pat Lee"],
+            "/p/sec/e.tex": ["Sam Lee"]})
+        self.assertEqual([(p["name"], p["path"], p["files"]) for p in got["people"]],
+                         [("Sam Lee", "/p/sec/e.tex", 1), ("Pat Lee", "/p/sec/b2.tex", 3)])
+        self.assertAlmostEqual(got["files"]["/p/sec/a.tex"][0]["at"], NOW - 50, places=2)
+
+
+class ChangesTest(SiteBase, unittest.TestCase):
+    """A file's lines credited from its changes one by one: a diff over each run of in-place edits, and each time it was
+    put in whole, its texts before and after compared."""
+
+    BEFORE = "\\section{Model}\nWe optimize the cost of each plan over the rounds.\nIt has three parts, each with its cost.\n" \
+             "A line that goes away entirely here.\n\\end{itemize}\nThe end of the section, unchanged.\n"
+    AFTER = "\\section{Model}\nWe maximize the cost of each plan, over all rounds.\nIt has three parts, each with its cost.\n" \
+            "\\end{itemize}\nThe end of the section, unchanged.\nA sentence added at the end of it.\n"
+
+    def setUp(self):
+        self.site()
+        self.account = O.Account(tempfile.mkdtemp())
+        self.account._signed_in([{"name": "overleaf_session2", "value": "good"}])
+        self.root = tempfile.mkdtemp()
+        self.path = os.path.join(self.root, "a.tex")
+
+    def lines(self, text, since=NOW - 3600):
+        got = O.changes(O.History(self.account), "c" * 24, self.root, self.path, text, ME, since)
+        return [(l["line"], l["who"][0]["name"], l["inserted"], l["deleted"]) for l in got["lines"]], got
+
+    def test_a_file_put_in_whole_by_another_its_changed_lines_credited_with_their_words(self):
+        _Overleaf.updates = [{"fromV": 4, "toV": 6, "pathnames": [], "meta": meta(CO, NOW - 30, "dropbox")}]
+        _Overleaf.raw = (4, [change(CO, NOW - 30, removed("a.tex"), origin="dropbox"),
+                             change(CO, NOW - 30, added("a.tex", "a2"), origin="dropbox")])
+        _Overleaf.diffs = {("a.tex", 4, 4): [{"u": self.BEFORE}], ("a.tex", 6, 6): [{"u": self.AFTER}],
+                           ("a.tex", 4, 6): [{"u": self.AFTER}]}     # its diff across: unchanged, naming no one
+        got, whole = self.lines(self.AFTER)
+        self.assertEqual(got, [
+            (2, "Pat Lee", ["maximize", ",", "all"], ["optimize", "the"]),
+            (4, "Pat Lee", [], ["A line that goes away entirely here."]),
+            (6, "Pat Lee", ["A sentence added at the end of it."], [])])
+        self.assertAlmostEqual(whole["lines"][0]["at"], NOW - 30, places=2)
+        self.assertEqual([(p["name"], p["lines"]) for p in whole["people"]], [("Pat Lee", 3)])
+        # here, a line typed since: not taken for theirs
+        self.assertEqual([l[0] for l in self.lines(self.AFTER.replace("over all", "over every"))[0]], [4, 6])
+        # put in whole by the user's own Dropbox: none
+        _Overleaf.raw = (4, [change(ME, NOW - 30, removed("a.tex"), origin="dropbox"),
+                             change(ME, NOW - 30, added("a.tex", "a2"), origin="dropbox")])
+        self.assertEqual(self.lines(self.AFTER)[0], [])
+
+    def test_edits_in_place_then_put_in_whole_each_told_and_each_text_read_once(self):
+        mid = self.BEFORE.replace("three parts", "four parts")                       # after the edit in place
+        first = mid.replace(mid.splitlines(True)[1], self.AFTER.splitlines(True)[1])  # the first put: line 2
+        second = self.AFTER.replace("three parts", "four parts")                     # the second: lines 4, 6
+        _Overleaf.updates = [{"fromV": 4, "toV": 12, "pathnames": ["a.tex"], "meta": meta(CO, NOW - 10, "dropbox")}]
+        _Overleaf.raw = (4, [
+            change(CO, NOW - 50, edit("a.tex")),                                    # 4: in place, on the site
+            change(CO, NOW - 40, removed("a.tex"), origin="dropbox"),              # 5, 6: put in whole
+            change(CO, NOW - 40, added("a.tex", "a2"), origin="dropbox"),
+            change(CO, NOW - 20, removed("a.tex"), origin="dropbox"),              # 7, 8: again, nothing between
+            change(CO, NOW - 20, added("a.tex", "a3"), origin="dropbox"),
+            change(CO, NOW - 15, removed("a.tex"), origin="dropbox"),              # 9, 10: again, its text as Overleaf
+            change(CO, NOW - 15, added("a.tex", "a4"), origin="dropbox"),          #  keeps it: binary -- not told
+            change(ME, NOW - 10, edit("a.tex"), origin="dropbox")])                # 11: the user's own, from here
+        _Overleaf.diffs = {
+            ("a.tex", 4, 5): [{"u": self.BEFORE.split("three", 1)[0]}, {"d": "three", "meta": meta(CO, NOW - 50)},
+                              {"i": "four", "meta": meta(CO, NOW - 50)}, {"u": self.BEFORE.split("three", 1)[1]}],
+            ("a.tex", 5, 5): [{"u": mid}], ("a.tex", 7, 7): [{"u": first}], ("a.tex", 9, 9): [{"u": second}],
+            ("a.tex", 11, 11): {"binary": True}}
+        got, _ = self.lines(second + "Ours.\n")
+        self.assertEqual([(l[0], l[2], l[3]) for l in got], [
+            (2, ["maximize", ",", "all"], ["optimize", "the"]),         # the first put in whole (5-7)
+            (3, ["four"], ["three"]),                                  # the edit in place, through its diff (4-5)
+            (4, [], ["A line that goes away entirely here."]),         # the second (7-9)
+            (6, ["A sentence added at the end of it."], [])])          # "Ours." (7): the user's own, left out
+        self.assertEqual({l[1] for l in got}, {"Pat Lee"})
+        # read once each: the diff 4-5, and the texts at 5, 7 (after the first put, before the second), 9 and 11
+        self.assertEqual(len([a for a in _Overleaf.asked if a.endswith("/diff")]), 5)
+
+    def test_a_new_file_from_another_all_its_lines_theirs(self):
+        _Overleaf.updates = [{"fromV": 4, "toV": 5, "pathnames": [], "meta": meta(CO, NOW - 30, "dropbox")}]
+        _Overleaf.raw = (4, [change(CO, NOW - 30, added("a.tex", "n1"), origin="dropbox")])
+        _Overleaf.diffs = {("a.tex", 5, 5): [{"u": self.AFTER}]}
+        got, _ = self.lines(self.AFTER)
+        self.assertEqual([l[0] for l in got], [1, 2, 3, 4, 5, 6])
+
+    def test_the_changes_read_in_pages_and_then_only_the_new(self):
+        _Overleaf.page = 2
+        h = O.History(self.account)
+        self.assertEqual([v for v, _ in h.changes("c" * 24, 5)], [5, 6, 7, 8])
+        self.assertEqual([a for a in _Overleaf.asked if a.startswith("changes")], ["changes since 5", "changes since 7"])
+        self.assertEqual([v for v, _ in h.changes("c" * 24, 6)], [6, 7, 8])
+        self.assertEqual(len([a for a in _Overleaf.asked if a.startswith("changes")]), 2)     # kept a few seconds
+        first, all_ = _Overleaf.raw
+        _Overleaf.raw = (first, all_ + [change(CO, NOW, edit("sec/a.tex"))])
+        h.changes_of["c" * 24] = (0.0,) + h.changes_of["c" * 24][1:]                         # those seconds past
+        self.assertEqual([v for v, _ in h.changes("c" * 24, 6)], [6, 7, 8, 9])
+        self.assertEqual([a for a in _Overleaf.asked if a.startswith("changes")][-1], "changes since 9")
 
 
 class RoutesTest(SiteBase, ServedBase):
